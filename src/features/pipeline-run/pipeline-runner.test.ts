@@ -159,7 +159,8 @@ describe('PipelineRunner', () => {
       resultCapturer: mockResultCapturer as unknown as PipelineRunnerDeps['resultCapturer'],
       tokenTracker: mockTokenTracker as unknown as PipelineRunnerDeps['tokenTracker'],
       manifestBuilder: mockManifestBuilder as unknown as typeof import('@domain/services/manifest-builder.js').ManifestBuilder,
-      pipelineDir,
+      persistPipeline: (p: Pipeline) =>
+        JsonStore.write(join(pipelineDir, `${p.id}.json`), p, PipelineSchema),
       ...overrides,
     };
   }

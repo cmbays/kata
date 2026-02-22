@@ -3,8 +3,8 @@ import { fileURLToPath } from 'node:url';
 import { existsSync } from 'node:fs';
 import { KataConfigSchema, type KataConfig } from '@domain/types/config.js';
 import { StageRegistry } from '@infra/registries/stage-registry.js';
-import { PipelineComposer } from '@domain/services/pipeline-composer.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
+import { loadPipelineTemplates } from '@infra/persistence/pipeline-template-store.js';
 import { KATA_DIRS } from '@shared/constants/paths.js';
 import { detectProject, type ProjectInfo } from './project-detector.js';
 
@@ -170,7 +170,7 @@ export async function handleInit(options: InitOptions): Promise<InitResult> {
   const builtinTemplatesDir = join(packageRoot, KATA_DIRS.templates);
   let templatesLoaded = 0;
   if (existsSync(builtinTemplatesDir)) {
-    const templates = PipelineComposer.loadTemplates(builtinTemplatesDir);
+    const templates = loadPipelineTemplates(builtinTemplatesDir);
     // Write each template into .kata/templates/
     const { PipelineTemplateSchema } = await import('@domain/types/pipeline.js');
     for (const template of templates) {
