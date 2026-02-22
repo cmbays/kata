@@ -132,6 +132,10 @@ export async function handleInit(options: InitOptions): Promise<InitResult> {
   JsonStore.ensureDir(templatesDir);
   JsonStore.ensureDir(cyclesDir);
   JsonStore.ensureDir(knowledgeDir);
+  JsonStore.ensureDir(join(kataDir, KATA_DIRS.pipelines));
+  JsonStore.ensureDir(join(kataDir, KATA_DIRS.history));
+  JsonStore.ensureDir(join(kataDir, KATA_DIRS.tracking));
+  JsonStore.ensureDir(join(kataDir, KATA_DIRS.prompts));
 
   // Build config
   const config: KataConfig = KataConfigSchema.parse({

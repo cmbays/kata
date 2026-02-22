@@ -35,9 +35,12 @@ Clean architecture with strict dependency direction: **domain → infrastructure
 ```
 src/
   domain/types/       # Zod schemas and inferred types — the core model
-  infrastructure/     # Persistence (JsonStore), future: registries, adapters, tracking
-  features/           # Application-level use cases (not yet built)
+  domain/services/    # Pipeline composition, manifest building, cycle management
+  domain/ports/       # Interfaces (IPersistence, IStageRegistry, IRefResolver)
+  infrastructure/     # Persistence (JsonStore), registries, adapters, tracking
+  features/           # Application-level use cases (pipeline-run, init, self-improvement, cycle-management)
   shared/lib/         # Logger, domain error hierarchy
+  shared/constants/   # Centralized path constants (KATA_DIRS)
   cli/                # Commander.js program — thin wrapper over features
 ```
 
@@ -123,11 +126,11 @@ Each module exports `registerXCommand(parent: Command)` in `src/cli/commands/`:
 - `learning-review.ts` → `kata knowledge review` (interactive learning review + prompt updates)
 - `execute` commands remain stubs (future wave)
 
-CLI utility `src/cli/utils.ts`: `resolveKataDir()`, `getGlobalOptions()`
+CLI utility `src/cli/utils.ts`: `resolveKataDir()`, `kataDirPath()`, `getGlobalOptions()`, `withCommandContext()`, `handleCommandError()`
 Formatters in `src/cli/formatters/`: stage, pipeline, cycle, gate, knowledge, learning (all support `--json`)
 
 ## Implementation status
 
-**Waves 0-4 are complete.** 704 tests passing across 52 test files.
+**Waves 0-4 are complete.** 711 tests passing across 52 test files.
 
 The implementation plan (`docs/pipeline/plan.md`) defines 5 waves with 9 sessions.

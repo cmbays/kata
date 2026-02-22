@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { StageSchema, type Stage } from '@domain/types/stage.js';
-import type { IStageRegistry } from '@domain/ports/stage-registry.js';
+import type { IStageRegistry, StageFilter } from '@domain/ports/stage-registry.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
 import { StageNotFoundError } from '@shared/lib/errors.js';
 
@@ -16,10 +16,6 @@ function stageKey(type: string, flavor?: string): string {
  */
 function stageFilename(type: string, flavor?: string): string {
   return flavor ? `${type}:${flavor}.json` : `${type}.json`;
-}
-
-export interface StageFilter {
-  type?: string;
 }
 
 /**
