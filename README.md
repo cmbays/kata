@@ -2,9 +2,10 @@
 
 Development Methodology Engine -- TypeScript library + CLI that encodes development methodology (Shape Up) as executable, composable stages with a self-improving knowledge system.
 
-[![npm version](https://img.shields.io/npm/v/@withkata/core)](https://www.npmjs.com/package/@withkata/core)
-[![license](https://img.shields.io/npm/l/@withkata/core)](./LICENSE)
-[![node](https://img.shields.io/node/v/@withkata/core)](https://nodejs.org/)
+[![CI](https://github.com/cmbays/kata/actions/workflows/ci.yml/badge.svg)](https://github.com/cmbays/kata/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
+[![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](https://nodejs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue)](https://www.typescriptlang.org/)
 
 ## What is kata?
 
