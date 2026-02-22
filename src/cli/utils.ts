@@ -21,3 +21,15 @@ export function getGlobalOptions(cmd: import('commander').Command): { json: bool
   const opts = cmd.optsWithGlobals();
   return { json: !!opts.json, verbose: !!opts.verbose, cwd: opts.cwd };
 }
+
+/**
+ * Centralized error handler for CLI commands.
+ * Prints the error message, and optionally the stack trace if verbose is enabled.
+ */
+export function handleCommandError(error: unknown, verbose: boolean): void {
+  console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
+  if (verbose && error instanceof Error && error.stack) {
+    console.error(error.stack);
+  }
+  process.exitCode = 1;
+}

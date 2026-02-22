@@ -5,7 +5,6 @@ import { randomUUID } from 'node:crypto';
 import type { Pipeline } from '@domain/types/pipeline.js';
 import type { Stage } from '@domain/types/stage.js';
 import type { ExecutionResult } from '@domain/types/manifest.js';
-import type { GateResult } from '@domain/types/gate.js';
 import type { Learning } from '@domain/types/learning.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
 import { PipelineSchema } from '@domain/types/pipeline.js';

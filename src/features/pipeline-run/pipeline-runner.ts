@@ -228,6 +228,7 @@ export class PipelineRunner {
         stageState.completedAt = new Date().toISOString();
         pipeline.state = 'abandoned';
         pipeline.updatedAt = new Date().toISOString();
+        // eslint-disable-next-line no-useless-assignment -- maintain invariant: all abandonment paths set abortedAt
         abortedAt = i;
 
         try {

@@ -44,7 +44,6 @@ export class SubscriptionManager {
 
     const filtered = existing.filter((cat) => !categories.includes(cat));
     if (filtered.length === 0) {
-      // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
       delete all[agentId];
     } else {
       all[agentId] = filtered;

@@ -37,8 +37,9 @@ export const RefResolver = {
     try {
       return readFileSync(resolvedPath, 'utf-8');
     } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
       throw new RefResolutionError(
-        `Failed to read referenced file: "${ref}" (resolved to "${resolvedPath}")`,
+        `Failed to read referenced file: "${ref}" (resolved to "${resolvedPath}"): ${reason}`,
         ref,
         resolvedPath,
       );
