@@ -89,7 +89,7 @@ describe('bunkai review command', () => {
     const program = createProgram();
     await program.parseAsync([
       'node', 'test', '--cwd', baseDir,
-      'bunkai', 'review', '--skip-prompts',
+      'knowledge', 'review', '--skip-prompts',
     ]);
 
     const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
@@ -106,7 +106,7 @@ describe('bunkai review command', () => {
     const program = createProgram();
     await program.parseAsync([
       'node', 'test', '--cwd', baseDir,
-      'bunkai', 'review', '--skip-prompts',
+      'knowledge', 'review', '--skip-prompts',
     ]);
 
     const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
@@ -125,13 +125,13 @@ describe('bunkai review command', () => {
     const program = createProgram();
     await program.parseAsync([
       'node', 'test', '--cwd', baseDir,
-      'bunkai', 'review', '--skip-prompts',
+      'knowledge', 'review', '--skip-prompts',
     ]);
 
     const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
     expect(output).toContain('=== Suggested Learning ===');
     expect(output).toContain('[Auto-accepted]');
-    expect(output).toContain('=== Bunkai Review Summary ===');
+    expect(output).toContain('=== Knowledge Review Summary ===');
     expect(output).toContain('Learnings accepted:  ');
   });
 
@@ -148,7 +148,7 @@ describe('bunkai review command', () => {
     const program = createProgram();
     await program.parseAsync([
       'node', 'test', '--cwd', baseDir,
-      'bunkai', 'review', '--skip-prompts', '--stage', 'build',
+      'knowledge', 'review', '--skip-prompts', '--stage', 'build',
     ]);
 
     const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
@@ -171,7 +171,7 @@ describe('bunkai review command', () => {
     const program = createProgram();
     await program.parseAsync([
       'node', 'test', '--json', '--cwd', baseDir,
-      'bunkai', 'review',
+      'knowledge', 'review',
     ]);
 
     const firstCall = consoleSpy.mock.calls[0]?.[0] as string;
@@ -194,7 +194,7 @@ describe('bunkai review command', () => {
     // Use a very high confidence threshold to filter out suggestions
     await program.parseAsync([
       'node', 'test', '--cwd', baseDir,
-      'bunkai', 'review', '--skip-prompts', '--min-confidence', '0.99',
+      'knowledge', 'review', '--skip-prompts', '--min-confidence', '0.99',
     ]);
 
     const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
@@ -215,13 +215,13 @@ describe('bunkai review command', () => {
     const program = createProgram();
     await program.parseAsync([
       'node', 'test', '--cwd', baseDir,
-      'bunkai', 'review',
+      'knowledge', 'review',
     ]);
 
     expect(confirmMock).toHaveBeenCalled();
     const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
     expect(output).toContain('Captured!');
-    expect(output).toContain('=== Bunkai Review Summary ===');
+    expect(output).toContain('=== Knowledge Review Summary ===');
   });
 
   it('handles interactive reject flow', async () => {
@@ -238,7 +238,7 @@ describe('bunkai review command', () => {
     const program = createProgram();
     await program.parseAsync([
       'node', 'test', '--cwd', baseDir,
-      'bunkai', 'review',
+      'knowledge', 'review',
     ]);
 
     const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
@@ -256,7 +256,7 @@ describe('bunkai review command', () => {
     const program = createProgram();
     await program.parseAsync([
       'node', 'test', '--cwd', baseDir,
-      'bunkai', 'review', '--skip-prompts',
+      'knowledge', 'review', '--skip-prompts',
     ]);
 
     // Verify learning was captured in the knowledge store
@@ -274,7 +274,7 @@ describe('bunkai review command', () => {
     const program = createProgram();
     await program.parseAsync([
       'node', 'test', '--cwd', noKataDir,
-      'bunkai', 'review', '--skip-prompts',
+      'knowledge', 'review', '--skip-prompts',
     ]);
 
     expect(errorSpy).toHaveBeenCalled();
@@ -299,11 +299,11 @@ describe('bunkai review command', () => {
     const program = createProgram();
     await program.parseAsync([
       'node', 'test', '--cwd', baseDir,
-      'bunkai', 'review', '--skip-prompts',
+      'knowledge', 'review', '--skip-prompts',
     ]);
 
     const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
-    expect(output).toContain('=== Bunkai Review Summary ===');
+    expect(output).toContain('=== Knowledge Review Summary ===');
     // The auto-accept flow should have captured learnings and potentially suggested prompt updates
     expect(output).toContain('Learnings accepted:');
   });

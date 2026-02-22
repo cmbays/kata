@@ -72,7 +72,7 @@ export function formatReviewSummary(
 ): string {
   const lines: string[] = [];
 
-  lines.push('=== Bunkai Review Summary ===');
+  lines.push('=== Knowledge Review Summary ===');
   lines.push('');
   lines.push(`  Learnings accepted:  ${accepted}`);
   lines.push(`  Learnings rejected:  ${rejected}`);

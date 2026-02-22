@@ -9,7 +9,7 @@ import type { CooldownSessionResult } from '@features/cycle-management/cooldown-
 export function formatCycleStatus(status: BudgetStatus, cycle: Cycle): string {
   const lines: string[] = [];
 
-  lines.push(`Enbu: ${cycle.name ?? cycle.id}`);
+  lines.push(`Cycle: ${cycle.name ?? cycle.id}`);
   lines.push(`State: ${cycle.state}`);
   lines.push(`Bets: ${cycle.bets.length}`);
   lines.push('');
@@ -48,9 +48,9 @@ export function formatCycleStatus(status: BudgetStatus, cycle: Cycle): string {
 export function formatCooldownReport(report: CooldownReport): string {
   const lines: string[] = [];
 
-  lines.push('=== Ma (Cooldown) Report ===');
+  lines.push('=== Cooldown Report ===');
   lines.push('');
-  lines.push(`Enbu: ${report.cycleName ?? report.cycleId}`);
+  lines.push(`Cycle: ${report.cycleName ?? report.cycleId}`);
   lines.push(`Completion Rate: ${report.completionRate.toFixed(1)}%`);
   lines.push(`Token Utilization: ${report.utilizationPercent.toFixed(1)}%`);
   if (report.alertLevel) {

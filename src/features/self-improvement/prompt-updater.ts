@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync, copyFileSync, existsSync, realpathSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import type { StageRegistry } from '@infra/registries/stage-registry.js';
+import type { IStageRegistry } from '@domain/ports/stage-registry.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
 import { StageNotFoundError } from '@shared/lib/errors.js';
 import { logger } from '@shared/lib/logger.js';
@@ -34,7 +34,7 @@ export class PromptUpdater {
   apply(
     kataDir: string,
     update: PromptUpdate,
-    stageRegistry: StageRegistry,
+    stageRegistry: IStageRegistry,
   ): PromptUpdateResult {
     try {
       // Resolve prompt path
@@ -125,7 +125,7 @@ export class PromptUpdater {
   private resolvePromptPath(
     kataDir: string,
     update: PromptUpdate,
-    stageRegistry: StageRegistry,
+    stageRegistry: IStageRegistry,
   ): string | null {
     let rawPath: string | undefined;
 

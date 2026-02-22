@@ -10,45 +10,45 @@ describe('createProgram', () => {
   it('has the expected top-level commands', () => {
     const program = createProgram();
     const commandNames = program.commands.map((c) => c.name());
-    expect(commandNames).toContain('rei');
-    expect(commandNames).toContain('form');
-    expect(commandNames).toContain('flow');
-    expect(commandNames).toContain('enbu');
-    expect(commandNames).toContain('bunkai');
-    expect(commandNames).toContain('ma');
-    expect(commandNames).toContain('kiai');
+    expect(commandNames).toContain('init');
+    expect(commandNames).toContain('stage');
+    expect(commandNames).toContain('pipeline');
+    expect(commandNames).toContain('cycle');
+    expect(commandNames).toContain('knowledge');
+    expect(commandNames).toContain('cooldown');
+    expect(commandNames).toContain('execute');
   });
 
-  it('form has list and inspect subcommands', () => {
+  it('stage has list and inspect subcommands', () => {
     const program = createProgram();
-    const form = program.commands.find((c) => c.name() === 'form');
-    const subcommands = form!.commands.map((c) => c.name());
+    const stage = program.commands.find((c) => c.name() === 'stage');
+    const subcommands = stage!.commands.map((c) => c.name());
     expect(subcommands).toContain('list');
     expect(subcommands).toContain('inspect');
   });
 
-  it('flow has start, status, and prep subcommands', () => {
+  it('pipeline has start, status, and prep subcommands', () => {
     const program = createProgram();
-    const flow = program.commands.find((c) => c.name() === 'flow');
-    const subcommands = flow!.commands.map((c) => c.name());
+    const pipeline = program.commands.find((c) => c.name() === 'pipeline');
+    const subcommands = pipeline!.commands.map((c) => c.name());
     expect(subcommands).toContain('start');
     expect(subcommands).toContain('status');
     expect(subcommands).toContain('prep');
   });
 
-  it('enbu has new, status, and focus subcommands', () => {
+  it('cycle has new, status, and focus subcommands', () => {
     const program = createProgram();
-    const enbu = program.commands.find((c) => c.name() === 'enbu');
-    const subcommands = enbu!.commands.map((c) => c.name());
+    const cycle = program.commands.find((c) => c.name() === 'cycle');
+    const subcommands = cycle!.commands.map((c) => c.name());
     expect(subcommands).toContain('new');
     expect(subcommands).toContain('status');
     expect(subcommands).toContain('focus');
   });
 
-  it('bunkai has query and stats subcommands', () => {
+  it('knowledge has query and stats subcommands', () => {
     const program = createProgram();
-    const bunkai = program.commands.find((c) => c.name() === 'bunkai');
-    const subcommands = bunkai!.commands.map((c) => c.name());
+    const knowledge = program.commands.find((c) => c.name() === 'knowledge');
+    const subcommands = knowledge!.commands.map((c) => c.name());
     expect(subcommands).toContain('query');
     expect(subcommands).toContain('stats');
   });
@@ -59,5 +59,49 @@ describe('createProgram', () => {
     expect(optionNames).toContain('--json');
     expect(optionNames).toContain('--verbose');
     expect(optionNames).toContain('--cwd');
+  });
+
+  describe('command aliases', () => {
+    it('init has alias "rei"', () => {
+      const program = createProgram();
+      const init = program.commands.find((c) => c.name() === 'init');
+      expect(init!.alias()).toBe('rei');
+    });
+
+    it('stage has alias "form"', () => {
+      const program = createProgram();
+      const stage = program.commands.find((c) => c.name() === 'stage');
+      expect(stage!.alias()).toBe('form');
+    });
+
+    it('pipeline has alias "flow"', () => {
+      const program = createProgram();
+      const pipeline = program.commands.find((c) => c.name() === 'pipeline');
+      expect(pipeline!.alias()).toBe('flow');
+    });
+
+    it('cycle has alias "enbu"', () => {
+      const program = createProgram();
+      const cycle = program.commands.find((c) => c.name() === 'cycle');
+      expect(cycle!.alias()).toBe('enbu');
+    });
+
+    it('cooldown has alias "ma"', () => {
+      const program = createProgram();
+      const cooldown = program.commands.find((c) => c.name() === 'cooldown');
+      expect(cooldown!.alias()).toBe('ma');
+    });
+
+    it('knowledge has alias "bunkai"', () => {
+      const program = createProgram();
+      const knowledge = program.commands.find((c) => c.name() === 'knowledge');
+      expect(knowledge!.alias()).toBe('bunkai');
+    });
+
+    it('execute has alias "kiai"', () => {
+      const program = createProgram();
+      const execute = program.commands.find((c) => c.name() === 'execute');
+      expect(execute!.alias()).toBe('kiai');
+    });
   });
 });

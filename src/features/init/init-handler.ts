@@ -5,6 +5,7 @@ import { KataConfigSchema, type KataConfig } from '@domain/types/config.js';
 import { StageRegistry } from '@infra/registries/stage-registry.js';
 import { PipelineComposer } from '@domain/services/pipeline-composer.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
+import { KATA_DIRS } from '@shared/constants/paths.js';
 import { detectProject, type ProjectInfo } from './project-detector.js';
 
 export interface InitOptions {
@@ -34,13 +35,13 @@ function resolvePackageRoot(): string {
   // In dev: src/features/init → src/features → src → root
   // In dist: dist/features/init → dist/features → dist → root
   let candidate = resolve(thisDir, '..', '..', '..');
-  if (existsSync(join(candidate, 'stages', 'builtin'))) {
+  if (existsSync(join(candidate, KATA_DIRS.stages, KATA_DIRS.builtin))) {
     return candidate;
   }
 
   // Fallback: try one more level up (handles nested dist structures)
   candidate = resolve(thisDir, '..', '..');
-  if (existsSync(join(candidate, 'stages', 'builtin'))) {
+  if (existsSync(join(candidate, KATA_DIRS.stages, KATA_DIRS.builtin))) {
     return candidate;
   }
 
@@ -119,11 +120,11 @@ export async function handleInit(options: InitOptions): Promise<InitResult> {
   adapter = adapter ?? 'manual';
 
   // Resolve paths
-  const kataDir = join(cwd, '.kata');
-  const stagesDir = join(kataDir, 'stages');
-  const templatesDir = join(kataDir, 'templates');
-  const cyclesDir = join(kataDir, 'cycles');
-  const knowledgeDir = join(kataDir, 'knowledge');
+  const kataDir = join(cwd, KATA_DIRS.root);
+  const stagesDir = join(kataDir, KATA_DIRS.stages);
+  const templatesDir = join(kataDir, KATA_DIRS.templates);
+  const cyclesDir = join(kataDir, KATA_DIRS.cycles);
+  const knowledgeDir = join(kataDir, KATA_DIRS.knowledge);
 
   // Create directory structure
   JsonStore.ensureDir(kataDir);
@@ -131,6 +132,10 @@ export async function handleInit(options: InitOptions): Promise<InitResult> {
   JsonStore.ensureDir(templatesDir);
   JsonStore.ensureDir(cyclesDir);
   JsonStore.ensureDir(knowledgeDir);
+  JsonStore.ensureDir(join(kataDir, KATA_DIRS.pipelines));
+  JsonStore.ensureDir(join(kataDir, KATA_DIRS.history));
+  JsonStore.ensureDir(join(kataDir, KATA_DIRS.tracking));
+  JsonStore.ensureDir(join(kataDir, KATA_DIRS.prompts));
 
   // Build config
   const config: KataConfig = KataConfigSchema.parse({
@@ -147,12 +152,12 @@ export async function handleInit(options: InitOptions): Promise<InitResult> {
   });
 
   // Persist config
-  const configPath = join(kataDir, 'config.json');
+  const configPath = join(kataDir, KATA_DIRS.config);
   JsonStore.write(configPath, config, KataConfigSchema);
 
   // Load built-in stages
   const packageRoot = resolvePackageRoot();
-  const builtinStagesDir = join(packageRoot, 'stages', 'builtin');
+  const builtinStagesDir = join(packageRoot, KATA_DIRS.stages, KATA_DIRS.builtin);
   const registry = new StageRegistry(stagesDir);
 
   let stagesLoaded = 0;
@@ -162,7 +167,7 @@ export async function handleInit(options: InitOptions): Promise<InitResult> {
   }
 
   // Load pipeline templates
-  const builtinTemplatesDir = join(packageRoot, 'templates');
+  const builtinTemplatesDir = join(packageRoot, KATA_DIRS.templates);
   let templatesLoaded = 0;
   if (existsSync(builtinTemplatesDir)) {
     const templates = PipelineComposer.loadTemplates(builtinTemplatesDir);

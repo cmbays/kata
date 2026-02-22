@@ -27,13 +27,13 @@ describe('registerInitCommand', () => {
     errorSpy.mockRestore();
   });
 
-  it('registers rei command on program', () => {
+  it('registers init command on program', () => {
     const program = new Command();
     program.option('--json').option('--verbose').option('--cwd <path>');
     registerInitCommand(program);
 
-    const reiCmd = program.commands.find((c) => c.name() === 'rei');
-    expect(reiCmd).toBeDefined();
+    const initCmd = program.commands.find((c) => c.name() === 'init');
+    expect(initCmd).toBeDefined();
   });
 
   it('initializes a project with --skip-prompts', async () => {
@@ -42,7 +42,7 @@ describe('registerInitCommand', () => {
     program.exitOverride();
     registerInitCommand(program);
 
-    await program.parseAsync(['node', 'test', 'rei', '--skip-prompts', '--cwd', baseDir]);
+    await program.parseAsync(['node', 'test', 'init', '--skip-prompts', '--cwd', baseDir]);
 
     expect(existsSync(join(baseDir, '.kata'))).toBe(true);
     expect(existsSync(join(baseDir, '.kata', 'config.json'))).toBe(true);
@@ -55,7 +55,7 @@ describe('registerInitCommand', () => {
     program.exitOverride();
     registerInitCommand(program);
 
-    await program.parseAsync(['node', 'test', '--json', 'rei', '--skip-prompts', '--cwd', baseDir]);
+    await program.parseAsync(['node', 'test', '--json', 'init', '--skip-prompts', '--cwd', baseDir]);
 
     // Check that JSON output was produced (first console.log call should be JSON)
     const firstCall = consoleSpy.mock.calls[0]?.[0];
@@ -72,7 +72,7 @@ describe('registerInitCommand', () => {
     registerInitCommand(program);
 
     await program.parseAsync([
-      'node', 'test', '--json', 'rei',
+      'node', 'test', '--json', 'init',
       '--skip-prompts',
       '--methodology', 'custom',
       '--adapter', 'claude-cli',

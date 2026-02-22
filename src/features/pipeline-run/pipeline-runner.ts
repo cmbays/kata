@@ -5,7 +5,7 @@ import type { KataConfig } from '@domain/types/config.js';
 import type { Gate, GateResult } from '@domain/types/gate.js';
 import type { Stage } from '@domain/types/stage.js';
 import type { Learning } from '@domain/types/learning.js';
-import type { StageRegistry } from '@infra/registries/stage-registry.js';
+import type { IStageRegistry } from '@domain/ports/stage-registry.js';
 import type { KnowledgeStore } from '@infra/knowledge/knowledge-store.js';
 import type { AdapterResolver } from '@infra/execution/adapter-resolver.js';
 import type { TokenTracker } from '@infra/tracking/token-tracker.js';
@@ -18,7 +18,7 @@ import type { ResultCapturer } from './result-capturer.js';
  * Dependencies injected into the pipeline runner for testability.
  */
 export interface PipelineRunnerDeps {
-  stageRegistry: StageRegistry;
+  stageRegistry: IStageRegistry;
   knowledgeStore: KnowledgeStore;
   adapterResolver: AdapterResolver;
   resultCapturer: ResultCapturer;
@@ -228,6 +228,7 @@ export class PipelineRunner {
         stageState.completedAt = new Date().toISOString();
         pipeline.state = 'abandoned';
         pipeline.updatedAt = new Date().toISOString();
+        // eslint-disable-next-line no-useless-assignment -- maintain invariant: all abandonment paths set abortedAt
         abortedAt = i;
 
         try {

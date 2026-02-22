@@ -1,60 +1,44 @@
-import { join } from 'node:path';
 import type { Command } from 'commander';
 import { StageRegistry } from '@infra/registries/stage-registry.js';
-import { resolveKataDir, getGlobalOptions } from '@cli/utils.js';
+import { withCommandContext, kataDirPath } from '@cli/utils.js';
 import { formatStageTable, formatStageDetail, formatStageJson } from '@cli/formatters/stage-formatter.js';
 
 /**
- * Register the `kata form` subcommands.
+ * Register the `kata stage` subcommands.
  */
 export function registerStageCommands(parent: Command): void {
-  const form = parent
-    .command('form')
-    .description('Manage forms (stages) — reusable methodology steps');
+  const stage = parent
+    .command('stage')
+    .alias('form')
+    .description('Manage stages — reusable methodology steps (alias: form)');
 
-  form
+  stage
     .command('list')
-    .description('List available forms')
-    .action((_opts, cmd) => {
-      const globalOpts = getGlobalOptions(cmd);
+    .description('List available stages')
+    .action(withCommandContext((ctx) => {
+      const registry = new StageRegistry(kataDirPath(ctx.kataDir, 'stages'));
+      const stages = registry.list();
 
-      try {
-        const kataDir = resolveKataDir(globalOpts.cwd);
-        const registry = new StageRegistry(join(kataDir, 'stages'));
-        const stages = registry.list();
-
-        if (globalOpts.json) {
-          console.log(formatStageJson(stages));
-        } else {
-          console.log(formatStageTable(stages));
-        }
-      } catch (error) {
-        console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
-        process.exitCode = 1;
+      if (ctx.globalOpts.json) {
+        console.log(formatStageJson(stages));
+      } else {
+        console.log(formatStageTable(stages));
       }
-    });
+    }));
 
-  form
+  stage
     .command('inspect <type>')
-    .description('Show details of a specific form')
+    .description('Show details of a specific stage')
     .option('--flavor <flavor>', 'Stage flavor to inspect')
-    .action((type: string, _opts, cmd) => {
-      const globalOpts = getGlobalOptions(cmd);
-      const localOpts = cmd.opts();
+    .action(withCommandContext((ctx, type: string) => {
+      const localOpts = ctx.cmd.opts();
+      const registry = new StageRegistry(kataDirPath(ctx.kataDir, 'stages'));
+      const stage = registry.get(type, localOpts.flavor);
 
-      try {
-        const kataDir = resolveKataDir(globalOpts.cwd);
-        const registry = new StageRegistry(join(kataDir, 'stages'));
-        const stage = registry.get(type, localOpts.flavor);
-
-        if (globalOpts.json) {
-          console.log(formatStageJson([stage]));
-        } else {
-          console.log(formatStageDetail(stage));
-        }
-      } catch (error) {
-        console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
-        process.exitCode = 1;
+      if (ctx.globalOpts.json) {
+        console.log(formatStageJson([stage]));
+      } else {
+        console.log(formatStageDetail(stage));
       }
-    });
+    }));
 }

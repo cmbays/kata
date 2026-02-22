@@ -38,7 +38,7 @@ const makeStatus = (overrides: Partial<BudgetStatus> = {}): BudgetStatus => ({
 describe('formatCycleStatus', () => {
   it('shows cycle name, state, and budget', () => {
     const result = formatCycleStatus(makeStatus(), makeCycle());
-    expect(result).toContain('Enbu: Test Cycle');
+    expect(result).toContain('Cycle: Test Cycle');
     expect(result).toContain('State: active');
     expect(result).toContain('25,000 / 100,000');
     expect(result).toContain('25.0%');
@@ -85,7 +85,7 @@ describe('formatCycleStatus', () => {
   it('uses cycle id when name is missing', () => {
     const cycle = makeCycle({ name: undefined });
     const result = formatCycleStatus(makeStatus(), cycle);
-    expect(result).toContain('Enbu: 00000000-0000-0000-0000-000000000001');
+    expect(result).toContain('Cycle: 00000000-0000-0000-0000-000000000001');
   });
 });
 
@@ -104,7 +104,7 @@ describe('formatCooldownReport', () => {
 
   it('shows the report header', () => {
     const result = formatCooldownReport(makeReport());
-    expect(result).toContain('=== Ma (Cooldown) Report ===');
+    expect(result).toContain('=== Cooldown Report ===');
     expect(result).toContain('Sprint 1');
   });
 
@@ -263,7 +263,7 @@ describe('formatCooldownSessionResult', () => {
 
   it('includes cooldown report', () => {
     const result = formatCooldownSessionResult(makeSessionResult());
-    expect(result).toContain('=== Ma (Cooldown) Report ===');
+    expect(result).toContain('=== Cooldown Report ===');
     expect(result).toContain('Sprint 1');
   });
 
