@@ -3,7 +3,6 @@ import { mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { CycleManager } from '@domain/services/cycle-manager.js';
 import { KnowledgeStore } from '@infra/knowledge/knowledge-store.js';
-import { TokenTracker } from '@infra/tracking/token-tracker.js';
 import { ExecutionHistoryEntrySchema } from '@domain/types/history.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
 import {
@@ -16,31 +15,25 @@ describe('CooldownSession', () => {
   const baseDir = join(tmpdir(), `kata-cooldown-test-${Date.now()}`);
   const cyclesDir = join(baseDir, 'cycles');
   const knowledgeDir = join(baseDir, 'knowledge');
-  const trackingDir = join(baseDir, 'tracking');
   const pipelineDir = join(baseDir, 'pipelines');
   const historyDir = join(baseDir, 'history');
 
   let cycleManager: CycleManager;
   let knowledgeStore: KnowledgeStore;
-  let tokenTracker: TokenTracker;
   let session: CooldownSession;
 
   beforeEach(() => {
     mkdirSync(cyclesDir, { recursive: true });
     mkdirSync(knowledgeDir, { recursive: true });
-    mkdirSync(trackingDir, { recursive: true });
     mkdirSync(pipelineDir, { recursive: true });
     mkdirSync(historyDir, { recursive: true });
 
     cycleManager = new CycleManager(cyclesDir);
     knowledgeStore = new KnowledgeStore(knowledgeDir);
-    tokenTracker = new TokenTracker(trackingDir);
 
     const deps: CooldownSessionDeps = {
       cycleManager,
       knowledgeStore,
-      tokenTracker,
-      cyclesDir,
       pipelineDir,
       historyDir,
     };
@@ -112,7 +105,7 @@ describe('CooldownSession', () => {
       expect(cycleManager.get(cycle.id).state).toBe('complete');
     });
 
-    it('enriches report with token usage', async () => {
+    it('enriches report with token usage from cycle history', async () => {
       const cycle = cycleManager.create({ tokenBudget: 100000 }, 'Token Cycle');
       cycleManager.addBet(cycle.id, {
         description: 'Feature B',
@@ -121,18 +114,35 @@ describe('CooldownSession', () => {
         issueRefs: [],
       });
 
-      // Record some token usage
-      tokenTracker.recordUsage('stage-1', {
-        inputTokens: 5000,
-        outputTokens: 3000,
-        cacheCreationTokens: 0,
-        cacheReadTokens: 0,
-        total: 8000,
-      });
+      // Create a history entry linked to this cycle (not just global tracker)
+      const historyEntry = {
+        id: crypto.randomUUID(),
+        pipelineId: crypto.randomUUID(),
+        stageType: 'build',
+        stageIndex: 0,
+        adapter: 'manual',
+        tokenUsage: {
+          inputTokens: 5000,
+          outputTokens: 3000,
+          cacheCreationTokens: 0,
+          cacheReadTokens: 0,
+          total: 8000,
+        },
+        artifactNames: [],
+        learningIds: [],
+        cycleId: cycle.id,
+        startedAt: new Date().toISOString(),
+        completedAt: new Date().toISOString(),
+      };
+      JsonStore.write(
+        join(historyDir, `${historyEntry.id}.json`),
+        historyEntry,
+        ExecutionHistoryEntrySchema,
+      );
 
       const result = await session.run(cycle.id);
 
-      // Report should have enriched token data
+      // Report should have enriched token data from cycle history
       expect(result.report.tokensUsed).toBe(8000);
       expect(result.report.utilizationPercent).toBeCloseTo(8, 0);
     });
@@ -173,14 +183,31 @@ describe('CooldownSession', () => {
         issueRefs: [],
       });
 
-      // Record token usage exceeding budget
-      tokenTracker.recordUsage('stage-big', {
-        inputTokens: 8000,
-        outputTokens: 7000,
-        cacheCreationTokens: 0,
-        cacheReadTokens: 0,
-        total: 15000,
-      });
+      // Create history entry with token usage exceeding budget, linked to cycle
+      const historyEntry = {
+        id: crypto.randomUUID(),
+        pipelineId: crypto.randomUUID(),
+        stageType: 'build',
+        stageIndex: 0,
+        adapter: 'manual',
+        tokenUsage: {
+          inputTokens: 8000,
+          outputTokens: 7000,
+          cacheCreationTokens: 0,
+          cacheReadTokens: 0,
+          total: 15000,
+        },
+        artifactNames: [],
+        learningIds: [],
+        cycleId: cycle.id,
+        startedAt: new Date().toISOString(),
+        completedAt: new Date().toISOString(),
+      };
+      JsonStore.write(
+        join(historyDir, `${historyEntry.id}.json`),
+        historyEntry,
+        ExecutionHistoryEntrySchema,
+      );
 
       const result = await session.run(cycle.id);
 
@@ -188,6 +215,21 @@ describe('CooldownSession', () => {
       expect(result.report.utilizationPercent).toBe(150);
       expect(result.report.alertLevel).toBe('critical');
       expect(result.learningsCaptured).toBeGreaterThanOrEqual(1);
+    });
+
+    it('rolls back cycle state when an error occurs mid-session', async () => {
+      const cycle = cycleManager.create({ tokenBudget: 50000 }, 'Rollback Test');
+      cycleManager.updateState(cycle.id, 'active');
+
+      // Force an error after state transition to cooldown
+      vi.spyOn(cycleManager, 'generateCooldown').mockImplementation(() => {
+        throw new Error('Simulated failure');
+      });
+
+      await expect(session.run(cycle.id)).rejects.toThrow('Simulated failure');
+
+      // State should be rolled back to 'active', not stuck at 'cooldown'
+      expect(cycleManager.get(cycle.id).state).toBe('active');
     });
 
     it('handles empty cycle with no bets', async () => {
@@ -267,22 +309,14 @@ describe('CooldownSession', () => {
   });
 
   describe('enrichReportWithTokens', () => {
-    it('uses tracker total when no cycle history exists', () => {
+    it('reports zero tokens when no cycle history exists', () => {
       const cycle = cycleManager.create({ tokenBudget: 100000 }, 'Enrich Test');
-
-      tokenTracker.recordUsage('some-stage', {
-        inputTokens: 3000,
-        outputTokens: 2000,
-        cacheCreationTokens: 0,
-        cacheReadTokens: 0,
-        total: 5000,
-      });
 
       const baseReport = cycleManager.generateCooldown(cycle.id);
       const enriched = session.enrichReportWithTokens(baseReport, cycle.id);
 
-      expect(enriched.tokensUsed).toBe(5000);
-      expect(enriched.utilizationPercent).toBe(5);
+      expect(enriched.tokensUsed).toBe(0);
+      expect(enriched.utilizationPercent).toBe(0);
     });
 
     it('uses cycle-specific history when available', () => {
@@ -322,13 +356,14 @@ describe('CooldownSession', () => {
     it('sets critical alert when over budget', () => {
       const cycle = cycleManager.create({ tokenBudget: 10000 }, 'Over Budget');
 
-      tokenTracker.recordUsage('big-stage', {
-        inputTokens: 8000,
-        outputTokens: 7000,
-        cacheCreationTokens: 0,
-        cacheReadTokens: 0,
-        total: 15000,
-      });
+      const historyEntry = {
+        id: crypto.randomUUID(), pipelineId: crypto.randomUUID(),
+        stageType: 'build', stageIndex: 0, adapter: 'manual',
+        tokenUsage: { inputTokens: 8000, outputTokens: 7000, cacheCreationTokens: 0, cacheReadTokens: 0, total: 15000 },
+        artifactNames: [], learningIds: [], cycleId: cycle.id,
+        startedAt: new Date().toISOString(), completedAt: new Date().toISOString(),
+      };
+      JsonStore.write(join(historyDir, `${historyEntry.id}.json`), historyEntry, ExecutionHistoryEntrySchema);
 
       const baseReport = cycleManager.generateCooldown(cycle.id);
       const enriched = session.enrichReportWithTokens(baseReport, cycle.id);
@@ -339,13 +374,14 @@ describe('CooldownSession', () => {
     it('sets warning alert at 90%+ utilization', () => {
       const cycle = cycleManager.create({ tokenBudget: 10000 }, 'Warning Level');
 
-      tokenTracker.recordUsage('stage-a', {
-        inputTokens: 5000,
-        outputTokens: 4500,
-        cacheCreationTokens: 0,
-        cacheReadTokens: 0,
-        total: 9500,
-      });
+      const historyEntry = {
+        id: crypto.randomUUID(), pipelineId: crypto.randomUUID(),
+        stageType: 'build', stageIndex: 0, adapter: 'manual',
+        tokenUsage: { inputTokens: 5000, outputTokens: 4500, cacheCreationTokens: 0, cacheReadTokens: 0, total: 9500 },
+        artifactNames: [], learningIds: [], cycleId: cycle.id,
+        startedAt: new Date().toISOString(), completedAt: new Date().toISOString(),
+      };
+      JsonStore.write(join(historyDir, `${historyEntry.id}.json`), historyEntry, ExecutionHistoryEntrySchema);
 
       const baseReport = cycleManager.generateCooldown(cycle.id);
       const enriched = session.enrichReportWithTokens(baseReport, cycle.id);
@@ -356,13 +392,14 @@ describe('CooldownSession', () => {
     it('sets info alert at 75%+ utilization', () => {
       const cycle = cycleManager.create({ tokenBudget: 10000 }, 'Info Level');
 
-      tokenTracker.recordUsage('stage-b', {
-        inputTokens: 4000,
-        outputTokens: 3800,
-        cacheCreationTokens: 0,
-        cacheReadTokens: 0,
-        total: 7800,
-      });
+      const historyEntry = {
+        id: crypto.randomUUID(), pipelineId: crypto.randomUUID(),
+        stageType: 'build', stageIndex: 0, adapter: 'manual',
+        tokenUsage: { inputTokens: 4000, outputTokens: 3800, cacheCreationTokens: 0, cacheReadTokens: 0, total: 7800 },
+        artifactNames: [], learningIds: [], cycleId: cycle.id,
+        startedAt: new Date().toISOString(), completedAt: new Date().toISOString(),
+      };
+      JsonStore.write(join(historyDir, `${historyEntry.id}.json`), historyEntry, ExecutionHistoryEntrySchema);
 
       const baseReport = cycleManager.generateCooldown(cycle.id);
       const enriched = session.enrichReportWithTokens(baseReport, cycle.id);
@@ -373,13 +410,14 @@ describe('CooldownSession', () => {
     it('clears alert level when under 75%', () => {
       const cycle = cycleManager.create({ tokenBudget: 100000 }, 'Low Usage');
 
-      tokenTracker.recordUsage('stage-c', {
-        inputTokens: 1000,
-        outputTokens: 500,
-        cacheCreationTokens: 0,
-        cacheReadTokens: 0,
-        total: 1500,
-      });
+      const historyEntry = {
+        id: crypto.randomUUID(), pipelineId: crypto.randomUUID(),
+        stageType: 'build', stageIndex: 0, adapter: 'manual',
+        tokenUsage: { inputTokens: 1000, outputTokens: 500, cacheCreationTokens: 0, cacheReadTokens: 0, total: 1500 },
+        artifactNames: [], learningIds: [], cycleId: cycle.id,
+        startedAt: new Date().toISOString(), completedAt: new Date().toISOString(),
+      };
+      JsonStore.write(join(historyDir, `${historyEntry.id}.json`), historyEntry, ExecutionHistoryEntrySchema);
 
       const baseReport = cycleManager.generateCooldown(cycle.id);
       const enriched = session.enrichReportWithTokens(baseReport, cycle.id);

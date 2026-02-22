@@ -2,7 +2,7 @@ import { join } from 'node:path';
 import { JsonStore } from '@infra/persistence/json-store.js';
 import { CycleSchema } from '@domain/types/cycle.js';
 import type { Cycle, Budget, BudgetStatus, BudgetAlertLevel } from '@domain/types/cycle.js';
-import { BetSchema } from '@domain/types/bet.js';
+import { BetSchema, BetOutcome } from '@domain/types/bet.js';
 import type { Bet } from '@domain/types/bet.js';
 import type { CycleState } from '@domain/types/cycle.js';
 import { CycleNotFoundError } from '@shared/lib/errors.js';
@@ -160,6 +160,42 @@ export class CycleManager {
       alertLevel,
       perBet,
     };
+  }
+
+  /**
+   * Update bet outcomes on a cycle. Skips unknown betIds and returns the list of unmatched IDs.
+   */
+  updateBetOutcomes(
+    cycleId: string,
+    outcomes: Array<{ betId: string; outcome: string; notes?: string }>,
+  ): { cycle: Cycle; unmatchedBetIds: string[] } {
+    const cycle = this.get(cycleId);
+    const unmatchedBetIds: string[] = [];
+
+    for (const record of outcomes) {
+      const parsed = BetOutcome.safeParse(record.outcome);
+      if (!parsed.success) {
+        throw new Error(`Invalid bet outcome "${record.outcome}". Must be one of: pending, complete, partial, abandoned`);
+      }
+
+      const bet = cycle.bets.find((b) => b.id === record.betId);
+      if (bet) {
+        bet.outcome = parsed.data;
+        if (record.notes) {
+          bet.outcomeNotes = record.notes;
+        }
+      } else {
+        unmatchedBetIds.push(record.betId);
+      }
+    }
+
+    if (unmatchedBetIds.length === outcomes.length && outcomes.length > 0) {
+      return { cycle, unmatchedBetIds };
+    }
+
+    cycle.updatedAt = new Date().toISOString();
+    this.save(cycle);
+    return { cycle, unmatchedBetIds };
   }
 
   /**

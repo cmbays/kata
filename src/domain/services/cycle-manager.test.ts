@@ -313,6 +313,83 @@ describe('CycleManager.updateState', () => {
   });
 });
 
+describe('CycleManager.updateBetOutcomes', () => {
+  it('updates bet outcomes and persists to disk', () => {
+    const cycle = manager.create(makeBudget());
+    const updated = manager.addBet(cycle.id, makeBetInput());
+    const betId = updated.bets[0]!.id;
+
+    const result = manager.updateBetOutcomes(cycle.id, [
+      { betId, outcome: 'complete', notes: 'Done!' },
+    ]);
+
+    expect(result.unmatchedBetIds).toHaveLength(0);
+    expect(result.cycle.bets[0]!.outcome).toBe('complete');
+    expect(result.cycle.bets[0]!.outcomeNotes).toBe('Done!');
+
+    // Verify persisted
+    const reloaded = manager.get(cycle.id);
+    expect(reloaded.bets[0]!.outcome).toBe('complete');
+  });
+
+  it('returns unmatched bet IDs for nonexistent bets', () => {
+    const cycle = manager.create(makeBudget());
+    manager.addBet(cycle.id, makeBetInput());
+
+    const result = manager.updateBetOutcomes(cycle.id, [
+      { betId: 'nonexistent-id', outcome: 'complete' },
+    ]);
+
+    expect(result.unmatchedBetIds).toEqual(['nonexistent-id']);
+  });
+
+  it('handles mix of matched and unmatched bet IDs', () => {
+    const cycle = manager.create(makeBudget());
+    const updated = manager.addBet(cycle.id, makeBetInput());
+    const betId = updated.bets[0]!.id;
+
+    const result = manager.updateBetOutcomes(cycle.id, [
+      { betId, outcome: 'partial', notes: 'Half done' },
+      { betId: 'ghost-bet', outcome: 'abandoned' },
+    ]);
+
+    expect(result.unmatchedBetIds).toEqual(['ghost-bet']);
+    expect(result.cycle.bets[0]!.outcome).toBe('partial');
+  });
+
+  it('skips disk write when all bet IDs are unmatched', () => {
+    const cycle = manager.create(makeBudget());
+    manager.addBet(cycle.id, makeBetInput());
+    const originalUpdatedAt = manager.get(cycle.id).updatedAt;
+
+    manager.updateBetOutcomes(cycle.id, [
+      { betId: 'fake-1', outcome: 'complete' },
+      { betId: 'fake-2', outcome: 'abandoned' },
+    ]);
+
+    // updatedAt should not change since no bets were matched
+    expect(manager.get(cycle.id).updatedAt).toBe(originalUpdatedAt);
+  });
+
+  it('throws for invalid outcome values', () => {
+    const cycle = manager.create(makeBudget());
+    const updated = manager.addBet(cycle.id, makeBetInput());
+    const betId = updated.bets[0]!.id;
+
+    expect(() =>
+      manager.updateBetOutcomes(cycle.id, [
+        { betId, outcome: 'invalid-state' },
+      ]),
+    ).toThrow('Invalid bet outcome "invalid-state"');
+  });
+
+  it('throws CycleNotFoundError for nonexistent cycle', () => {
+    expect(() =>
+      manager.updateBetOutcomes(crypto.randomUUID(), []),
+    ).toThrow(CycleNotFoundError);
+  });
+});
+
 describe('CycleManager.generateCooldown', () => {
   it('generates cooldown report for a cycle with no bets', () => {
     const cycle = manager.create(makeBudget(), 'Empty Cycle');

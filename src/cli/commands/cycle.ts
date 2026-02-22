@@ -2,7 +2,6 @@ import { join } from 'node:path';
 import type { Command } from 'commander';
 import { CycleManager } from '@domain/services/cycle-manager.js';
 import { KnowledgeStore } from '@infra/knowledge/knowledge-store.js';
-import { TokenTracker } from '@infra/tracking/token-tracker.js';
 import { CooldownSession, type BetOutcomeRecord } from '@features/cycle-management/cooldown-session.js';
 import { resolveKataDir, getGlobalOptions } from '@cli/utils.js';
 import {
@@ -238,13 +237,10 @@ export function registerCycleCommands(parent: Command): void {
         const cyclesDir = join(kataDir, 'cycles');
         const manager = new CycleManager(cyclesDir);
         const knowledgeStore = new KnowledgeStore(join(kataDir, 'knowledge'));
-        const tokenTracker = new TokenTracker(join(kataDir, 'tracking'));
 
         const session = new CooldownSession({
           cycleManager: manager,
           knowledgeStore,
-          tokenTracker,
-          cyclesDir,
           pipelineDir: join(kataDir, 'pipelines'),
           historyDir: join(kataDir, 'history'),
         });

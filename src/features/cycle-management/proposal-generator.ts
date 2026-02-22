@@ -5,6 +5,7 @@ import type { KnowledgeStore } from '@infra/knowledge/knowledge-store.js';
 import type { Pipeline } from '@domain/types/pipeline.js';
 import { PipelineSchema } from '@domain/types/pipeline.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
+import { logger } from '@shared/lib/logger.js';
 
 /**
  * A proposal for the next development cycle, derived from analysis
@@ -227,8 +228,8 @@ export class ProposalGenerator {
       if (JsonStore.exists(path)) {
         try {
           pipelines.push(JsonStore.read(path, PipelineSchema));
-        } catch {
-          // Skip invalid pipeline files
+        } catch (error) {
+          logger.warn(`Skipping unreadable pipeline file: ${id}.json — ${error instanceof Error ? error.message : String(error)}`);
         }
       }
     }

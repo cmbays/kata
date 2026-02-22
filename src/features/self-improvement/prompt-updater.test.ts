@@ -115,6 +115,30 @@ describe('PromptUpdater', () => {
       expect(content).toContain('## Learned Patterns (testing)');
     });
 
+    it('rejects path traversal via ../ sequences', () => {
+      const update = makeUpdate({ currentPromptPath: '../../../etc/passwd' });
+      const result = updater.apply(kataDir, update, stageRegistry);
+
+      expect(result.applied).toBe(false);
+      expect(result.error).toContain('No prompt template found');
+    });
+
+    it('rejects absolute path outside kataDir', () => {
+      const update = makeUpdate({ currentPromptPath: '/tmp/evil.md' });
+      const result = updater.apply(kataDir, update, stageRegistry);
+
+      expect(result.applied).toBe(false);
+      expect(result.error).toContain('No prompt template found');
+    });
+
+    it('rejects path with null byte', () => {
+      const update = makeUpdate({ currentPromptPath: 'prompts/build.md\x00.txt' });
+      const result = updater.apply(kataDir, update, stageRegistry);
+
+      expect(result.applied).toBe(false);
+      expect(result.error).toContain('No prompt template found');
+    });
+
     it('handles update to nested directory path', () => {
       const update = makeUpdate({
         currentPromptPath: 'prompts/stages/deep/build.md',

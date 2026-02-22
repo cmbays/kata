@@ -1,7 +1,9 @@
-import { readFileSync, writeFileSync, copyFileSync, existsSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { readFileSync, writeFileSync, copyFileSync, existsSync, realpathSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import type { StageRegistry } from '@infra/registries/stage-registry.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
+import { StageNotFoundError } from '@shared/lib/errors.js';
+import { logger } from '@shared/lib/logger.js';
 import type { PromptUpdate } from './learning-extractor.js';
 
 /**
@@ -125,21 +127,54 @@ export class PromptUpdater {
     update: PromptUpdate,
     stageRegistry: StageRegistry,
   ): string | null {
+    let rawPath: string | undefined;
+
     // Try update's currentPromptPath first
     if (update.currentPromptPath) {
-      return join(kataDir, update.currentPromptPath);
-    }
-
-    // Look up the stage in the registry for its promptTemplate
-    try {
-      const stage = stageRegistry.get(update.stageType);
-      if (stage.promptTemplate) {
-        return join(kataDir, stage.promptTemplate);
+      rawPath = update.currentPromptPath;
+    } else {
+      // Look up the stage in the registry for its promptTemplate
+      try {
+        const stage = stageRegistry.get(update.stageType);
+        rawPath = stage.promptTemplate;
+      } catch (error) {
+        // Only swallow "stage not found" — let corruption/permission errors propagate
+        if (!(error instanceof StageNotFoundError)) {
+          throw error;
+        }
       }
-    } catch {
-      // Stage not found — fall through
     }
 
-    return null;
+    if (!rawPath) return null;
+
+    // Reject null bytes (defense-in-depth; Node.js fs rejects them at syscall level)
+    if (rawPath.includes('\0')) {
+      logger.warn(`Prompt path contains null byte, rejecting: stage "${update.stageType}"`);
+      return null;
+    }
+
+    // Guard against path traversal — resolved path must stay within kataDir
+    const resolved = resolve(kataDir, rawPath);
+    const normalizedRoot = resolve(kataDir);
+    if (!resolved.startsWith(normalizedRoot + '/') && resolved !== normalizedRoot) {
+      logger.warn(`Path traversal detected: "${rawPath}" resolves outside kataDir. Rejecting.`);
+      return null;
+    }
+
+    // Guard against symlink escapes — resolve the deepest existing ancestor
+    let existing = resolved;
+    while (!existsSync(existing)) {
+      const parent = dirname(existing);
+      if (parent === existing) break;
+      existing = parent;
+    }
+    const realExisting = realpathSync(existing);
+    const realRoot = realpathSync(kataDir);
+    if (!realExisting.startsWith(realRoot + '/') && realExisting !== realRoot) {
+      logger.warn(`Symlink escape detected: "${rawPath}" resolves outside kataDir via symlink. Rejecting.`);
+      return null;
+    }
+
+    return resolved;
   }
 }
