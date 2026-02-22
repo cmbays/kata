@@ -1,7 +1,8 @@
 import { join } from 'node:path';
 import { mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { resolveKataDir, getGlobalOptions, handleCommandError } from './utils.js';
+import { resolveKataDir, getGlobalOptions, handleCommandError, kataDirPath, withCommandContext } from './utils.js';
+import type { CommandContext } from './utils.js';
 import { ConfigNotFoundError } from '@shared/lib/errors.js';
 import { Command } from 'commander';
 
@@ -65,6 +66,14 @@ describe('getGlobalOptions', () => {
   });
 });
 
+describe('kataDirPath', () => {
+  it('joins kataDir with the named subdirectory', () => {
+    expect(kataDirPath('/project/.kata', 'stages')).toBe(join('/project/.kata', 'stages'));
+    expect(kataDirPath('/project/.kata', 'pipelines')).toBe(join('/project/.kata', 'pipelines'));
+    expect(kataDirPath('/project/.kata', 'config')).toBe(join('/project/.kata', 'config.json'));
+  });
+});
+
 describe('handleCommandError', () => {
   let errorSpy: ReturnType<typeof vi.spyOn>;
 
@@ -108,5 +117,98 @@ describe('handleCommandError', () => {
     handleCommandError(42, true);
     expect(errorSpy).toHaveBeenCalledTimes(1);
     expect(errorSpy).toHaveBeenCalledWith('Error: 42');
+  });
+});
+
+describe('withCommandContext', () => {
+  let errorSpy: ReturnType<typeof vi.spyOn>;
+  let testDir: string;
+
+  beforeEach(() => {
+    testDir = join(tmpdir(), `kata-ctx-test-${Date.now()}`);
+    mkdirSync(join(testDir, '.kata'), { recursive: true });
+    errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    process.exitCode = undefined;
+  });
+
+  afterEach(() => {
+    rmSync(testDir, { recursive: true, force: true });
+    errorSpy.mockRestore();
+    process.exitCode = undefined;
+  });
+
+  function makeCmd(cwd: string): Command {
+    const program = new Command();
+    program
+      .option('--json', 'JSON output')
+      .option('--verbose', 'Verbose output')
+      .option('--cwd <path>', 'Working directory');
+    program.parse(['node', 'test', '--cwd', cwd]);
+    return program;
+  }
+
+  it('provides globalOpts and kataDir to handler', async () => {
+    let captured: CommandContext | undefined;
+    const handler = withCommandContext(async (ctx) => { captured = ctx; });
+
+    const cmd = makeCmd(testDir);
+    const localOpts = {};
+    await handler(localOpts, cmd);
+
+    expect(captured).toBeDefined();
+    expect(captured!.kataDir).toBe(join(testDir, '.kata'));
+    expect(captured!.globalOpts.json).toBe(false);
+  });
+
+  it('forwards positional arguments', async () => {
+    const args: unknown[] = [];
+    const handler = withCommandContext(async (ctx, ...rest) => { args.push(...rest); });
+
+    const cmd = makeCmd(testDir);
+    const localOpts = {};
+    await handler('my-type', localOpts, cmd);
+
+    expect(args).toEqual(['my-type']);
+  });
+
+  it('catches errors and calls handleCommandError', async () => {
+    const handler = withCommandContext(async () => { throw new Error('handler error'); });
+
+    const cmd = makeCmd(testDir);
+    const localOpts = {};
+    await handler(localOpts, cmd);
+
+    expect(errorSpy).toHaveBeenCalledWith('Error: handler error');
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('skips kataDir resolution when needsKataDir is false', async () => {
+    let captured: CommandContext | undefined;
+    const handler = withCommandContext(
+      async (ctx) => { captured = ctx; },
+      { needsKataDir: false },
+    );
+
+    // Use a directory without .kata — should not throw
+    const noKataDir = join(tmpdir(), `kata-no-dir-${Date.now()}`);
+    mkdirSync(noKataDir, { recursive: true });
+    const cmd = makeCmd(noKataDir);
+    const localOpts = {};
+    await handler(localOpts, cmd);
+    rmSync(noKataDir, { recursive: true, force: true });
+
+    expect(captured).toBeDefined();
+    expect(captured!.kataDir).toBe('');
+  });
+
+  it('handles sync handlers', async () => {
+    let called = false;
+    const handler = withCommandContext((_ctx) => { called = true; });
+
+    const cmd = makeCmd(testDir);
+    const localOpts = {};
+    await handler(localOpts, cmd);
+
+    expect(called).toBe(true);
   });
 });

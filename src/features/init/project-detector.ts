@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { KATA_DIRS } from '@shared/constants/paths.js';
 
 export interface ProjectInfo {
   /** Whether a .kata/ directory already exists */
@@ -17,7 +18,7 @@ export interface ProjectInfo {
  * Pure function that checks for .kata/, package.json, and .git/.
  */
 export function detectProject(cwd: string): ProjectInfo {
-  const hasKata = existsSync(join(cwd, '.kata'));
+  const hasKata = existsSync(join(cwd, KATA_DIRS.root));
   const hasGit = existsSync(join(cwd, '.git'));
 
   let hasPackageJson = false;

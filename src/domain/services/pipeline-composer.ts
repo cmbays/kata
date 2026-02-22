@@ -8,7 +8,7 @@ import {
   type PipelineType,
 } from '@domain/types/pipeline.js';
 import type { StageRef } from '@domain/types/stage.js';
-import type { StageRegistry } from '@infra/registries/stage-registry.js';
+import type { IStageRegistry } from '@domain/ports/stage-registry.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
 
 export interface ValidationResult {
@@ -57,7 +57,7 @@ export const PipelineComposer = {
    * 2. Gate compatibility: stage N exit gate artifact conditions satisfy
    *    stage N+1 entry gate artifact-exists requirements
    */
-  validate(pipeline: Pipeline, registry: StageRegistry): ValidationResult {
+  validate(pipeline: Pipeline, registry: IStageRegistry): ValidationResult {
     const errors: string[] = [];
 
     // Check each stage exists in the registry

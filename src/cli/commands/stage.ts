@@ -1,7 +1,6 @@
-import { join } from 'node:path';
 import type { Command } from 'commander';
 import { StageRegistry } from '@infra/registries/stage-registry.js';
-import { resolveKataDir, getGlobalOptions, handleCommandError } from '@cli/utils.js';
+import { withCommandContext, kataDirPath } from '@cli/utils.js';
 import { formatStageTable, formatStageDetail, formatStageJson } from '@cli/formatters/stage-formatter.js';
 
 /**
@@ -16,44 +15,30 @@ export function registerStageCommands(parent: Command): void {
   stage
     .command('list')
     .description('List available stages')
-    .action((_opts, cmd) => {
-      const globalOpts = getGlobalOptions(cmd);
+    .action(withCommandContext((ctx) => {
+      const registry = new StageRegistry(kataDirPath(ctx.kataDir, 'stages'));
+      const stages = registry.list();
 
-      try {
-        const kataDir = resolveKataDir(globalOpts.cwd);
-        const registry = new StageRegistry(join(kataDir, 'stages'));
-        const stages = registry.list();
-
-        if (globalOpts.json) {
-          console.log(formatStageJson(stages));
-        } else {
-          console.log(formatStageTable(stages));
-        }
-      } catch (error) {
-        handleCommandError(error, globalOpts.verbose);
+      if (ctx.globalOpts.json) {
+        console.log(formatStageJson(stages));
+      } else {
+        console.log(formatStageTable(stages));
       }
-    });
+    }));
 
   stage
     .command('inspect <type>')
     .description('Show details of a specific stage')
     .option('--flavor <flavor>', 'Stage flavor to inspect')
-    .action((type: string, _opts, cmd) => {
-      const globalOpts = getGlobalOptions(cmd);
-      const localOpts = cmd.opts();
+    .action(withCommandContext((ctx, type: string) => {
+      const localOpts = ctx.cmd.opts();
+      const registry = new StageRegistry(kataDirPath(ctx.kataDir, 'stages'));
+      const stage = registry.get(type, localOpts.flavor);
 
-      try {
-        const kataDir = resolveKataDir(globalOpts.cwd);
-        const registry = new StageRegistry(join(kataDir, 'stages'));
-        const stage = registry.get(type, localOpts.flavor);
-
-        if (globalOpts.json) {
-          console.log(formatStageJson([stage]));
-        } else {
-          console.log(formatStageDetail(stage));
-        }
-      } catch (error) {
-        handleCommandError(error, globalOpts.verbose);
+      if (ctx.globalOpts.json) {
+        console.log(formatStageJson([stage]));
+      } else {
+        console.log(formatStageDetail(stage));
       }
-    });
+    }));
 }

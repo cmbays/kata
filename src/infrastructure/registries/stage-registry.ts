@@ -1,5 +1,6 @@
 import { join } from 'node:path';
 import { StageSchema, type Stage } from '@domain/types/stage.js';
+import type { IStageRegistry } from '@domain/ports/stage-registry.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
 import { StageNotFoundError } from '@shared/lib/errors.js';
 
@@ -27,7 +28,7 @@ export interface StageFilter {
  * Stages are persisted to `basePath/{type}.json` (or `{type}:{flavor}.json` for flavored stages).
  * Uses an in-memory cache backed by JsonStore for file I/O.
  */
-export class StageRegistry {
+export class StageRegistry implements IStageRegistry {
   private readonly stages = new Map<string, Stage>();
 
   constructor(private readonly basePath: string) {}

@@ -6,7 +6,7 @@ import {
 import type { Stage } from '@domain/types/stage.js';
 import type { Gate } from '@domain/types/gate.js';
 import type { Learning } from '@domain/types/learning.js';
-import { RefResolver } from '@infra/config/ref-resolver.js';
+import type { IRefResolver } from '@domain/ports/ref-resolver.js';
 
 /**
  * Manifest Builder — composes ExecutionManifests for stage execution.
@@ -66,8 +66,8 @@ export const ManifestBuilder = {
    * @param basePath - Base directory for resolving the path
    * @returns The file contents as a string
    */
-  resolveRefs(template: string, basePath: string): string {
-    return RefResolver.resolveRef(template, basePath);
+  resolveRefs(template: string, basePath: string, resolver: IRefResolver): string {
+    return resolver.resolveRef(template, basePath);
   },
 
   /**

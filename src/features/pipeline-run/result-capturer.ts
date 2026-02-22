@@ -6,6 +6,7 @@ import {
 } from '@domain/types/history.js';
 import type { ExecutionResult } from '@domain/types/manifest.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
+import { KATA_DIRS } from '@shared/constants/paths.js';
 
 /**
  * Options for capturing an execution result as a history entry.
@@ -31,7 +32,7 @@ export class ResultCapturer {
   private readonly historyDir: string;
 
   constructor(basePath: string) {
-    this.historyDir = join(basePath, 'history');
+    this.historyDir = join(basePath, KATA_DIRS.history);
   }
 
   /**

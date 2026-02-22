@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import type { Stage } from '@domain/types/stage.js';
 import type { ExecutionContext } from '@domain/types/manifest.js';
 import type { Learning } from '@domain/types/learning.js';
-import { RefResolutionError } from '@infra/config/ref-resolver.js';
+import { RefResolver, RefResolutionError } from '@infra/config/ref-resolver.js';
 import { ManifestBuilder } from './manifest-builder.js';
 
 function makeStage(overrides: Partial<Stage> = {}): Stage {
@@ -154,7 +154,7 @@ describe('ManifestBuilder', () => {
       const promptContent = '# Research Prompt\n\nDo thorough research on the topic.';
       writeFileSync(join(tempDir, 'prompts', 'research.md'), promptContent);
 
-      const result = ManifestBuilder.resolveRefs('prompts/research.md', tempDir);
+      const result = ManifestBuilder.resolveRefs('prompts/research.md', tempDir, RefResolver);
       expect(result).toBe(promptContent);
     });
 
@@ -169,6 +169,7 @@ describe('ManifestBuilder', () => {
       const result = ManifestBuilder.resolveRefs(
         '../prompts/build.md',
         join(tempDir, 'builtin'),
+        RefResolver,
       );
       expect(result).toBe(content);
     });
@@ -177,7 +178,7 @@ describe('ManifestBuilder', () => {
       const tempDir = mkdtempSync(join(tmpdir(), 'manifest-refs-'));
 
       expect(() => {
-        ManifestBuilder.resolveRefs('nonexistent.md', tempDir);
+        ManifestBuilder.resolveRefs('nonexistent.md', tempDir, RefResolver);
       }).toThrow(RefResolutionError);
     });
   });
