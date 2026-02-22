@@ -3,6 +3,7 @@ import { mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { Command } from 'commander';
 import { CycleManager } from '@domain/services/cycle-manager.js';
+import { JsonStore } from '@infra/persistence/json-store.js';
 import { registerCycleCommands } from './cycle.js';
 
 // Mock @inquirer/prompts
@@ -76,7 +77,7 @@ describe('registerCycleCommands', () => {
   describe('cycle status', () => {
     it('shows all cycles when no id given', async () => {
       // Create a cycle first
-      const manager = new CycleManager(cyclesDir);
+      const manager = new CycleManager(cyclesDir, JsonStore);
       manager.create({ tokenBudget: 50000 }, 'Test Cycle');
 
       const program = createProgram();
@@ -87,7 +88,7 @@ describe('registerCycleCommands', () => {
     });
 
     it('shows specific cycle by id', async () => {
-      const manager = new CycleManager(cyclesDir);
+      const manager = new CycleManager(cyclesDir, JsonStore);
       const cycle = manager.create({ tokenBudget: 50000 }, 'Specific Cycle');
 
       const program = createProgram();
@@ -114,7 +115,7 @@ describe('registerCycleCommands', () => {
 
   describe('cycle focus', () => {
     it('adds a bet to a cycle with --skip-prompts', async () => {
-      const manager = new CycleManager(cyclesDir);
+      const manager = new CycleManager(cyclesDir, JsonStore);
       const cycle = manager.create({ tokenBudget: 50000 }, 'Focus Test');
 
       const program = createProgram();
@@ -132,7 +133,7 @@ describe('registerCycleCommands', () => {
 
   describe('cooldown', () => {
     it('generates cooldown session result with --skip-prompts', async () => {
-      const manager = new CycleManager(cyclesDir);
+      const manager = new CycleManager(cyclesDir, JsonStore);
       const cycle = manager.create({ tokenBudget: 50000 }, 'Reflect Test');
       manager.addBet(cycle.id, {
         description: 'Build feature',
@@ -154,7 +155,7 @@ describe('registerCycleCommands', () => {
     });
 
     it('shows JSON cooldown session result', async () => {
-      const manager = new CycleManager(cyclesDir);
+      const manager = new CycleManager(cyclesDir, JsonStore);
       const cycle = manager.create({ tokenBudget: 50000 }, 'JSON Report');
 
       const program = createProgram();
@@ -168,7 +169,7 @@ describe('registerCycleCommands', () => {
     });
 
     it('shows proposals section when unfinished work exists', async () => {
-      const manager = new CycleManager(cyclesDir);
+      const manager = new CycleManager(cyclesDir, JsonStore);
       const cycle = manager.create({ tokenBudget: 50000 }, 'Proposal Test');
       manager.addBet(cycle.id, {
         description: 'Incomplete feature',
@@ -193,7 +194,7 @@ describe('registerCycleCommands', () => {
     });
 
     it('uses interactive prompts for bet outcomes when not skipped', async () => {
-      const manager = new CycleManager(cyclesDir);
+      const manager = new CycleManager(cyclesDir, JsonStore);
       const cycle = manager.create({ tokenBudget: 50000 }, 'Interactive Test');
       const updatedCycle = manager.addBet(cycle.id, {
         description: 'Auth feature',
@@ -224,7 +225,7 @@ describe('registerCycleCommands', () => {
     });
 
     it('prompts for notes when bet outcome is partial', async () => {
-      const manager = new CycleManager(cyclesDir);
+      const manager = new CycleManager(cyclesDir, JsonStore);
       const cycle = manager.create({ tokenBudget: 50000 }, 'Notes Test');
       manager.addBet(cycle.id, {
         description: 'Search feature',

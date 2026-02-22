@@ -1,9 +1,9 @@
 import type { CycleManager, CooldownReport } from '@domain/services/cycle-manager.js';
-import type { KnowledgeStore } from '@infra/knowledge/knowledge-store.js';
+import type { IKnowledgeStore } from '@domain/ports/knowledge-store.js';
+import type { IPersistence } from '@domain/ports/persistence.js';
 import type { ExecutionHistoryEntry } from '@domain/types/history.js';
 import type { BudgetAlertLevel } from '@domain/types/cycle.js';
 import { ExecutionHistoryEntrySchema } from '@domain/types/history.js';
-import { JsonStore } from '@infra/persistence/json-store.js';
 import { logger } from '@shared/lib/logger.js';
 import { ProposalGenerator, type CycleProposal } from './proposal-generator.js';
 
@@ -12,7 +12,8 @@ import { ProposalGenerator, type CycleProposal } from './proposal-generator.js';
  */
 export interface CooldownSessionDeps {
   cycleManager: CycleManager;
-  knowledgeStore: KnowledgeStore;
+  knowledgeStore: IKnowledgeStore;
+  persistence: IPersistence;
   pipelineDir: string;
   historyDir: string;
 }
@@ -56,6 +57,7 @@ export class CooldownSession {
     this.proposalGenerator = new ProposalGenerator({
       cycleManager: deps.cycleManager,
       knowledgeStore: deps.knowledgeStore,
+      persistence: deps.persistence,
       pipelineDir: deps.pipelineDir,
       historyDir: deps.historyDir,
     });
@@ -247,7 +249,7 @@ export class CooldownSession {
     return captured;
   }
 
-  private safeCaptureLearning(params: Parameters<KnowledgeStore['capture']>[0]): boolean {
+  private safeCaptureLearning(params: Parameters<IKnowledgeStore['capture']>[0]): boolean {
     try {
       this.deps.knowledgeStore.capture(params);
       return true;
@@ -261,7 +263,7 @@ export class CooldownSession {
    * Load execution history entries associated with this cycle.
    */
   private loadCycleHistory(cycleId: string): ExecutionHistoryEntry[] {
-    const allEntries = JsonStore.list(this.deps.historyDir, ExecutionHistoryEntrySchema);
+    const allEntries = this.deps.persistence.list(this.deps.historyDir, ExecutionHistoryEntrySchema);
     return allEntries.filter((entry) => entry.cycleId === cycleId);
   }
 }

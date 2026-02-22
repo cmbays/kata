@@ -1,6 +1,7 @@
 import type { Command } from 'commander';
 import { CycleManager } from '@domain/services/cycle-manager.js';
 import { KnowledgeStore } from '@infra/knowledge/knowledge-store.js';
+import { JsonStore } from '@infra/persistence/json-store.js';
 import { CooldownSession, type BetOutcomeRecord } from '@features/cycle-management/cooldown-session.js';
 import { withCommandContext, kataDirPath } from '@cli/utils.js';
 import {
@@ -29,7 +30,7 @@ export function registerCycleCommands(parent: Command): void {
     .option('--skip-prompts', 'Skip interactive prompts')
     .action(withCommandContext(async (ctx) => {
       const localOpts = ctx.cmd.opts();
-      const manager = new CycleManager(kataDirPath(ctx.kataDir, 'cycles'));
+      const manager = new CycleManager(kataDirPath(ctx.kataDir, 'cycles'), JsonStore);
 
       let tokenBudget: number | undefined = localOpts.budget;
       let timeBudget: string | undefined = localOpts.time;
@@ -120,7 +121,7 @@ export function registerCycleCommands(parent: Command): void {
     .description('Show cycle status and budget')
     .argument('[id]', 'Cycle ID (shows all if omitted)')
     .action(withCommandContext((ctx, id: string | undefined) => {
-      const manager = new CycleManager(kataDirPath(ctx.kataDir, 'cycles'));
+      const manager = new CycleManager(kataDirPath(ctx.kataDir, 'cycles'), JsonStore);
 
       if (id) {
         const cycle = manager.get(id);
@@ -164,7 +165,7 @@ export function registerCycleCommands(parent: Command): void {
     .option('--skip-prompts', 'Skip interactive prompts')
     .action(withCommandContext(async (ctx, cycleId: string) => {
       const localOpts = ctx.cmd.opts();
-      const manager = new CycleManager(kataDirPath(ctx.kataDir, 'cycles'));
+      const manager = new CycleManager(kataDirPath(ctx.kataDir, 'cycles'), JsonStore);
 
       let description: string = localOpts.description;
       let appetite: number = localOpts.appetite;
@@ -208,12 +209,13 @@ export function registerCycleCommands(parent: Command): void {
     .action(withCommandContext(async (ctx, cycleId: string) => {
       const localOpts = ctx.cmd.opts();
       const cyclesDir = kataDirPath(ctx.kataDir, 'cycles');
-      const manager = new CycleManager(cyclesDir);
+      const manager = new CycleManager(cyclesDir, JsonStore);
       const knowledgeStore = new KnowledgeStore(kataDirPath(ctx.kataDir, 'knowledge'));
 
       const session = new CooldownSession({
         cycleManager: manager,
         knowledgeStore,
+        persistence: JsonStore,
         pipelineDir: kataDirPath(ctx.kataDir, 'pipelines'),
         historyDir: kataDirPath(ctx.kataDir, 'history'),
       });

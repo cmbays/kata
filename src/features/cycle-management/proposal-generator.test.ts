@@ -24,12 +24,13 @@ describe('ProposalGenerator', () => {
     mkdirSync(pipelineDir, { recursive: true });
     mkdirSync(historyDir, { recursive: true });
 
-    cycleManager = new CycleManager(cyclesDir);
+    cycleManager = new CycleManager(cyclesDir, JsonStore);
     knowledgeStore = new KnowledgeStore(knowledgeDir);
 
     const deps: ProposalGeneratorDeps = {
       cycleManager,
       knowledgeStore,
+      persistence: JsonStore,
       pipelineDir,
       historyDir,
     };
