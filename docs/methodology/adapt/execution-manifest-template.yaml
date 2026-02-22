@@ -1,0 +1,62 @@
+# Execution Manifest Template
+# This file is consumed by `work build <manifest.yaml> [--wave N]`
+#
+# Required: yq (brew install yq)
+# Validate: yq '.' <this-file>
+
+vertical: VERTICAL_SLUG # Must match content.config.ts verticals
+
+waves:
+  - name: 'Foundation'
+    serial: true # Sessions run one at a time
+    sessions:
+      - topic: VERTICAL-w0-schemas
+        prompt: |
+          Use the build-session-protocol skill to guide your workflow.
+
+          Read docs/workspace/{pipeline-id}/breadboard.md for the affordance map.
+          Read CLAUDE.md for coding standards (Zod-first types, Tailwind tokens).
+
+          Build the Zod schemas and mock data for the VERTICAL vertical:
+          1. Define all entity schemas in lib/schemas/
+          2. Create realistic mock data in lib/mock-data/
+          3. Export types via z.infer<typeof schema>
+          4. Write schema tests in __tests__/
+
+          Commit and create PR when complete.
+        stage: build
+
+  - name: 'Core Features'
+    serial: false # Sessions run in parallel
+    sessions:
+      - topic: VERTICAL-w1-feature-a
+        prompt: |
+          Use the build-session-protocol skill to guide your workflow.
+
+          Read docs/workspace/{pipeline-id}/breadboard.md for the affordance map.
+          Read the schemas from lib/schemas/ (built in Wave 0).
+
+          Build FEATURE_A:
+          - Components: list specific components
+          - Route: /path/to/page
+          - Dependencies: schemas from Wave 0
+
+          Commit and create PR when complete.
+        stage: build
+        dependsOn: VERTICAL-w0-schemas
+
+      - topic: VERTICAL-w1-feature-b
+        prompt: |
+          Use the build-session-protocol skill to guide your workflow.
+
+          Read docs/workspace/{pipeline-id}/breadboard.md for the affordance map.
+          Read the schemas from lib/schemas/ (built in Wave 0).
+
+          Build FEATURE_B:
+          - Components: list specific components
+          - Route: /path/to/page
+          - Dependencies: schemas from Wave 0
+
+          Commit and create PR when complete.
+        stage: build
+        dependsOn: VERTICAL-w0-schemas
