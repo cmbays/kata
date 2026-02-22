@@ -30,7 +30,6 @@ export interface ProposalGeneratorDeps {
   knowledgeStore: IKnowledgeStore;
   persistence: IPersistence;
   pipelineDir: string;
-  historyDir: string;
 }
 
 /**

@@ -5,7 +5,7 @@ import type { ExecutionHistoryEntry } from '@domain/types/history.js';
 import type { BudgetAlertLevel } from '@domain/types/cycle.js';
 import { ExecutionHistoryEntrySchema } from '@domain/types/history.js';
 import { logger } from '@shared/lib/logger.js';
-import { ProposalGenerator, type CycleProposal } from './proposal-generator.js';
+import { ProposalGenerator, type CycleProposal, type ProposalGeneratorDeps } from './proposal-generator.js';
 
 /**
  * Dependencies injected into CooldownSession for testability.
@@ -16,6 +16,8 @@ export interface CooldownSessionDeps {
   persistence: IPersistence;
   pipelineDir: string;
   historyDir: string;
+  /** Optional — injected for testability; defaults to a standard ProposalGenerator. */
+  proposalGenerator?: Pick<ProposalGenerator, 'generate'>;
 }
 
 /**
@@ -50,17 +52,17 @@ export interface CooldownSessionResult {
  */
 export class CooldownSession {
   private readonly deps: CooldownSessionDeps;
-  private readonly proposalGenerator: ProposalGenerator;
+  private readonly proposalGenerator: Pick<ProposalGenerator, 'generate'>;
 
   constructor(deps: CooldownSessionDeps) {
     this.deps = deps;
-    this.proposalGenerator = new ProposalGenerator({
+    const generatorDeps: ProposalGeneratorDeps = {
       cycleManager: deps.cycleManager,
       knowledgeStore: deps.knowledgeStore,
       persistence: deps.persistence,
       pipelineDir: deps.pipelineDir,
-      historyDir: deps.historyDir,
-    });
+    };
+    this.proposalGenerator = deps.proposalGenerator ?? new ProposalGenerator(generatorDeps);
   }
 
   /**

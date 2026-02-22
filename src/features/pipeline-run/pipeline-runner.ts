@@ -7,9 +7,9 @@ import type { IStageRegistry } from '@domain/ports/stage-registry.js';
 import type { IKnowledgeStore } from '@domain/ports/knowledge-store.js';
 import type { IAdapterResolver } from '@domain/ports/adapter-resolver.js';
 import type { ITokenTracker } from '@domain/ports/token-tracker.js';
+import type { IResultCapturer } from '@domain/ports/result-capturer.js';
 import { ManifestBuilder } from '@domain/services/manifest-builder.js';
 import { evaluateGate, type GateEvalContext } from './gate-evaluator.js';
-import type { ResultCapturer } from './result-capturer.js';
 
 /**
  * Dependencies injected into the pipeline runner for testability.
@@ -18,7 +18,7 @@ export interface PipelineRunnerDeps {
   stageRegistry: IStageRegistry;
   knowledgeStore: IKnowledgeStore;
   adapterResolver: IAdapterResolver;
-  resultCapturer: ResultCapturer;
+  resultCapturer: IResultCapturer;
   tokenTracker: ITokenTracker;
   manifestBuilder: typeof ManifestBuilder;
   /** Persist an updated pipeline snapshot to storage. */

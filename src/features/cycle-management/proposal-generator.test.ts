@@ -12,7 +12,6 @@ describe('ProposalGenerator', () => {
   const cyclesDir = join(baseDir, 'cycles');
   const knowledgeDir = join(baseDir, 'knowledge');
   const pipelineDir = join(baseDir, 'pipelines');
-  const historyDir = join(baseDir, 'history');
 
   let cycleManager: CycleManager;
   let knowledgeStore: KnowledgeStore;
@@ -22,7 +21,6 @@ describe('ProposalGenerator', () => {
     mkdirSync(cyclesDir, { recursive: true });
     mkdirSync(knowledgeDir, { recursive: true });
     mkdirSync(pipelineDir, { recursive: true });
-    mkdirSync(historyDir, { recursive: true });
 
     cycleManager = new CycleManager(cyclesDir, JsonStore);
     knowledgeStore = new KnowledgeStore(knowledgeDir);
@@ -32,7 +30,6 @@ describe('ProposalGenerator', () => {
       knowledgeStore,
       persistence: JsonStore,
       pipelineDir,
-      historyDir,
     };
 
     generator = new ProposalGenerator(deps);
