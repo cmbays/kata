@@ -78,13 +78,13 @@ describe('registerPipelineCommands', () => {
     return pipeline;
   }
 
-  describe('sequence status', () => {
+  describe('flow status', () => {
     it('should list all pipelines when no ID given', async () => {
       createPipeline({ name: 'pipeline-a' });
       createPipeline({ name: 'pipeline-b' });
 
       await program.parseAsync(
-        ['sequence', 'status', '--cwd', parentDir],
+        ['flow', 'status', '--cwd', parentDir],
         { from: 'user' },
       );
 
@@ -98,7 +98,7 @@ describe('registerPipelineCommands', () => {
       const pipeline = createPipeline({ name: 'my-pipeline' });
 
       await program.parseAsync(
-        ['sequence', 'status', pipeline.id, '--cwd', parentDir],
+        ['flow', 'status', pipeline.id, '--cwd', parentDir],
         { from: 'user' },
       );
 
@@ -112,7 +112,7 @@ describe('registerPipelineCommands', () => {
       const pipeline = createPipeline({ name: 'json-test' });
 
       await program.parseAsync(
-        ['--json', 'sequence', 'status', pipeline.id, '--cwd', parentDir],
+        ['--json', 'flow', 'status', pipeline.id, '--cwd', parentDir],
         { from: 'user' },
       );
 
@@ -125,24 +125,24 @@ describe('registerPipelineCommands', () => {
 
     it('should error for non-existent pipeline ID', async () => {
       await program.parseAsync(
-        ['sequence', 'status', 'nonexistent-id', '--cwd', parentDir],
+        ['flow', 'status', 'nonexistent-id', '--cwd', parentDir],
         { from: 'user' },
       );
 
       expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Pipeline not found'),
+        expect.stringContaining('Flow not found'),
       );
     });
 
     it('should show empty list when no pipelines exist', async () => {
       await program.parseAsync(
-        ['sequence', 'status', '--cwd', parentDir],
+        ['flow', 'status', '--cwd', parentDir],
         { from: 'user' },
       );
 
       expect(consoleSpy).toHaveBeenCalled();
       const output = consoleSpy.mock.calls[0]?.[0] as string;
-      expect(output).toContain('No pipelines found');
+      expect(output).toContain('No flows found');
     });
   });
 
@@ -152,21 +152,21 @@ describe('registerPipelineCommands', () => {
       registerStage({ type: 'build', artifacts: [], learningHooks: [], config: {} });
 
       await program.parseAsync(
-        ['sequence', 'define', 'my-flow', 'research', 'build', '--cwd', parentDir],
+        ['flow', 'prep', 'my-flow', 'research', 'build', '--cwd', parentDir],
         { from: 'user' },
       );
 
       expect(consoleSpy).toHaveBeenCalled();
       const output = consoleSpy.mock.calls[0]?.[0] as string;
       expect(output).toContain('my-flow');
-      expect(output).toContain('2 stages');
+      expect(output).toContain('2 forms');
     });
 
     it('should output JSON when --json flag is set', async () => {
       registerStage({ type: 'research', artifacts: [], learningHooks: [], config: {} });
 
       await program.parseAsync(
-        ['--json', 'sequence', 'define', 'json-flow', 'research', '--cwd', parentDir],
+        ['--json', 'flow', 'prep', 'json-flow', 'research', '--cwd', parentDir],
         { from: 'user' },
       );
 
@@ -178,7 +178,7 @@ describe('registerPipelineCommands', () => {
 
     it('should error when a stage does not exist', async () => {
       await program.parseAsync(
-        ['sequence', 'define', 'broken-flow', 'nonexistent-stage', '--cwd', parentDir],
+        ['flow', 'prep', 'broken-flow', 'nonexistent-stage', '--cwd', parentDir],
         { from: 'user' },
       );
 
@@ -189,7 +189,7 @@ describe('registerPipelineCommands', () => {
       registerStage({ type: 'build', flavor: 'frontend', artifacts: [], learningHooks: [], config: {} });
 
       await program.parseAsync(
-        ['sequence', 'define', 'flavored-flow', 'build:frontend', '--cwd', parentDir],
+        ['flow', 'prep', 'flavored-flow', 'build:frontend', '--cwd', parentDir],
         { from: 'user' },
       );
 
@@ -199,10 +199,10 @@ describe('registerPipelineCommands', () => {
     });
   });
 
-  describe('sequence start', () => {
+  describe('flow start', () => {
     it('should error when no template found for type', async () => {
       await program.parseAsync(
-        ['sequence', 'start', 'vertical', '--cwd', parentDir],
+        ['flow', 'start', 'vertical', '--cwd', parentDir],
         { from: 'user' },
       );
 
@@ -213,7 +213,7 @@ describe('registerPipelineCommands', () => {
 
     it('should error for invalid pipeline type', async () => {
       await program.parseAsync(
-        ['sequence', 'start', 'invalid-type', '--cwd', parentDir],
+        ['flow', 'start', 'invalid-type', '--cwd', parentDir],
         { from: 'user' },
       );
 
@@ -239,7 +239,7 @@ describe('registerPipelineCommands', () => {
       );
 
       await program.parseAsync(
-        ['sequence', 'start', 'vertical', '--cwd', parentDir],
+        ['flow', 'start', 'vertical', '--cwd', parentDir],
         { from: 'user' },
       );
 

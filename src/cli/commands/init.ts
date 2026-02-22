@@ -3,12 +3,12 @@ import { handleInit } from '@features/init/init-handler.js';
 import { getGlobalOptions } from '@cli/utils.js';
 
 /**
- * Register the `kata begin` command.
+ * Register the `kata rei` command — the bow that starts your practice.
  */
 export function registerInitCommand(program: Command): void {
   program
-    .command('begin')
-    .description('Initialize a new kata project in the current directory')
+    .command('rei')
+    .description('Initialize a new kata project — the bow before practice begins')
     .option('--methodology <name>', 'Methodology framework (default: shape-up)')
     .option('--adapter <name>', 'Execution adapter: manual, claude-cli, composio')
     .option('--skip-prompts', 'Skip interactive prompts and use defaults')
@@ -39,7 +39,7 @@ export function registerInitCommand(program: Command): void {
             console.log(`  Project: ${result.config.project.name}`);
           }
           console.log('');
-          console.log('Run "kata form list" to see available stages.');
+          console.log('Run "kata form list" to see available forms.');
         }
       } catch (error) {
         console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);

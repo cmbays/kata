@@ -29,7 +29,7 @@ export function formatPipelineStatus(pipeline: Pipeline): string {
     ? Math.round((completedCount / pipeline.stages.length) * 100)
     : 0;
 
-  lines.push(`Pipeline: ${pipeline.name} (${pipeline.id})`);
+  lines.push(`Flow: ${pipeline.name} (${pipeline.id})`);
   lines.push(`Type: ${pipeline.type}`);
   lines.push(`State: ${PIPELINE_STATE_LABELS[pipeline.state] ?? pipeline.state}`);
   lines.push(`Progress: ${completedCount}/${pipeline.stages.length} stages (${pct}%)`);
@@ -61,11 +61,11 @@ export function formatPipelineStatus(pipeline: Pipeline): string {
  */
 export function formatPipelineList(pipelines: Pipeline[]): string {
   if (pipelines.length === 0) {
-    return 'No pipelines found.';
+    return 'No flows found.';
   }
 
   const lines: string[] = [];
-  lines.push('Pipelines:');
+  lines.push('Flows:');
   lines.push('');
 
   // Header
@@ -103,9 +103,9 @@ export function formatPipelineResult(result: PipelineResult): string {
   const lines: string[] = [];
 
   if (result.success) {
-    lines.push(`Pipeline completed successfully!`);
+    lines.push(`Flow completed successfully!`);
   } else {
-    lines.push(`Pipeline execution failed.`);
+    lines.push(`Flow execution failed.`);
     if (result.abortedAt !== undefined) {
       lines.push(`Aborted at stage ${result.abortedAt + 1}.`);
     }

@@ -10,17 +10,17 @@ import {
 } from '@cli/formatters/cycle-formatter.js';
 
 /**
- * Register the `kata practice` and `kata reflect` subcommands.
+ * Register the `kata enbu` and `kata ma` subcommands.
  */
 export function registerCycleCommands(parent: Command): void {
-  const practice = parent
-    .command('practice')
-    .description('Manage practice sessions (cycles) — time-boxed work periods');
+  const enbu = parent
+    .command('enbu')
+    .description('Manage enbu (group performances) — time-boxed work periods with budgets');
 
-  // kata practice new — interactive wizard
-  practice
+  // kata enbu new — interactive wizard
+  enbu
     .command('new')
-    .description('Create a new practice cycle')
+    .description('Create a new enbu')
     .option('-b, --budget <tokens>', 'Token budget', parseInt)
     .option('-t, --time <duration>', 'Time budget (e.g., "2 weeks")')
     .option('-n, --name <name>', 'Cycle name')
@@ -94,7 +94,7 @@ export function registerCycleCommands(parent: Command): void {
           if (globalOpts.json) {
             console.log(formatCycleStatusJson(status, updatedCycle));
           } else {
-            console.log('Cycle created!');
+            console.log('Enbu created!');
             console.log('');
             console.log(formatCycleStatus(status, updatedCycle));
           }
@@ -109,7 +109,7 @@ export function registerCycleCommands(parent: Command): void {
           if (globalOpts.json) {
             console.log(formatCycleStatusJson(status, cycle));
           } else {
-            console.log('Cycle created!');
+            console.log('Enbu created!');
             console.log('');
             console.log(formatCycleStatus(status, cycle));
           }
@@ -120,10 +120,10 @@ export function registerCycleCommands(parent: Command): void {
       }
     });
 
-  // kata practice status [id]
-  practice
+  // kata enbu status [id]
+  enbu
     .command('status')
-    .description('Show cycle status and budget')
+    .description('Show enbu status and budget')
     .argument('[id]', 'Cycle ID (shows all if omitted)')
     .action((id: string | undefined, _opts, cmd) => {
       const globalOpts = getGlobalOptions(cmd);
@@ -144,7 +144,7 @@ export function registerCycleCommands(parent: Command): void {
         } else {
           const cycles = manager.list();
           if (cycles.length === 0) {
-            console.log('No cycles found. Run "kata practice new" to create one.');
+            console.log('No enbu found. Run "kata enbu new" to create one.');
             return;
           }
 
@@ -168,10 +168,10 @@ export function registerCycleCommands(parent: Command): void {
       }
     });
 
-  // kata practice focus <cycle-id> — add a bet interactively
-  practice
+  // kata enbu focus <enbu-id> — add a bet interactively
+  enbu
     .command('focus')
-    .description('Add a bet to a cycle')
+    .description('Add a focus (bet) to an enbu')
     .argument('<cycle-id>', 'Cycle ID')
     .option('-d, --description <desc>', 'Bet description')
     .option('-a, --appetite <pct>', 'Appetite percentage', parseInt)
@@ -210,7 +210,7 @@ export function registerCycleCommands(parent: Command): void {
         if (globalOpts.json) {
           console.log(formatCycleStatusJson(status, cycle));
         } else {
-          console.log('Bet added!');
+          console.log('Focus added!');
           console.log('');
           console.log(formatCycleStatus(status, cycle));
         }
@@ -220,10 +220,10 @@ export function registerCycleCommands(parent: Command): void {
       }
     });
 
-  // kata reflect <cycle-id>
+  // kata ma <enbu-id>
   parent
-    .command('reflect')
-    .description('Run cool-down reflection on a completed cycle')
+    .command('ma')
+    .description('The space between — run cool-down reflection on a completed enbu')
     .argument('<cycle-id>', 'Cycle ID')
     .action((cycleId: string, _opts, cmd) => {
       const globalOpts = getGlobalOptions(cmd);

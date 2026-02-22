@@ -32,10 +32,10 @@ describe('registerKnowledgeCommands', () => {
     return program;
   }
 
-  describe('memory query', () => {
+  describe('bunkai query', () => {
     it('shows empty result when no learnings exist', async () => {
       const program = createProgram();
-      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'memory', 'query']);
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'bunkai', 'query']);
 
       expect(consoleSpy).toHaveBeenCalledWith('No learnings found.');
     });
@@ -62,7 +62,7 @@ describe('registerKnowledgeCommands', () => {
       const program = createProgram();
       await program.parseAsync([
         'node', 'test', '--cwd', baseDir,
-        'memory', 'query', '--tier', 'stage',
+        'bunkai', 'query', '--tier', 'stage',
       ]);
 
       const output = consoleSpy.mock.calls[0]?.[0] as string;
@@ -84,7 +84,7 @@ describe('registerKnowledgeCommands', () => {
       const program = createProgram();
       await program.parseAsync([
         'node', 'test', '--json', '--cwd', baseDir,
-        'memory', 'query',
+        'bunkai', 'query',
       ]);
 
       const output = consoleSpy.mock.calls[0]?.[0] as string;
@@ -113,7 +113,7 @@ describe('registerKnowledgeCommands', () => {
       const program = createProgram();
       await program.parseAsync([
         'node', 'test', '--json', '--cwd', baseDir,
-        'memory', 'query', '--category', 'testing',
+        'bunkai', 'query', '--category', 'testing',
       ]);
 
       const output = consoleSpy.mock.calls[0]?.[0] as string;
@@ -123,10 +123,10 @@ describe('registerKnowledgeCommands', () => {
     });
   });
 
-  describe('memory stats', () => {
+  describe('bunkai stats', () => {
     it('shows stats for empty store', async () => {
       const program = createProgram();
-      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'memory', 'stats']);
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'bunkai', 'stats']);
 
       const output = consoleSpy.mock.calls[0]?.[0] as string;
       expect(output).toContain('Total Learnings: 0');
@@ -143,7 +143,7 @@ describe('registerKnowledgeCommands', () => {
       });
 
       const program = createProgram();
-      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'memory', 'stats']);
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'bunkai', 'stats']);
 
       const output = consoleSpy.mock.calls[0]?.[0] as string;
       expect(output).toContain('Total Learnings: 1');
@@ -152,7 +152,7 @@ describe('registerKnowledgeCommands', () => {
 
     it('shows stats as JSON', async () => {
       const program = createProgram();
-      await program.parseAsync(['node', 'test', '--json', '--cwd', baseDir, 'memory', 'stats']);
+      await program.parseAsync(['node', 'test', '--json', '--cwd', baseDir, 'bunkai', 'stats']);
 
       const output = consoleSpy.mock.calls[0]?.[0] as string;
       const parsed = JSON.parse(output);
@@ -165,7 +165,7 @@ describe('registerKnowledgeCommands', () => {
       mkdirSync(noKataDir, { recursive: true });
 
       const program = createProgram();
-      await program.parseAsync(['node', 'test', '--cwd', noKataDir, 'memory', 'stats']);
+      await program.parseAsync(['node', 'test', '--cwd', noKataDir, 'bunkai', 'stats']);
 
       expect(errorSpy).toHaveBeenCalled();
       rmSync(noKataDir, { recursive: true, force: true });

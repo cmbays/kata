@@ -10,13 +10,13 @@ describe('createProgram', () => {
   it('has the expected top-level commands', () => {
     const program = createProgram();
     const commandNames = program.commands.map((c) => c.name());
-    expect(commandNames).toContain('begin');
+    expect(commandNames).toContain('rei');
     expect(commandNames).toContain('form');
-    expect(commandNames).toContain('sequence');
-    expect(commandNames).toContain('practice');
-    expect(commandNames).toContain('memory');
-    expect(commandNames).toContain('reflect');
-    expect(commandNames).toContain('focus');
+    expect(commandNames).toContain('flow');
+    expect(commandNames).toContain('enbu');
+    expect(commandNames).toContain('bunkai');
+    expect(commandNames).toContain('ma');
+    expect(commandNames).toContain('kiai');
   });
 
   it('form has list and inspect subcommands', () => {
@@ -27,28 +27,28 @@ describe('createProgram', () => {
     expect(subcommands).toContain('inspect');
   });
 
-  it('sequence has start, status, and define subcommands', () => {
+  it('flow has start, status, and prep subcommands', () => {
     const program = createProgram();
-    const sequence = program.commands.find((c) => c.name() === 'sequence');
-    const subcommands = sequence!.commands.map((c) => c.name());
+    const flow = program.commands.find((c) => c.name() === 'flow');
+    const subcommands = flow!.commands.map((c) => c.name());
     expect(subcommands).toContain('start');
     expect(subcommands).toContain('status');
-    expect(subcommands).toContain('define');
+    expect(subcommands).toContain('prep');
   });
 
-  it('practice has new, status, and focus subcommands', () => {
+  it('enbu has new, status, and focus subcommands', () => {
     const program = createProgram();
-    const practice = program.commands.find((c) => c.name() === 'practice');
-    const subcommands = practice!.commands.map((c) => c.name());
+    const enbu = program.commands.find((c) => c.name() === 'enbu');
+    const subcommands = enbu!.commands.map((c) => c.name());
     expect(subcommands).toContain('new');
     expect(subcommands).toContain('status');
     expect(subcommands).toContain('focus');
   });
 
-  it('memory has query and stats subcommands', () => {
+  it('bunkai has query and stats subcommands', () => {
     const program = createProgram();
-    const memory = program.commands.find((c) => c.name() === 'memory');
-    const subcommands = memory!.commands.map((c) => c.name());
+    const bunkai = program.commands.find((c) => c.name() === 'bunkai');
+    const subcommands = bunkai!.commands.map((c) => c.name());
     expect(subcommands).toContain('query');
     expect(subcommands).toContain('stats');
   });

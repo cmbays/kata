@@ -76,26 +76,53 @@ The type system models a methodology pipeline engine:
 - **History** — execution records with token usage tracking
 - **Config** — project-level `.kata/config.json` settings
 
-### CLI vocabulary (thematic naming)
+### CLI vocabulary — The Kata Lexicon
 
-Internal domain terms map to themed CLI commands:
+All CLI commands use authentic karate terminology. Domain code keeps standard names (Stage, Pipeline, Cycle, Learning); the themed names are the CLI presentation layer.
 
-| Domain term | CLI command | Description |
-|-------------|------------|-------------|
-| Stage | `kata form` | Manage methodology steps |
-| Pipeline | `kata sequence` | Manage stage compositions |
-| Cycle | `kata practice` | Manage time-boxed work periods |
-| Learning | `kata memory` | Manage extracted patterns |
-| Init | `kata begin` | Initialize a project |
-| Cooldown | `kata reflect` | Run cycle retrospective |
-| Execution | `kata focus` | Run focused sessions |
+| Domain term | CLI command | Japanese meaning | Description |
+|-------------|------------|-----------------|-------------|
+| Stage | `kata form` | Form/pattern | Manage methodology steps |
+| Pipeline | `kata flow` | Flow of forms | Manage ordered compositions of forms |
+| Cycle | `kata enbu` | Group performance | Manage time-boxed work periods with budgets |
+| Setup/Init | `kata rei` | The bow | Initialize a project |
+| Execution | `kata kiai` | Spirit shout | Run focused execution sessions |
+| Learning | `kata bunkai` | The breakdown | Manage patterns extracted from practice |
+| Cooldown | `kata ma` | The space between | Run reflection on a completed enbu |
 
 ### Tests
 
 Tests are colocated with source files (`*.test.ts` next to `*.ts`). Vitest globals are enabled — no need to import `describe`/`it`/`expect`. Coverage excludes test files and `src/cli/index.ts`.
 
+### Service and feature layer
+
+- **StageRegistry** (`@infra/registries/`) — register, get, list, loadBuiltins, loadCustom
+- **PipelineComposer** (`@domain/services/`) — define, validate, loadTemplates, instantiate
+- **ManifestBuilder** (`@domain/services/`) — build, resolveRefs, attachGates, injectLearnings
+- **CycleManager** (`@domain/services/`) — create, get, list, addBet, getBudgetStatus, generateCooldown
+- **KnowledgeStore** (`@infra/knowledge/`) — capture, query, loadForStage, loadForSubscriptions, stats
+- **AdapterResolver** (`@infra/execution/`) — resolve(config) → IExecutionAdapter (manual, claude-cli, composio)
+- **TokenTracker** (`@infra/tracking/`) — recordUsage, getUsage, getTotalUsage, checkBudget
+- **PipelineRunner** (`@features/pipeline-run/`) — orchestration loop with gate evaluation, retry logic, result capture
+- **GateEvaluator** (`@features/pipeline-run/`) — evaluateGate with exhaustive condition checking
+- **ResultCapturer** (`@features/pipeline-run/`) — pure history writer (token tracking is in PipelineRunner)
+- **InitHandler** (`@features/init/`) — project detection, interactive setup, builtin loading
+
+### CLI command modules
+
+Each module exports `registerXCommand(parent: Command)` in `src/cli/commands/`:
+- `init.ts` → `kata rei`
+- `stage.ts` → `kata form list`, `kata form inspect`
+- `pipeline.ts` → `kata flow start`, `kata flow status`, `kata flow prep`
+- `cycle.ts` → `kata enbu new`, `kata enbu status`, `kata enbu focus`; `kata ma`
+- `knowledge.ts` → `kata bunkai query`, `kata bunkai stats`
+- `kiai` commands remain stubs (Wave 3+)
+
+CLI utility `src/cli/utils.ts`: `resolveKataDir()`, `getGlobalOptions()`
+Formatters in `src/cli/formatters/`: stage, pipeline, cycle, gate, knowledge (all support `--json`)
+
 ## Implementation status
 
-**Wave 0 (Foundation) is complete.** All types, persistence, CLI skeleton, and shared utilities are built.
+**Waves 0-2 are complete.** 527 tests passing across 43 test files.
 
-The implementation plan (`docs/pipeline/plan.md`) defines 5 waves with 9 sessions. Waves 1–4 are not yet started. The next wave (Wave 1) builds domain services: stage registry, pipeline composer, cycle manager, knowledge store, and execution adapters.
+The implementation plan (`docs/pipeline/plan.md`) defines 5 waves with 9 sessions. Wave 3 (Intelligence) is next: self-improvement loop + cooldown proposals.

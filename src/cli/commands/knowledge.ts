@@ -11,15 +11,15 @@ import {
 } from '@cli/formatters/knowledge-formatter.js';
 
 /**
- * Register the `kata memory` subcommands.
+ * Register the `kata bunkai` subcommands — the breakdown and analysis.
  */
 export function registerKnowledgeCommands(parent: Command): void {
-  const memory = parent
-    .command('memory')
-    .description('Manage the learning memory — patterns extracted from practice');
+  const bunkai = parent
+    .command('bunkai')
+    .description('Manage bunkai (breakdowns) — patterns extracted from practice');
 
-  // kata memory query
-  memory
+  // kata bunkai query
+  bunkai
     .command('query')
     .description('Query learnings by filters')
     .option('--stage <type>', 'Filter by stage type')
@@ -53,8 +53,8 @@ export function registerKnowledgeCommands(parent: Command): void {
       }
     });
 
-  // kata memory stats
-  memory
+  // kata bunkai stats
+  bunkai
     .command('stats')
     .description('Show knowledge store statistics')
     .action((_opts, cmd) => {

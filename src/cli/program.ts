@@ -18,31 +18,31 @@ export function createProgram(): Command {
     .option('--verbose', 'Enable verbose logging')
     .option('--cwd <path>', 'Set working directory');
 
-  // Wire Wave 2 command modules
+  // Wire command modules
   registerInitCommand(program);
   registerStageCommands(program);
   registerPipelineCommands(program);
   registerCycleCommands(program);
   registerKnowledgeCommands(program);
 
-  // kata focus — Execution management (stub — Wave 3+)
-  const focus = program
-    .command('focus')
-    .description('Manage focused execution sessions');
+  // kata kiai — Execution management (stub — Wave 3+)
+  const kiai = program
+    .command('kiai')
+    .description('Manage execution sessions — the spirit shout of agent action');
 
-  focus
+  kiai
     .command('run <stage>')
-    .description('Run a focused execution of a stage')
-    .option('-p, --pipeline <id>', 'Pipeline context')
+    .description('Run a focused execution of a form')
+    .option('-p, --flow <id>', 'Flow context')
     .action((stage: string) => {
-      console.log(`kata focus run ${stage} — not yet implemented`);
+      console.log(`kata kiai run ${stage} — not yet implemented`);
     });
 
-  focus
+  kiai
     .command('status')
-    .description('Show current focus session status')
+    .description('Show current kiai session status')
     .action(() => {
-      console.log('kata focus status — not yet implemented');
+      console.log('kata kiai status — not yet implemented');
     });
 
   return program;

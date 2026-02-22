@@ -39,19 +39,19 @@ describe('registerCycleCommands', () => {
     return program;
   }
 
-  describe('practice new', () => {
+  describe('enbu new', () => {
     it('creates a cycle with --skip-prompts', async () => {
       const program = createProgram();
       await program.parseAsync([
         'node', 'test', '--cwd', baseDir,
-        'practice', 'new',
+        'enbu', 'new',
         '--skip-prompts',
         '--budget', '50000',
         '--time', '2 weeks',
         '--name', 'Sprint 1',
       ]);
 
-      expect(consoleSpy).toHaveBeenCalledWith('Cycle created!');
+      expect(consoleSpy).toHaveBeenCalledWith('Enbu created!');
       const outputCalls = consoleSpy.mock.calls.map((c) => c[0]);
       const statusOutput = outputCalls.find((c) => typeof c === 'string' && c.includes('Sprint 1'));
       expect(statusOutput).toBeDefined();
@@ -61,7 +61,7 @@ describe('registerCycleCommands', () => {
       const program = createProgram();
       await program.parseAsync([
         'node', 'test', '--json', '--cwd', baseDir,
-        'practice', 'new',
+        'enbu', 'new',
         '--skip-prompts',
         '--budget', '100000',
       ]);
@@ -73,14 +73,14 @@ describe('registerCycleCommands', () => {
     });
   });
 
-  describe('practice status', () => {
+  describe('enbu status', () => {
     it('shows all cycles when no id given', async () => {
       // Create a cycle first
       const manager = new CycleManager(cyclesDir);
       manager.create({ tokenBudget: 50000 }, 'Test Cycle');
 
       const program = createProgram();
-      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'practice', 'status']);
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'enbu', 'status']);
 
       const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
       expect(output).toContain('Test Cycle');
@@ -91,7 +91,7 @@ describe('registerCycleCommands', () => {
       const cycle = manager.create({ tokenBudget: 50000 }, 'Specific Cycle');
 
       const program = createProgram();
-      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'practice', 'status', cycle.id]);
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'enbu', 'status', cycle.id]);
 
       const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
       expect(output).toContain('Specific Cycle');
@@ -99,20 +99,20 @@ describe('registerCycleCommands', () => {
 
     it('shows message when no cycles exist', async () => {
       const program = createProgram();
-      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'practice', 'status']);
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'enbu', 'status']);
 
-      expect(consoleSpy).toHaveBeenCalledWith('No cycles found. Run "kata practice new" to create one.');
+      expect(consoleSpy).toHaveBeenCalledWith('No enbu found. Run "kata enbu new" to create one.');
     });
 
     it('shows error for missing cycle id', async () => {
       const program = createProgram();
-      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'practice', 'status', 'nonexistent-id']);
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'enbu', 'status', 'nonexistent-id']);
 
       expect(errorSpy).toHaveBeenCalled();
     });
   });
 
-  describe('practice focus', () => {
+  describe('enbu focus', () => {
     it('adds a bet to a cycle with --skip-prompts', async () => {
       const manager = new CycleManager(cyclesDir);
       const cycle = manager.create({ tokenBudget: 50000 }, 'Focus Test');
@@ -120,17 +120,17 @@ describe('registerCycleCommands', () => {
       const program = createProgram();
       await program.parseAsync([
         'node', 'test', '--cwd', baseDir,
-        'practice', 'focus', cycle.id,
+        'enbu', 'focus', cycle.id,
         '--description', 'Implement auth',
         '--appetite', '30',
         '--skip-prompts',
       ]);
 
-      expect(consoleSpy).toHaveBeenCalledWith('Bet added!');
+      expect(consoleSpy).toHaveBeenCalledWith('Focus added!');
     });
   });
 
-  describe('reflect', () => {
+  describe('ma', () => {
     it('generates cooldown report', async () => {
       const manager = new CycleManager(cyclesDir);
       const cycle = manager.create({ tokenBudget: 50000 }, 'Reflect Test');
@@ -142,10 +142,10 @@ describe('registerCycleCommands', () => {
       });
 
       const program = createProgram();
-      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'reflect', cycle.id]);
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'ma', cycle.id]);
 
       const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
-      expect(output).toContain('Cooldown Report');
+      expect(output).toContain('Ma (Cooldown) Report');
       expect(output).toContain('Reflect Test');
     });
 
@@ -154,7 +154,7 @@ describe('registerCycleCommands', () => {
       const cycle = manager.create({ tokenBudget: 50000 }, 'JSON Report');
 
       const program = createProgram();
-      await program.parseAsync(['node', 'test', '--json', '--cwd', baseDir, 'reflect', cycle.id]);
+      await program.parseAsync(['node', 'test', '--json', '--cwd', baseDir, 'ma', cycle.id]);
 
       const firstCall = consoleSpy.mock.calls[0]?.[0] as string;
       const parsed = JSON.parse(firstCall);

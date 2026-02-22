@@ -10,8 +10,8 @@ const makeStage = (overrides: Partial<Stage> = {}): Stage => ({
 });
 
 describe('formatStageTable', () => {
-  it('returns "No stages found." for empty list', () => {
-    expect(formatStageTable([])).toBe('No stages found.');
+  it('returns "No forms found." for empty list', () => {
+    expect(formatStageTable([])).toBe('No forms found.');
   });
 
   it('formats a single stage row', () => {
@@ -51,13 +51,13 @@ describe('formatStageTable', () => {
 describe('formatStageDetail', () => {
   it('shows type and description', () => {
     const result = formatStageDetail(makeStage({ description: 'Do research' }));
-    expect(result).toContain('Stage: research');
+    expect(result).toContain('Form: research');
     expect(result).toContain('Description: Do research');
   });
 
   it('shows flavor in parentheses', () => {
     const result = formatStageDetail(makeStage({ flavor: 'deep' }));
-    expect(result).toContain('Stage: research (deep)');
+    expect(result).toContain('Form: research (deep)');
   });
 
   it('shows entry and exit gates', () => {

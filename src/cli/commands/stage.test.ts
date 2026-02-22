@@ -78,7 +78,7 @@ describe('registerStageCommands', () => {
       await program.parseAsync(['node', 'test', '--cwd', baseDir, 'form', 'inspect', 'research']);
 
       const output = consoleSpy.mock.calls[0]?.[0] as string;
-      expect(output).toContain('Stage: research');
+      expect(output).toContain('Form: research');
       expect(output).toContain('Research step');
     });
 

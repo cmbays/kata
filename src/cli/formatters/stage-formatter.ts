@@ -5,7 +5,7 @@ import type { Stage } from '@domain/types/stage.js';
  */
 export function formatStageTable(stages: Stage[]): string {
   if (stages.length === 0) {
-    return 'No stages found.';
+    return 'No forms found.';
   }
 
   const header = padColumns(['Type', 'Flavor', 'Gates', 'Artifacts']);
@@ -25,7 +25,7 @@ export function formatStageTable(stages: Stage[]): string {
 export function formatStageDetail(stage: Stage): string {
   const lines: string[] = [];
 
-  lines.push(`Stage: ${stage.type}${stage.flavor ? ` (${stage.flavor})` : ''}`);
+  lines.push(`Form: ${stage.type}${stage.flavor ? ` (${stage.flavor})` : ''}`);
   if (stage.description) {
     lines.push(`Description: ${stage.description}`);
   }
