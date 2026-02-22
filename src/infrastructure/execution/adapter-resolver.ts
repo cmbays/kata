@@ -3,6 +3,7 @@ import type { IExecutionAdapter } from './execution-adapter.js';
 import { ManualAdapter } from './manual-adapter.js';
 import { ClaudeCliAdapter } from './claude-cli-adapter.js';
 import { ComposioAdapter } from './composio-adapter.js';
+import { logger } from '@shared/lib/logger.js';
 
 type AdapterFactory = (config?: KataConfig) => IExecutionAdapter;
 
@@ -25,10 +26,20 @@ export class AdapterResolver {
 
   /**
    * Register a new adapter factory under the given name.
-   * Overwrites any existing registration for that name.
+   * Warns when overwriting an existing registration.
    */
   static register(name: string, factory: AdapterFactory): void {
+    if (AdapterResolver.registry.has(name)) {
+      logger.warn(`AdapterResolver: overwriting existing registration for adapter "${name}".`);
+    }
     AdapterResolver.registry.set(name, factory);
+  }
+
+  /**
+   * Remove a registered adapter factory. Primarily for test cleanup.
+   */
+  static unregister(name: string): void {
+    AdapterResolver.registry.delete(name);
   }
 
   /**

@@ -131,12 +131,29 @@ export function registerPipelineCommands(program: Command): void {
       }
 
       const p = JsonStore.read(filePath, PipelineSchema);
+
+      if (p.state === 'complete' || p.state === 'abandoned') {
+        console.error(`Cannot approve: pipeline is already in terminal state "${p.state}".`);
+        process.exitCode = 1;
+        return;
+      }
+
       const stageState = p.stages[p.currentStageIndex];
 
       if (!stageState) {
         console.error('No current stage to approve.');
         process.exitCode = 1;
         return;
+      }
+
+      if (stageState.state === 'complete' || stageState.state === 'failed' || stageState.state === 'skipped') {
+        console.error(`Cannot approve: stage "${stageState.stageRef.type}" is already in terminal state "${stageState.state}".`);
+        process.exitCode = 1;
+        return;
+      }
+
+      if (stageState.humanApprovedAt) {
+        console.warn(`Warning: stage "${stageState.stageRef.type}" was already approved at ${stageState.humanApprovedAt}. Re-approving.`);
       }
 
       stageState.humanApprovedAt = new Date().toISOString();

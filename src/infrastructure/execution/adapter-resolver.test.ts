@@ -70,13 +70,16 @@ describe('AdapterResolver', () => {
 
   describe('register', () => {
     const TEST_ADAPTER_NAME = 'test-custom-adapter';
+    let uniqueName: string;
 
     afterEach(() => {
-      // Clean up the test registration from the static registry
-      // We do this by calling register with a sentinel that we can detect,
-      // then delete isn't available — instead we overwrite to restore nothing.
-      // Since we can't remove entries, we re-register 'manual' to keep tests stable.
-      // The custom key stays in the registry but doesn't affect other tests.
+      // Remove keys added by tests to prevent cross-test pollution of the static registry.
+      AdapterResolver.unregister(TEST_ADAPTER_NAME);
+      if (uniqueName) AdapterResolver.unregister(uniqueName);
+      // Restore 'manual' in case the override test left a non-ManualAdapter replacement.
+      // Unregister first to avoid the overwrite warning from AdapterResolver.register().
+      AdapterResolver.unregister('manual');
+      AdapterResolver.register('manual', () => new ManualAdapter());
     });
 
     it('allows registering a custom adapter', () => {
@@ -96,25 +99,22 @@ describe('AdapterResolver', () => {
         name: 'manual-override',
         execute: async () => ({ success: true, artifacts: [], completedAt: new Date().toISOString() }),
       };
-      // Override 'manual' temporarily
+      // Override 'manual' temporarily (afterEach restores it)
       AdapterResolver.register('manual', () => replacementManual);
 
       const resolved = new AdapterResolver().resolve(makeConfig('manual'));
       expect(resolved).toBe(replacementManual);
-
-      // Restore original registration
-      AdapterResolver.register('manual', () => new ManualAdapter());
     });
 
     it('error message lists dynamically registered adapters', () => {
-      const UNIQUE_NAME = `test-registry-${Date.now()}`;
-      AdapterResolver.register(UNIQUE_NAME, () => ({
-        name: UNIQUE_NAME,
+      uniqueName = `test-registry-${Date.now()}`;
+      AdapterResolver.register(uniqueName, () => ({
+        name: uniqueName,
         execute: async () => ({ success: true, artifacts: [], completedAt: new Date().toISOString() }),
       }));
 
       const config = makeConfig('nonexistent');
-      expect(() => new AdapterResolver().resolve(config)).toThrow(UNIQUE_NAME);
+      expect(() => new AdapterResolver().resolve(config)).toThrow(uniqueName);
     });
   });
 });

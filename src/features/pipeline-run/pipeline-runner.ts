@@ -11,6 +11,8 @@ import type { IResultCapturer } from '@domain/ports/result-capturer.js';
 import type { IRefResolver } from '@domain/ports/ref-resolver.js';
 import { ManifestBuilder } from '@domain/services/manifest-builder.js';
 import { evaluateGate, type GateEvalContext } from './gate-evaluator.js';
+import { RefResolutionError } from '@infra/config/ref-resolver.js';
+import { logger } from '@shared/lib/logger.js';
 
 /**
  * Dependencies injected into the pipeline runner for testability.
@@ -83,6 +85,10 @@ export class PipelineRunner {
     const historyIds: string[] = [];
     let stagesCompleted = 0;
     let abortedAt: number | undefined;
+
+    if (this.deps.yolo) {
+      logger.warn('YOLO mode enabled — all gate checks are bypassed. Use only in non-production environments.');
+    }
 
     // Mark pipeline as active
     pipeline.state = 'active';
@@ -296,10 +302,13 @@ export class PipelineRunner {
         this.deps.refResolver,
       );
       return { ...stageDef, promptTemplate: resolvedPrompt };
-    } catch {
-      // If the ref can't be resolved (file missing), use the template path as-is.
-      // The adapter will receive the path string — not ideal but not fatal.
-      return stageDef;
+    } catch (err) {
+      if (err instanceof RefResolutionError) {
+        // File missing — use the template path as-is (adapter receives the path string).
+        logger.warn(`Could not resolve prompt template "${stageDef.promptTemplate}": ${err.message}`);
+        return stageDef;
+      }
+      throw err;
     }
   }
 
@@ -348,7 +357,10 @@ export class PipelineRunner {
     gate: Gate,
     context: GateEvalContext,
   ): Promise<'proceed' | 'skip' | 'abort'> {
-    if (this.deps.yolo) return 'proceed';
+    if (this.deps.yolo) {
+      logger.warn(`Gate bypassed (yolo mode): ${gate.type} gate with ${gate.conditions.length} condition(s)`);
+      return 'proceed';
+    }
 
     const MAX_RETRIES = 3;
 

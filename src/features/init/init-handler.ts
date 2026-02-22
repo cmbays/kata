@@ -6,6 +6,7 @@ import { StageRegistry } from '@infra/registries/stage-registry.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
 import { loadPipelineTemplates } from '@infra/persistence/pipeline-template-store.js';
 import { KATA_DIRS } from '@shared/constants/paths.js';
+import { logger } from '@shared/lib/logger.js';
 import { detectProject, type ProjectInfo } from './project-detector.js';
 
 export interface InitOptions {
@@ -175,7 +176,11 @@ export async function handleInit(options: InitOptions): Promise<InitResult> {
     const promptsDir = join(kataDir, KATA_DIRS.prompts);
     const mdFiles = readdirSync(builtinPromptsDir).filter((f) => f.endsWith('.md'));
     for (const mdFile of mdFiles) {
-      copyFileSync(join(builtinPromptsDir, mdFile), join(promptsDir, mdFile));
+      try {
+        copyFileSync(join(builtinPromptsDir, mdFile), join(promptsDir, mdFile));
+      } catch (err) {
+        logger.warn(`Could not copy prompt template "${mdFile}": ${err instanceof Error ? err.message : String(err)}`);
+      }
     }
   }
 
