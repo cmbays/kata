@@ -1,0 +1,9 @@
+{
+  "name": "Cooldown",
+  "type": "cooldown",
+  "description": "Cycle retrospective pipeline: review what was accomplished, then wrap up with learnings synthesis and next-cycle proposals. Used at the end of a Shape Up cycle to capture knowledge and plan forward.",
+  "stages": [
+    { "type": "review" },
+    { "type": "wrap-up" }
+  ]
+}

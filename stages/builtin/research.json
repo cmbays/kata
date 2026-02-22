@@ -1,0 +1,30 @@
+{
+  "type": "research",
+  "description": "Investigate the problem space, competitors, prior art, and technical landscape. Produces a research summary that informs all downstream stages.",
+  "exitGate": {
+    "type": "exit",
+    "conditions": [
+      {
+        "type": "artifact-exists",
+        "description": "Research summary document must be produced",
+        "artifactName": "research-summary"
+      }
+    ],
+    "required": true
+  },
+  "artifacts": [
+    {
+      "name": "research-summary",
+      "description": "Structured summary of research findings including problem space analysis, competitive landscape, and technical considerations",
+      "required": true,
+      "extension": ".md"
+    }
+  ],
+  "promptTemplate": "../prompts/research.md",
+  "learningHooks": [
+    "research-quality",
+    "domain-insights",
+    "competitive-analysis"
+  ],
+  "config": {}
+}

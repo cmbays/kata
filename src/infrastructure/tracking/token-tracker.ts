@@ -1,0 +1,106 @@
+import { join } from 'node:path';
+import { z } from 'zod/v4';
+import { JsonStore } from '@infra/persistence/json-store.js';
+import { TokenUsageSchema } from '@domain/types/history.js';
+import type { TokenUsage } from '@domain/types/history.js';
+import type { Budget, BudgetAlertLevel } from '@domain/types/cycle.js';
+import { calculateUtilization } from '@domain/rules/budget-rules.js';
+
+export interface BudgetAlert {
+  level: BudgetAlertLevel;
+  message: string;
+  tokensUsed: number;
+  tokenBudget: number;
+  utilizationPercent: number;
+}
+
+/** Schema for persisted usage records: a map of stageId -> TokenUsage */
+const UsageRecordSchema = z.record(z.string(), TokenUsageSchema);
+
+type UsageRecord = z.infer<typeof UsageRecordSchema>;
+
+/**
+ * Tracks token usage from Claude Code JSONL session files.
+ * Persists usage data to `.kata/tracking/usage.json`.
+ */
+export class TokenTracker {
+  private readonly usagePath: string;
+
+  constructor(basePath: string) {
+    this.usagePath = join(basePath, 'usage.json');
+  }
+
+  /**
+   * Record token usage for a stage execution.
+   */
+  recordUsage(stageId: string, tokenUsage: TokenUsage): void {
+    const records = this.loadRecords();
+    records[stageId] = tokenUsage;
+    JsonStore.write(this.usagePath, records, UsageRecordSchema);
+  }
+
+  /**
+   * Retrieve token usage for a specific stage.
+   */
+  getUsage(stageId: string): TokenUsage | undefined {
+    const records = this.loadRecords();
+    return records[stageId];
+  }
+
+  /**
+   * Sum all recorded token usage across all stages.
+   */
+  getTotalUsage(): number {
+    const records = this.loadRecords();
+    let total = 0;
+    for (const usage of Object.values(records)) {
+      total += usage.total;
+    }
+    return total;
+  }
+
+  /**
+   * Evaluate current usage against budget, return any alerts.
+   */
+  checkBudget(budget: Budget, tokensUsed: number): BudgetAlert[] {
+    const alerts: BudgetAlert[] = [];
+
+    if (!budget.tokenBudget) {
+      return alerts;
+    }
+
+    const { percent, alertLevel } = calculateUtilization(budget, tokensUsed);
+
+    if (alertLevel) {
+      const messages: Record<BudgetAlertLevel, string> = {
+        info: `Token usage at ${percent.toFixed(1)}% of budget — consider wrapping up soon`,
+        warning: `Token usage at ${percent.toFixed(1)}% of budget — approaching limit`,
+        critical: `Token usage at ${percent.toFixed(1)}% of budget — budget exceeded`,
+      };
+
+      alerts.push({
+        level: alertLevel,
+        message: messages[alertLevel],
+        tokensUsed,
+        tokenBudget: budget.tokenBudget,
+        utilizationPercent: percent,
+      });
+    }
+
+    return alerts;
+  }
+
+  /**
+   * Load persisted usage records, returning empty object if file doesn't exist.
+   */
+  private loadRecords(): UsageRecord {
+    if (!JsonStore.exists(this.usagePath)) {
+      return {};
+    }
+    try {
+      return JsonStore.read(this.usagePath, UsageRecordSchema);
+    } catch {
+      return {};
+    }
+  }
+}

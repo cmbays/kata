@@ -1,0 +1,41 @@
+{
+  "type": "wrap-up",
+  "description": "Retrospective and knowledge capture. Synthesize learnings from the pipeline run, extract patterns, update documentation, and propose improvements for future cycles.",
+  "entryGate": {
+    "type": "entry",
+    "conditions": [
+      {
+        "type": "artifact-exists",
+        "description": "Review findings must exist before wrap-up",
+        "artifactName": "review-findings"
+      }
+    ],
+    "required": true
+  },
+  "exitGate": {
+    "type": "exit",
+    "conditions": [
+      {
+        "type": "artifact-exists",
+        "description": "Wrap-up summary with learnings must be produced",
+        "artifactName": "wrap-up-summary"
+      }
+    ],
+    "required": true
+  },
+  "artifacts": [
+    {
+      "name": "wrap-up-summary",
+      "description": "Retrospective summary including captured learnings, pattern observations, improvement proposals, and documentation updates",
+      "required": true,
+      "extension": ".md"
+    }
+  ],
+  "promptTemplate": "../prompts/wrap-up.md",
+  "learningHooks": [
+    "retrospective-quality",
+    "process-improvement",
+    "knowledge-synthesis"
+  ],
+  "config": {}
+}

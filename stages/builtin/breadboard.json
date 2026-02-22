@@ -1,0 +1,41 @@
+{
+  "type": "breadboard",
+  "description": "Map the solution as places, affordances, and wiring. Define vertical slices for incremental delivery. Produces a breadboard document with complete interaction model.",
+  "entryGate": {
+    "type": "entry",
+    "conditions": [
+      {
+        "type": "artifact-exists",
+        "description": "Shaping document must exist before breadboarding",
+        "artifactName": "shaping-doc"
+      }
+    ],
+    "required": true
+  },
+  "exitGate": {
+    "type": "exit",
+    "conditions": [
+      {
+        "type": "artifact-exists",
+        "description": "Breadboard document must be produced",
+        "artifactName": "breadboard-doc"
+      }
+    ],
+    "required": true
+  },
+  "artifacts": [
+    {
+      "name": "breadboard-doc",
+      "description": "Breadboard document with places, UI/code affordances, data stores, wiring, and vertical slices",
+      "required": true,
+      "extension": ".md"
+    }
+  ],
+  "promptTemplate": "../prompts/breadboard.md",
+  "learningHooks": [
+    "breadboard-quality",
+    "interaction-design",
+    "vertical-slicing"
+  ],
+  "config": {}
+}

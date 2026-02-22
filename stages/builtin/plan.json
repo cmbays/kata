@@ -1,0 +1,41 @@
+{
+  "type": "plan",
+  "description": "Produce an implementation plan with waves, sessions, dependencies, and task breakdowns. Translates breadboard slices into executable work units.",
+  "entryGate": {
+    "type": "entry",
+    "conditions": [
+      {
+        "type": "artifact-exists",
+        "description": "Breadboard document must exist before planning",
+        "artifactName": "breadboard-doc"
+      }
+    ],
+    "required": true
+  },
+  "exitGate": {
+    "type": "exit",
+    "conditions": [
+      {
+        "type": "artifact-exists",
+        "description": "Implementation plan must be produced",
+        "artifactName": "implementation-plan"
+      }
+    ],
+    "required": true
+  },
+  "artifacts": [
+    {
+      "name": "implementation-plan",
+      "description": "Structured implementation plan with waves, sessions, dependencies, and task-level detail",
+      "required": true,
+      "extension": ".md"
+    }
+  ],
+  "promptTemplate": "../prompts/plan.md",
+  "learningHooks": [
+    "planning-quality",
+    "estimation-accuracy",
+    "dependency-management"
+  ],
+  "config": {}
+}

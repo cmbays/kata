@@ -1,0 +1,41 @@
+{
+  "type": "review",
+  "description": "Quality gate — review code, design, and artifacts for correctness, completeness, and adherence to standards. Produces review findings and a gate decision.",
+  "entryGate": {
+    "type": "entry",
+    "conditions": [
+      {
+        "type": "artifact-exists",
+        "description": "Build output must exist before review",
+        "artifactName": "build-output"
+      }
+    ],
+    "required": true
+  },
+  "exitGate": {
+    "type": "exit",
+    "conditions": [
+      {
+        "type": "artifact-exists",
+        "description": "Review findings document must be produced",
+        "artifactName": "review-findings"
+      }
+    ],
+    "required": true
+  },
+  "artifacts": [
+    {
+      "name": "review-findings",
+      "description": "Structured review findings with severity levels, file references, and fix recommendations",
+      "required": true,
+      "extension": ".md"
+    }
+  ],
+  "promptTemplate": "../prompts/review.md",
+  "learningHooks": [
+    "review-quality",
+    "code-patterns",
+    "quality-standards"
+  ],
+  "config": {}
+}

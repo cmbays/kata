@@ -1,0 +1,41 @@
+{
+  "type": "build",
+  "description": "Execute the implementation work defined in the plan. Produce code, tests, and artifacts. Follow session protocols for quality and completeness.",
+  "entryGate": {
+    "type": "entry",
+    "conditions": [
+      {
+        "type": "artifact-exists",
+        "description": "Implementation plan must exist before building",
+        "artifactName": "implementation-plan"
+      }
+    ],
+    "required": true
+  },
+  "exitGate": {
+    "type": "exit",
+    "conditions": [
+      {
+        "type": "artifact-exists",
+        "description": "Build output (code changes, PR, or deliverable) must be produced",
+        "artifactName": "build-output"
+      }
+    ],
+    "required": true
+  },
+  "artifacts": [
+    {
+      "name": "build-output",
+      "description": "Build deliverable — code changes, PR URL, test results, or other tangible output",
+      "required": true,
+      "extension": ".md"
+    }
+  ],
+  "promptTemplate": "../prompts/build.md",
+  "learningHooks": [
+    "build-quality",
+    "implementation-patterns",
+    "testing-coverage"
+  ],
+  "config": {}
+}

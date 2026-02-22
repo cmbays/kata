@@ -1,0 +1,11 @@
+{
+  "name": "Spike",
+  "type": "spike",
+  "description": "Technical investigation pipeline: research feasibility, breadboard a proof of concept, build a prototype, and wrap up with findings. Used to resolve unknowns before committing to full implementation.",
+  "stages": [
+    { "type": "research" },
+    { "type": "breadboard" },
+    { "type": "build" },
+    { "type": "wrap-up" }
+  ]
+}

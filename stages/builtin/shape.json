@@ -1,0 +1,41 @@
+{
+  "type": "shape",
+  "description": "Define requirements, solution shapes, and constraints. Evaluate options using fit checks. Select a shape with defined appetite and boundaries. Produces a shaping document.",
+  "entryGate": {
+    "type": "entry",
+    "conditions": [
+      {
+        "type": "artifact-exists",
+        "description": "Interview notes must exist before shaping",
+        "artifactName": "interview-notes"
+      }
+    ],
+    "required": true
+  },
+  "exitGate": {
+    "type": "exit",
+    "conditions": [
+      {
+        "type": "artifact-exists",
+        "description": "Shaping document must be produced",
+        "artifactName": "shaping-doc"
+      }
+    ],
+    "required": true
+  },
+  "artifacts": [
+    {
+      "name": "shaping-doc",
+      "description": "Complete shaping document with requirements (R), solution shapes (S), fit checks, and selected shape with appetite",
+      "required": true,
+      "extension": ".md"
+    }
+  ],
+  "promptTemplate": "../prompts/shape.md",
+  "learningHooks": [
+    "shaping-quality",
+    "requirement-clarity",
+    "scope-management"
+  ],
+  "config": {}
+}

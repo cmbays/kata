@@ -1,0 +1,12 @@
+{
+  "name": "Polish",
+  "type": "polish",
+  "description": "Refinement pipeline for improving existing work: review current state, plan improvements, build them, review again, and wrap up. Used for quality passes, UX refinement, and tech debt reduction.",
+  "stages": [
+    { "type": "review" },
+    { "type": "plan" },
+    { "type": "build" },
+    { "type": "review" },
+    { "type": "wrap-up" }
+  ]
+}

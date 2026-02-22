@@ -1,0 +1,15 @@
+{
+  "name": "Vertical Slice",
+  "type": "vertical",
+  "description": "Full vertical pipeline: research through wrap-up. The complete Shape Up-inspired development cycle for new features or significant enhancements.",
+  "stages": [
+    { "type": "research" },
+    { "type": "interview" },
+    { "type": "shape" },
+    { "type": "breadboard" },
+    { "type": "plan" },
+    { "type": "build" },
+    { "type": "review" },
+    { "type": "wrap-up" }
+  ]
+}

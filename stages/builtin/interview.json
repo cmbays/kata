@@ -1,0 +1,41 @@
+{
+  "type": "interview",
+  "description": "Gather user needs, pain points, priorities, and workflow context through structured stakeholder interviews. Produces interview notes that ground the shaping process.",
+  "entryGate": {
+    "type": "entry",
+    "conditions": [
+      {
+        "type": "artifact-exists",
+        "description": "Research summary must exist before conducting interviews",
+        "artifactName": "research-summary"
+      }
+    ],
+    "required": true
+  },
+  "exitGate": {
+    "type": "exit",
+    "conditions": [
+      {
+        "type": "artifact-exists",
+        "description": "Interview notes must be captured",
+        "artifactName": "interview-notes"
+      }
+    ],
+    "required": true
+  },
+  "artifacts": [
+    {
+      "name": "interview-notes",
+      "description": "Structured notes from stakeholder interviews covering workflow, pain points, desired features, and success criteria",
+      "required": true,
+      "extension": ".md"
+    }
+  ],
+  "promptTemplate": "../prompts/interview.md",
+  "learningHooks": [
+    "interview-technique",
+    "user-insights",
+    "requirement-discovery"
+  ],
+  "config": {}
+}
