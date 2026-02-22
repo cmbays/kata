@@ -1,12 +1,15 @@
 import { join } from 'node:path';
 import type { Command } from 'commander';
 import { CycleManager } from '@domain/services/cycle-manager.js';
+import { KnowledgeStore } from '@infra/knowledge/knowledge-store.js';
+import { TokenTracker } from '@infra/tracking/token-tracker.js';
+import { CooldownSession, type BetOutcomeRecord } from '@features/cycle-management/cooldown-session.js';
 import { resolveKataDir, getGlobalOptions } from '@cli/utils.js';
 import {
   formatCycleStatus,
-  formatCooldownReport,
   formatCycleStatusJson,
-  formatCooldownReportJson,
+  formatCooldownSessionResult,
+  formatBetOutcomePrompt,
 } from '@cli/formatters/cycle-formatter.js';
 
 /**
@@ -225,18 +228,77 @@ export function registerCycleCommands(parent: Command): void {
     .command('ma')
     .description('The space between — run cool-down reflection on a completed enbu')
     .argument('<cycle-id>', 'Cycle ID')
-    .action((cycleId: string, _opts, cmd) => {
+    .option('--skip-prompts', 'Skip interactive prompts')
+    .action(async (cycleId: string, _opts, cmd) => {
       const globalOpts = getGlobalOptions(cmd);
+      const localOpts = cmd.opts();
 
       try {
         const kataDir = resolveKataDir(globalOpts.cwd);
-        const manager = new CycleManager(join(kataDir, 'cycles'));
-        const report = manager.generateCooldown(cycleId);
+        const cyclesDir = join(kataDir, 'cycles');
+        const manager = new CycleManager(cyclesDir);
+        const knowledgeStore = new KnowledgeStore(join(kataDir, 'knowledge'));
+        const tokenTracker = new TokenTracker(join(kataDir, 'tracking'));
+
+        const session = new CooldownSession({
+          cycleManager: manager,
+          knowledgeStore,
+          tokenTracker,
+          cyclesDir,
+          pipelineDir: join(kataDir, 'pipelines'),
+          historyDir: join(kataDir, 'history'),
+        });
+
+        let betOutcomes: BetOutcomeRecord[] = [];
+
+        // Interactive mode: prompt for bet outcomes
+        if (!localOpts.skipPrompts) {
+          const report = manager.generateCooldown(cycleId);
+
+          if (report.bets.length > 0) {
+            const { select, input } = await import('@inquirer/prompts');
+
+            console.log('Review each bet and record its outcome:');
+            console.log('');
+
+            for (const bet of report.bets) {
+              console.log(formatBetOutcomePrompt(bet));
+              console.log('');
+
+              const outcome = await select({
+                message: `Outcome for "${bet.description}":`,
+                choices: [
+                  { name: 'Complete', value: 'complete' as const },
+                  { name: 'Partial', value: 'partial' as const },
+                  { name: 'Abandoned', value: 'abandoned' as const },
+                ],
+              });
+
+              let notes: string | undefined;
+              if (outcome !== 'complete') {
+                notes = await input({
+                  message: 'Notes (optional):',
+                  default: '',
+                }) || undefined;
+              }
+
+              betOutcomes.push({ betId: bet.betId, outcome, notes });
+            }
+            console.log('');
+          }
+        }
+
+        const result = await session.run(cycleId, betOutcomes);
 
         if (globalOpts.json) {
-          console.log(formatCooldownReportJson(report));
+          console.log(JSON.stringify({
+            report: result.report,
+            betOutcomes: result.betOutcomes,
+            proposals: result.proposals,
+            learningsCaptured: result.learningsCaptured,
+          }, null, 2));
         } else {
-          console.log(formatCooldownReport(report));
+          console.log(formatCooldownSessionResult(result));
         }
       } catch (error) {
         console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);

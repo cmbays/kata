@@ -107,6 +107,10 @@ Tests are colocated with source files (`*.test.ts` next to `*.ts`). Vitest globa
 - **GateEvaluator** (`@features/pipeline-run/`) — evaluateGate with exhaustive condition checking
 - **ResultCapturer** (`@features/pipeline-run/`) — pure history writer (token tracking is in PipelineRunner)
 - **InitHandler** (`@features/init/`) — project detection, interactive setup, builtin loading
+- **LearningExtractor** (`@features/self-improvement/`) — pattern detection across execution history, learning/prompt-update suggestions
+- **PromptUpdater** (`@features/self-improvement/`) — applies prompt template changes with backup, preview diffs
+- **CooldownSession** (`@features/cycle-management/`) — full cooldown orchestration with token enrichment, bet outcomes, proposal generation
+- **ProposalGenerator** (`@features/cycle-management/`) — next-cycle proposals from unfinished work, learnings, dependencies
 
 ### CLI command modules
 
@@ -114,15 +118,16 @@ Each module exports `registerXCommand(parent: Command)` in `src/cli/commands/`:
 - `init.ts` → `kata rei`
 - `stage.ts` → `kata form list`, `kata form inspect`
 - `pipeline.ts` → `kata flow start`, `kata flow status`, `kata flow prep`
-- `cycle.ts` → `kata enbu new`, `kata enbu status`, `kata enbu focus`; `kata ma`
+- `cycle.ts` → `kata enbu new`, `kata enbu status`, `kata enbu focus`; `kata ma` (interactive cooldown with proposals)
 - `knowledge.ts` → `kata bunkai query`, `kata bunkai stats`
-- `kiai` commands remain stubs (Wave 3+)
+- `learning-review.ts` → `kata bunkai review` (interactive learning review + prompt updates)
+- `kiai` commands remain stubs (Wave 4)
 
 CLI utility `src/cli/utils.ts`: `resolveKataDir()`, `getGlobalOptions()`
-Formatters in `src/cli/formatters/`: stage, pipeline, cycle, gate, knowledge (all support `--json`)
+Formatters in `src/cli/formatters/`: stage, pipeline, cycle, gate, knowledge, learning (all support `--json`)
 
 ## Implementation status
 
-**Waves 0-2 are complete.** 527 tests passing across 43 test files.
+**Waves 0-3 are complete.** 650 tests passing across 49 test files.
 
-The implementation plan (`docs/pipeline/plan.md`) defines 5 waves with 9 sessions. Wave 3 (Intelligence) is next: self-improvement loop + cooldown proposals.
+The implementation plan (`docs/pipeline/plan.md`) defines 5 waves with 9 sessions. Wave 4 (Polish) is next: integration tests, thematic naming verification, error handling, documentation, npm publishing prep.

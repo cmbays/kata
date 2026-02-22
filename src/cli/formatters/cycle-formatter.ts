@@ -1,5 +1,7 @@
 import type { BudgetStatus, Cycle } from '@domain/types/cycle.js';
-import type { CooldownReport } from '@domain/services/cycle-manager.js';
+import type { CooldownReport, CooldownBetReport } from '@domain/services/cycle-manager.js';
+import type { CycleProposal } from '@features/cycle-management/proposal-generator.js';
+import type { CooldownSessionResult } from '@features/cycle-management/cooldown-session.js';
 
 /**
  * Format cycle budget status as a human-readable summary.
@@ -100,6 +102,94 @@ export function formatCycleStatusJson(status: BudgetStatus, cycle: Cycle): strin
  */
 export function formatCooldownReportJson(report: CooldownReport): string {
   return JSON.stringify(report, null, 2);
+}
+
+/**
+ * Format cycle proposals as a human-readable list.
+ */
+export function formatProposals(proposals: CycleProposal[]): string {
+  if (proposals.length === 0) {
+    return 'No proposals generated for the next cycle.';
+  }
+
+  const lines: string[] = [];
+  lines.push('=== Next-Cycle Proposals ===');
+  lines.push('');
+
+  for (let i = 0; i < proposals.length; i++) {
+    const p = proposals[i]!;
+    const priorityTag = `[${p.priority.toUpperCase()}]`;
+    lines.push(`${i + 1}. ${priorityTag} ${p.description}`);
+    lines.push(`   Source: ${p.source} | Appetite: ${p.suggestedAppetite}%`);
+    lines.push(`   Rationale: ${p.rationale}`);
+
+    if (p.relatedBetIds && p.relatedBetIds.length > 0) {
+      lines.push(`   Related bets: ${p.relatedBetIds.join(', ')}`);
+    }
+    if (p.relatedLearningIds && p.relatedLearningIds.length > 0) {
+      lines.push(`   Related learnings: ${p.relatedLearningIds.join(', ')}`);
+    }
+    lines.push('');
+  }
+
+  return lines.join('\n').trimEnd();
+}
+
+/**
+ * Format proposals as JSON.
+ */
+export function formatProposalsJson(proposals: CycleProposal[]): string {
+  return JSON.stringify(proposals, null, 2);
+}
+
+/**
+ * Format a full cooldown session result.
+ */
+export function formatCooldownSessionResult(result: CooldownSessionResult): string {
+  const lines: string[] = [];
+
+  // Use the existing cooldown report formatter
+  lines.push(formatCooldownReport(result.report));
+  lines.push('');
+
+  // Bet outcomes section
+  if (result.betOutcomes.length > 0) {
+    lines.push('--- Bet Outcomes Recorded ---');
+    for (const outcome of result.betOutcomes) {
+      const icon = outcomeIcon(outcome.outcome);
+      lines.push(`  ${icon} ${outcome.betId}: ${outcome.outcome}${outcome.notes ? ` — ${outcome.notes}` : ''}`);
+    }
+    lines.push('');
+  }
+
+  // Learnings captured
+  if (result.learningsCaptured > 0) {
+    lines.push(`Learnings captured: ${result.learningsCaptured}`);
+    lines.push('');
+  }
+
+  // Proposals section
+  if (result.proposals.length > 0) {
+    lines.push(formatProposals(result.proposals));
+  } else {
+    lines.push('No proposals generated for the next cycle.');
+  }
+
+  return lines.join('\n').trimEnd();
+}
+
+/**
+ * Format a bet for the outcome selection prompt.
+ */
+export function formatBetOutcomePrompt(bet: CooldownBetReport): string {
+  const icon = outcomeIcon(bet.outcome);
+  const lines: string[] = [];
+  lines.push(`${icon} ${bet.description}`);
+  lines.push(`  Appetite: ${bet.appetite}% | Current outcome: ${bet.outcome} | Pipelines: ${bet.pipelineCount}`);
+  if (bet.outcomeNotes) {
+    lines.push(`  Notes: ${bet.outcomeNotes}`);
+  }
+  return lines.join('\n');
 }
 
 // ---- Helpers ----

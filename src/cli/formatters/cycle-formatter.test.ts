@@ -1,10 +1,16 @@
 import type { BudgetStatus, Cycle } from '@domain/types/cycle.js';
-import type { CooldownReport } from '@domain/services/cycle-manager.js';
+import type { CooldownReport, CooldownBetReport } from '@domain/services/cycle-manager.js';
+import type { CycleProposal } from '@features/cycle-management/proposal-generator.js';
+import type { CooldownSessionResult } from '@features/cycle-management/cooldown-session.js';
 import {
   formatCycleStatus,
   formatCooldownReport,
   formatCycleStatusJson,
   formatCooldownReportJson,
+  formatProposals,
+  formatProposalsJson,
+  formatCooldownSessionResult,
+  formatBetOutcomePrompt,
 } from './cycle-formatter.js';
 
 const makeCycle = (overrides: Partial<Cycle> = {}): Cycle => ({
@@ -154,5 +160,199 @@ describe('formatCooldownReportJson', () => {
     const result = formatCooldownReportJson(report);
     const parsed = JSON.parse(result);
     expect(parsed.cycleId).toBe('c1');
+  });
+});
+
+describe('formatProposals', () => {
+  const makeProposal = (overrides: Partial<CycleProposal> = {}): CycleProposal => ({
+    id: '00000000-0000-0000-0000-000000000099',
+    description: 'Continue: Build auth system',
+    rationale: 'Partially completed in previous cycle.',
+    suggestedAppetite: 24,
+    priority: 'high',
+    source: 'unfinished',
+    relatedBetIds: ['00000000-0000-0000-0000-000000000010'],
+    ...overrides,
+  });
+
+  it('shows empty message when no proposals', () => {
+    const result = formatProposals([]);
+    expect(result).toBe('No proposals generated for the next cycle.');
+  });
+
+  it('shows proposal with priority tag and details', () => {
+    const result = formatProposals([makeProposal()]);
+    expect(result).toContain('=== Next-Cycle Proposals ===');
+    expect(result).toContain('[HIGH]');
+    expect(result).toContain('Continue: Build auth system');
+    expect(result).toContain('Source: unfinished');
+    expect(result).toContain('Appetite: 24%');
+    expect(result).toContain('Partially completed');
+  });
+
+  it('shows related bet IDs', () => {
+    const result = formatProposals([makeProposal()]);
+    expect(result).toContain('Related bets: 00000000-0000-0000-0000-000000000010');
+  });
+
+  it('shows related learning IDs', () => {
+    const result = formatProposals([
+      makeProposal({
+        source: 'learning',
+        relatedBetIds: undefined,
+        relatedLearningIds: ['learning-1', 'learning-2'],
+      }),
+    ]);
+    expect(result).toContain('Related learnings: learning-1, learning-2');
+  });
+
+  it('numbers proposals correctly', () => {
+    const result = formatProposals([
+      makeProposal({ description: 'First proposal' }),
+      makeProposal({ id: 'id-2', description: 'Second proposal', priority: 'medium' }),
+    ]);
+    expect(result).toContain('1. [HIGH] First proposal');
+    expect(result).toContain('2. [MEDIUM] Second proposal');
+  });
+});
+
+describe('formatProposalsJson', () => {
+  it('returns valid JSON array', () => {
+    const proposals: CycleProposal[] = [
+      {
+        id: 'p1',
+        description: 'Test',
+        rationale: 'Reason',
+        suggestedAppetite: 20,
+        priority: 'high',
+        source: 'unfinished',
+      },
+    ];
+    const result = formatProposalsJson(proposals);
+    const parsed = JSON.parse(result);
+    expect(Array.isArray(parsed)).toBe(true);
+    expect(parsed[0].id).toBe('p1');
+  });
+
+  it('returns empty array for no proposals', () => {
+    const result = formatProposalsJson([]);
+    const parsed = JSON.parse(result);
+    expect(parsed).toEqual([]);
+  });
+});
+
+describe('formatCooldownSessionResult', () => {
+  const makeSessionResult = (overrides: Partial<CooldownSessionResult> = {}): CooldownSessionResult => ({
+    report: {
+      cycleId: '00000000-0000-0000-0000-000000000001',
+      cycleName: 'Sprint 1',
+      budget: { tokenBudget: 50000 },
+      tokensUsed: 40000,
+      utilizationPercent: 80,
+      bets: [
+        { betId: 'b1', description: 'Auth feature', appetite: 40, outcome: 'complete', pipelineCount: 2 },
+      ],
+      completionRate: 100,
+      summary: 'All done.',
+    },
+    betOutcomes: [],
+    proposals: [],
+    learningsCaptured: 0,
+    ...overrides,
+  });
+
+  it('includes cooldown report', () => {
+    const result = formatCooldownSessionResult(makeSessionResult());
+    expect(result).toContain('=== Ma (Cooldown) Report ===');
+    expect(result).toContain('Sprint 1');
+  });
+
+  it('shows bet outcomes when present', () => {
+    const result = formatCooldownSessionResult(
+      makeSessionResult({
+        betOutcomes: [
+          { betId: 'b1', outcome: 'complete', notes: 'All tests pass' },
+          { betId: 'b2', outcome: 'partial' },
+        ],
+      }),
+    );
+    expect(result).toContain('--- Bet Outcomes Recorded ---');
+    expect(result).toContain('[+] b1: complete');
+    expect(result).toContain('All tests pass');
+    expect(result).toContain('[~] b2: partial');
+  });
+
+  it('shows learnings captured count', () => {
+    const result = formatCooldownSessionResult(
+      makeSessionResult({ learningsCaptured: 3 }),
+    );
+    expect(result).toContain('Learnings captured: 3');
+  });
+
+  it('shows proposals when present', () => {
+    const result = formatCooldownSessionResult(
+      makeSessionResult({
+        proposals: [
+          {
+            id: 'p1',
+            description: 'Continue: Auth system',
+            rationale: 'Partial work',
+            suggestedAppetite: 24,
+            priority: 'high',
+            source: 'unfinished',
+          },
+        ],
+      }),
+    );
+    expect(result).toContain('=== Next-Cycle Proposals ===');
+    expect(result).toContain('Continue: Auth system');
+  });
+
+  it('shows no-proposals message when empty', () => {
+    const result = formatCooldownSessionResult(makeSessionResult());
+    expect(result).toContain('No proposals generated for the next cycle.');
+  });
+});
+
+describe('formatBetOutcomePrompt', () => {
+  it('formats a bet for outcome selection', () => {
+    const bet: CooldownBetReport = {
+      betId: 'b1',
+      description: 'Build authentication',
+      appetite: 30,
+      outcome: 'pending',
+      pipelineCount: 2,
+    };
+    const result = formatBetOutcomePrompt(bet);
+    expect(result).toContain('[ ] Build authentication');
+    expect(result).toContain('Appetite: 30%');
+    expect(result).toContain('Current outcome: pending');
+    expect(result).toContain('Pipelines: 2');
+  });
+
+  it('shows outcome notes when present', () => {
+    const bet: CooldownBetReport = {
+      betId: 'b2',
+      description: 'Search feature',
+      appetite: 25,
+      outcome: 'partial',
+      outcomeNotes: 'Basic search works, filters not done',
+      pipelineCount: 1,
+    };
+    const result = formatBetOutcomePrompt(bet);
+    expect(result).toContain('[~] Search feature');
+    expect(result).toContain('Notes: Basic search works, filters not done');
+  });
+
+  it('uses correct icons for each outcome', () => {
+    const complete: CooldownBetReport = {
+      betId: 'b1', description: 'Done', appetite: 20, outcome: 'complete', pipelineCount: 0,
+    };
+    const abandoned: CooldownBetReport = {
+      betId: 'b2', description: 'Dropped', appetite: 10, outcome: 'abandoned', pipelineCount: 0,
+    };
+
+    expect(formatBetOutcomePrompt(complete)).toContain('[+]');
+    expect(formatBetOutcomePrompt(abandoned)).toContain('[-]');
   });
 });

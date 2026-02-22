@@ -9,6 +9,7 @@ import {
   formatLearningJson,
   formatKnowledgeStatsJson,
 } from '@cli/formatters/knowledge-formatter.js';
+import { registerLearningReviewCommand } from './learning-review.js';
 
 /**
  * Register the `kata bunkai` subcommands — the breakdown and analysis.
@@ -75,4 +76,7 @@ export function registerKnowledgeCommands(parent: Command): void {
         process.exitCode = 1;
       }
     });
+
+  // kata bunkai review — interactive learning review session
+  registerLearningReviewCommand(bunkai);
 }
