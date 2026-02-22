@@ -1,10 +1,10 @@
 import { join } from 'node:path';
 import type { Cycle } from '@domain/types/cycle.js';
 import type { CycleManager } from '@domain/services/cycle-manager.js';
-import type { KnowledgeStore } from '@infra/knowledge/knowledge-store.js';
+import type { IKnowledgeStore } from '@domain/ports/knowledge-store.js';
+import type { IPersistence } from '@domain/ports/persistence.js';
 import type { Pipeline } from '@domain/types/pipeline.js';
 import { PipelineSchema } from '@domain/types/pipeline.js';
-import { JsonStore } from '@infra/persistence/json-store.js';
 import { logger } from '@shared/lib/logger.js';
 
 /**
@@ -27,9 +27,9 @@ export interface CycleProposal {
  */
 export interface ProposalGeneratorDeps {
   cycleManager: CycleManager;
-  knowledgeStore: KnowledgeStore;
+  knowledgeStore: IKnowledgeStore;
+  persistence: IPersistence;
   pipelineDir: string;
-  historyDir: string;
 }
 
 /**
@@ -225,9 +225,9 @@ export class ProposalGenerator {
 
     for (const id of pipelineIds) {
       const path = join(this.deps.pipelineDir, `${id}.json`);
-      if (JsonStore.exists(path)) {
+      if (this.deps.persistence.exists(path)) {
         try {
-          pipelines.push(JsonStore.read(path, PipelineSchema));
+          pipelines.push(this.deps.persistence.read(path, PipelineSchema));
         } catch (error) {
           logger.warn(`Skipping unreadable pipeline file: ${id}.json — ${error instanceof Error ? error.message : String(error)}`);
         }

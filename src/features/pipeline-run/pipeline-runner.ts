@@ -1,30 +1,28 @@
-import { join } from 'node:path';
 import type { Pipeline } from '@domain/types/pipeline.js';
-import { PipelineSchema } from '@domain/types/pipeline.js';
 import type { KataConfig } from '@domain/types/config.js';
 import type { Gate, GateResult } from '@domain/types/gate.js';
 import type { Stage } from '@domain/types/stage.js';
 import type { Learning } from '@domain/types/learning.js';
 import type { IStageRegistry } from '@domain/ports/stage-registry.js';
-import type { KnowledgeStore } from '@infra/knowledge/knowledge-store.js';
-import type { AdapterResolver } from '@infra/execution/adapter-resolver.js';
-import type { TokenTracker } from '@infra/tracking/token-tracker.js';
+import type { IKnowledgeStore } from '@domain/ports/knowledge-store.js';
+import type { IAdapterResolver } from '@domain/ports/adapter-resolver.js';
+import type { ITokenTracker } from '@domain/ports/token-tracker.js';
+import type { IResultCapturer } from '@domain/ports/result-capturer.js';
 import { ManifestBuilder } from '@domain/services/manifest-builder.js';
-import { JsonStore } from '@infra/persistence/json-store.js';
 import { evaluateGate, type GateEvalContext } from './gate-evaluator.js';
-import type { ResultCapturer } from './result-capturer.js';
 
 /**
  * Dependencies injected into the pipeline runner for testability.
  */
 export interface PipelineRunnerDeps {
   stageRegistry: IStageRegistry;
-  knowledgeStore: KnowledgeStore;
-  adapterResolver: AdapterResolver;
-  resultCapturer: ResultCapturer;
-  tokenTracker: TokenTracker;
+  knowledgeStore: IKnowledgeStore;
+  adapterResolver: IAdapterResolver;
+  resultCapturer: IResultCapturer;
+  tokenTracker: ITokenTracker;
   manifestBuilder: typeof ManifestBuilder;
-  pipelineDir: string;
+  /** Persist an updated pipeline snapshot to storage. */
+  persistPipeline: (pipeline: Pipeline) => void;
   /** Optional prompt function for interactive overrides */
   promptFn?: {
     gateOverride: (gateResult: GateResult) => Promise<'retry' | 'skip' | 'abort'>;
@@ -348,10 +346,9 @@ export class PipelineRunner {
   }
 
   /**
-   * Persist the pipeline to its JSON file.
+   * Persist the pipeline snapshot via the injected callback.
    */
   private persistPipeline(pipeline: Pipeline): void {
-    const filePath = join(this.deps.pipelineDir, `${pipeline.id}.json`);
-    JsonStore.write(filePath, pipeline, PipelineSchema);
+    this.deps.persistPipeline(pipeline);
   }
 }

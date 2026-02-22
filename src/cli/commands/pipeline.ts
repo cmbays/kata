@@ -10,6 +10,7 @@ import { KnowledgeStore } from '@infra/knowledge/knowledge-store.js';
 import { AdapterResolver } from '@infra/execution/adapter-resolver.js';
 import { TokenTracker } from '@infra/tracking/token-tracker.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
+import { loadPipelineTemplates } from '@infra/persistence/pipeline-template-store.js';
 import { PipelineRunner } from '@features/pipeline-run/pipeline-runner.js';
 import { ResultCapturer } from '@features/pipeline-run/result-capturer.js';
 import {
@@ -56,7 +57,7 @@ export function registerPipelineCommands(program: Command): void {
         : undefined;
 
       // Load template or create from type
-      const templates = PipelineComposer.loadTemplates(templateDir);
+      const templates = loadPipelineTemplates(templateDir);
       const template = templates.find((t) => t.type === type || t.name === type);
 
       let pipeline: Pipeline;
@@ -93,7 +94,8 @@ export function registerPipelineCommands(program: Command): void {
         resultCapturer,
         tokenTracker,
         manifestBuilder: ManifestBuilder,
-        pipelineDir,
+        persistPipeline: (p) =>
+          JsonStore.write(join(pipelineDir, `${p.id}.json`), p, PipelineSchema),
       });
 
       const result = await runner.run(pipeline, config);

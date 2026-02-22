@@ -5,6 +5,7 @@ import { CycleManager } from '@domain/services/cycle-manager.js';
 import { KnowledgeStore } from '@infra/knowledge/knowledge-store.js';
 import { ExecutionHistoryEntrySchema } from '@domain/types/history.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
+// JsonStore satisfies IPersistence structurally — passed as persistence adapter in deps
 import {
   CooldownSession,
   type CooldownSessionDeps,
@@ -28,12 +29,13 @@ describe('CooldownSession', () => {
     mkdirSync(pipelineDir, { recursive: true });
     mkdirSync(historyDir, { recursive: true });
 
-    cycleManager = new CycleManager(cyclesDir);
+    cycleManager = new CycleManager(cyclesDir, JsonStore);
     knowledgeStore = new KnowledgeStore(knowledgeDir);
 
     const deps: CooldownSessionDeps = {
       cycleManager,
       knowledgeStore,
+      persistence: JsonStore,
       pipelineDir,
       historyDir,
     };
