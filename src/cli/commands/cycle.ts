@@ -3,7 +3,7 @@ import type { Command } from 'commander';
 import { CycleManager } from '@domain/services/cycle-manager.js';
 import { KnowledgeStore } from '@infra/knowledge/knowledge-store.js';
 import { CooldownSession, type BetOutcomeRecord } from '@features/cycle-management/cooldown-session.js';
-import { resolveKataDir, getGlobalOptions } from '@cli/utils.js';
+import { resolveKataDir, getGlobalOptions, handleCommandError } from '@cli/utils.js';
 import {
   formatCycleStatus,
   formatCycleStatusJson,
@@ -12,17 +12,18 @@ import {
 } from '@cli/formatters/cycle-formatter.js';
 
 /**
- * Register the `kata enbu` and `kata ma` subcommands.
+ * Register the `kata cycle` and `kata cooldown` subcommands.
  */
 export function registerCycleCommands(parent: Command): void {
-  const enbu = parent
-    .command('enbu')
-    .description('Manage enbu (group performances) — time-boxed work periods with budgets');
+  const cycle = parent
+    .command('cycle')
+    .alias('enbu')
+    .description('Manage cycles — time-boxed work periods with budgets (alias: enbu)');
 
-  // kata enbu new — interactive wizard
-  enbu
+  // kata cycle new — interactive wizard
+  cycle
     .command('new')
-    .description('Create a new enbu')
+    .description('Create a new cycle')
     .option('-b, --budget <tokens>', 'Token budget', parseInt)
     .option('-t, --time <duration>', 'Time budget (e.g., "2 weeks")')
     .option('-n, --name <name>', 'Cycle name')
@@ -96,7 +97,7 @@ export function registerCycleCommands(parent: Command): void {
           if (globalOpts.json) {
             console.log(formatCycleStatusJson(status, updatedCycle));
           } else {
-            console.log('Enbu created!');
+            console.log('Cycle created!');
             console.log('');
             console.log(formatCycleStatus(status, updatedCycle));
           }
@@ -111,21 +112,20 @@ export function registerCycleCommands(parent: Command): void {
           if (globalOpts.json) {
             console.log(formatCycleStatusJson(status, cycle));
           } else {
-            console.log('Enbu created!');
+            console.log('Cycle created!');
             console.log('');
             console.log(formatCycleStatus(status, cycle));
           }
         }
       } catch (error) {
-        console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
-        process.exitCode = 1;
+        handleCommandError(error, globalOpts.verbose);
       }
     });
 
-  // kata enbu status [id]
-  enbu
+  // kata cycle status [id]
+  cycle
     .command('status')
-    .description('Show enbu status and budget')
+    .description('Show cycle status and budget')
     .argument('[id]', 'Cycle ID (shows all if omitted)')
     .action((id: string | undefined, _opts, cmd) => {
       const globalOpts = getGlobalOptions(cmd);
@@ -146,7 +146,7 @@ export function registerCycleCommands(parent: Command): void {
         } else {
           const cycles = manager.list();
           if (cycles.length === 0) {
-            console.log('No enbu found. Run "kata enbu new" to create one.');
+            console.log('No cycles found. Run "kata cycle new" to create one.');
             return;
           }
 
@@ -165,15 +165,14 @@ export function registerCycleCommands(parent: Command): void {
           }
         }
       } catch (error) {
-        console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
-        process.exitCode = 1;
+        handleCommandError(error, globalOpts.verbose);
       }
     });
 
-  // kata enbu focus <enbu-id> — add a bet interactively
-  enbu
+  // kata cycle focus <cycle-id> — add a bet interactively
+  cycle
     .command('focus')
-    .description('Add a focus (bet) to an enbu')
+    .description('Add a focus (bet) to a cycle')
     .argument('<cycle-id>', 'Cycle ID')
     .option('-d, --description <desc>', 'Bet description')
     .option('-a, --appetite <pct>', 'Appetite percentage', parseInt)
@@ -217,15 +216,15 @@ export function registerCycleCommands(parent: Command): void {
           console.log(formatCycleStatus(status, cycle));
         }
       } catch (error) {
-        console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
-        process.exitCode = 1;
+        handleCommandError(error, globalOpts.verbose);
       }
     });
 
-  // kata ma <enbu-id>
+  // kata cooldown <cycle-id>
   parent
-    .command('ma')
-    .description('The space between — run cool-down reflection on a completed enbu')
+    .command('cooldown')
+    .alias('ma')
+    .description('Run cooldown reflection on a completed cycle (alias: ma)')
     .argument('<cycle-id>', 'Cycle ID')
     .option('--skip-prompts', 'Skip interactive prompts')
     .action(async (cycleId: string, _opts, cmd) => {
@@ -245,7 +244,7 @@ export function registerCycleCommands(parent: Command): void {
           historyDir: join(kataDir, 'history'),
         });
 
-        let betOutcomes: BetOutcomeRecord[] = [];
+        const betOutcomes: BetOutcomeRecord[] = [];
 
         // Interactive mode: prompt for bet outcomes
         if (!localOpts.skipPrompts) {
@@ -297,8 +296,7 @@ export function registerCycleCommands(parent: Command): void {
           console.log(formatCooldownSessionResult(result));
         }
       } catch (error) {
-        console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
-        process.exitCode = 1;
+        handleCommandError(error, globalOpts.verbose);
       }
     });
 }

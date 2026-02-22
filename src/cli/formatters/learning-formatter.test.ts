@@ -129,7 +129,7 @@ describe('formatPromptUpdateDiff', () => {
 describe('formatReviewSummary', () => {
   it('shows accepted, rejected, and prompts updated', () => {
     const result = formatReviewSummary(5, 3, 2);
-    expect(result).toContain('=== Bunkai Review Summary ===');
+    expect(result).toContain('=== Knowledge Review Summary ===');
     expect(result).toContain('Learnings accepted:  5');
     expect(result).toContain('Learnings rejected:  3');
     expect(result).toContain('Prompts updated:     2');

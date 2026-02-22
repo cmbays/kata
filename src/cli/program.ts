@@ -1,4 +1,5 @@
 import { Command } from 'commander';
+import { setLoggerOptions } from '@shared/lib/logger.js';
 import { registerInitCommand } from './commands/init.js';
 import { registerStageCommands } from './commands/stage.js';
 import { registerPipelineCommands } from './commands/pipeline.js';
@@ -18,6 +19,14 @@ export function createProgram(): Command {
     .option('--verbose', 'Enable verbose logging')
     .option('--cwd <path>', 'Set working directory');
 
+  // Wire --verbose to logger before any command runs
+  program.hook('preAction', (_thisCommand, actionCommand) => {
+    const opts = actionCommand.optsWithGlobals();
+    if (opts.verbose) {
+      setLoggerOptions({ level: 'debug' });
+    }
+  });
+
   // Wire command modules
   registerInitCommand(program);
   registerStageCommands(program);
@@ -25,24 +34,25 @@ export function createProgram(): Command {
   registerCycleCommands(program);
   registerKnowledgeCommands(program);
 
-  // kata kiai — Execution management (stub — Wave 3+)
-  const kiai = program
-    .command('kiai')
-    .description('Manage execution sessions — the spirit shout of agent action');
+  // kata execute — Execution management (stub — Wave 3+)
+  const execute = program
+    .command('execute')
+    .alias('kiai')
+    .description('Manage execution sessions (alias: kiai)');
 
-  kiai
+  execute
     .command('run <stage>')
-    .description('Run a focused execution of a form')
-    .option('-p, --flow <id>', 'Flow context')
+    .description('Run a focused execution of a stage')
+    .option('-p, --pipeline <id>', 'Pipeline context')
     .action((stage: string) => {
-      console.log(`kata kiai run ${stage} — not yet implemented`);
+      console.log(`kata execute run ${stage} — not yet implemented`);
     });
 
-  kiai
+  execute
     .command('status')
-    .description('Show current kiai session status')
+    .description('Show current execution session status')
     .action(() => {
-      console.log('kata kiai status — not yet implemented');
+      console.log('kata execute status — not yet implemented');
     });
 
   return program;

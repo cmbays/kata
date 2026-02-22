@@ -2,7 +2,7 @@ import { join } from 'node:path';
 import type { Command } from 'commander';
 import { KnowledgeStore } from '@infra/knowledge/knowledge-store.js';
 import type { LearningFilter } from '@domain/types/learning.js';
-import { resolveKataDir, getGlobalOptions } from '@cli/utils.js';
+import { resolveKataDir, getGlobalOptions, handleCommandError } from '@cli/utils.js';
 import {
   formatLearningTable,
   formatKnowledgeStats,
@@ -12,15 +12,16 @@ import {
 import { registerLearningReviewCommand } from './learning-review.js';
 
 /**
- * Register the `kata bunkai` subcommands — the breakdown and analysis.
+ * Register the `kata knowledge` subcommands.
  */
 export function registerKnowledgeCommands(parent: Command): void {
-  const bunkai = parent
-    .command('bunkai')
-    .description('Manage bunkai (breakdowns) — patterns extracted from practice');
+  const knowledge = parent
+    .command('knowledge')
+    .alias('bunkai')
+    .description('Manage knowledge — patterns extracted from practice (alias: bunkai)');
 
-  // kata bunkai query
-  bunkai
+  // kata knowledge query
+  knowledge
     .command('query')
     .description('Query learnings by filters')
     .option('--stage <type>', 'Filter by stage type')
@@ -49,13 +50,12 @@ export function registerKnowledgeCommands(parent: Command): void {
           console.log(formatLearningTable(learnings));
         }
       } catch (error) {
-        console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
-        process.exitCode = 1;
+        handleCommandError(error, globalOpts.verbose);
       }
     });
 
-  // kata bunkai stats
-  bunkai
+  // kata knowledge stats
+  knowledge
     .command('stats')
     .description('Show knowledge store statistics')
     .action((_opts, cmd) => {
@@ -72,11 +72,10 @@ export function registerKnowledgeCommands(parent: Command): void {
           console.log(formatKnowledgeStats(stats));
         }
       } catch (error) {
-        console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
-        process.exitCode = 1;
+        handleCommandError(error, globalOpts.verbose);
       }
     });
 
-  // kata bunkai review — interactive learning review session
-  registerLearningReviewCommand(bunkai);
+  // kata knowledge review — interactive learning review session
+  registerLearningReviewCommand(knowledge);
 }

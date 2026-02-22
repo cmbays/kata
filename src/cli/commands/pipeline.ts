@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import type { Command } from 'commander';
-import { resolveKataDir, getGlobalOptions } from '@cli/utils.js';
+import { resolveKataDir, getGlobalOptions, handleCommandError } from '@cli/utils.js';
 import { PipelineSchema, PipelineType, type Pipeline } from '@domain/types/pipeline.js';
 import { KataConfigSchema } from '@domain/types/config.js';
 import { PipelineComposer } from '@domain/services/pipeline-composer.js';
@@ -22,20 +22,21 @@ import {
 } from '@cli/formatters/pipeline-formatter.js';
 
 /**
- * Register flow (pipeline) commands on the given parent Command.
+ * Register pipeline commands on the given parent Command.
  */
 export function registerPipelineCommands(program: Command): void {
-  const flow = program
-    .command('flow')
-    .description('Manage flows — ordered compositions of forms');
+  const pipeline = program
+    .command('pipeline')
+    .alias('flow')
+    .description('Manage pipelines — ordered compositions of stages (alias: flow)');
 
-  // kata flow start <type> [--enbu <cycle-id>] [--focus <bet-id>]
-  flow
+  // kata pipeline start <type> [--cycle <cycle-id>] [--focus <bet-id>]
+  pipeline
     .command('start <type>')
-    .description('Start a new flow from a template type')
-    .option('--enbu <cycle-id>', 'Link to an enbu (cycle)')
+    .description('Start a new pipeline from a template type')
+    .option('--cycle <cycle-id>', 'Link to a cycle')
     .option('--focus <bet-id>', 'Link to a bet within an enbu')
-    .action(async (type: string, opts: { enbu?: string; focus?: string }, cmd: Command) => {
+    .action(async (type: string, opts: { cycle?: string; focus?: string }, cmd: Command) => {
       const globals = getGlobalOptions(cmd);
 
       try {
@@ -65,7 +66,7 @@ export function registerPipelineCommands(program: Command): void {
         if (template) {
           const metadata = {
             issueRefs: [] as string[],
-            cycleId: opts.enbu,
+            cycleId: opts.cycle,
             betId: opts.focus,
           };
           pipeline = PipelineComposer.instantiate(template, metadata);
@@ -74,7 +75,7 @@ export function registerPipelineCommands(program: Command): void {
           console.error(
             `No template found for "${type}". ` +
             `Available types: ${validTypes.join(', ')}. ` +
-            `Create a template at ${templateDir}/${type}.json or use "kata flow prep".`,
+            `Create a template at ${templateDir}/${type}.json or use "kata pipeline prep".`,
           );
           process.exitCode = 1;
           return;
@@ -109,16 +110,15 @@ export function registerPipelineCommands(program: Command): void {
         if (!result.success) {
           process.exitCode = 1;
         }
-      } catch (err) {
-        console.error(err instanceof Error ? err.message : String(err));
-        process.exitCode = 1;
+      } catch (error) {
+        handleCommandError(error, globals.verbose);
       }
     });
 
-  // kata flow status [id]
-  flow
+  // kata pipeline status [id]
+  pipeline
     .command('status [id]')
-    .description('Show flow status (single or all)')
+    .description('Show pipeline status (single or all)')
     .action((id: string | undefined, _opts: unknown, cmd: Command) => {
       const globals = getGlobalOptions(cmd);
 
@@ -130,7 +130,7 @@ export function registerPipelineCommands(program: Command): void {
           // Show single pipeline
           const filePath = join(pipelineDir, `${id}.json`);
           if (!JsonStore.exists(filePath)) {
-            console.error(`Flow not found: ${id}`);
+            console.error(`Pipeline not found: ${id}`);
             process.exitCode = 1;
             return;
           }
@@ -150,16 +150,15 @@ export function registerPipelineCommands(program: Command): void {
             console.log(formatPipelineList(pipelines));
           }
         }
-      } catch (err) {
-        console.error(err instanceof Error ? err.message : String(err));
-        process.exitCode = 1;
+      } catch (error) {
+        handleCommandError(error, globals.verbose);
       }
     });
 
-  // kata flow prep <name> <stages...>
-  flow
+  // kata pipeline prep <name> <stages...>
+  pipeline
     .command('prep <name> <stages...>')
-    .description('Prepare a custom flow from form type names')
+    .description('Prepare a custom pipeline from stage type names')
     .action((name: string, stages: string[], _opts: unknown, cmd: Command) => {
       const globals = getGlobalOptions(cmd);
 
@@ -209,12 +208,11 @@ export function registerPipelineCommands(program: Command): void {
         if (globals.json) {
           console.log(formatPipelineStatusJson(pipeline));
         } else {
-          console.log(`Flow "${name}" prepped with ${stageRefs.length} forms.`);
+          console.log(`Pipeline "${name}" prepped with ${stageRefs.length} stages.`);
           console.log(`ID: ${pipeline.id}`);
         }
-      } catch (err) {
-        console.error(err instanceof Error ? err.message : String(err));
-        process.exitCode = 1;
+      } catch (error) {
+        handleCommandError(error, globals.verbose);
       }
     });
 }

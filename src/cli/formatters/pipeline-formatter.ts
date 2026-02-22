@@ -61,11 +61,11 @@ export function formatPipelineStatus(pipeline: Pipeline): string {
  */
 export function formatPipelineList(pipelines: Pipeline[]): string {
   if (pipelines.length === 0) {
-    return 'No flows found.';
+    return 'No pipelines found.';
   }
 
   const lines: string[] = [];
-  lines.push('Flows:');
+  lines.push('Pipelines:');
   lines.push('');
 
   // Header
@@ -103,9 +103,9 @@ export function formatPipelineResult(result: PipelineResult): string {
   const lines: string[] = [];
 
   if (result.success) {
-    lines.push(`Flow completed successfully!`);
+    lines.push(`Pipeline completed successfully!`);
   } else {
-    lines.push(`Flow execution failed.`);
+    lines.push(`Pipeline execution failed.`);
     if (result.abortedAt !== undefined) {
       lines.push(`Aborted at stage ${result.abortedAt + 1}.`);
     }

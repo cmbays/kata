@@ -1,20 +1,21 @@
 import { join } from 'node:path';
 import type { Command } from 'commander';
 import { StageRegistry } from '@infra/registries/stage-registry.js';
-import { resolveKataDir, getGlobalOptions } from '@cli/utils.js';
+import { resolveKataDir, getGlobalOptions, handleCommandError } from '@cli/utils.js';
 import { formatStageTable, formatStageDetail, formatStageJson } from '@cli/formatters/stage-formatter.js';
 
 /**
- * Register the `kata form` subcommands.
+ * Register the `kata stage` subcommands.
  */
 export function registerStageCommands(parent: Command): void {
-  const form = parent
-    .command('form')
-    .description('Manage forms (stages) — reusable methodology steps');
+  const stage = parent
+    .command('stage')
+    .alias('form')
+    .description('Manage stages — reusable methodology steps (alias: form)');
 
-  form
+  stage
     .command('list')
-    .description('List available forms')
+    .description('List available stages')
     .action((_opts, cmd) => {
       const globalOpts = getGlobalOptions(cmd);
 
@@ -29,14 +30,13 @@ export function registerStageCommands(parent: Command): void {
           console.log(formatStageTable(stages));
         }
       } catch (error) {
-        console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
-        process.exitCode = 1;
+        handleCommandError(error, globalOpts.verbose);
       }
     });
 
-  form
+  stage
     .command('inspect <type>')
-    .description('Show details of a specific form')
+    .description('Show details of a specific stage')
     .option('--flavor <flavor>', 'Stage flavor to inspect')
     .action((type: string, _opts, cmd) => {
       const globalOpts = getGlobalOptions(cmd);
@@ -53,8 +53,7 @@ export function registerStageCommands(parent: Command): void {
           console.log(formatStageDetail(stage));
         }
       } catch (error) {
-        console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
-        process.exitCode = 1;
+        handleCommandError(error, globalOpts.verbose);
       }
     });
 }

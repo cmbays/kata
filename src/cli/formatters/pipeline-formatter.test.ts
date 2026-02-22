@@ -88,9 +88,9 @@ describe('formatPipelineStatus', () => {
 });
 
 describe('formatPipelineList', () => {
-  it('should display "No flows found" when empty', () => {
+  it('should display "No pipelines found" when empty', () => {
     const output = formatPipelineList([]);
-    expect(output).toBe('No flows found.');
+    expect(output).toBe('No pipelines found.');
   });
 
   it('should display a summary for each pipeline', () => {

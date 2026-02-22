@@ -78,17 +78,17 @@ The type system models a methodology pipeline engine:
 
 ### CLI vocabulary — The Kata Lexicon
 
-All CLI commands use authentic karate terminology. Domain code keeps standard names (Stage, Pipeline, Cycle, Learning); the themed names are the CLI presentation layer.
+CLI commands use English names as primary, with Japanese karate aliases for a themed experience. Domain code keeps standard names (Stage, Pipeline, Cycle, Learning); the themed aliases are the CLI presentation layer.
 
-| Domain term | CLI command | Japanese meaning | Description |
-|-------------|------------|-----------------|-------------|
-| Stage | `kata form` | Form/pattern | Manage methodology steps |
-| Pipeline | `kata flow` | Flow of forms | Manage ordered compositions of forms |
-| Cycle | `kata enbu` | Group performance | Manage time-boxed work periods with budgets |
-| Setup/Init | `kata rei` | The bow | Initialize a project |
-| Execution | `kata kiai` | Spirit shout | Run focused execution sessions |
-| Learning | `kata bunkai` | The breakdown | Manage patterns extracted from practice |
-| Cooldown | `kata ma` | The space between | Run reflection on a completed enbu |
+| Domain term | CLI command | Japanese alias | Description |
+|-------------|------------|----------------|-------------|
+| Stage | `kata stage` | `kata form` | Manage methodology steps |
+| Pipeline | `kata pipeline` | `kata flow` | Manage ordered compositions of stages |
+| Cycle | `kata cycle` | `kata enbu` | Manage time-boxed work periods with budgets |
+| Setup/Init | `kata init` | `kata rei` | Initialize a project |
+| Execution | `kata execute` | `kata kiai` | Run focused execution sessions |
+| Learning | `kata knowledge` | `kata bunkai` | Manage patterns extracted from practice |
+| Cooldown | `kata cooldown` | `kata ma` | Run reflection on a completed cycle |
 
 ### Tests
 
@@ -115,19 +115,19 @@ Tests are colocated with source files (`*.test.ts` next to `*.ts`). Vitest globa
 ### CLI command modules
 
 Each module exports `registerXCommand(parent: Command)` in `src/cli/commands/`:
-- `init.ts` → `kata rei`
-- `stage.ts` → `kata form list`, `kata form inspect`
-- `pipeline.ts` → `kata flow start`, `kata flow status`, `kata flow prep`
-- `cycle.ts` → `kata enbu new`, `kata enbu status`, `kata enbu focus`; `kata ma` (interactive cooldown with proposals)
-- `knowledge.ts` → `kata bunkai query`, `kata bunkai stats`
-- `learning-review.ts` → `kata bunkai review` (interactive learning review + prompt updates)
-- `kiai` commands remain stubs (Wave 4)
+- `init.ts` → `kata init`
+- `stage.ts` → `kata stage list`, `kata stage inspect`
+- `pipeline.ts` → `kata pipeline start`, `kata pipeline status`, `kata pipeline prep`
+- `cycle.ts` → `kata cycle new`, `kata cycle status`, `kata cycle focus`; `kata cooldown` (interactive cooldown with proposals)
+- `knowledge.ts` → `kata knowledge query`, `kata knowledge stats`
+- `learning-review.ts` → `kata knowledge review` (interactive learning review + prompt updates)
+- `execute` commands remain stubs (future wave)
 
 CLI utility `src/cli/utils.ts`: `resolveKataDir()`, `getGlobalOptions()`
 Formatters in `src/cli/formatters/`: stage, pipeline, cycle, gate, knowledge, learning (all support `--json`)
 
 ## Implementation status
 
-**Waves 0-3 are complete.** 650 tests passing across 49 test files.
+**Waves 0-4 are complete.** 704 tests passing across 52 test files.
 
-The implementation plan (`docs/pipeline/plan.md`) defines 5 waves with 9 sessions. Wave 4 (Polish) is next: integration tests, thematic naming verification, error handling, documentation, npm publishing prep.
+The implementation plan (`docs/pipeline/plan.md`) defines 5 waves with 9 sessions.

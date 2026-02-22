@@ -40,10 +40,10 @@ describe('registerStageCommands', () => {
     return program;
   }
 
-  describe('form list', () => {
+  describe('stage list', () => {
     it('lists stages as table', async () => {
       const program = createProgram();
-      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'form', 'list']);
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'stage', 'list']);
 
       expect(consoleSpy).toHaveBeenCalled();
       const output = consoleSpy.mock.calls[0]?.[0] as string;
@@ -52,7 +52,7 @@ describe('registerStageCommands', () => {
 
     it('lists stages as JSON', async () => {
       const program = createProgram();
-      await program.parseAsync(['node', 'test', '--json', '--cwd', baseDir, 'form', 'list']);
+      await program.parseAsync(['node', 'test', '--json', '--cwd', baseDir, 'stage', 'list']);
 
       const output = consoleSpy.mock.calls[0]?.[0] as string;
       const parsed = JSON.parse(output);
@@ -65,26 +65,26 @@ describe('registerStageCommands', () => {
       mkdirSync(noKataDir, { recursive: true });
 
       const program = createProgram();
-      await program.parseAsync(['node', 'test', '--cwd', noKataDir, 'form', 'list']);
+      await program.parseAsync(['node', 'test', '--cwd', noKataDir, 'stage', 'list']);
 
       expect(errorSpy).toHaveBeenCalled();
       rmSync(noKataDir, { recursive: true, force: true });
     });
   });
 
-  describe('form inspect', () => {
+  describe('stage inspect', () => {
     it('shows stage detail', async () => {
       const program = createProgram();
-      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'form', 'inspect', 'research']);
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'stage', 'inspect', 'research']);
 
       const output = consoleSpy.mock.calls[0]?.[0] as string;
-      expect(output).toContain('Form: research');
+      expect(output).toContain('Stage: research');
       expect(output).toContain('Research step');
     });
 
     it('shows stage as JSON', async () => {
       const program = createProgram();
-      await program.parseAsync(['node', 'test', '--json', '--cwd', baseDir, 'form', 'inspect', 'research']);
+      await program.parseAsync(['node', 'test', '--json', '--cwd', baseDir, 'stage', 'inspect', 'research']);
 
       const output = consoleSpy.mock.calls[0]?.[0] as string;
       const parsed = JSON.parse(output);
@@ -93,7 +93,7 @@ describe('registerStageCommands', () => {
 
     it('shows error for unknown stage', async () => {
       const program = createProgram();
-      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'form', 'inspect', 'nonexistent']);
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'stage', 'inspect', 'nonexistent']);
 
       expect(errorSpy).toHaveBeenCalled();
     });

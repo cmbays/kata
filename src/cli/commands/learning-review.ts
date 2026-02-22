@@ -7,7 +7,7 @@ import { JsonStore } from '@infra/persistence/json-store.js';
 import { LearningExtractor } from '@features/self-improvement/learning-extractor.js';
 import type { SuggestedLearning } from '@features/self-improvement/learning-extractor.js';
 import { PromptUpdater } from '@features/self-improvement/prompt-updater.js';
-import { resolveKataDir, getGlobalOptions } from '@cli/utils.js';
+import { resolveKataDir, getGlobalOptions, handleCommandError } from '@cli/utils.js';
 import {
   formatSuggestedLearning,
   formatPromptUpdateDiff,
@@ -16,10 +16,10 @@ import {
 } from '@cli/formatters/learning-formatter.js';
 
 /**
- * Register the `bunkai review` subcommand on an existing bunkai command group.
+ * Register the `knowledge review` subcommand on an existing knowledge command group.
  */
-export function registerLearningReviewCommand(bunkai: Command): void {
-  bunkai
+export function registerLearningReviewCommand(knowledge: Command): void {
+  knowledge
     .command('review')
     .description('Interactive review of patterns extracted from execution history')
     .option('--stage <type>', 'Filter patterns by stage type')
@@ -157,8 +157,7 @@ export function registerLearningReviewCommand(bunkai: Command): void {
         console.log('');
         console.log(formatReviewSummary(accepted, rejected, promptsUpdated));
       } catch (error) {
-        console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
-        process.exitCode = 1;
+        handleCommandError(error, globalOpts.verbose);
       }
     });
 }
