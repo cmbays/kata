@@ -1,6 +1,6 @@
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync, copyFileSync } from 'node:fs';
 import { KataConfigSchema, type KataConfig } from '@domain/types/config.js';
 import { StageRegistry } from '@infra/registries/stage-registry.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
@@ -164,6 +164,19 @@ export async function handleInit(options: InitOptions): Promise<InitResult> {
   if (existsSync(builtinStagesDir)) {
     registry.loadBuiltins(builtinStagesDir);
     stagesLoaded = registry.list().length;
+  }
+
+  // Copy prompt templates to .kata/prompts/
+  // Stage JSONs reference "../prompts/<name>.md" (relative to .kata/stages/),
+  // so they resolve to .kata/prompts/<name>.md at runtime.
+  // Source: {packageRoot}/stages/prompts/*.md
+  const builtinPromptsDir = join(packageRoot, KATA_DIRS.stages, KATA_DIRS.prompts);
+  if (existsSync(builtinPromptsDir)) {
+    const promptsDir = join(kataDir, KATA_DIRS.prompts);
+    const mdFiles = readdirSync(builtinPromptsDir).filter((f) => f.endsWith('.md'));
+    for (const mdFile of mdFiles) {
+      copyFileSync(join(builtinPromptsDir, mdFile), join(promptsDir, mdFile));
+    }
   }
 
   // Load pipeline templates

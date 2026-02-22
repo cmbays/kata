@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { mkdirSync, rmSync, existsSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdirSync, rmSync, existsSync, writeFileSync, readFileSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { handleInit } from './init-handler.js';
 import { KataConfigSchema } from '@domain/types/config.js';
@@ -149,5 +149,35 @@ describe('handleInit', () => {
 
     expect(result.kataDir).toBe(join(baseDir, '.kata'));
     expect(result.config.methodology).toBe('shape-up');
+  });
+
+  it('copies prompt templates to .kata/prompts/', async () => {
+    await handleInit({ cwd: baseDir, skipPrompts: true });
+
+    const promptsDir = join(baseDir, '.kata', 'prompts');
+    expect(existsSync(promptsDir)).toBe(true);
+
+    const files = readdirSync(promptsDir);
+    // At least one .md prompt file should be present
+    expect(files.some((f) => f.endsWith('.md'))).toBe(true);
+  });
+
+  it('prompt files in .kata/prompts/ match builtin stage names', async () => {
+    await handleInit({ cwd: baseDir, skipPrompts: true });
+
+    const stagesDir = join(baseDir, '.kata', 'stages');
+    const promptsDir = join(baseDir, '.kata', 'prompts');
+
+    // Stages in .kata/stages/ reference "../prompts/<name>.md"
+    // Verify that each builtin stage with a promptTemplate has a matching file in prompts/
+    const stageFiles = readdirSync(stagesDir).filter((f) => f.endsWith('.json'));
+    expect(stageFiles.length).toBeGreaterThan(0);
+
+    const promptFiles = new Set(readdirSync(promptsDir));
+    for (const stageFile of stageFiles) {
+      const stageName = stageFile.replace(/\.json$/, '');
+      // Each builtin stage should have a corresponding .md prompt file
+      expect(promptFiles.has(`${stageName}.md`)).toBe(true);
+    }
   });
 });
