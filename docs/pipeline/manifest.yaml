@@ -1,0 +1,786 @@
+product: kata
+pipeline: 20260221-methodology-engine
+repo: kata  # Separate repo (D9) — not print-4ink
+
+waves:
+  # ─────────────────────────────────────────────
+  # Wave 0: Foundation — repo scaffold + all types
+  # ─────────────────────────────────────────────
+  - name: 'Foundation'
+    serial: true
+    sessions:
+      - topic: kata-foundation
+        stage: build
+        prompt: |
+          # kata Foundation — Repo Scaffold + Core Types
+
+          ## Context
+
+          You are building **kata** — a Development Methodology Engine (TypeScript library + CLI).
+          kata encodes development methodology as executable, composable stages with a self-improving
+          knowledge system. This is a GREENFIELD project in its own repository.
+
+          Read these design docs for full context:
+          - `docs/pipeline/shaping.md` — R0-R8, Shape A (A1-A9), D1-D17
+          - `docs/pipeline/breadboard.md` — Places, affordances, wiring, slices
+          - `docs/pipeline/plan.md` — full implementation plan
+
+          ## What to Build
+
+          1. **Create the kata repository** with this structure:
+             ```
+             kata/
+               src/
+                 domain/types/       # Zod schemas (A1)
+                 infrastructure/persistence/  # JSON file store utility
+                 shared/lib/          # Logger, errors, utilities
+                 cli/                 # Commander.js program skeleton
+               package.json
+               tsconfig.json
+               vitest.config.ts
+             ```
+
+          2. **Install ALL project dependencies** (no subsequent waves should modify package.json):
+             - Runtime: `zod`, `commander`, `@inquirer/prompts`
+             - Dev: `vitest`, `typescript`, `@types/node`, `eslint`, `tsup`
+
+          3. **Define all 8 Zod schemas** (A1 — Core Domain Types):
+             - `StageSchema` — type, flavor, gates[], artifacts[], promptTemplate ($ref string),
+               learningHooks[], config record. Flavor is optional (base stages have no flavor).
+             - `PipelineSchema` — id, name, type, stages[] (ordered StageRef[]), state enum
+               (draft|active|paused|complete|abandoned), currentStageIndex, metadata (projectRef,
+               issueRefs, betId), timestamps.
+             - `CycleSchema` — id, budget (tokenBudget?, timeBudget?), bets[], pipelineMappings[],
+               state enum (planning|active|cooldown|complete), timestamps.
+             - `GateSchema` — type enum (entry|exit), conditions[] (artifact-exists, schema-valid,
+               human-approved, predecessor-complete), required boolean.
+             - `ArtifactSchema` — name, description, schema (Zod schema ref as string), required.
+             - `BetSchema` — id, description, appetite (0-100), projectRef?, issueRefs[],
+               outcome enum (pending|complete|partial|abandoned).
+             - `LearningSchema` — id, tier enum (stage|category|agent), category, content,
+               evidence[] (pipelineId, stageType, observation), confidence (0-1), stageType?,
+               agentId?, timestamps.
+             - `ExecutionManifestSchema` — stageType, stageFlavor?, prompt (resolved string),
+               context (pipelineId, stageIndex, metadata), entryGate, exitGate,
+               artifactSchemas[], learnings[].
+
+          4. **Create JsonStore<T> utility** (`src/infrastructure/persistence/json-store.ts`):
+             - `read<T>(path: string, schema: ZodSchema<T>): T` — read file, parse JSON, validate
+             - `write<T>(path: string, data: T, schema: ZodSchema<T>): void` — validate, serialize, write
+             - `exists(path: string): boolean`
+             - `list<T>(dir: string, schema: ZodSchema<T>): T[]` — read all .json files in directory
+             - `ensureDir(path: string): void` — mkdir -p
+             - Handle errors gracefully: file not found, parse errors, validation failures
+
+          5. **Create Commander.js program skeleton** (`src/cli/`):
+             - `index.ts` — bin entry point
+             - `program.ts` — Commander program with:
+               - name: `kata`
+               - version from package.json
+               - Global options: `--json` (machine output), `--verbose` (debug)
+               - Subcommand registration pattern (each command file exports a function that
+                 registers on the program)
+             - Stub subcommands: begin, form, sequence, practice, memory, reflect
+             - `--help` shows all commands with thematic names
+
+          6. **Create logger** (`src/shared/lib/logger.ts`):
+             - Simple structured logger (console-based for v1, replaceable)
+             - Levels: debug, info, warn, error
+             - `--verbose` flag enables debug level
+             - JSON output mode for machine consumption
+
+          7. **Create error types** (`src/shared/lib/errors.ts`):
+             - `KataError` base class
+             - `ConfigNotFoundError` — .kata/ directory missing
+             - `ValidationError` — schema validation failure
+             - `StageNotFoundError`, `PipelineNotFoundError`, `CycleNotFoundError`
+
+          8. **Write comprehensive tests** for all schemas and JsonStore:
+             - Valid data passes all schemas
+             - Invalid data fails with clear error messages
+             - Edge cases: empty arrays, optional fields, enum boundaries
+             - JsonStore: read/write round-trip, missing files, invalid JSON, schema violations
+
+          ## Tech Decisions
+          - TypeScript strict mode, ESM modules, Node.js 20+
+          - Zod v4 for schemas, derive types via `z.infer<>`
+          - tsup for building (ESM + CJS dual package)
+          - Vitest for testing
+          - No `any` types — Zod inference everywhere
+
+          ## Acceptance Criteria
+          - `npm test` passes with all schema + JsonStore tests
+          - `npx kata --version` prints version
+          - `npx kata --help` shows command structure with thematic names
+          - All types exportable: `import { StageSchema, PipelineSchema } from './domain/types'`
+          - tsconfig strict passes with zero errors
+
+          ## Workspace Documentation
+
+          Before finalizing your work, commit implementation notes to:
+            docs/pipeline/kata-foundation-notes.md
+
+          Include:
+          - Schema design decisions (field choices, validation rules)
+          - Project structure rationale
+          - Any deferred decisions or open questions
+          - Links to key source files
+
+  # ─────────────────────────────────────────────
+  # Wave 1: Services — domain + infrastructure
+  # All 3 sessions depend only on Wave 0 types
+  # ─────────────────────────────────────────────
+  - name: 'Services'
+    serial: false
+    sessions:
+      - topic: stage-pipeline-manifest
+        stage: build
+        dependsOn: kata-foundation
+        prompt: |
+          # Stage Registry + Pipeline Composer + Manifest Builder
+
+          ## Context
+
+          You are building kata's stage/pipeline services. Read the implementation plan at
+          `docs/pipeline/plan.md` (Task 1.1) for full details.
+
+          Read the breadboard at `docs/pipeline/breadboard.md`
+          for affordance details — specifically A2 (N10-N14), A3 (N20-N23), A5 (N40-N43).
+
+          The Zod schemas and JsonStore utility from Wave 0 are available in the codebase.
+
+          ## What to Build
+
+          ### 1. Stage Registry (A2) — `src/infrastructure/registries/stage-registry.ts`
+          - `register(stage)` (N10) — validate with StageSchema, persist to .kata/stages/
+          - `get(type, flavor?)` (N11) — resolve by type + optional flavor
+          - `list(filter?)` (N12) — list all, optionally filter by type/flavor
+          - `loadBuiltins()` (N13) — register all 8 built-in stages from stages/builtin/
+          - `loadCustom(configPath)` (N14) — load user-defined stages from path
+
+          ### 2. Pipeline Composer (A3) — `src/domain/services/pipeline-composer.ts`
+          - `define(stages[])` (N20) — create pipeline definition from stage references
+          - `validate(pipeline)` (N21) — gate compatibility: stage N exit satisfies stage N+1 entry
+          - `loadTemplates()` (N22) — load 5 built-in pipeline templates from templates/
+          - `instantiate(template, context)` (N23) — create pipeline instance with state
+
+          ### 3. Manifest Builder (A5) — `src/domain/services/manifest-builder.ts`
+          - `build(stage, context, learnings)` (N40) — compose ExecutionManifest
+          - `resolveRefs(template)` (N41) — replace $ref strings with .md file content
+          - `attachGates(manifest, stage)` (N42) — add gate definitions to manifest
+          - `injectLearnings(manifest, learnings)` (N43) — add learning context section
+
+          ### 4. $ref Resolver — `src/infrastructure/config/ref-resolver.ts`
+          - Parse $ref strings (e.g., "./prompts/research.md")
+          - Read referenced file, inject content
+          - Error on missing references
+
+          ### 5. Built-in Stage Definitions — `stages/builtin/*.json`
+          Write 8 stage JSON files following StageSchema:
+          research, interview, shape, breadboard, plan, build, review, wrap-up
+
+          Each stage includes: type, entryGate, exitGate, artifactSchemas, learningHooks,
+          promptTemplate ($ref to .md file), optional config.
+
+          See shaping.md "Built-in Stage Templates" table for gate patterns.
+
+          ### 6. Prompt Templates — `stages/prompts/*.md`
+          Write 8 self-sufficient prompt .md files. Each guides ANY LLM through the stage
+          without specialized agents or skills. This is the null-state experience (R5).
+
+          Each prompt should include:
+          - Stage purpose and expected outcome
+          - Input requirements (what artifacts/context to expect)
+          - Step-by-step instructions
+          - Output format (artifact schema description)
+          - Quality criteria (what "done" looks like)
+
+          ### 7. Pipeline Templates — `templates/*.json`
+          Write 5 pipeline template JSON files: vertical, bug-fix, polish, spike, cooldown.
+          Each defines an ordered sequence of stage references.
+
+          ## Testing
+          - Stage Registry: registration, retrieval, filtering, builtin loading, duplicate handling
+          - Pipeline Composer: valid composition, gate mismatch detection, template loading
+          - Manifest Builder: full manifest generation, $ref resolution, learning injection
+          - Target: 90%+ coverage
+
+          ## Workspace Documentation
+
+          Before finalizing your work, commit implementation notes to:
+            docs/pipeline/stage-pipeline-manifest-notes.md
+
+          Include: architecture decisions, prompt template design rationale, gate compatibility
+          rules, any deferred work.
+
+      - topic: cycle-budget
+        stage: build
+        dependsOn: kata-foundation
+        prompt: |
+          # Cycle Manager + Token Tracker
+
+          ## Context
+
+          You are building kata's cycle management and token tracking services. Read the
+          implementation plan at `docs/pipeline/plan.md` (Task 1.2).
+
+          Read the breadboard for affordance details — A4 (N30-N35), Token Tracker (N94-N95).
+          Read `docs/pipeline/spike-token-budget.md` for token
+          budget design decisions.
+
+          ## What to Build
+
+          ### 1. Cycle Manager (A4) — `src/domain/services/cycle-manager.ts`
+          - `create(budget)` (N30) — create cycle with token and/or time budget
+          - `addBet(cycleId, bet)` (N31) — add bet with appetite (% of budget)
+          - `mapPipeline(betId, pipelineId)` (N32) — link pipeline execution to a bet
+          - `getBudgetStatus(cycleId)` (N33) — calculate current usage vs budget
+          - `checkDependencies(cycleId)` (N34) — detect cross-bet dependencies, warn (D5)
+          - `generateCooldown(cycleId)` (N35) — produce cooldown report data
+
+          ### 2. Budget Rules — `src/domain/rules/budget-rules.ts`
+          - Threshold alerts at 75%, 90%, 100% of budget
+          - Appetite validation (bets + cooldown reserve <= 100%)
+          - Budget is a CONSTRAINT, not a hard stop (Shape Up philosophy)
+          - Budget type: tokens (number) and/or time (duration string)
+
+          ### 3. Dependency Rules — `src/domain/rules/dependency-rules.ts`
+          - Detect cross-bet dependencies within a cycle
+          - Cross-bet deps are a methodology smell (D5)
+          - Suggestions: combine bets, sequence across cycles, or decouple
+          - WARN, don't block — user can acknowledge and proceed
+
+          ### 4. Token Tracker — `src/infrastructure/tracking/token-tracker.ts`
+          - `recordUsage(stageId, jsonlPath?)` (N94) — parse Claude Code JSONL, sum tokens
+          - `checkBudget(cycleId)` (N95) — compare actual usage against cycle budget
+          - If no JSONL path available, allow manual token entry
+
+          ### 5. JSONL Parser — `src/infrastructure/tracking/jsonl-parser.ts`
+          - Read Claude Code session files at ~/.claude/projects/{encoded-path}/*.jsonl
+          - Parse per-turn: input_tokens, output_tokens, cache_creation_input_tokens,
+            cache_read_input_tokens
+          - Sum totals per session file
+          - Handle malformed lines gracefully (skip, warn)
+
+          ## Key Design Decisions
+          - Budget = appetite/constraint, not prediction or hard stop (D13, spike-token-budget.md)
+          - Track actuals first, estimate from history later (phased approach)
+          - Cross-bet dependencies warn but don't block (D5)
+          - Cooldown reserve: suggest 10% of budget, configurable
+
+          ## Testing
+          - Cycle CRUD, bet management, appetite validation
+          - Budget threshold alerts at correct percentages
+          - Cross-bet dependency detection
+          - JSONL parsing with real-world file format
+          - Token summation accuracy
+          - Target: 90%+ coverage
+
+          ## Workspace Documentation
+
+          Before finalizing your work, commit implementation notes to:
+            docs/pipeline/cycle-budget-notes.md
+
+          Include: budget model decisions, JSONL parsing approach, dependency detection logic.
+
+      - topic: knowledge-adapters
+        stage: build
+        dependsOn: kata-foundation
+        prompt: |
+          # Knowledge Store + Execution Adapters
+
+          ## Context
+
+          You are building kata's knowledge persistence and execution adapter infrastructure.
+          Read the implementation plan at `docs/pipeline/plan.md`
+          (Task 1.3).
+
+          Read the breadboard for affordance details — A7 (N60-N66), A6 (N50-N54).
+          Read `docs/pipeline/spike-knowledge-graph.md` for
+          knowledge backing decisions.
+
+          ## What to Build
+
+          ### 1. Knowledge Store (A7) — `src/infrastructure/knowledge/knowledge-store.ts`
+          Three-tier learning model (R4):
+          - Tier 1 (Stage-level): applies to all instances of a stage type, auto-loaded
+          - Tier 2 (Category): applies within a stage flavor or domain, subscription-based
+          - Tier 3 (Agent-specific): personal behavioral patterns, always loaded for that agent
+
+          Methods:
+          - `capture(stageType, learning)` (N60) — persist to .kata/knowledge/learnings.json
+          - `query(filter)` (N61) — filter by tier, category, stageType, agentId, confidence
+          - `loadForStage(stageType)` (N62) — Tier 1 auto-load for a stage type
+          - `loadForSubscriptions(agentId)` (N63) — Tier 2 subscription-based loading
+          - `loadForAgent(agentId)` (N64) — Tier 3 agent-specific loading
+          - `subscribe(agentId, categories[])` (N65) — manage subscriptions (S6)
+          - `stats()` (N66) — summary: total learnings by tier, top categories, avg confidence
+
+          ### 2. Subscription Manager — `src/infrastructure/knowledge/subscription-manager.ts`
+          - Read/write .kata/knowledge/subscriptions.json (S6)
+          - Map agent IDs to category subscriptions
+          - Resolve subscriptions to learning queries
+
+          ### 3. Execution Adapter Interface (A6)
+
+          Port interface — `src/infrastructure/execution/execution-adapter.ts`:
+          ```typescript
+          interface IExecutionAdapter {
+            execute(manifest: ExecutionManifest): Promise<ExecutionResult>;
+          }
+          ```
+
+          Implementations:
+          - `ManualAdapter` (N52) — format manifest as human-readable instructions, print to
+            terminal. This is the null-state adapter (R5).
+          - `ClaudeCliAdapter` (N51) — spawn `claude` CLI process with manifest as prompt.
+            Read resulting session JSONL for token tracking.
+          - `ComposioAdapter` (N53) — call `ao spawn` with manifest context. Placeholder for v1.
+
+          ### 4. Adapter Resolver — `src/infrastructure/execution/adapter-resolver.ts`
+          - `resolve(config)` (N54) — read .kata/config.json, resolve adapter by name
+          - Config field: `execution.adapter: "manual" | "claude-cli" | "composio"`
+          - Default: "manual" (null-state)
+          - Extensible: custom adapter resolution via config
+
+          ## Key Design Decisions
+          - JSON files for knowledge backing (D11) — debuggable, zero deps, testable
+          - Interface abstracts backend for future Graphology swap
+          - Config-based adapter resolution (D14) — not CLI plugins
+          - ManualAdapter is the null-state default (R5, D8)
+          - ClaudeCliAdapter spawns a subprocess — needs error handling for missing `claude` binary
+
+          ## Testing
+          - Knowledge Store: 3-tier loading, capture, query with filters, stats
+          - Subscription Manager: subscribe/unsubscribe, resolution to queries
+          - ManualAdapter: produces readable output from manifest
+          - ClaudeCliAdapter: spawns process (mock in unit tests)
+          - AdapterResolver: resolves correct adapter from config
+          - Target: 90%+ coverage
+
+          ## Workspace Documentation
+
+          Before finalizing your work, commit implementation notes to:
+            docs/pipeline/knowledge-adapters-notes.md
+
+          Include: knowledge tier design, adapter interface decisions, null-state behavior.
+
+  # ─────────────────────────────────────────────
+  # Wave 2: Application Layer — CLI + Runner
+  # ─────────────────────────────────────────────
+  - name: 'Application Layer'
+    serial: false
+    sessions:
+      - topic: cli-init
+        stage: build
+        dependsOn: stage-pipeline-manifest
+        prompt: |
+          # CLI Framework + Init Wizard + Commands
+
+          ## Context
+
+          You are building kata's CLI layer and init wizard. Read the implementation plan at
+          `docs/pipeline/plan.md` (Task 2.1).
+
+          Read the breadboard for affordance details — A9 (N80-N89), P2 (Init Wizard),
+          P4 (Cycle Wizard). The thematic CLI naming table is in the breadboard's
+          "Thematic CLI Naming (D17)" section.
+
+          All services from Wave 1 are available: StageRegistry, PipelineComposer,
+          CycleManager, KnowledgeStore.
+
+          ## What to Build
+
+          ### 1. Init Wizard (P2) — `src/features/init/init-handler.ts`
+          `handleInit()` (N80) orchestrates:
+          1. Detect project state (git repo? existing .kata/? package.json?)
+          2. Display detection summary (U20)
+          3. Prompt: methodology framework (U21) — "Shape Up" (default) or custom
+          4. Prompt: execution adapter (U22) — manual (default), claude-cli, composio
+          5. Prompt: confirm pipeline templates (U23)
+          6. Create .kata/ directory structure
+          7. Write config.json (S1) with selections
+          8. Call StageRegistry.loadBuiltins() (N13) → writes to S2
+          9. Call PipelineComposer.loadTemplates() (N22) → writes to S3
+          10. Display completion summary (U24): files created, suggested next commands
+
+          ### 2. CLI Commands (thin wrappers over services)
+
+          All commands use thematic names (D17) with domain aliases:
+
+          | Command | Thematic | Alias | Handler |
+          |---------|----------|-------|---------|
+          | `kata begin` | init wizard | `kata init` | → handleInit() |
+          | `kata form list` | stage list | `kata stage list` | → StageRegistry.list() |
+          | `kata form inspect <type>` | stage inspect | `kata stage inspect` | → StageRegistry.get() |
+          | `kata practice new` | cycle new | `kata cycle new` | → Cycle Wizard |
+          | `kata practice status [id]` | cycle status | `kata cycle status` | → CycleManager.getBudgetStatus() |
+          | `kata practice focus <id>` | add bet | `kata cycle bet` | → CycleManager.addBet() |
+          | `kata reflect <id>` | cooldown | `kata cycle cooldown` | → CycleManager.generateCooldown() |
+          | `kata memory query` | knowledge query | `kata knowledge query` | → KnowledgeStore.query() |
+          | `kata memory stats` | knowledge stats | `kata knowledge stats` | → KnowledgeStore.stats() |
+
+          ### 3. Cycle Wizard (P4) — `src/cli/commands/cycle-new.ts`
+          Interactive prompts (U50-U55):
+          1. Budget prompt: token count and/or time box (U50)
+          2. Bet entry: description + issue URL (U51)
+          3. Appetite allocation: % of budget (U52)
+          4. Dependency check result display (U53)
+          5. "Add another bet?" loop (U54)
+          6. Cycle created summary (U55)
+
+          ### 4. Terminal Formatters — `src/cli/formatters/`
+          - Stage table: type, flavor, gate count, artifact count
+          - Stage detail: full definition with prompt preview (first 5 lines)
+          - Cycle summary: budget, bets with appetites, utilization %
+          - Knowledge table: tier, category, count, avg confidence
+          - All formatters support `--json` flag (raw JSON output)
+
+          ## Key Patterns
+          - Each command file exports a function: `(program: Command) => void`
+          - Commander.js subcommands with `.command()` and `.action()`
+          - @inquirer/prompts for interactive inputs (select, input, confirm)
+          - Formatters are pure functions: data in → formatted string out
+          - `--json` flag bypasses formatters, outputs raw JSON
+
+          ## Testing
+          - Init handler: mocked file system, verify .kata/ structure
+          - CLI commands: Commander test patterns (capture output)
+          - Formatters: snapshot tests for formatted output
+          - Target: 80%+ coverage
+
+          ## Workspace Documentation
+
+          Before finalizing your work, commit implementation notes to:
+            docs/pipeline/cli-init-notes.md
+
+          Include: command naming decisions, formatter patterns, init flow design.
+
+      - topic: pipeline-runner
+        stage: build
+        dependsOn: stage-pipeline-manifest
+        prompt: |
+          # Pipeline Runner
+
+          ## Context
+
+          You are building kata's core orchestration engine — the Pipeline Runner. This is
+          the heart of the system. Read the implementation plan at
+          `docs/pipeline/plan.md` (Task 2.2).
+
+          Read the breadboard CAREFULLY — the Core Flow diagram (P3: Pipeline Runner) shows
+          the exact traversal loop. See affordances N83-N84, N91-N96, P3, P3.1.
+
+          All services from Wave 1 are available: StageRegistry, PipelineComposer,
+          ManifestBuilder, KnowledgeStore, Execution Adapters, CycleManager, TokenTracker.
+
+          ## What to Build
+
+          ### 1. Pipeline Runner — `src/features/pipeline-run/pipeline-runner.ts`
+
+          `run(pipelineId: string): Promise<PipelineResult>` (N91)
+
+          The main traversal loop. For EACH STAGE in the pipeline:
+
+          ```
+          1. Display stage header (U31: "Stage 3/8: shape (base)")
+          2. Evaluate ENTRY gate (N92)
+             → If PASS: continue
+             → If FAIL: display result (U41) → override prompt (U42):
+               - retry → re-evaluate gate
+               - skip → proceed without gate satisfaction (log warning)
+               - abort → exit to shell (P1)
+          3. Load learnings (N62: Tier 1 for stage type, N63: Tier 2 subscriptions)
+             → Display loaded learnings summary (U32)
+          4. Build execution manifest (N40 → N41 resolve $refs → N43 inject learnings)
+             → Display manifest preview (U33: prompt excerpt, artifact schemas)
+          5. Resolve adapter (N54) → Execute (N50)
+             → Display execution output (U34)
+          6. Capture results (N93) → Record token usage (N94) → Write to history (S8)
+             → Evaluate EXIT gate (N92 exit) → Display validation (U35)
+          7. Check budget if mapped to cycle (N95 → alerts at 75/90/100%)
+          8. Prompt for learning capture (U36: "What worked? What didn't?")
+             → Store learning (N60)
+          9. Advance to next stage (N96)
+             → Display stage complete (U37)
+          ```
+
+          After ALL stages complete:
+          - Display pipeline complete summary (U38: artifacts, learnings, tokens)
+          - Navigate to Learning Review (P6) — but P6 is built in Wave 3,
+            so for now just display a message that learning review is available
+
+          ### 2. Gate Evaluator — `src/features/pipeline-run/gate-evaluator.ts`
+          - Evaluate gate conditions against pipeline state
+          - Condition types: artifact-exists, schema-valid, human-approved, predecessor-complete
+          - Return structured GateResult with per-condition pass/fail and details
+          - Support both entry gates and exit gates
+
+          ### 3. Result Capturer — `src/features/pipeline-run/result-capturer.ts`
+          - Capture execution results after adapter completes
+          - Update pipeline state (S3): mark stage complete, record artifacts
+          - Write execution history (S8): stage timing, token usage, artifacts, outcome
+          - Integrate with TokenTracker.recordUsage() for JSONL parsing
+          - Integrate with CycleManager.checkBudget() if pipeline mapped to cycle
+
+          ### 4. CLI Pipeline Commands
+          - `kata sequence start <type> [--practice <id> --focus <id>]` (N83):
+            - Instantiate pipeline from template
+            - If --practice and --focus provided: call CycleManager.mapPipeline() (N32)
+            - Launch PipelineRunner.run()
+          - `kata sequence status [id]` (N84):
+            - Display pipeline state, current stage, completion progress
+          - `kata sequence define <stages...>`:
+            - Create custom pipeline from stage list, validate gates (N20, N21)
+
+          ### 5. Pipeline Formatter — `src/cli/formatters/pipeline-formatter.ts`
+          - Stage progress: `[████████░░] 6/8 stages — currently: build`
+          - Gate results: colored pass/fail with condition details
+          - Manifest preview: truncated prompt, listed artifacts
+          - Pipeline summary: stages completed, total tokens, learnings captured
+          - Support `--json` for machine output
+
+          ## Key Design Decisions
+          - The runner is an async loop, not event-driven (simplicity for v1)
+          - Gate failures are interactive — user decides to retry/skip/abort
+          - Token tracking is optional — works without JSONL files (warn, continue)
+          - Budget alerts are informational, not blocking (Shape Up philosophy)
+          - Pipeline state persists to S3 — can resume interrupted pipelines
+
+          ## Testing
+          - Full loop with ManualAdapter (mock adapter that returns success)
+          - Gate evaluation: pass, fail, override paths
+          - Result capture: pipeline state updates, history writes
+          - Budget alert thresholds
+          - Resume: start, interrupt, verify state, continue
+          - Target: 80%+ coverage
+
+          ## Workspace Documentation
+
+          Before finalizing your work, commit implementation notes to:
+            docs/pipeline/pipeline-runner-notes.md
+
+          Include: orchestration loop design, gate evaluation strategy, state management
+          approach, error handling decisions.
+
+  # ─────────────────────────────────────────────
+  # Wave 3: Intelligence — self-improvement + cooldown
+  # ─────────────────────────────────────────────
+  - name: 'Intelligence'
+    serial: false
+    sessions:
+      - topic: self-improvement
+        stage: build
+        dependsOn: pipeline-runner
+        prompt: |
+          # Self-Improving Loop
+
+          ## Context
+
+          You are building kata's self-improvement engine — the system that gets better over
+          time. Read the implementation plan at `docs/pipeline/plan.md`
+          (Task 3.1).
+
+          Read the breadboard for A8 (N70-N73), P6 (Learning Review).
+
+          The Pipeline Runner (Wave 2) captures execution history to S8 and learnings to S5.
+          This feature analyzes that accumulated data to suggest improvements.
+
+          ## What to Build
+
+          ### 1. Learning Extractor — `src/features/self-improvement/learning-extractor.ts`
+          - `analyze(history[])` (N70) — find recurring patterns across pipeline executions
+            - Group history by stage type
+            - Compare success/failure patterns across runs
+            - Identify consistent observations (same insight appearing 3+ times)
+          - `suggestLearnings(patterns[])` (N71) — propose learnings
+            - Assign tier (1 if applies to stage type, 2 if category-specific)
+            - Calculate confidence from evidence count and consistency
+            - Format with evidence links (which pipeline runs support this)
+          - `suggestPromptUpdates(learnings[], stages[])` (N72) — propose prompt changes
+            - Compare current prompt template against accumulated learnings
+            - Generate concrete additions/modifications to prompt text
+            - Present as diffs (before/after)
+
+          ### 2. Prompt Updater — `src/features/self-improvement/prompt-updater.ts`
+          - `apply(stageType, update)` (N73) — apply accepted prompt update
+            - Backup original prompt template (append .bak)
+            - Update prompt .md file (S7)
+            - Optionally update stage definition (S2) if gate/artifact changes suggested
+            - Validate result: $refs still resolve, schema still valid
+
+          ### 3. Learning Review CLI (P6) — `src/cli/commands/learning-review.ts`
+          Interactive session after pipeline completion:
+          1. Display each suggested learning (U70): tier, category, evidence, confidence
+          2. For each: accept / reject / edit (U71)
+             - Accept → capture via KnowledgeStore.capture()
+             - Edit → modify content, then capture
+             - Reject → skip
+          3. Display suggested prompt updates (U72): show diff of current vs proposed
+          4. For each: accept / reject (U73)
+             - Accept → apply via PromptUpdater.apply()
+             - Reject → skip
+          5. Review summary (U74): N learnings accepted, M prompt updates applied
+
+          ## Key Design Decisions
+          - Threshold: 3+ consistent observations before suggesting (D13)
+          - Confidence scoring: evidence_count / total_runs for that stage type
+          - Prompt updates are SUGGESTIONS, never auto-applied — human reviews each one
+          - Backup before updating (safety net)
+          - This feature improves over time — early runs may not have enough data
+
+          ## Testing
+          - Pattern detection with mock execution histories
+          - Learning suggestion with confidence scoring
+          - Prompt update diff generation
+          - Apply with backup and validation
+          - Target: 80%+ coverage
+
+          ## Workspace Documentation
+
+          Before finalizing your work, commit implementation notes to:
+            docs/pipeline/self-improvement-notes.md
+
+          Include: pattern detection algorithm, confidence model, prompt update strategy.
+
+      - topic: cooldown-proposals
+        stage: build
+        dependsOn: pipeline-runner
+        prompt: |
+          # Cooldown + Cycle Proposals
+
+          ## Context
+
+          You are enhancing kata's cooldown session with richer analysis and next-cycle
+          proposal generation. Read the implementation plan at
+          `docs/pipeline/plan.md` (Task 3.2).
+
+          Read the breadboard for P5 (Cooldown Session), N35 (generateCooldown).
+
+          The basic CycleManager.generateCooldown() exists from Wave 1. This session
+          enriches it with detailed analysis and proposal intelligence.
+
+          ## What to Build
+
+          ### 1. Cooldown Session — `src/features/cycle-management/cooldown-session.ts`
+          Orchestrate the full cooldown flow (P5):
+          1. Cycle retrospective summary (U60):
+             - Budget utilization (tokens used / allocated, time elapsed / budgeted)
+             - Pipeline completion rates
+             - Timeline visualization (start date → now)
+          2. Per-bet outcome review (U61):
+             - Interactive: mark each bet as complete / partial / abandoned
+             - Capture reasoning for non-complete outcomes
+             - Calculate per-bet budget usage
+          3. Unblocked work display (U62):
+             - Analyze bet outcomes against dependency graph
+             - Show what completed bets now enable
+             - Highlight newly available epics/features
+          4. Next-cycle proposal (U63):
+             - Generate candidate bets from unblocked work
+             - Factor in learnings from current cycle
+             - Prioritize by: dependency urgency, learning confidence, user signals
+             - Include rationale for each suggestion
+          5. Cooldown complete confirmation (U64)
+
+          ### 2. Proposal Generator — `src/features/cycle-management/proposal-generator.ts`
+          - Read cycle data (S4): bet outcomes, budget utilization
+          - Read learnings (S5): what did we learn this cycle?
+          - Read history (S8): execution patterns, success/failure rates
+          - Generate prioritized list of candidate bets for next cycle
+          - Each proposal includes: description, suggested appetite, rationale, dependencies
+
+          ### 3. Enhance `kata reflect` formatter
+          - Rich terminal output for cooldown data
+          - Budget utilization bars
+          - Per-bet outcome summary with colors (green/yellow/red)
+          - Proposal table with rationale column
+
+          ## Testing
+          - Cooldown report generation with mock cycle data
+          - Bet outcome tracking
+          - Proposal generation from dependency graph
+          - Formatter output tests
+          - Target: 80%+ coverage
+
+          ## Workspace Documentation
+
+          Before finalizing your work, commit implementation notes to:
+            docs/pipeline/cooldown-proposals-notes.md
+
+          Include: proposal generation algorithm, dependency analysis approach, outcome tracking.
+
+  # ─────────────────────────────────────────────
+  # Wave 4: Polish — integration, naming, docs
+  # ─────────────────────────────────────────────
+  - name: 'Polish'
+    serial: true
+    sessions:
+      - topic: kata-polish
+        stage: build
+        dependsOn: self-improvement
+        prompt: |
+          # kata Polish — Integration, Naming, Testing, Docs
+
+          ## Context
+
+          All kata features are built. This session integrates everything, applies thematic
+          naming, adds E2E tests, and prepares for npm publishing.
+
+          Read the implementation plan at `docs/pipeline/plan.md`
+          (Task 4.1) for full details.
+
+          ## What to Do
+
+          ### 1. Thematic CLI Naming (D17)
+          Verify and polish all command names use kata vocabulary:
+          - `kata begin` (init), `kata form` (stage), `kata sequence` (pipeline),
+            `kata practice` (cycle), `kata memory` (knowledge), `kata reflect` (cooldown)
+          - Add plain-name aliases: `kata init`, `kata stage`, `kata pipeline`, `kata cycle`,
+            `kata knowledge`, `kata cooldown`
+          - Update all --help text to use thematic language naturally
+          - Verify tab completion works
+
+          ### 2. End-to-End Integration Tests
+          Write integration tests that exercise full workflows:
+          - **Null-state flow**: fresh dir → `kata begin` → `kata form list` → see 8 stages
+          - **Pipeline flow**: `kata begin` → `kata sequence start vertical` → traverse all
+            stages (ManualAdapter) → capture learnings → see summary
+          - **Cycle flow**: `kata practice new` → budget + 2 bets → `kata sequence start
+            --practice X --focus Y` → `kata reflect X`
+          - **Knowledge accumulation**: run 3 short pipelines → verify learning suggestions
+
+          ### 3. Error Handling Audit
+          - Missing .kata/ → suggest `kata begin`
+          - Invalid stage/pipeline/cycle references → clear error messages
+          - Corrupted JSON → validate on load, suggest repair path
+          - Missing Claude JSONL → skip token tracking with info message
+          - Ctrl+C → clean exit, no orphaned state
+
+          ### 4. README.md
+          - Installation: `npm install -g @withkata/core`
+          - Quickstart: begin → form list → sequence start → reflect
+          - Architecture overview diagram
+          - CLI reference table with all commands
+          - Link to design docs (shaping, breadboard)
+
+          ### 5. npm Publishing Prep
+          - tsup build config (ESM + CJS dual package)
+          - package.json: name, description, keywords, bin, exports, repository
+          - .npmignore: exclude tests, docs, .kata/ examples
+          - prepublishOnly: lint + test + build
+          - Verify: `npm pack` produces clean tarball
+
+          ## Acceptance
+          - All E2E tests pass
+          - `kata --help` is clear and uses thematic names
+          - Error messages are actionable
+          - README enables 5-minute quickstart
+          - `npm pack` succeeds with correct file list
+
+          ## Workspace Documentation
+
+          Before finalizing your work, commit implementation notes to:
+            docs/pipeline/kata-polish-notes.md
+
+          Include: naming audit results, integration test coverage, publishing decisions.
