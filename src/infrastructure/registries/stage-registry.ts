@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { unlinkSync } from 'node:fs';
 import { StageSchema, type Stage } from '@domain/types/stage.js';
 import type { IStageRegistry, StageFilter } from '@domain/ports/stage-registry.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
@@ -104,6 +105,20 @@ export class StageRegistry implements IStageRegistry {
     }
 
     return [...flavors].sort();
+  }
+
+  /**
+   * Delete a stage definition from disk and cache.
+   * @throws StageNotFoundError if the stage does not exist
+   */
+  delete(type: string, flavor?: string): void {
+    const key = stageKey(type, flavor);
+    const filePath = join(this.basePath, stageFilename(type, flavor));
+    if (!JsonStore.exists(filePath)) {
+      throw new StageNotFoundError(type, flavor);
+    }
+    unlinkSync(filePath);
+    this.stages.delete(key);
   }
 
   /**
