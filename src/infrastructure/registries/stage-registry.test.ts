@@ -251,6 +251,49 @@ describe('StageRegistry', () => {
     });
   });
 
+  describe('delete', () => {
+    it('deletes a registered stage from disk and cache', () => {
+      registry.register(makeStage({ type: 'build' }));
+      expect(existsSync(join(basePath, 'build.json'))).toBe(true);
+
+      registry.delete('build');
+
+      expect(existsSync(join(basePath, 'build.json'))).toBe(false);
+      expect(() => registry.get('build')).toThrow(StageNotFoundError);
+    });
+
+    it('returns the deleted stage', () => {
+      registry.register(makeStage({ type: 'build', description: 'Build step' }));
+
+      const deleted = registry.delete('build');
+
+      expect(deleted.type).toBe('build');
+      expect(deleted.description).toBe('Build step');
+    });
+
+    it('deletes a flavored stage', () => {
+      registry.register(makeStage({ type: 'build', flavor: 'go' }));
+
+      registry.delete('build', 'go');
+
+      expect(existsSync(join(basePath, 'build.go.json'))).toBe(false);
+    });
+
+    it('throws StageNotFoundError for missing stage', () => {
+      expect(() => registry.delete('nonexistent')).toThrow(StageNotFoundError);
+    });
+
+    it('does not affect sibling stages when one is deleted', () => {
+      registry.register(makeStage({ type: 'build' }));
+      registry.register(makeStage({ type: 'build', flavor: 'go' }));
+
+      registry.delete('build', 'go');
+
+      expect(existsSync(join(basePath, 'build.json'))).toBe(true);
+      expect(() => registry.get('build')).not.toThrow();
+    });
+  });
+
   describe('listFlavors', () => {
     it('should return all flavors for a given type', () => {
       registry.register(makeStage({ type: 'build' }));

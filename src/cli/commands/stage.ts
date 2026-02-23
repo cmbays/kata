@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { join, resolve } from 'node:path';
 import type { Command } from 'commander';
 import { StageRegistry } from '@infra/registries/stage-registry.js';
+import { StageNotFoundError } from '@shared/lib/errors.js';
 import { withCommandContext, kataDirPath } from '@cli/utils.js';
 import { formatStageTable, formatStageDetail, formatStageJson } from '@cli/formatters/stage-formatter.js';
 import { createStage } from '@features/stage-create/stage-creator.js';
@@ -175,7 +176,13 @@ async function promptGateConditions(gateLabel: string, existing: GateCondition[]
     } else if (condType === 'command-passes') {
       command = (await input({ message: '  Shell command to run:' })).trim() || undefined;
     }
-    conditions.push({ type: condType, description: condDesc || undefined, artifactName, predecessorType, command });
+    conditions.push({
+      type: condType,
+      ...(condDesc ? { description: condDesc } : {}),
+      ...(artifactName ? { artifactName } : {}),
+      ...(predecessorType ? { predecessorType } : {}),
+      ...(command ? { command } : {}),
+    } as GateCondition);
     addCond = await confirm({ message: `Add another ${gateLabel} gate condition?`, default: false });
   }
   return conditions;
@@ -201,12 +208,16 @@ async function promptResources(existing: StageResources | undefined): Promise<St
 
   let addTool = await confirm({ message: 'Add a tool?', default: false });
   while (addTool) {
-    const toolName = (await input({ message: '  Tool name (e.g., "tsc"):' })).trim();
-    const toolPurpose = (await input({ message: '  Purpose:' })).trim();
+    const toolName = (await input({
+      message: '  Tool name (e.g., "tsc"):',
+      validate: (v) => v.trim().length > 0 || 'Tool name is required',
+    })).trim();
+    const toolPurpose = (await input({
+      message: '  Purpose:',
+      validate: (v) => v.trim().length > 0 || 'Purpose is required',
+    })).trim();
     const toolCmd = (await input({ message: '  Invocation hint (optional):' })).trim();
-    if (toolName && toolPurpose) {
-      tools.push({ name: toolName, purpose: toolPurpose, command: toolCmd || undefined });
-    }
+    tools.push({ name: toolName, purpose: toolPurpose, command: toolCmd || undefined });
     addTool = await confirm({ message: 'Add another tool?', default: false });
   }
 
@@ -440,7 +451,12 @@ export function registerStageCommands(parent: Command): void {
 
       if (localOpts.fromFile) {
         const filePath = resolve(localOpts.fromFile as string);
-        const raw: unknown = JSON.parse(readFileSync(filePath, 'utf-8'));
+        let raw: unknown;
+        try {
+          raw = JSON.parse(readFileSync(filePath, 'utf-8'));
+        } catch (e) {
+          throw new Error(`Could not read stage file "${filePath}": ${e instanceof Error ? e.message : String(e)}`, { cause: e });
+        }
         const { stage } = createStage({ stagesDir, input: raw });
         if (isJson) {
           console.log(formatStageJson([stage]));
@@ -602,26 +618,50 @@ export function registerStageCommands(parent: Command): void {
       const registry = new StageRegistry(stagesDir);
       const existing = registry.get(type, flavor);
 
+      // Guard: refuse if target already exists (unless renaming to same key)
+      const oldKey = `${type}:${flavor ?? ''}`;
+      const newKey = `${newType}:${newFlavor ?? ''}`;
+      if (oldKey !== newKey) {
+        try {
+          registry.get(newType, newFlavor);
+          throw new Error(
+            `Stage "${stageLabel(newType, newFlavor)}" already exists. Delete it first or choose a different name.`
+          );
+        } catch (e) {
+          if (!(e instanceof StageNotFoundError)) throw e;
+        }
+      }
+
       // Build updated stage with new type+flavor
       let updated: Stage = { ...existing, type: newType, flavor: newFlavor };
 
-      // Handle prompt template path rename
+      // Plan prompt template file rename (but don't do it yet)
+      let oldPromptPath: string | undefined;
+      let newPromptPath: string | undefined;
       if (existing.promptTemplate) {
         const oldSlug = existing.flavor ? `${existing.type}.${existing.flavor}` : existing.type;
         const newSlug = newFlavor ? `${newType}.${newFlavor}` : newType;
         const promptsDir = join(ctx.kataDir, 'prompts');
-        const oldPromptPath = join(promptsDir, `${oldSlug}.md`);
-        const newPromptPath = join(promptsDir, `${newSlug}.md`);
-
-        if (existsSync(oldPromptPath)) {
-          renameSync(oldPromptPath, newPromptPath);
-        }
+        oldPromptPath = join(promptsDir, `${oldSlug}.md`);
+        newPromptPath = join(promptsDir, `${newSlug}.md`);
         updated = { ...updated, promptTemplate: `../prompts/${newSlug}.md` };
       }
 
-      // Write new stage, then delete old
-      createStage({ stagesDir, input: updated });
-      deleteStage({ stagesDir, type, flavor });
+      // Rename prompt file first (before touching stage JSONs)
+      if (oldPromptPath && newPromptPath && existsSync(oldPromptPath)) {
+        renameSync(oldPromptPath, newPromptPath);
+      }
+
+      // Write new stage then delete old; roll back prompt rename on failure
+      try {
+        createStage({ stagesDir, input: updated });
+        deleteStage({ stagesDir, type, flavor });
+      } catch (e) {
+        if (newPromptPath && oldPromptPath && existsSync(newPromptPath)) {
+          renameSync(newPromptPath, oldPromptPath);
+        }
+        throw e;
+      }
 
       const fromLabel = stageLabel(type, flavor);
       const toLabel = stageLabel(newType, newFlavor);

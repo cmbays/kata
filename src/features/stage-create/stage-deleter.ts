@@ -12,13 +12,12 @@ export interface StageDeleteResult {
 }
 
 /**
- * Load an existing stage and delete it from disk and cache.
+ * Delete an existing stage from disk and cache, returning the deleted stage.
  *
  * @throws StageNotFoundError if no stage with (type, flavor) exists
  */
 export function deleteStage(options: StageDeleteOptions): StageDeleteResult {
   const registry = new StageRegistry(options.stagesDir);
-  const deleted = registry.get(options.type, options.flavor);
-  registry.delete(options.type, options.flavor);
+  const deleted = registry.delete(options.type, options.flavor);
   return { deleted };
 }

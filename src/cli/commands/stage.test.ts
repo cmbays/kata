@@ -323,6 +323,18 @@ describe('registerStageCommands', () => {
       expect(parsed[0].flavor).toBe('typescript');
     });
 
+    it('accepts --ryu as alias for --flavor on edit', async () => {
+      const { select } = await import('@inquirer/prompts');
+      vi.mocked(select).mockResolvedValueOnce('save' as never);
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--json', '--cwd', baseDir, 'stage', 'edit', 'build', '--ryu', 'typescript']);
+
+      const output = consoleSpy.mock.calls[0]?.[0] as string;
+      const parsed = JSON.parse(output);
+      expect(parsed[0].flavor).toBe('typescript');
+    });
+
     it('shows error when editing a non-existent stage', async () => {
       const program = createProgram();
       await program.parseAsync(['node', 'test', '--cwd', baseDir, 'stage', 'edit', 'nonexistent']);
@@ -429,6 +441,21 @@ describe('registerStageCommands', () => {
 
       expect(existsSync(join(stagesDir, 'research.json'))).toBe(false);
     });
+
+    it('accepts --ryu as alias for --flavor on delete', async () => {
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'stage', 'delete', 'build', '--ryu', 'typescript', '--force']);
+
+      expect(existsSync(join(stagesDir, 'build.typescript.json'))).toBe(false);
+      expect(existsSync(join(stagesDir, 'build.json'))).toBe(true);
+    });
+
+    it('accepts wasure with --ryu alias', async () => {
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'stage', 'wasure', 'build', '--ryu', 'typescript', '--force']);
+
+      expect(existsSync(join(stagesDir, 'build.typescript.json'))).toBe(false);
+    });
   });
 
   // ---- stage rename ----
@@ -475,6 +502,32 @@ describe('registerStageCommands', () => {
       // build and build.typescript should be untouched
       expect(existsSync(join(stagesDir, 'build.json'))).toBe(true);
       expect(existsSync(join(stagesDir, 'build.typescript.json'))).toBe(true);
+    });
+
+    it('accepts --ryu as alias for --flavor on rename', async () => {
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'stage', 'rename', 'build', 'compile', '--ryu', 'typescript']);
+
+      expect(existsSync(join(stagesDir, 'build.typescript.json'))).toBe(false);
+      expect(existsSync(join(stagesDir, 'compile.typescript.json'))).toBe(true);
+    });
+
+    it('accepts --new-ryu as alias for --new-flavor on rename', async () => {
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir, 'stage', 'rename', 'build', 'compile',
+        '--flavor', 'typescript', '--new-ryu', 'ts',
+      ]);
+
+      expect(existsSync(join(stagesDir, 'compile.ts.json'))).toBe(true);
+    });
+
+    it('shows error when renaming to a type that already exists', async () => {
+      const program = createProgram();
+      // research already exists, trying to rename build → research
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'stage', 'rename', 'build', 'research']);
+
+      expect(errorSpy).toHaveBeenCalled();
     });
 
     it('shows error when source stage does not exist', async () => {

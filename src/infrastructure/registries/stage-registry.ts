@@ -103,17 +103,17 @@ export class StageRegistry implements IStageRegistry {
   }
 
   /**
-   * Delete a stage definition from disk and cache.
+   * Delete a stage definition from disk and cache, returning the deleted stage.
+   * Uses get() to ensure the stage is loaded into cache before deletion.
    * @throws StageNotFoundError if the stage does not exist
    */
-  delete(type: string, flavor?: string): void {
+  delete(type: string, flavor?: string): Stage {
+    const stage = this.get(type, flavor);
     const key = stageKey(type, flavor);
     const filePath = join(this.basePath, stageFilename(type, flavor));
-    if (!JsonStore.exists(filePath)) {
-      throw new StageNotFoundError(type, flavor);
-    }
     unlinkSync(filePath);
     this.stages.delete(key);
+    return stage;
   }
 
   /**
