@@ -34,7 +34,7 @@ export interface ConditionResult {
  * - `gate.required` is false (non-required gates always pass), OR
  * - ALL conditions pass
  */
-export function evaluateGate(gate: Gate, context: GateEvalContext): GateResult {
+export async function evaluateGate(gate: Gate, context: GateEvalContext): Promise<GateResult> {
   const results: ConditionResult[] = gate.conditions.map((condition) =>
     evaluateCondition(condition, context),
   );

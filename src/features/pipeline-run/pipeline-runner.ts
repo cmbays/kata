@@ -311,7 +311,7 @@ export class PipelineRunner {
     const MAX_RETRIES = 3;
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-      const result = evaluateGate(gate, context);
+      const result = await evaluateGate(gate, context);
       if (result.passed) {
         return 'proceed';
       }
