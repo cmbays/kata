@@ -33,14 +33,14 @@ describe('createStage', () => {
     expect(parsed.type).toBe('my-custom');
   });
 
-  it('writes a flavored stage with dot-colon filename', () => {
+  it('writes a flavored stage with dot-notation filename', () => {
     createStage({
       stagesDir: baseDir,
       input: { type: 'build', flavor: 'rust' },
     });
 
-    // StageRegistry uses "type:flavor.json" convention
-    const filePath = join(baseDir, 'build:rust.json');
+    // StageRegistry uses "type.flavor.json" dot-notation (from feat/wave5-flavors)
+    const filePath = join(baseDir, 'build.rust.json');
     expect(existsSync(filePath)).toBe(true);
 
     const raw = JSON.parse(readFileSync(filePath, 'utf-8'));
