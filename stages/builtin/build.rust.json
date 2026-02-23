@@ -27,6 +27,11 @@
         "command": "cargo test"
       },
       {
+        "type": "command-passes",
+        "description": "Clippy lints must pass with no warnings",
+        "command": "cargo clippy -- -D warnings"
+      },
+      {
         "type": "artifact-exists",
         "description": "Build output summary must be produced",
         "artifactName": "build-output"

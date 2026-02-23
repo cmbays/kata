@@ -90,13 +90,13 @@ describe('registerStageCommands', () => {
       rmSync(noKataDir, { recursive: true, force: true });
     });
 
-    it('filters by stage type when --flavor is passed', async () => {
+    it('filters by stage type when --type is passed', async () => {
       const program = createProgram();
-      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'stage', 'list', '--flavor', 'build']);
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'stage', 'list', '--type', 'build']);
 
       expect(consoleSpy).toHaveBeenCalled();
       const output = consoleSpy.mock.calls[0]?.[0] as string;
-      // Should contain build and build:typescript but not research
+      // Should contain build and build.typescript but not research
       expect(output).toContain('build');
       expect(output).not.toContain('research');
     });
@@ -111,9 +111,9 @@ describe('registerStageCommands', () => {
       expect(parsed.some((s: { type: string }) => s.type === 'build')).toBe(true);
     });
 
-    it('returns empty message when --flavor type has no stages', async () => {
+    it('returns empty message when --type has no matching stages', async () => {
       const program = createProgram();
-      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'stage', 'list', '--flavor', 'nonexistent']);
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'stage', 'list', '--type', 'nonexistent']);
 
       const output = consoleSpy.mock.calls[0]?.[0] as string;
       expect(output).toContain('No stages found');
