@@ -1,5 +1,15 @@
+import { vi } from 'vitest';
+import { spawnSync } from 'node:child_process';
 import type { Gate } from '@domain/types/gate.js';
 import { evaluateGate, type GateEvalContext } from './gate-evaluator.js';
+
+vi.mock('node:child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:child_process')>();
+  return {
+    ...actual,
+    spawnSync: vi.fn(actual.spawnSync),
+  };
+});
 
 describe('evaluateGate', () => {
   const baseContext: GateEvalContext = {
@@ -312,6 +322,80 @@ describe('evaluateGate', () => {
 
       expect(result.passed).toBe(false);
       expect(result.results[0]?.detail).toContain('bad output');
+    });
+
+    it('should fail when command is not found (shell exits 127)', async () => {
+      const gate: Gate = {
+        type: 'entry',
+        conditions: [{ type: 'command-passes', command: 'nonexistent-binary-kata-xyz-99999' }],
+        required: true,
+      };
+
+      const result = await evaluateGate(gate, baseContext);
+
+      expect(result.passed).toBe(false);
+      expect(result.results[0]?.detail).toBeDefined();
+    });
+
+    it('should throw (evaluateGate rejects) when proc.error is set', async () => {
+      vi.mocked(spawnSync).mockReturnValueOnce({
+        pid: 0,
+        output: [null, '', ''],
+        stdout: '',
+        stderr: '',
+        status: null,
+        signal: null,
+        error: new Error('spawn ENOENT'),
+      } as unknown as ReturnType<typeof spawnSync>);
+
+      const gate: Gate = {
+        type: 'entry',
+        conditions: [{ type: 'command-passes', command: 'any-cmd' }],
+        required: true,
+      };
+
+      await expect(evaluateGate(gate, baseContext)).rejects.toThrow(
+        'command-passes: failed to spawn shell',
+      );
+    });
+
+    it('should include signal name in detail when process is killed by a signal', async () => {
+      const gate: Gate = {
+        type: 'entry',
+        conditions: [
+          {
+            type: 'command-passes',
+            command: 'node -e "process.kill(process.pid, \'SIGTERM\')"',
+          },
+        ],
+        required: true,
+      };
+
+      const result = await evaluateGate(gate, baseContext);
+
+      expect(result.passed).toBe(false);
+      const detail = result.results[0]?.detail ?? '';
+      expect(detail.toLowerCase()).toMatch(/signal|sigterm/);
+    });
+
+    it('should truncate long output and append truncation marker', async () => {
+      const gate: Gate = {
+        type: 'entry',
+        conditions: [
+          {
+            type: 'command-passes',
+            command: 'node -e "process.stderr.write(\'x\'.repeat(1000)); process.exit(1)"',
+          },
+        ],
+        required: true,
+      };
+
+      const result = await evaluateGate(gate, baseContext);
+
+      expect(result.passed).toBe(false);
+      const detail = result.results[0]?.detail ?? '';
+      expect(detail).toContain('... (truncated)');
+      expect(detail.length).toBeLessThan(550);
     });
   });
 
