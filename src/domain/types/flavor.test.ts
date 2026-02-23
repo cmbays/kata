@@ -141,4 +141,16 @@ describe('FlavorSchema', () => {
     expect(flavor.steps[1].stepType).toBe('plan');
     expect(flavor.steps[0].stepName).not.toBe(flavor.steps[1].stepName);
   });
+
+  it('rejects duplicate stepName within the same flavor', () => {
+    expect(() =>
+      FlavorSchema.parse({
+        ...minimalFlavor,
+        steps: [
+          { stepName: 'shaping', stepType: 'shape' },
+          { stepName: 'shaping', stepType: 'breadboard' }, // same stepName
+        ],
+      }),
+    ).toThrow(/Duplicate stepName/);
+  });
 });

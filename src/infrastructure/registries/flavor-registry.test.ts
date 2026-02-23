@@ -1,9 +1,9 @@
-import { mkdtempSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, existsSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { Flavor } from '@domain/types/flavor.js';
 import type { Step } from '@domain/types/step.js';
-import { FlavorNotFoundError } from '@shared/lib/errors.js';
+import { KataError, FlavorNotFoundError } from '@shared/lib/errors.js';
 import { FlavorRegistry } from './flavor-registry.js';
 
 function makeFlavor(overrides: Partial<Flavor> = {}): Flavor {
@@ -456,6 +456,145 @@ describe('FlavorRegistry', () => {
 
       const result = registry.validate(flavor, stepResolver);
       expect(result.valid).toBe(true);
+    });
+  });
+
+  describe('validate — additional edge cases', () => {
+    it('rejects flavor with mixed valid and invalid override keys — only invalid key appears in errors', () => {
+      const flavor = makeFlavor({
+        overrides: {
+          shaping: { humanApproval: true },       // valid key
+          nonexistent: { confidenceThreshold: 0.5 }, // invalid key
+        },
+      });
+      const result = registry.validate(flavor);
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e) => e.includes('nonexistent'))).toBe(true);
+      // 'shaping' is valid — must not appear in errors
+      expect(result.errors.some((e) => e.includes('"shaping"'))).toBe(false);
+    });
+
+    it('handles multiple artifact-exists conditions in one gate — reports only unsatisfied ones', () => {
+      const step1 = makeStep({
+        type: 'shape',
+        artifacts: [{ name: 'shape-document', required: true }],
+      });
+      const step2 = makeStep({
+        type: 'breadboard',
+        entryGate: {
+          type: 'entry',
+          conditions: [
+            { type: 'artifact-exists', artifactName: 'shape-document' },   // satisfied
+            { type: 'artifact-exists', artifactName: 'missing-artifact' }, // not satisfied
+          ],
+          required: true,
+        },
+        artifacts: [{ name: 'breadboard-sketch', required: true }],
+      });
+
+      const stepResolver = (stepName: string) => {
+        if (stepName === 'shaping') return step1;
+        if (stepName === 'breadboarding') return step2;
+        return undefined;
+      };
+
+      const flavor = makeFlavor({
+        steps: [
+          { stepName: 'shaping', stepType: 'shape' },
+          { stepName: 'breadboarding', stepType: 'breadboard' },
+        ],
+        synthesisArtifact: 'breadboard-sketch',
+      });
+
+      const result = registry.validate(flavor, stepResolver);
+      expect(result.valid).toBe(false);
+      // Only the unsatisfied artifact produces an error
+      expect(result.errors.some((e) => e.includes('missing-artifact'))).toBe(true);
+      expect(result.errors.some((e) => e.includes('shape-document'))).toBe(false);
+      expect(result.errors).toHaveLength(1);
+    });
+
+    it('stepResolver receiving correct stepType for disambiguation', () => {
+      const shapeStep = makeStep({
+        type: 'shape',
+        artifacts: [{ name: 'shape-document', required: true }],
+      });
+      const planStep = makeStep({
+        type: 'plan',
+        artifacts: [{ name: 'plan-document', required: true }],
+      });
+
+      // Resolver dispatches on stepType, not just stepName
+      const stepResolver = (_stepName: string, stepType: string) => {
+        if (stepType === 'shape') return shapeStep;
+        if (stepType === 'plan') return planStep;
+        return undefined;
+      };
+
+      const flavor = makeFlavor({
+        steps: [
+          { stepName: 'my-shaping', stepType: 'shape' },
+          { stepName: 'my-planning', stepType: 'plan' },
+        ],
+        synthesisArtifact: 'plan-document',
+      });
+
+      const result = registry.validate(flavor, stepResolver);
+      expect(result.valid).toBe(true);
+    });
+
+    it('stepResolver that throws is handled gracefully — treated as unresolvable', () => {
+      const throwingResolver = () => {
+        throw new Error('Registry unavailable');
+      };
+
+      const flavor = makeFlavor({
+        steps: [{ stepName: 'shaping', stepType: 'shape' }],
+        synthesisArtifact: 'shape-document',
+      });
+
+      const result = registry.validate(flavor, throwingResolver);
+      expect(result.valid).toBe(false);
+      // Should report as unresolvable, not crash
+      expect(result.errors.some((e) => e.includes('could not be resolved'))).toBe(true);
+    });
+  });
+
+  describe('error handling', () => {
+    it('get() throws KataError when flavor file is corrupted', () => {
+      writeFileSync(join(basePath, 'plan.ui-planning.json'), '{ corrupted json }');
+
+      expect(() => registry.get('plan', 'ui-planning')).toThrow(KataError);
+    });
+
+    it('delete() throws KataError when file was externally removed after caching', () => {
+      registry.register(makeFlavor());
+      // Remove file directly while flavor is still in cache
+      unlinkSync(join(basePath, 'plan.ui-planning.json'));
+
+      expect(() => registry.delete('plan', 'ui-planning')).toThrow(KataError);
+    });
+  });
+
+  describe('list() cache semantics', () => {
+    it('does NOT load from disk when cache is already populated (documents known behavior)', () => {
+      // Write flavorB directly to disk before any registry interaction
+      writeFileSync(
+        join(basePath, 'plan.data-model.json'),
+        JSON.stringify(makeFlavor({ name: 'data-model' })),
+      );
+
+      // Register a different flavor — now cache is non-empty
+      registry.register(makeFlavor({ name: 'ui-planning' }));
+
+      // list() skips disk scan because cache.size > 0
+      // Only the registered flavor is returned, not the one on disk
+      const flavors = registry.list();
+      expect(flavors.some((f) => f.name === 'ui-planning')).toBe(true);
+      expect(flavors.some((f) => f.name === 'data-model')).toBe(false);
+      // Use a fresh registry instance to see both:
+      const fresh = new FlavorRegistry(basePath);
+      expect(fresh.list()).toHaveLength(2);
     });
   });
 

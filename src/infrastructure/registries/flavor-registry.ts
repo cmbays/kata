@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import { unlinkSync } from 'node:fs';
 import { FlavorSchema, type Flavor } from '@domain/types/flavor.js';
+import type { Step } from '@domain/types/step.js';
 import type { StageCategory } from '@domain/types/stage.js';
 import type {
   IFlavorRegistry,
@@ -8,7 +9,8 @@ import type {
   StepResolver,
 } from '@domain/ports/flavor-registry.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
-import { FlavorNotFoundError } from '@shared/lib/errors.js';
+import { KataError, FlavorNotFoundError } from '@shared/lib/errors.js';
+import { logger } from '@shared/lib/logger.js';
 
 /**
  * Build the in-memory cache key for a flavor: `{stageCategory}:{name}`.
@@ -27,10 +29,36 @@ function flavorFilename(stageCategory: StageCategory, name: string): string {
 }
 
 /**
+ * Safely call a StepResolver, converting any thrown exception to undefined.
+ * The StepResolver contract specifies returning undefined for unknown steps,
+ * but a resolver backed by a throwing registry would otherwise escape validate()
+ * and bypass the FlavorValidationResult error accumulation contract.
+ */
+function safeResolve(
+  stepResolver: StepResolver,
+  stepName: string,
+  stepType: string,
+): Step | undefined {
+  try {
+    return stepResolver(stepName, stepType);
+  } catch (err) {
+    logger.warn(
+      `StepResolver threw unexpectedly for step "${stepName}" (type: "${stepType}") — treating as unresolvable.`,
+      { stepName, stepType, error: err instanceof Error ? err.message : String(err) },
+    );
+    return undefined;
+  }
+}
+
+/**
  * Flavor Registry — manages Flavor definitions with JSON file persistence.
  *
  * Flavors are persisted to `basePath/{stageCategory}.{name}.json`.
  * Uses an in-memory cache backed by JsonStore for file I/O.
+ *
+ * Cache semantics: list() loads from disk only when the cache is empty.
+ * Once any flavor is registered or loaded, subsequent list() calls return
+ * only in-memory state. Use a fresh registry instance to re-scan disk.
  */
 export class FlavorRegistry implements IFlavorRegistry {
   private readonly flavors = new Map<string, Flavor>();
@@ -53,6 +81,7 @@ export class FlavorRegistry implements IFlavorRegistry {
   /**
    * Retrieve a flavor by stage category and name.
    * @throws FlavorNotFoundError if the flavor is not registered or on disk
+   * @throws KataError if the flavor file exists but is corrupted or schema-incompatible
    */
   get(stageCategory: StageCategory, name: string): Flavor {
     const key = flavorKey(stageCategory, name);
@@ -64,7 +93,16 @@ export class FlavorRegistry implements IFlavorRegistry {
     // Try loading from disk
     const filePath = join(this.basePath, flavorFilename(stageCategory, name));
     if (JsonStore.exists(filePath)) {
-      const flavor = JsonStore.read(filePath, FlavorSchema);
+      let flavor: Flavor;
+      try {
+        flavor = JsonStore.read(filePath, FlavorSchema);
+      } catch (err) {
+        throw new KataError(
+          `Flavor "${stageCategory}/${name}" exists on disk but could not be loaded. ` +
+            `The file at ${filePath} may be corrupted or schema-incompatible. ` +
+            `Details: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
       this.flavors.set(key, flavor);
       return flavor;
     }
@@ -74,6 +112,7 @@ export class FlavorRegistry implements IFlavorRegistry {
 
   /**
    * List all registered flavors, optionally filtered by stage category.
+   * Loads from disk only when the cache is empty.
    */
   list(stageCategory?: StageCategory): Flavor[] {
     if (this.flavors.size === 0) {
@@ -92,19 +131,30 @@ export class FlavorRegistry implements IFlavorRegistry {
   /**
    * Delete a flavor from disk and cache, returning the deleted flavor.
    * @throws FlavorNotFoundError if the flavor does not exist
+   * @throws KataError if the file cannot be deleted (e.g., permission denied)
    */
   delete(stageCategory: StageCategory, name: string): Flavor {
     const flavor = this.get(stageCategory, name);
     const key = flavorKey(stageCategory, name);
     const filePath = join(this.basePath, flavorFilename(stageCategory, name));
-    unlinkSync(filePath);
+
+    try {
+      unlinkSync(filePath);
+    } catch (err) {
+      throw new KataError(
+        `Failed to delete flavor "${stageCategory}/${name}": ` +
+          `${err instanceof Error ? err.message : String(err)}. ` +
+          `Check file permissions at ${filePath}.`,
+      );
+    }
+
     this.flavors.delete(key);
     return flavor;
   }
 
   /**
    * Load built-in flavor definitions from a directory.
-   * Each .json file should conform to FlavorSchema.
+   * Each .json file should conform to FlavorSchema. Invalid files are skipped (logged by JsonStore).
    */
   loadBuiltins(builtinDir: string): void {
     const flavors = JsonStore.list(builtinDir, FlavorSchema);
@@ -120,13 +170,9 @@ export class FlavorRegistry implements IFlavorRegistry {
    * Validate a flavor structurally and, when a stepResolver is provided,
    * perform full DAG validation of artifact dependencies.
    *
-   * DAG validation checks that each step's `artifact-exists` entry gate
-   * conditions can be satisfied by:
-   * 1. Artifacts produced by preceding steps in this flavor (`step.artifacts`)
-   * 2. The optional stage-level input artifacts (handoff from the prior Stage)
-   *
-   * Also verifies that the final set of produced artifacts includes the
-   * flavor's declared synthesisArtifact.
+   * Without a stepResolver, valid: true only means the flavor is structurally
+   * correct — it does NOT guarantee the synthesisArtifact is reachable.
+   * Pass a stepResolver for full DAG artifact dependency checking.
    */
   validate(
     flavor: Flavor,
@@ -161,19 +207,26 @@ export class FlavorRegistry implements IFlavorRegistry {
       return { valid: errors.length === 0, errors };
     }
 
+    // Pre-resolve all steps once to avoid O(n²) resolver calls in the inner loop
+    const resolvedSteps = new Map<string, Step | undefined>();
+    for (const stepRef of flavor.steps) {
+      resolvedSteps.set(stepRef.stepName, safeResolve(stepResolver, stepRef.stepName, stepRef.stepType));
+    }
+
     // Full DAG validation: track artifacts available at each position
     const availableArtifacts = new Set<string>(stageInputArtifacts);
     let synthesisArtifactProduced = false;
 
     for (const stepRef of flavor.steps) {
-      const step = stepResolver(stepRef.stepName, stepRef.stepType);
+      const step = resolvedSteps.get(stepRef.stepName);
 
       if (!step) {
         errors.push(
           `Step "${stepRef.stepName}" (type: "${stepRef.stepType}") could not be resolved. ` +
-            `Ensure the step is registered before validating this flavor.`,
+            `Ensure the step is registered before validating this flavor. ` +
+            `Artifact dependency errors for steps following "${stepRef.stepName}" may also ` +
+            `be caused by this missing step.`,
         );
-        // Continue — still check other steps with partial info
         continue;
       }
 
@@ -182,15 +235,12 @@ export class FlavorRegistry implements IFlavorRegistry {
       for (const condition of entryConditions) {
         if (condition.type === 'artifact-exists' && condition.artifactName) {
           if (!availableArtifacts.has(condition.artifactName)) {
-            // Find which step produces this artifact, if any
-            const producerIdx = flavor.steps.findIndex((ref) => {
-              const refStep = stepResolver(ref.stepName, ref.stepType);
-              return refStep?.artifacts.some((a) => a.name === condition.artifactName);
-            });
+            // Find which step produces this artifact (using pre-resolved map)
+            const producerRef = flavor.steps.find((ref) =>
+              resolvedSteps.get(ref.stepName)?.artifacts.some((a) => a.name === condition.artifactName),
+            );
 
-            const producer = producerIdx !== -1 ? flavor.steps[producerIdx] : undefined;
-
-            if (!producer) {
+            if (!producerRef) {
               errors.push(
                 `Step "${stepRef.stepName}" requires artifact "${condition.artifactName}" ` +
                   `which is not produced by any step in this flavor and is not a stage input.`,
@@ -198,8 +248,8 @@ export class FlavorRegistry implements IFlavorRegistry {
             } else {
               errors.push(
                 `Step "${stepRef.stepName}" requires artifact "${condition.artifactName}" ` +
-                  `which is produced by step "${producer.stepName}", ` +
-                  `but "${producer.stepName}" is not included before "${stepRef.stepName}" in this flavor.`,
+                  `which is produced by step "${producerRef.stepName}", ` +
+                  `but "${producerRef.stepName}" is not included before "${stepRef.stepName}" in this flavor.`,
               );
             }
           }

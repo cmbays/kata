@@ -46,8 +46,19 @@ export const FlavorSchema = z.object({
   description: z.string().optional(),
   /** Which Stage category this flavor belongs to. */
   stageCategory: StageCategorySchema,
-  /** Ordered list of step references. Must contain at least one step. */
-  steps: z.array(FlavorStepRefSchema).min(1),
+  /**
+   * Ordered list of step references. Must contain at least one step.
+   * stepName values must be unique within the flavor — they serve as override keys.
+   */
+  steps: z.array(FlavorStepRefSchema).min(1).superRefine((steps, ctx) => {
+    const seen = new Set<string>();
+    for (const step of steps) {
+      if (seen.has(step.stepName)) {
+        ctx.addIssue({ code: 'custom', message: `Duplicate stepName: "${step.stepName}"` });
+      }
+      seen.add(step.stepName);
+    }
+  }),
   /**
    * Per-step property overrides, keyed by stepName.
    * Only humanApproval, confidenceThreshold, and timeout may be overridden.
