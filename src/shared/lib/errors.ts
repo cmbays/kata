@@ -48,3 +48,10 @@ export class CycleNotFoundError extends KataError {
     this.name = 'CycleNotFoundError';
   }
 }
+
+export class FlavorNotFoundError extends KataError {
+  constructor(stageCategory: string, name: string) {
+    super(`Flavor not found: "${stageCategory}/${name}". Run "kata stage list" to see available flavors.`);
+    this.name = 'FlavorNotFoundError';
+  }
+}

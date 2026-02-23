@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { z } from 'zod/v4';
+import { logger } from '@shared/lib/logger.js';
 
 export class JsonStoreError extends Error {
   constructor(
@@ -96,8 +97,12 @@ export const JsonStore = {
     for (const file of files) {
       try {
         results.push(JsonStore.read(join(dir, file), schema));
-      } catch {
-        // Skip invalid files — caller can check count vs directory listing
+      } catch (err) {
+        logger.warn(`Skipping invalid file "${file}" in ${dir}`, {
+          file,
+          dir,
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
     }
 

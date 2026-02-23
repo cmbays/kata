@@ -6,6 +6,7 @@ import {
   StepNotFoundError,
   PipelineNotFoundError,
   CycleNotFoundError,
+  FlavorNotFoundError,
 } from './errors.js';
 
 describe('KataError', () => {
@@ -69,6 +70,16 @@ describe('CycleNotFoundError', () => {
     expect(err.name).toBe('CycleNotFoundError');
     expect(err.message).toContain('"cycle-456"');
     expect(err.message).toContain('kata cycle status');
+    expect(err).toBeInstanceOf(KataError);
+  });
+});
+
+describe('FlavorNotFoundError', () => {
+  it('formats message with stageCategory and name and suggests kata stage list', () => {
+    const err = new FlavorNotFoundError('plan', 'ui-planning');
+    expect(err.name).toBe('FlavorNotFoundError');
+    expect(err.message).toContain('plan/ui-planning');
+    expect(err.message).toContain('kata stage list');
     expect(err).toBeInstanceOf(KataError);
   });
 });
