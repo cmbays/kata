@@ -44,7 +44,7 @@ export function registerInitCommand(program: Command): void {
         console.log('');
         console.log(`  Stages loaded:    ${result.stagesLoaded}`);
         console.log(`  Templates loaded: ${result.templatesLoaded}`);
-        console.log(`  Project type:     ${PROJECT_TYPE_LABELS[result.projectType]}`);
+        console.log(`  Project type:     ${PROJECT_TYPE_LABELS[result.projectType] ?? result.projectType}`);
         console.log(`  Adapter:          ${result.config.execution.adapter}`);
         console.log('');
         console.log('  What\'s next:');

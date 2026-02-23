@@ -11,7 +11,7 @@ describe('StageType', () => {
   });
 
   it('rejects invalid stage type', () => {
-    expect(() => StageType.parse('deploy')).toThrow();
+    expect(() => StageType.parse('not-a-real-stage')).toThrow();
   });
 });
 

@@ -168,6 +168,12 @@ describe('handleInit', () => {
     expect(result.projectType).toBe('unknown');
   });
 
+  it('returns detected projectType when a manifest file is present', async () => {
+    writeFileSync(join(baseDir, 'Cargo.toml'), '[package]');
+    const result = await handleInit({ cwd: baseDir, skipPrompts: true });
+    expect(result.projectType).toBe('rust');
+  });
+
   it('prompt files in .kata/prompts/ match builtin stage names', async () => {
     await handleInit({ cwd: baseDir, skipPrompts: true });
 

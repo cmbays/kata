@@ -167,6 +167,8 @@ export async function handleInit(options: InitOptions): Promise<InitResult> {
   if (existsSync(builtinStagesDir)) {
     registry.loadBuiltins(builtinStagesDir);
     stagesLoaded = registry.list().length;
+  } else {
+    logger.warn(`Built-in stages not found at "${builtinStagesDir}". Stages were not loaded — check your installation.`);
   }
 
   // Copy prompt templates to .kata/prompts/
@@ -176,7 +178,12 @@ export async function handleInit(options: InitOptions): Promise<InitResult> {
   const builtinPromptsDir = join(packageRoot, KATA_DIRS.stages, KATA_DIRS.prompts);
   if (existsSync(builtinPromptsDir)) {
     const promptsDir = join(kataDir, KATA_DIRS.prompts);
-    const mdFiles = readdirSync(builtinPromptsDir).filter((f) => f.endsWith('.md'));
+    let mdFiles: string[] = [];
+    try {
+      mdFiles = readdirSync(builtinPromptsDir).filter((f) => f.endsWith('.md'));
+    } catch (err) {
+      logger.warn(`Could not list prompt templates directory: ${err instanceof Error ? err.message : String(err)}`);
+    }
     for (const mdFile of mdFiles) {
       try {
         copyFileSync(join(builtinPromptsDir, mdFile), join(promptsDir, mdFile));
@@ -184,6 +191,8 @@ export async function handleInit(options: InitOptions): Promise<InitResult> {
         logger.warn(`Could not copy prompt template "${mdFile}": ${err instanceof Error ? err.message : String(err)}`);
       }
     }
+  } else {
+    logger.warn(`Built-in prompt templates not found at "${builtinPromptsDir}". Prompts were not copied.`);
   }
 
   // Load pipeline templates
@@ -198,6 +207,8 @@ export async function handleInit(options: InitOptions): Promise<InitResult> {
       JsonStore.write(templatePath, template, PipelineTemplateSchema);
     }
     templatesLoaded = templates.length;
+  } else {
+    logger.warn(`Built-in pipeline templates not found at "${builtinTemplatesDir}". Templates were not loaded.`);
   }
 
   return {
