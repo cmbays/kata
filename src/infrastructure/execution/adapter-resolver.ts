@@ -50,7 +50,7 @@ export class AdapterResolver {
    * @returns The resolved execution adapter instance.
    * @throws Error if the adapter name is not registered.
    */
-  resolve(config?: KataConfig): IExecutionAdapter {
+  static resolve(config?: KataConfig): IExecutionAdapter {
     const adapterName = config?.execution?.adapter ?? 'manual';
     const factory = AdapterResolver.registry.get(adapterName);
 

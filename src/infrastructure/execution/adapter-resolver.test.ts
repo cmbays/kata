@@ -19,29 +19,27 @@ function makeConfig(adapter: string): KataConfig {
 }
 
 describe('AdapterResolver', () => {
-  const resolver = new AdapterResolver();
-
   describe('resolve', () => {
     it('resolves ManualAdapter for "manual"', () => {
-      const adapter = resolver.resolve(makeConfig('manual'));
+      const adapter = AdapterResolver.resolve(makeConfig('manual'));
       expect(adapter).toBeInstanceOf(ManualAdapter);
       expect(adapter.name).toBe('manual');
     });
 
     it('resolves ClaudeCliAdapter for "claude-cli"', () => {
-      const adapter = resolver.resolve(makeConfig('claude-cli'));
+      const adapter = AdapterResolver.resolve(makeConfig('claude-cli'));
       expect(adapter).toBeInstanceOf(ClaudeCliAdapter);
       expect(adapter.name).toBe('claude-cli');
     });
 
     it('resolves ComposioAdapter for "composio"', () => {
-      const adapter = resolver.resolve(makeConfig('composio'));
+      const adapter = AdapterResolver.resolve(makeConfig('composio'));
       expect(adapter).toBeInstanceOf(ComposioAdapter);
       expect(adapter.name).toBe('composio');
     });
 
     it('defaults to ManualAdapter when config is undefined', () => {
-      const adapter = resolver.resolve(undefined);
+      const adapter = AdapterResolver.resolve(undefined);
       expect(adapter).toBeInstanceOf(ManualAdapter);
     });
 
@@ -55,18 +53,17 @@ describe('AdapterResolver', () => {
         customStagePaths: [],
         project: {},
       };
-      const adapter = resolver.resolve(config);
+      const adapter = AdapterResolver.resolve(config);
       expect(adapter).toBeInstanceOf(ManualAdapter);
     });
 
     it('throws for unknown adapter name', () => {
-      // Force an invalid adapter value to test error handling
       const config = makeConfig('nonexistent');
-      expect(() => resolver.resolve(config)).toThrow('Unknown execution adapter');
-      expect(() => resolver.resolve(config)).toThrow('nonexistent');
+      expect(() => AdapterResolver.resolve(config)).toThrow('Unknown execution adapter');
+      expect(() => AdapterResolver.resolve(config)).toThrow('nonexistent');
       // Check each built-in name is listed (order-independent)
       for (const name of ['manual', 'claude-cli', 'composio']) {
-        expect(() => resolver.resolve(config)).toThrow(name);
+        expect(() => AdapterResolver.resolve(config)).toThrow(name);
       }
     });
   });
@@ -92,7 +89,7 @@ describe('AdapterResolver', () => {
       };
       AdapterResolver.register(TEST_ADAPTER_NAME, () => fakeAdapter);
 
-      const resolved = new AdapterResolver().resolve(makeConfig(TEST_ADAPTER_NAME));
+      const resolved = AdapterResolver.resolve(makeConfig(TEST_ADAPTER_NAME));
       expect(resolved).toBe(fakeAdapter);
       expect(resolved.name).toBe(TEST_ADAPTER_NAME);
     });
@@ -102,10 +99,9 @@ describe('AdapterResolver', () => {
         name: 'manual-override',
         execute: async () => ({ success: true, artifacts: [], completedAt: new Date().toISOString() }),
       };
-      // Override 'manual' temporarily (afterEach restores it)
       AdapterResolver.register('manual', () => replacementManual);
 
-      const resolved = new AdapterResolver().resolve(makeConfig('manual'));
+      const resolved = AdapterResolver.resolve(makeConfig('manual'));
       expect(resolved).toBe(replacementManual);
     });
 
@@ -117,7 +113,7 @@ describe('AdapterResolver', () => {
       }));
 
       const config = makeConfig('nonexistent');
-      expect(() => new AdapterResolver().resolve(config)).toThrow(uniqueName);
+      expect(() => AdapterResolver.resolve(config)).toThrow(uniqueName);
     });
   });
 });
