@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { mkdirSync, rmSync, existsSync } from 'node:fs';
+import { mkdirSync, rmSync, existsSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { Command } from 'commander';
 import { registerInitCommand } from './init.js';
@@ -46,7 +46,25 @@ describe('registerInitCommand', () => {
 
     expect(existsSync(join(baseDir, '.kata'))).toBe(true);
     expect(existsSync(join(baseDir, '.kata', 'config.json'))).toBe(true);
-    expect(consoleSpy).toHaveBeenCalledWith('kata project initialized!');
+    // Check that the "What's next?" guidance was printed
+    const allOutput = consoleSpy.mock.calls.flat().join('\n');
+    expect(allOutput).toMatch(/kata initialized|kata project initialized/);
+    expect(allOutput).toMatch(/What's next/);
+    expect(allOutput).toMatch(/kata flow start/);
+    expect(allOutput).toContain('Project type:     Generic');
+  });
+
+  it('displays project name in header when package.json is present', async () => {
+    writeFileSync(join(baseDir, 'package.json'), JSON.stringify({ name: 'my-app' }));
+    const program = new Command();
+    program.option('--json').option('--verbose').option('--cwd <path>');
+    program.exitOverride();
+    registerInitCommand(program);
+
+    await program.parseAsync(['node', 'test', 'init', '--skip-prompts', '--cwd', baseDir]);
+
+    const allOutput = consoleSpy.mock.calls.flat().join('\n');
+    expect(allOutput).toContain('kata initialized for my-app');
   });
 
   it('outputs JSON when --json flag is set', async () => {
@@ -63,6 +81,7 @@ describe('registerInitCommand', () => {
     const parsed = JSON.parse(firstCall as string);
     expect(parsed.kataDir).toBeDefined();
     expect(parsed.config).toBeDefined();
+    expect(parsed.projectType).toBeDefined();
   });
 
   it('accepts --methodology and --adapter flags', async () => {

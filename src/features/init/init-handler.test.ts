@@ -162,6 +162,18 @@ describe('handleInit', () => {
     expect(files.some((f) => f.endsWith('.md'))).toBe(true);
   });
 
+  it('returns projectType in result', async () => {
+    const result = await handleInit({ cwd: baseDir, skipPrompts: true });
+    // No manifest files present in tmp dir → unknown
+    expect(result.projectType).toBe('unknown');
+  });
+
+  it('returns detected projectType when a manifest file is present', async () => {
+    writeFileSync(join(baseDir, 'Cargo.toml'), '[package]');
+    const result = await handleInit({ cwd: baseDir, skipPrompts: true });
+    expect(result.projectType).toBe('rust');
+  });
+
   it('prompt files in .kata/prompts/ match builtin stage names', async () => {
     await handleInit({ cwd: baseDir, skipPrompts: true });
 

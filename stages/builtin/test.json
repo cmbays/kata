@@ -1,0 +1,52 @@
+{
+  "type": "test",
+  "description": "Verify correctness and coverage. Design and execute a test strategy — unit, integration, and E2E — that proves the build works as intended and catches regressions.",
+  "entryGate": {
+    "type": "entry",
+    "conditions": [
+      {
+        "type": "artifact-exists",
+        "description": "Build output must exist before testing can begin",
+        "artifactName": "build-output"
+      }
+    ],
+    "required": true
+  },
+  "exitGate": {
+    "type": "exit",
+    "conditions": [
+      {
+        "type": "artifact-exists",
+        "description": "Test plan document must be produced",
+        "artifactName": "test-plan"
+      },
+      {
+        "type": "artifact-exists",
+        "description": "Coverage report must be produced",
+        "artifactName": "coverage-report"
+      }
+    ],
+    "required": true
+  },
+  "artifacts": [
+    {
+      "name": "test-plan",
+      "description": "Structured test plan with strategy, test cases, coverage targets, and results summary",
+      "required": true,
+      "extension": ".md"
+    },
+    {
+      "name": "coverage-report",
+      "description": "Test coverage summary with pass/fail counts, coverage percentages, and gap analysis",
+      "required": true,
+      "extension": ".md"
+    }
+  ],
+  "promptTemplate": "../prompts/test.md",
+  "learningHooks": [
+    "test-coverage",
+    "test-patterns",
+    "qa-quality"
+  ],
+  "config": {}
+}
