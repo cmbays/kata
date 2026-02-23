@@ -702,4 +702,159 @@ describe('PipelineRunner', () => {
       expect(result.abortedAt).toBe(1);
     });
   });
+
+  describe('lifecycle hooks', () => {
+    it('should fire onStageStart before entry gate and onStageComplete after stage', async () => {
+      const onStageStart = vi.fn(async () => {});
+      const onStageComplete = vi.fn(async () => {});
+      const deps = makeDeps({ hooks: { onStageStart, onStageComplete } });
+      registerStages(deps, [makeStage('research'), makeStage('build')]);
+      const pipeline = makePipeline(['research', 'build']);
+
+      const runner = new PipelineRunner(deps);
+      await runner.run(pipeline);
+
+      expect(onStageStart).toHaveBeenCalledTimes(2);
+      expect(onStageStart).toHaveBeenNthCalledWith(1, 'research', 0);
+      expect(onStageStart).toHaveBeenNthCalledWith(2, 'build', 1);
+
+      expect(onStageComplete).toHaveBeenCalledTimes(2);
+      expect(onStageComplete).toHaveBeenNthCalledWith(1, 'research', 0);
+      expect(onStageComplete).toHaveBeenNthCalledWith(2, 'build', 1);
+    });
+
+    it('should fire onStageFail when stage throws', async () => {
+      const onStageFail = vi.fn(async () => {});
+      const deps = makeDeps({ hooks: { onStageFail } });
+      const stage = makeStage('research');
+      registerStages(deps, [stage]);
+
+      // Make the adapter throw
+      const mockAdapter = deps.adapterResolver.resolve();
+      (mockAdapter.execute as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('adapter exploded'));
+
+      const pipeline = makePipeline(['research']);
+      const runner = new PipelineRunner(deps);
+
+      await expect(runner.run(pipeline)).rejects.toThrow('adapter exploded');
+      expect(onStageFail).toHaveBeenCalledTimes(1);
+      expect(onStageFail).toHaveBeenCalledWith('research', 0, expect.any(Error));
+    });
+
+    it('should fire onGateResult for entry gate', async () => {
+      const onGateResult = vi.fn(async () => {});
+      const deps = makeDeps({ hooks: { onGateResult } });
+      const stage = makeStage('build', {
+        entryGate: {
+          type: 'entry',
+          conditions: [{ type: 'schema-valid' }],
+          required: true,
+        },
+      });
+      registerStages(deps, [stage]);
+      const pipeline = makePipeline(['build']);
+
+      const runner = new PipelineRunner(deps);
+      await runner.run(pipeline);
+
+      expect(onGateResult).toHaveBeenCalledTimes(1);
+      const [gate, result, action] = onGateResult.mock.calls[0] as [unknown, unknown, string];
+      expect(action).toBe('proceed');
+      expect((result as { passed: boolean }).passed).toBe(true);
+      expect((gate as { type: string }).type).toBe('entry');
+    });
+
+    it('should fire onGateResult for both entry and exit gates', async () => {
+      const onGateResult = vi.fn(async () => {});
+      const deps = makeDeps({ hooks: { onGateResult } });
+      const stage = makeStage('research', {
+        entryGate: { type: 'entry', conditions: [{ type: 'schema-valid' }], required: true },
+        exitGate: { type: 'exit', conditions: [{ type: 'schema-valid' }], required: true },
+      });
+      registerStages(deps, [stage]);
+      const pipeline = makePipeline(['research']);
+
+      const runner = new PipelineRunner(deps);
+      await runner.run(pipeline);
+
+      expect(onGateResult).toHaveBeenCalledTimes(2);
+      const gateTypes = onGateResult.mock.calls.map((c) => (c[0] as { type: string }).type);
+      expect(gateTypes).toContain('entry');
+      expect(gateTypes).toContain('exit');
+    });
+
+    it('should fire onGateResult with abort action when gate fails', async () => {
+      const onGateResult = vi.fn(async () => {});
+      const deps = makeDeps({ hooks: { onGateResult } });
+      const stage = makeStage('build', {
+        entryGate: {
+          type: 'entry',
+          conditions: [{ type: 'artifact-exists', artifactName: 'missing' }],
+          required: true,
+        },
+      });
+      registerStages(deps, [stage]);
+      const pipeline = makePipeline(['build']);
+
+      const runner = new PipelineRunner(deps);
+      await runner.run(pipeline);
+
+      expect(onGateResult).toHaveBeenCalledTimes(1);
+      const [, , action] = onGateResult.mock.calls[0] as [unknown, unknown, string];
+      expect(action).toBe('abort');
+    });
+
+    it('should not abort pipeline when a hook throws', async () => {
+      const onStageStart = vi.fn(async () => { throw new Error('hook exploded'); });
+      const onStageComplete = vi.fn(async () => { throw new Error('hook exploded'); });
+      const deps = makeDeps({ hooks: { onStageStart, onStageComplete } });
+      registerStages(deps, [makeStage('research')]);
+      const pipeline = makePipeline(['research']);
+
+      const runner = new PipelineRunner(deps);
+      const result = await runner.run(pipeline);
+
+      // Pipeline should still complete despite hooks throwing
+      expect(result.success).toBe(true);
+      expect(result.stagesCompleted).toBe(1);
+    });
+
+    it('should not fire hooks when none are provided', async () => {
+      const deps = makeDeps({ hooks: undefined });
+      registerStages(deps, [makeStage('research')]);
+      const pipeline = makePipeline(['research']);
+
+      const runner = new PipelineRunner(deps);
+      const result = await runner.run(pipeline);
+
+      expect(result.success).toBe(true);
+    });
+
+    it('should fire onGateResult with skip action when promptFn skips', async () => {
+      const onGateResult = vi.fn(async () => {});
+      const deps = makeDeps({
+        hooks: { onGateResult },
+        promptFn: {
+          gateOverride: vi.fn(async () => 'skip' as const),
+          captureLearning: vi.fn(async () => null),
+        },
+      });
+      const stage = makeStage('build', {
+        entryGate: {
+          type: 'entry',
+          conditions: [{ type: 'artifact-exists', artifactName: 'missing' }],
+          required: true,
+        },
+      });
+      registerStages(deps, [stage]);
+      const pipeline = makePipeline(['build']);
+
+      const runner = new PipelineRunner(deps);
+      await runner.run(pipeline);
+
+      expect(onGateResult).toHaveBeenCalledTimes(1);
+      const [, , action] = onGateResult.mock.calls[0] as [unknown, unknown, string];
+      expect(action).toBe('skip');
+    });
+  });
 });

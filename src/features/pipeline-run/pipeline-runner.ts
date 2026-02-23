@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { logger } from '@shared/lib/logger.js';
 import type { Pipeline } from '@domain/types/pipeline.js';
 import { PipelineSchema } from '@domain/types/pipeline.js';
 import type { KataConfig } from '@domain/types/config.js';
@@ -29,6 +30,17 @@ export interface PipelineRunnerDeps {
   promptFn?: {
     gateOverride: (gateResult: GateResult) => Promise<'retry' | 'skip' | 'abort'>;
     captureLearning: (stageType: string) => Promise<string | null>;
+  };
+  /** Optional lifecycle hooks — errors are swallowed and logged as warnings */
+  hooks?: {
+    onStageStart?: (stageType: string, stageIndex: number) => Promise<void>;
+    onStageComplete?: (stageType: string, stageIndex: number) => Promise<void>;
+    onStageFail?: (stageType: string, stageIndex: number, error: unknown) => Promise<void>;
+    onGateResult?: (
+      gate: Gate,
+      result: GateResult,
+      action: 'proceed' | 'skip' | 'abort',
+    ) => Promise<void>;
   };
 }
 
@@ -94,6 +106,7 @@ export class PipelineRunner {
         pipeline.currentStageIndex = i;
         pipeline.updatedAt = new Date().toISOString();
         this.persistPipeline(pipeline);
+        await this.fireHook(() => this.deps.hooks?.onStageStart?.(stageState.stageRef.type, i));
 
         // Build gate evaluation context
         const gateContext = this.buildGateContext(pipeline, i);
@@ -222,6 +235,7 @@ export class PipelineRunner {
         stagesCompleted++;
         pipeline.updatedAt = new Date().toISOString();
         this.persistPipeline(pipeline);
+        await this.fireHook(() => this.deps.hooks?.onStageComplete?.(stageState.stageRef.type, i));
       } catch (error) {
         // Fatal error — mark stage and pipeline as failed, persist, and stop
         stageState.state = 'failed';
@@ -237,6 +251,9 @@ export class PipelineRunner {
           // Cannot persist — best-effort cleanup
         }
 
+        await this.fireHook(() =>
+          this.deps.hooks?.onStageFail?.(stageState.stageRef.type, i, error),
+        );
         throw error;
       }
     }
@@ -313,12 +330,19 @@ export class PipelineRunner {
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       const result = await evaluateGate(gate, context);
       if (result.passed) {
+        await this.fireHook(() => this.deps.hooks?.onGateResult?.(gate, result, 'proceed'));
         return 'proceed';
       }
 
       const action = await this.handleGateFailure(result);
-      if (action === 'skip') return 'skip';
-      if (action === 'abort') return 'abort';
+      if (action === 'skip') {
+        await this.fireHook(() => this.deps.hooks?.onGateResult?.(gate, result, 'skip'));
+        return 'skip';
+      }
+      if (action === 'abort') {
+        await this.fireHook(() => this.deps.hooks?.onGateResult?.(gate, result, 'abort'));
+        return 'abort';
+      }
       // action === 'retry' — loop continues to re-evaluate
     }
 
@@ -353,5 +377,18 @@ export class PipelineRunner {
   private persistPipeline(pipeline: Pipeline): void {
     const filePath = join(this.deps.pipelineDir, `${pipeline.id}.json`);
     JsonStore.write(filePath, pipeline, PipelineSchema);
+  }
+
+  /**
+   * Fire a lifecycle hook, swallowing any errors so they never abort the pipeline.
+   */
+  private async fireHook(fn: () => Promise<void> | undefined): Promise<void> {
+    try {
+      await fn();
+    } catch (err) {
+      logger.warn('Lifecycle hook error (swallowed)', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 }
