@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
-import { DecisionSchema, type Decision, type DecisionOutcome } from '@domain/types/decision.js';
+import { DecisionSchema, type Decision, type DecisionOutcome, type DecisionType } from '@domain/types/decision.js';
 import type { StageCategory } from '@domain/types/stage.js';
 import type {
   IDecisionRegistry,
@@ -62,7 +62,9 @@ export class DecisionRegistry implements IDecisionRegistry {
     const cached = this.decisions.get(id);
     if (cached) return cached;
 
-    // Not in cache — scan disk for this specific id
+    // Not in cache — load all decisions from disk to find this id.
+    // The {stageCategory}.{id}.json naming scheme means we cannot construct
+    // the filename from the id alone, so a full scan is required.
     this.loadFromDisk();
 
     const loaded = this.decisions.get(id);
@@ -144,7 +146,7 @@ export class DecisionRegistry implements IDecisionRegistry {
     const avgConfidence =
       count === 0 ? 0 : subset.reduce((sum, d) => sum + d.confidence, 0) / count;
 
-    const countByType: Partial<Record<string, number>> = {};
+    const countByType: Partial<Record<DecisionType, number>> = {};
     for (const d of subset) {
       countByType[d.decisionType] = (countByType[d.decisionType] ?? 0) + 1;
     }

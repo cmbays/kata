@@ -44,12 +44,13 @@ describe('DecisionTypeSchema', () => {
 });
 
 describe('DecisionOutcomeSchema', () => {
-  it('parses empty object — all fields are optional', () => {
-    const result = DecisionOutcomeSchema.parse({});
+  it('parses with only one field set — all individual fields are optional', () => {
+    // Each field is individually optional, but at least one must be present.
+    const result = DecisionOutcomeSchema.parse({ notes: 'Looked good.' });
+    expect(result.notes).toBe('Looked good.');
     expect(result.artifactQuality).toBeUndefined();
     expect(result.gateResult).toBeUndefined();
     expect(result.reworkRequired).toBeUndefined();
-    expect(result.notes).toBeUndefined();
   });
 
   it('accepts all valid artifactQuality values', () => {
@@ -85,6 +86,10 @@ describe('DecisionOutcomeSchema', () => {
     expect(result.gateResult).toBe('failed');
     expect(result.reworkRequired).toBe(true);
     expect(result.notes).toBe('Confidence was too high for this context.');
+  });
+
+  it('rejects empty object — at least one field must be set', () => {
+    expect(() => DecisionOutcomeSchema.parse({})).toThrow(/At least one outcome field must be set/);
   });
 
   it('rejects invalid artifactQuality', () => {
@@ -213,5 +218,18 @@ describe('DecisionSchema', () => {
     const d = makeDecision();
     delete (d as Record<string, unknown>)['stageCategory'];
     expect(() => DecisionSchema.parse(d)).toThrow();
+  });
+
+  it('rejects selection not in options', () => {
+    expect(() =>
+      DecisionSchema.parse(makeDecision({ options: ['a', 'b'], selection: 'c' })),
+    ).toThrow(/must be one of the available options/);
+  });
+
+  it('accepts selection when it exactly matches one of the options', () => {
+    const result = DecisionSchema.parse(
+      makeDecision({ options: ['typescript-feature', 'bug-fix'], selection: 'bug-fix' }),
+    );
+    expect(result.selection).toBe('bug-fix');
   });
 });

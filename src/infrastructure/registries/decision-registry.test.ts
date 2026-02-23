@@ -207,7 +207,7 @@ describe('DecisionRegistry', () => {
       expect(updated.outcome?.reworkRequired).toBe(false);
     });
 
-    it('merges new outcome fields with existing ones', () => {
+    it('merges new outcome fields with existing ones (additive)', () => {
       const decision = registry.record(
         makeInput({ outcome: { artifactQuality: 'partial' } } as Omit<Decision, 'id'>),
       );
@@ -220,6 +220,19 @@ describe('DecisionRegistry', () => {
       // New fields are merged
       expect(updated.outcome?.gateResult).toBe('failed');
       expect(updated.outcome?.reworkRequired).toBe(true);
+    });
+
+    it('overwrites an existing outcome field when provided again', () => {
+      const decision = registry.record(
+        makeInput({
+          outcome: { artifactQuality: 'good', reworkRequired: false },
+        } as Omit<Decision, 'id'>),
+      );
+      const updated = registry.updateOutcome(decision.id, { artifactQuality: 'poor' });
+      // Overwritten field reflects the new value
+      expect(updated.outcome?.artifactQuality).toBe('poor');
+      // Unmentioned field is preserved from the existing outcome
+      expect(updated.outcome?.reworkRequired).toBe(false);
     });
 
     it('persists the updated decision to disk', () => {
