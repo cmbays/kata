@@ -22,14 +22,14 @@ export type StageCategory = z.infer<typeof StageCategorySchema>;
  * non-deterministic judgments about flavor selection and execution order.
  */
 export const OrchestratorConfigSchema = z.object({
-  /** Matches the stage category — determines the built-in orchestrator prompt. */
-  type: z.enum(['research', 'planning', 'build', 'review', 'wrapup']),
+  /** Selects the built-in orchestrator prompt — must match the Stage's category. */
+  type: StageCategorySchema,
   /** Optional path to a custom orchestrator prompt template. */
   promptTemplate: z.string().optional(),
   /** Minimum confidence level before a decision proceeds without human review. */
   confidenceThreshold: z.number().min(0).max(1).default(0.7),
   /** Maximum number of Flavors the orchestrator may run in parallel. */
-  maxParallelFlavors: z.number().positive().default(5),
+  maxParallelFlavors: z.number().int().positive().default(5),
 });
 
 export type OrchestratorConfig = z.infer<typeof OrchestratorConfigSchema>;

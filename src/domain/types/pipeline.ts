@@ -60,7 +60,7 @@ export const PipelineSchema = z.object({
   type: PipelineType,
   /** Distinguishes execution pipelines from the cooldown pipeline that bridges cycles. */
   kind: z.enum(['execution', 'cooldown']).default('execution'),
-  stages: z.array(PipelineStageStateSchema).min(1),
+  stages: z.array(PipelineStepStateSchema).min(1),
   state: PipelineState.default('draft'),
   currentStageIndex: z.number().int().min(0).default(0),
   metadata: PipelineMetadataSchema.default(() => ({ issueRefs: [] as string[] })),

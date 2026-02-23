@@ -33,7 +33,7 @@ describe('OrchestratorConfigSchema', () => {
   });
 
   it('accepts all valid orchestrator types', () => {
-    const types = ['research', 'planning', 'build', 'review', 'wrapup'];
+    const types = ['research', 'plan', 'build', 'review', 'wrapup'];
     for (const type of types) {
       expect(OrchestratorConfigSchema.parse({ type }).type).toBe(type);
     }
@@ -71,7 +71,7 @@ describe('OrchestratorConfigSchema', () => {
   });
 
   it('accepts maxParallelFlavors overridden to 1', () => {
-    const result = OrchestratorConfigSchema.parse({ type: 'planning', maxParallelFlavors: 1 });
+    const result = OrchestratorConfigSchema.parse({ type: 'plan', maxParallelFlavors: 1 });
     expect(result.maxParallelFlavors).toBe(1);
   });
 
@@ -124,7 +124,7 @@ describe('StageSchema', () => {
   it('parses stage with pinnedFlavors and excludedFlavors', () => {
     const result = StageSchema.parse({
       category: 'plan',
-      orchestrator: { type: 'planning' },
+      orchestrator: { type: 'plan' },
       availableFlavors: ['ui-planning', 'data-model-planning', 'impl-planning'],
       pinnedFlavors: ['impl-planning'],
       excludedFlavors: ['legacy-planning'],
