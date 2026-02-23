@@ -35,6 +35,11 @@ export interface PipelineRunnerDeps {
   hooks?: {
     onStageStart?: (stageType: string, stageIndex: number) => Promise<void>;
     onStageComplete?: (stageType: string, stageIndex: number) => Promise<void>;
+    /**
+     * Fires only on uncaught exceptions from the stage body. Gate aborts fire
+     * onGateResult with action 'abort' and do NOT fire onStageFail, even though
+     * the stage ends in state 'failed'.
+     */
     onStageFail?: (stageType: string, stageIndex: number, error: unknown) => Promise<void>;
     onGateResult?: (
       gate: Gate,

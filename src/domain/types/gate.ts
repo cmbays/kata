@@ -17,7 +17,14 @@ export const GateConditionSchema = z.object({
   artifactName: z.string().optional(),
   /** For predecessor-complete: which stage must be done */
   predecessorType: z.string().optional(),
-  /** For command-passes: the shell command to run */
+  /**
+   * For command-passes: the shell command to run.
+   *
+   * The command string is passed directly to the system shell (shell: true).
+   * Trust model: stage definitions are authored by the project owner and run
+   * with their full user permissions. If using shared stage packages, only
+   * load stage definitions from trusted sources.
+   */
   command: z.string().optional(),
 });
 
