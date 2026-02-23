@@ -253,6 +253,68 @@ describe('evaluateGate', () => {
     });
   });
 
+  describe('command-passes condition', () => {
+    it('should pass when command exits 0', async () => {
+      const gate: Gate = {
+        type: 'entry',
+        conditions: [{ type: 'command-passes', command: 'node --version' }],
+        required: true,
+      };
+
+      const result = await evaluateGate(gate, baseContext);
+
+      expect(result.passed).toBe(true);
+      expect(result.results[0]?.passed).toBe(true);
+      expect(result.results[0]?.detail).toContain('0');
+    });
+
+    it('should fail when command exits non-zero', async () => {
+      const gate: Gate = {
+        type: 'entry',
+        conditions: [{ type: 'command-passes', command: 'node -e "process.exit(1)"' }],
+        required: true,
+      };
+
+      const result = await evaluateGate(gate, baseContext);
+
+      expect(result.passed).toBe(false);
+      expect(result.results[0]?.passed).toBe(false);
+      expect(result.results[0]?.detail).toContain('1');
+    });
+
+    it('should fail gracefully when command string is missing', async () => {
+      const gate: Gate = {
+        type: 'entry',
+        conditions: [{ type: 'command-passes' }],
+        required: true,
+      };
+
+      const result = await evaluateGate(gate, baseContext);
+
+      expect(result.passed).toBe(false);
+      expect(result.results[0]?.passed).toBe(false);
+      expect(result.results[0]?.detail).toContain('missing command string');
+    });
+
+    it('should include stderr in detail on failure', async () => {
+      const gate: Gate = {
+        type: 'entry',
+        conditions: [
+          {
+            type: 'command-passes',
+            command: 'node -e "process.stderr.write(\'bad output\'); process.exit(2)"',
+          },
+        ],
+        required: true,
+      };
+
+      const result = await evaluateGate(gate, baseContext);
+
+      expect(result.passed).toBe(false);
+      expect(result.results[0]?.detail).toContain('bad output');
+    });
+  });
+
   describe('result metadata', () => {
     it('should include evaluatedAt timestamp', async () => {
       const gate: Gate = {

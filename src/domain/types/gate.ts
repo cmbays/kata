@@ -5,6 +5,7 @@ export const GateConditionType = z.enum([
   'schema-valid',
   'human-approved',
   'predecessor-complete',
+  'command-passes',
 ]);
 
 export type GateConditionType = z.infer<typeof GateConditionType>;
@@ -16,6 +17,8 @@ export const GateConditionSchema = z.object({
   artifactName: z.string().optional(),
   /** For predecessor-complete: which stage must be done */
   predecessorType: z.string().optional(),
+  /** For command-passes: the shell command to run */
+  command: z.string().optional(),
 });
 
 export type GateCondition = z.infer<typeof GateConditionSchema>;

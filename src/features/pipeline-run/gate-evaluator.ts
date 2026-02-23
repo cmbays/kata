@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import type { Gate, GateCondition, GateResult } from '@domain/types/gate.js';
 
 /**
@@ -114,6 +115,28 @@ function evaluateCondition(condition: GateCondition, context: GateEvalContext): 
         condition,
         passed: true,
         detail: 'Schema validation deferred to capture time',
+      };
+    }
+
+    case 'command-passes': {
+      if (!condition.command) {
+        return {
+          condition,
+          passed: false,
+          detail: 'command-passes condition missing command string',
+        };
+      }
+      const proc = spawnSync(condition.command, { shell: true, encoding: 'utf8' });
+      if (proc.status === 0) {
+        return { condition, passed: true, detail: `Command exited 0` };
+      }
+      const stderr = (proc.stderr ?? '').slice(0, 200);
+      const stdout = (proc.stdout ?? '').slice(0, 200);
+      const output = [stderr, stdout].filter(Boolean).join(' | ');
+      return {
+        condition,
+        passed: false,
+        detail: `Command exited ${proc.status ?? 'null'}${output ? `: ${output}` : ''}`,
       };
     }
 
