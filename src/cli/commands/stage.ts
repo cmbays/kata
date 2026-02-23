@@ -57,15 +57,15 @@ export function registerStageCommands(parent: Command): void {
     .action(withCommandContext(async (ctx) => {
       const stagesDir = kataDirPath(ctx.kataDir, 'stages');
       const promptsDir = join(ctx.kataDir, 'prompts');
+      const isJson = ctx.globalOpts.json;
 
-      const { input, confirm } = await import('@inquirer/prompts');
+      const { input, confirm, select } = await import('@inquirer/prompts');
 
       // --- Type ---
-      const type = await input({
+      const type = (await input({
         message: 'Stage type (e.g., "validate", "deploy-staging"):',
         validate: (v) => v.trim().length > 0 || 'Type is required',
-        transformer: (v) => v.trim(),
-      });
+      })).trim();
 
       // --- Flavor ---
       const flavorRaw = await input({
@@ -86,11 +86,10 @@ export function registerStageCommands(parent: Command): void {
         default: false,
       });
       while (addArtifact) {
-        const name = await input({
+        const name = (await input({
           message: '  Artifact name:',
           validate: (v) => v.trim().length > 0 || 'Name is required',
-          transformer: (v) => v.trim(),
-        });
+        })).trim();
         const artifactDesc = await input({ message: '  Description (optional):' });
         const ext = await input({ message: '  File extension (optional, e.g., ".md"):' });
         const required = await confirm({ message: '  Required?', default: true });
@@ -105,7 +104,6 @@ export function registerStageCommands(parent: Command): void {
 
       // --- Gate builder helper ---
       const buildGateConditions = async (gateLabel: string): Promise<GateCondition[]> => {
-        const { select } = await import('@inquirer/prompts');
         const conditions: GateCondition[] = [];
         let addCond = await confirm({ message: `Add a ${gateLabel} gate condition?`, default: false });
         while (addCond) {
@@ -147,15 +145,19 @@ export function registerStageCommands(parent: Command): void {
 
       // --- Entry gate ---
       const entryConditions = await buildGateConditions('entry');
-      const entryGate: Gate | undefined = entryConditions.length > 0
-        ? { type: 'entry', conditions: entryConditions, required: true }
-        : undefined;
+      let entryGate: Gate | undefined;
+      if (entryConditions.length > 0) {
+        const required = await confirm({ message: 'Is the entry gate required (blocking)?', default: true });
+        entryGate = { type: 'entry', conditions: entryConditions, required };
+      }
 
       // --- Exit gate ---
       const exitConditions = await buildGateConditions('exit');
-      const exitGate: Gate | undefined = exitConditions.length > 0
-        ? { type: 'exit', conditions: exitConditions, required: true }
-        : undefined;
+      let exitGate: Gate | undefined;
+      if (exitConditions.length > 0) {
+        const required = await confirm({ message: 'Is the exit gate required (blocking)?', default: true });
+        exitGate = { type: 'exit', conditions: exitConditions, required };
+      }
 
       // --- Learning hooks ---
       const hooksRaw = await input({
@@ -176,13 +178,15 @@ export function registerStageCommands(parent: Command): void {
         const slug = flavor ? `${type}.${flavor}` : type;
         const promptPath = join(promptsDir, `${slug}.md`);
         mkdirSync(promptsDir, { recursive: true });
+        // promptTemplate is relative from .kata/stages/ to .kata/prompts/
+        promptTemplate = `../prompts/${slug}.md`;
         if (!existsSync(promptPath)) {
           const defaultContent = `# ${type}${flavor ? ` (${flavor})` : ''}\n\n${description ?? ''}\n\n## Instructions\n\n<!-- Add your prompt instructions here -->\n`;
           writeFileSync(promptPath, defaultContent, 'utf-8');
+          if (!isJson) {
+            console.error(`  Prompt template created at .kata/prompts/${slug}.md`);
+          }
         }
-        // promptTemplate is relative from .kata/stages/ to .kata/prompts/
-        promptTemplate = `../prompts/${slug}.md`;
-        console.log(`  Prompt template created at .kata/prompts/${slug}.md`);
       }
 
       // --- Write stage ---
@@ -200,12 +204,12 @@ export function registerStageCommands(parent: Command): void {
         },
       });
 
-      const label = stage.flavor ? `${stage.type} (${stage.flavor})` : stage.type;
-      console.log(`\nStage "${label}" created successfully.`);
-      if (!ctx.globalOpts.json) {
-        console.log(formatStageDetail(stage));
-      } else {
+      if (isJson) {
         console.log(formatStageJson([stage]));
+      } else {
+        const label = stage.flavor ? `${stage.type} (${stage.flavor})` : stage.type;
+        console.log(`\nStage "${label}" created successfully.`);
+        console.log(formatStageDetail(stage));
       }
     }));
 }
