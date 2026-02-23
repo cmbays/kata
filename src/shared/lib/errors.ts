@@ -24,13 +24,16 @@ export class ValidationError extends KataError {
   }
 }
 
-export class StageNotFoundError extends KataError {
+export class StepNotFoundError extends KataError {
   constructor(type: string, flavor?: string) {
     const name = flavor ? `${type}:${flavor}` : type;
-    super(`Stage not found: "${name}". Run "kata stage list" to see available stages.`);
-    this.name = 'StageNotFoundError';
+    super(`Step not found: "${name}". Run "kata stage list" to see available steps.`);
+    this.name = 'StepNotFoundError';
   }
 }
+
+/** @deprecated Use StepNotFoundError */
+export const StageNotFoundError = StepNotFoundError;
 
 export class PipelineNotFoundError extends KataError {
   constructor(id: string) {

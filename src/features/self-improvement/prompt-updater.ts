@@ -1,8 +1,8 @@
 import { readFileSync, writeFileSync, copyFileSync, existsSync, realpathSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import type { IStageRegistry } from '@domain/ports/stage-registry.js';
+import type { IStepRegistry } from '@domain/ports/step-registry.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
-import { StageNotFoundError } from '@shared/lib/errors.js';
+import { StepNotFoundError } from '@shared/lib/errors.js';
 import { logger } from '@shared/lib/logger.js';
 import type { PromptUpdate } from './learning-extractor.js';
 
@@ -34,7 +34,7 @@ export class PromptUpdater {
   apply(
     kataDir: string,
     update: PromptUpdate,
-    stageRegistry: IStageRegistry,
+    stageRegistry: IStepRegistry,
   ): PromptUpdateResult {
     try {
       // Resolve prompt path
@@ -125,7 +125,7 @@ export class PromptUpdater {
   private resolvePromptPath(
     kataDir: string,
     update: PromptUpdate,
-    stageRegistry: IStageRegistry,
+    stageRegistry: IStepRegistry,
   ): string | null {
     let rawPath: string | undefined;
 
@@ -139,7 +139,7 @@ export class PromptUpdater {
         rawPath = stage.promptTemplate;
       } catch (error) {
         // Only swallow "stage not found" — let corruption/permission errors propagate
-        if (!(error instanceof StageNotFoundError)) {
+        if (!(error instanceof StepNotFoundError)) {
           throw error;
         }
       }

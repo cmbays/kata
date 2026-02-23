@@ -1,12 +1,12 @@
 import { mkdtempSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import type { Stage } from '@domain/types/stage.js';
+import type { Step } from '@domain/types/step.js';
 import type { PipelineTemplate, PipelineMetadata } from '@domain/types/pipeline.js';
-import { StageRegistry } from '@infra/registries/stage-registry.js';
+import { StepRegistry } from '@infra/registries/step-registry.js';
 import { PipelineComposer } from './pipeline-composer.js';
 
-function makeStage(overrides: Partial<Stage> = {}): Stage {
+function makeStage(overrides: Partial<Step> = {}): Step {
   return {
     type: 'research',
     description: 'Research stage',
@@ -26,11 +26,11 @@ function makeStage(overrides: Partial<Stage> = {}): Stage {
 
 describe('PipelineComposer', () => {
   let registryPath: string;
-  let registry: StageRegistry;
+  let registry: StepRegistry;
 
   beforeEach(() => {
     registryPath = mkdtempSync(join(tmpdir(), 'pipeline-composer-test-'));
-    registry = new StageRegistry(registryPath);
+    registry = new StepRegistry(registryPath);
 
     // Register some stages for testing
     registry.register(makeStage({

@@ -1,40 +1,40 @@
 import { join } from 'node:path';
 import { mkdtempSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { deleteStage } from './stage-deleter.js';
-import { StageNotFoundError } from '@shared/lib/errors.js';
+import { deleteStep } from './step-deleter.js';
+import { StepNotFoundError } from '@shared/lib/errors.js';
 
-describe('deleteStage', () => {
+describe('deleteStep', () => {
   let baseDir: string;
 
   beforeEach(() => {
-    baseDir = mkdtempSync(join(tmpdir(), 'kata-stage-delete-test-'));
+    baseDir = mkdtempSync(join(tmpdir(), 'kata-step-delete-test-'));
   });
 
   afterEach(() => {
     rmSync(baseDir, { recursive: true, force: true });
   });
 
-  it('deletes an existing stage and returns it', () => {
-    const stageDef = { type: 'cleanup', description: 'Cleanup step', artifacts: [], learningHooks: [], config: {} };
-    writeFileSync(join(baseDir, 'cleanup.json'), JSON.stringify(stageDef, null, 2));
+  it('deletes an existing step and returns it', () => {
+    const stepDef = { type: 'cleanup', description: 'Cleanup step', artifacts: [], learningHooks: [], config: {} };
+    writeFileSync(join(baseDir, 'cleanup.json'), JSON.stringify(stepDef, null, 2));
 
-    const { deleted } = deleteStage({ stagesDir: baseDir, type: 'cleanup' });
+    const { deleted } = deleteStep({ stagesDir: baseDir, type: 'cleanup' });
 
     expect(deleted.type).toBe('cleanup');
     expect(deleted.description).toBe('Cleanup step');
     expect(existsSync(join(baseDir, 'cleanup.json'))).toBe(false);
   });
 
-  it('throws StageNotFoundError for a missing stage', () => {
-    expect(() => deleteStage({ stagesDir: baseDir, type: 'nonexistent' })).toThrow(StageNotFoundError);
+  it('throws StepNotFoundError for a missing step', () => {
+    expect(() => deleteStep({ stagesDir: baseDir, type: 'nonexistent' })).toThrow(StepNotFoundError);
   });
 
-  it('deletes a flavored stage with dot-notation filename', () => {
-    const stageDef = { type: 'build', flavor: 'go', artifacts: [], learningHooks: [], config: {} };
-    writeFileSync(join(baseDir, 'build.go.json'), JSON.stringify(stageDef, null, 2));
+  it('deletes a flavored step with dot-notation filename', () => {
+    const stepDef = { type: 'build', flavor: 'go', artifacts: [], learningHooks: [], config: {} };
+    writeFileSync(join(baseDir, 'build.go.json'), JSON.stringify(stepDef, null, 2));
 
-    const { deleted } = deleteStage({ stagesDir: baseDir, type: 'build', flavor: 'go' });
+    const { deleted } = deleteStep({ stagesDir: baseDir, type: 'build', flavor: 'go' });
 
     expect(deleted.type).toBe('build');
     expect(deleted.flavor).toBe('go');
@@ -47,7 +47,7 @@ describe('deleteStage', () => {
     writeFileSync(join(baseDir, 'build.json'), JSON.stringify(base, null, 2));
     writeFileSync(join(baseDir, 'build.go.json'), JSON.stringify(go, null, 2));
 
-    deleteStage({ stagesDir: baseDir, type: 'build', flavor: 'go' });
+    deleteStep({ stagesDir: baseDir, type: 'build', flavor: 'go' });
 
     expect(existsSync(join(baseDir, 'build.json'))).toBe(true);
     expect(existsSync(join(baseDir, 'build.go.json'))).toBe(false);

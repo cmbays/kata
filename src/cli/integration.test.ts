@@ -259,7 +259,7 @@ describe('Integration: error handling', () => {
     await p2.parseAsync(['node', 'test', '--cwd', baseDir, 'stage', 'inspect', 'nonexistent']);
 
     const output = errorSpy.mock.calls.map((c) => c[0]).join('\n');
-    expect(output).toContain('Stage not found');
+    expect(output).toContain('Step not found');
     expect(process.exitCode).toBe(1);
   });
 

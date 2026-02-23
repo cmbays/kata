@@ -1,9 +1,9 @@
 import type { Pipeline } from '@domain/types/pipeline.js';
 import type { KataConfig } from '@domain/types/config.js';
 import type { Gate, GateResult } from '@domain/types/gate.js';
-import type { Stage } from '@domain/types/stage.js';
+import type { Step } from '@domain/types/step.js';
 import type { Learning } from '@domain/types/learning.js';
-import type { IStageRegistry } from '@domain/ports/stage-registry.js';
+import type { IStepRegistry } from '@domain/ports/step-registry.js';
 import type { IKnowledgeStore } from '@domain/ports/knowledge-store.js';
 import type { IAdapterResolver } from '@domain/ports/adapter-resolver.js';
 import type { ITokenTracker } from '@domain/ports/token-tracker.js';
@@ -18,7 +18,7 @@ import { logger } from '@shared/lib/logger.js';
  * Dependencies injected into the pipeline runner for testability.
  */
 export interface PipelineRunnerDeps {
-  stageRegistry: IStageRegistry;
+  stepRegistry: IStepRegistry;
   knowledgeStore: IKnowledgeStore;
   adapterResolver: IAdapterResolver;
   resultCapturer: IResultCapturer;
@@ -117,7 +117,7 @@ export class PipelineRunner {
 
       try {
         // Get stage definition
-        const stageDef = this.deps.stageRegistry.get(
+        const stageDef = this.deps.stepRegistry.get(
           stageState.stageRef.type,
           stageState.stageRef.flavor,
         );
@@ -318,7 +318,7 @@ export class PipelineRunner {
    * stagesDir + refResolver are provided, resolve the file content and return
    * a new stage object with the resolved prompt. Otherwise returns the stage as-is.
    */
-  private resolvePromptTemplate(stageDef: Stage): Stage {
+  private resolvePromptTemplate(stageDef: Step): Step {
     if (!stageDef.promptTemplate || !this.deps.stagesDir || !this.deps.refResolver) {
       return stageDef;
     }
@@ -442,7 +442,7 @@ export class PipelineRunner {
   /**
    * Load Tier 1 and Tier 2 learnings for a stage.
    */
-  private loadLearnings(stageDef: Stage): Learning[] {
+  private loadLearnings(stageDef: Step): Learning[] {
     const tier1 = this.deps.knowledgeStore.loadForStage(stageDef.type);
     // Tier 2 requires an agentId; for now we load subscriptions with a generic ID
     const tier2 = this.deps.knowledgeStore.loadForSubscriptions('default');

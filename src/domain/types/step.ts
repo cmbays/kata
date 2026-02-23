@@ -2,7 +2,7 @@ import { z } from 'zod/v4';
 import { GateSchema } from './gate.js';
 import { ArtifactSchema } from './artifact.js';
 
-export const StageType = z.enum([
+export const StepType = z.enum([
   'research',
   'interview',
   'shape',
@@ -14,16 +14,16 @@ export const StageType = z.enum([
   'custom',
 ]);
 
-export type StageType = z.infer<typeof StageType>;
+export type StepType = z.infer<typeof StepType>;
 
-export const StageRefSchema = z.object({
+export const StepRefSchema = z.object({
   type: z.string().min(1),
   flavor: z.string().optional(),
 });
 
-export type StageRef = z.infer<typeof StageRefSchema>;
+export type StepRef = z.infer<typeof StepRefSchema>;
 
-export const StageToolSchema = z.object({
+export const StepToolSchema = z.object({
   /** Display name for the tool (e.g. "tsc"). Must be non-empty. */
   name: z.string().min(1),
   /** Human-readable explanation of why this tool is relevant. Must be non-empty. */
@@ -36,41 +36,41 @@ export const StageToolSchema = z.object({
   command: z.string().optional(),
 });
 
-export type StageTool = z.infer<typeof StageToolSchema>;
+export type StepTool = z.infer<typeof StepToolSchema>;
 
 /**
  * Hint for an agent (spawned via the Task tool) or skill (invoked via the Skill tool).
- * Separate arrays on StageResourcesSchema distinguish the two invocation semantics,
+ * Separate arrays on StepResourcesSchema distinguish the two invocation semantics,
  * even though the hint shape is identical.
  */
-export const StageAgentHintSchema = z.object({
+export const StepAgentHintSchema = z.object({
   /** Fully-qualified agent or skill name (e.g. "everything-claude-code:build-error-resolver"). Must be non-empty. */
   name: z.string().min(1),
   /** Optional condition under which to invoke (e.g. "when build fails"). */
   when: z.string().optional(),
 });
 
-export type StageAgentHint = z.infer<typeof StageAgentHintSchema>;
+export type StepAgentHint = z.infer<typeof StepAgentHintSchema>;
 
 /**
- * Structured tool/agent/skill hints attached to a stage definition.
+ * Structured tool/agent/skill hints attached to a step definition.
  *
  * - `tools`: CLI tools the agent may find useful (shown as inline code hints in the prompt).
  * - `agents`: Sub-agents to spawn via the Task tool under stated conditions.
  * - `skills`: Skills to invoke via the Skill tool under stated conditions.
  *
  * ManifestBuilder serializes these into a "## Suggested Resources" section appended
- * to the stage prompt. Hints are guidance for the executing agent, not hard-wired invocations.
+ * to the step prompt. Hints are guidance for the executing agent, not hard-wired invocations.
  */
-export const StageResourcesSchema = z.object({
-  tools: z.array(StageToolSchema).default([]),
-  agents: z.array(StageAgentHintSchema).default([]),
-  skills: z.array(StageAgentHintSchema).default([]),
+export const StepResourcesSchema = z.object({
+  tools: z.array(StepToolSchema).default([]),
+  agents: z.array(StepAgentHintSchema).default([]),
+  skills: z.array(StepAgentHintSchema).default([]),
 });
 
-export type StageResources = z.infer<typeof StageResourcesSchema>;
+export type StepResources = z.infer<typeof StepResourcesSchema>;
 
-export const StageSchema = z.object({
+export const StepSchema = z.object({
   type: z.string().min(1),
   flavor: z.string().optional(),
   description: z.string().optional(),
@@ -80,10 +80,10 @@ export const StageSchema = z.object({
   /** $ref path to prompt template .md file */
   promptTemplate: z.string().optional(),
   learningHooks: z.array(z.string()).default([]),
-  /** Arbitrary stage-specific configuration */
+  /** Arbitrary step-specific configuration */
   config: z.record(z.string(), z.unknown()).default({}),
   /** Structured tool/agent/skill hints serialized into the system prompt */
-  resources: StageResourcesSchema.optional(),
+  resources: StepResourcesSchema.optional(),
 });
 
-export type Stage = z.infer<typeof StageSchema>;
+export type Step = z.infer<typeof StepSchema>;

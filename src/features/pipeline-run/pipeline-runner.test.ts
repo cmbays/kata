@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import type { Pipeline } from '@domain/types/pipeline.js';
-import type { Stage } from '@domain/types/stage.js';
+import type { Step } from '@domain/types/step.js';
 import type { ExecutionResult } from '@domain/types/manifest.js';
 import type { Learning } from '@domain/types/learning.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
@@ -27,7 +27,7 @@ describe('PipelineRunner', () => {
   /**
    * Create a simple stage definition for testing.
    */
-  function makeStage(type: string, overrides?: Partial<Stage>): Stage {
+  function makeStage(type: string, overrides?: Partial<Step>): Step {
     return {
       type,
       artifacts: [],
@@ -76,7 +76,7 @@ describe('PipelineRunner', () => {
    * Create mock dependencies with sensible defaults.
    */
   function makeDeps(overrides?: Partial<PipelineRunnerDeps>): PipelineRunnerDeps {
-    const stageMap = new Map<string, Stage>();
+    const stageMap = new Map<string, Step>();
 
     const mockStageRegistry = {
       get: vi.fn((type: string, _flavor?: string) => {
@@ -136,7 +136,7 @@ describe('PipelineRunner', () => {
     };
 
     const mockManifestBuilder = {
-      build: vi.fn((stage: Stage, context: unknown) => ({
+      build: vi.fn((stage: Step, context: unknown) => ({
         stageType: stage.type,
         stageFlavor: stage.flavor,
         prompt: `Execute ${stage.type}`,
@@ -145,7 +145,7 @@ describe('PipelineRunner', () => {
         learnings: [],
       })),
       resolveRefs: vi.fn((template: string) => template),
-      attachGates: vi.fn((stage: Stage) => ({
+      attachGates: vi.fn((stage: Step) => ({
         entryGate: stage.entryGate,
         exitGate: stage.exitGate,
       })),
@@ -153,7 +153,7 @@ describe('PipelineRunner', () => {
     };
 
     return {
-      stageRegistry: mockStageRegistry as unknown as PipelineRunnerDeps['stageRegistry'],
+      stepRegistry: mockStageRegistry as unknown as PipelineRunnerDeps['stepRegistry'],
       knowledgeStore: mockKnowledgeStore as unknown as PipelineRunnerDeps['knowledgeStore'],
       adapterResolver: mockAdapterResolver as unknown as PipelineRunnerDeps['adapterResolver'],
       resultCapturer: mockResultCapturer as unknown as PipelineRunnerDeps['resultCapturer'],
@@ -168,8 +168,8 @@ describe('PipelineRunner', () => {
   /**
    * Helper to register stages in the mock registry.
    */
-  function registerStages(deps: PipelineRunnerDeps, stages: Stage[]): void {
-    const registry = deps.stageRegistry as unknown as { get: ReturnType<typeof vi.fn> };
+  function registerStages(deps: PipelineRunnerDeps, stages: Step[]): void {
+    const registry = deps.stepRegistry as unknown as { get: ReturnType<typeof vi.fn> };
     registry.get.mockImplementation((type: string) => {
       const found = stages.find((s) => s.type === type);
       if (!found) throw new Error(`Stage not found: ${type}`);

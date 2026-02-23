@@ -5,7 +5,7 @@ import { PipelineSchema, PipelineType, type Pipeline } from '@domain/types/pipel
 import { KataConfigSchema } from '@domain/types/config.js';
 import { PipelineComposer } from '@domain/services/pipeline-composer.js';
 import { ManifestBuilder } from '@domain/services/manifest-builder.js';
-import { StageRegistry } from '@infra/registries/stage-registry.js';
+import { StepRegistry } from '@infra/registries/step-registry.js';
 import { KnowledgeStore } from '@infra/knowledge/knowledge-store.js';
 import { AdapterResolver } from '@infra/execution/adapter-resolver.js';
 import { TokenTracker } from '@infra/tracking/token-tracker.js';
@@ -46,7 +46,7 @@ export function registerPipelineCommands(program: Command): void {
       const templateDir = kataDirPath(ctx.kataDir, 'templates');
 
       // Initialize services
-      const stageRegistry = new StageRegistry(stagesDir);
+      const stepRegistry = new StepRegistry(stagesDir);
       const knowledgeStore = new KnowledgeStore(kataDirPath(ctx.kataDir, 'knowledge'));
       const adapterResolver = AdapterResolver;
       const resultCapturer = new ResultCapturer(ctx.kataDir);
@@ -90,7 +90,7 @@ export function registerPipelineCommands(program: Command): void {
 
       // Run the pipeline
       const runner = new PipelineRunner({
-        stageRegistry,
+        stepRegistry,
         knowledgeStore,
         adapterResolver,
         resultCapturer,
@@ -208,14 +208,14 @@ export function registerPipelineCommands(program: Command): void {
       const pipelineDir = kataDirPath(ctx.kataDir, 'pipelines');
 
       // Validate that all stages exist in the registry
-      const stageRegistry = new StageRegistry(stagesDir);
+      const stepRegistry = new StepRegistry(stagesDir);
       const stageRefs = stages.map((s) => {
         const parts = s.split(':');
         const type = parts[0] as string;
         const flavor = parts[1];
 
         // Validate stage exists
-        stageRegistry.get(type, flavor);
+        stepRegistry.get(type, flavor);
 
         return { type, flavor };
       });
@@ -228,7 +228,7 @@ export function registerPipelineCommands(program: Command): void {
       );
 
       // Validate
-      const validation = PipelineComposer.validate(pipeline, stageRegistry);
+      const validation = PipelineComposer.validate(pipeline, stepRegistry);
       if (!validation.valid) {
         console.error('Pipeline validation failed:');
         for (const error of validation.errors) {

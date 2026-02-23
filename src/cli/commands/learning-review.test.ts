@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { Command } from 'commander';
 import { ExecutionHistoryEntrySchema, type ExecutionHistoryEntry } from '@domain/types/history.js';
-import { StageSchema } from '@domain/types/stage.js';
+import { StepSchema } from '@domain/types/step.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
 import { KnowledgeStore } from '@infra/knowledge/knowledge-store.js';
 import { registerKnowledgeCommands } from './knowledge.js';
@@ -82,7 +82,7 @@ describe('bunkai review command', () => {
       config: {},
       promptTemplate,
     };
-    JsonStore.write(join(stagesDir, `${type}.json`), stage, StageSchema);
+    JsonStore.write(join(stagesDir, `${type}.json`), stage, StepSchema);
   }
 
   it('shows message when no history exists', async () => {

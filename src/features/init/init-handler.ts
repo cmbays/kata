@@ -2,7 +2,7 @@ import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { existsSync, readdirSync, copyFileSync } from 'node:fs';
 import { KataConfigSchema, type KataConfig } from '@domain/types/config.js';
-import { StageRegistry } from '@infra/registries/stage-registry.js';
+import { StepRegistry } from '@infra/registries/step-registry.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
 import { loadPipelineTemplates } from '@infra/persistence/pipeline-template-store.js';
 import { checkBinaryExists } from '@infra/execution/claude-cli-adapter.js';
@@ -188,7 +188,7 @@ export async function handleInit(options: InitOptions): Promise<InitResult> {
   // Load built-in stages
   const packageRoot = resolvePackageRoot();
   const builtinStagesDir = join(packageRoot, KATA_DIRS.stages, KATA_DIRS.builtin);
-  const registry = new StageRegistry(stagesDir);
+  const registry = new StepRegistry(stagesDir);
 
   let stagesLoaded = 0;
   if (existsSync(builtinStagesDir)) {

@@ -1,47 +1,47 @@
 import { describe, it, expect } from 'vitest';
-import { StageType, StageRefSchema, StageResourcesSchema, StageSchema } from './stage.js';
+import { StepType, StepRefSchema, StepResourcesSchema, StepSchema } from './step.js';
 
-describe('StageType', () => {
+describe('StepType', () => {
   const validTypes = ['research', 'interview', 'shape', 'breadboard', 'plan', 'build', 'review', 'wrap-up', 'custom'];
 
-  it('accepts all valid stage types', () => {
+  it('accepts all valid step types', () => {
     for (const type of validTypes) {
-      expect(StageType.parse(type)).toBe(type);
+      expect(StepType.parse(type)).toBe(type);
     }
   });
 
-  it('rejects invalid stage type', () => {
-    expect(() => StageType.parse('not-a-real-stage')).toThrow();
+  it('rejects invalid step type', () => {
+    expect(() => StepType.parse('not-a-real-step')).toThrow();
   });
 });
 
-describe('StageRefSchema', () => {
+describe('StepRefSchema', () => {
   it('parses type-only ref', () => {
-    const result = StageRefSchema.parse({ type: 'build' });
+    const result = StepRefSchema.parse({ type: 'build' });
     expect(result.type).toBe('build');
     expect(result.flavor).toBeUndefined();
   });
 
   it('parses ref with flavor', () => {
-    const result = StageRefSchema.parse({ type: 'review', flavor: 'security' });
+    const result = StepRefSchema.parse({ type: 'review', flavor: 'security' });
     expect(result.flavor).toBe('security');
   });
 
   it('rejects empty type', () => {
-    expect(() => StageRefSchema.parse({ type: '' })).toThrow();
+    expect(() => StepRefSchema.parse({ type: '' })).toThrow();
   });
 });
 
-describe('StageResourcesSchema', () => {
+describe('StepResourcesSchema', () => {
   it('parses empty resources with defaults', () => {
-    const result = StageResourcesSchema.parse({});
+    const result = StepResourcesSchema.parse({});
     expect(result.tools).toEqual([]);
     expect(result.agents).toEqual([]);
     expect(result.skills).toEqual([]);
   });
 
   it('parses tools with command', () => {
-    const result = StageResourcesSchema.parse({
+    const result = StepResourcesSchema.parse({
       tools: [{ name: 'tsc', purpose: 'Type checking', command: 'npx tsc --noEmit' }],
     });
     expect(result.tools).toHaveLength(1);
@@ -50,32 +50,32 @@ describe('StageResourcesSchema', () => {
   });
 
   it('parses tools without command (optional)', () => {
-    const result = StageResourcesSchema.parse({
+    const result = StepResourcesSchema.parse({
       tools: [{ name: 'eslint', purpose: 'Linting' }],
     });
     expect(result.tools[0]!.command).toBeUndefined();
   });
 
   it('rejects tool with empty name', () => {
-    expect(() => StageResourcesSchema.parse({
+    expect(() => StepResourcesSchema.parse({
       tools: [{ name: '', purpose: 'Linting' }],
     })).toThrow();
   });
 
   it('rejects tool with empty purpose', () => {
-    expect(() => StageResourcesSchema.parse({
+    expect(() => StepResourcesSchema.parse({
       tools: [{ name: 'eslint', purpose: '' }],
     })).toThrow();
   });
 
   it('rejects agent with empty name', () => {
-    expect(() => StageResourcesSchema.parse({
+    expect(() => StepResourcesSchema.parse({
       agents: [{ name: '' }],
     })).toThrow();
   });
 
   it('parses agents with when hint', () => {
-    const result = StageResourcesSchema.parse({
+    const result = StepResourcesSchema.parse({
       agents: [{ name: 'everything-claude-code:build-error-resolver', when: 'when build fails' }],
     });
     expect(result.agents[0]!.name).toBe('everything-claude-code:build-error-resolver');
@@ -83,14 +83,14 @@ describe('StageResourcesSchema', () => {
   });
 
   it('parses skills without when (optional)', () => {
-    const result = StageResourcesSchema.parse({
+    const result = StepResourcesSchema.parse({
       skills: [{ name: 'pr-review-toolkit:code-reviewer' }],
     });
     expect(result.skills[0]!.when).toBeUndefined();
   });
 
   it('parses full resources object', () => {
-    const result = StageResourcesSchema.parse({
+    const result = StepResourcesSchema.parse({
       tools: [{ name: 'tsc', purpose: 'Type checking' }],
       agents: [{ name: 'build-resolver', when: 'on failure' }],
       skills: [{ name: 'code-reviewer', when: 'before done' }],
@@ -101,9 +101,9 @@ describe('StageResourcesSchema', () => {
   });
 });
 
-describe('StageSchema', () => {
-  it('parses minimal stage with defaults', () => {
-    const result = StageSchema.parse({ type: 'build' });
+describe('StepSchema', () => {
+  it('parses minimal step with defaults', () => {
+    const result = StepSchema.parse({ type: 'build' });
     expect(result.type).toBe('build');
     expect(result.artifacts).toEqual([]);
     expect(result.learningHooks).toEqual([]);
@@ -111,8 +111,8 @@ describe('StageSchema', () => {
     expect(result.resources).toBeUndefined();
   });
 
-  it('parses stage with gates and artifacts', () => {
-    const result = StageSchema.parse({
+  it('parses step with gates and artifacts', () => {
+    const result = StepSchema.parse({
       type: 'build',
       flavor: 'frontend',
       description: 'Build the UI components',
@@ -137,8 +137,8 @@ describe('StageSchema', () => {
     expect(result.config).toEqual({ parallel: true, maxRetries: 3 });
   });
 
-  it('parses stage with resources field', () => {
-    const result = StageSchema.parse({
+  it('parses step with resources field', () => {
+    const result = StepSchema.parse({
       type: 'build',
       flavor: 'typescript',
       resources: {
@@ -153,8 +153,8 @@ describe('StageSchema', () => {
     expect(result.resources!.skills).toHaveLength(0);
   });
 
-  it('accepts stage without resources (optional)', () => {
-    const result = StageSchema.parse({ type: 'research' });
+  it('accepts step without resources (optional)', () => {
+    const result = StepSchema.parse({ type: 'research' });
     expect(result.resources).toBeUndefined();
   });
 });

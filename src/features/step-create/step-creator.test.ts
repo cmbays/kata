@@ -1,11 +1,11 @@
 import { join } from 'node:path';
 import { mkdirSync, rmSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { createStage } from './stage-creator.js';
-import { StageSchema } from '@domain/types/stage.js';
+import { createStep } from './step-creator.js';
+import { StepSchema } from '@domain/types/step.js';
 
-describe('createStage', () => {
-  const baseDir = join(tmpdir(), `kata-stage-create-test-${Date.now()}`);
+describe('createStep', () => {
+  const baseDir = join(tmpdir(), `kata-step-create-test-${Date.now()}`);
 
   beforeEach(() => {
     mkdirSync(baseDir, { recursive: true });
@@ -15,31 +15,31 @@ describe('createStage', () => {
     rmSync(baseDir, { recursive: true, force: true });
   });
 
-  it('writes a minimal stage to disk', () => {
-    const { stage } = createStage({
+  it('writes a minimal step to disk', () => {
+    const { step } = createStep({
       stagesDir: baseDir,
       input: { type: 'my-custom' },
     });
 
-    expect(stage.type).toBe('my-custom');
-    expect(stage.artifacts).toEqual([]);
-    expect(stage.learningHooks).toEqual([]);
+    expect(step.type).toBe('my-custom');
+    expect(step.artifacts).toEqual([]);
+    expect(step.learningHooks).toEqual([]);
 
     const filePath = join(baseDir, 'my-custom.json');
     expect(existsSync(filePath)).toBe(true);
 
     const raw = JSON.parse(readFileSync(filePath, 'utf-8'));
-    const parsed = StageSchema.parse(raw);
+    const parsed = StepSchema.parse(raw);
     expect(parsed.type).toBe('my-custom');
   });
 
-  it('writes a flavored stage with dot-notation filename', () => {
-    createStage({
+  it('writes a flavored step with dot-notation filename', () => {
+    createStep({
       stagesDir: baseDir,
       input: { type: 'build', flavor: 'rust' },
     });
 
-    // StageRegistry uses "type.flavor.json" dot-notation (from feat/wave5-flavors)
+    // StepRegistry uses "type.flavor.json" dot-notation (from feat/wave5-flavors)
     const filePath = join(baseDir, 'build.rust.json');
     expect(existsSync(filePath)).toBe(true);
 
@@ -48,8 +48,8 @@ describe('createStage', () => {
     expect(raw.flavor).toBe('rust');
   });
 
-  it('persists full stage with gates and artifacts', () => {
-    const { stage } = createStage({
+  it('persists full step with gates and artifacts', () => {
+    const { step } = createStep({
       stagesDir: baseDir,
       input: {
         type: 'validate',
@@ -71,10 +71,10 @@ describe('createStage', () => {
       },
     });
 
-    expect(stage.entryGate?.conditions).toHaveLength(1);
-    expect(stage.exitGate?.conditions[0]?.type).toBe('human-approved');
-    expect(stage.artifacts[0]?.name).toBe('validation-report');
-    expect(stage.learningHooks).toEqual(['quality-check']);
+    expect(step.entryGate?.conditions).toHaveLength(1);
+    expect(step.exitGate?.conditions[0]?.type).toBe('human-approved');
+    expect(step.artifacts[0]?.name).toBe('validation-report');
+    expect(step.learningHooks).toEqual(['quality-check']);
 
     const filePath = join(baseDir, 'validate.json');
     expect(existsSync(filePath)).toBe(true);
@@ -82,19 +82,19 @@ describe('createStage', () => {
 
   it('throws when type is empty', () => {
     expect(() =>
-      createStage({ stagesDir: baseDir, input: { type: '' } }),
+      createStep({ stagesDir: baseDir, input: { type: '' } }),
     ).toThrow(/too_small|Too small/i);
   });
 
   it('throws when input is missing type', () => {
     expect(() =>
-      createStage({ stagesDir: baseDir, input: { flavor: 'x' } }),
+      createStep({ stagesDir: baseDir, input: { flavor: 'x' } }),
     ).toThrow(/invalid_type|Invalid input/i);
   });
 
-  it('overwrites an existing stage with the same type', () => {
-    createStage({ stagesDir: baseDir, input: { type: 'demo', description: 'first' } });
-    createStage({ stagesDir: baseDir, input: { type: 'demo', description: 'second' } });
+  it('overwrites an existing step with the same type', () => {
+    createStep({ stagesDir: baseDir, input: { type: 'demo', description: 'first' } });
+    createStep({ stagesDir: baseDir, input: { type: 'demo', description: 'second' } });
 
     const raw = JSON.parse(readFileSync(join(baseDir, 'demo.json'), 'utf-8'));
     expect(raw.description).toBe('second');

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { Command } from 'commander';
 import { PipelineSchema, PipelineTemplateSchema, type Pipeline } from '@domain/types/pipeline.js';
-import { StageSchema, type Stage } from '@domain/types/stage.js';
+import { StepSchema, type Step } from '@domain/types/step.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
 import { registerPipelineCommands } from './pipeline.js';
 
@@ -48,9 +48,9 @@ describe('registerPipelineCommands', () => {
     rmSync(parentDir, { recursive: true, force: true });
   });
 
-  function registerStage(stage: Stage): void {
+  function registerStage(stage: Step): void {
     const filename = stage.flavor ? `${stage.type}.${stage.flavor}.json` : `${stage.type}.json`;
-    JsonStore.write(join(kataDir, 'stages', filename), stage, StageSchema);
+    JsonStore.write(join(kataDir, 'stages', filename), stage, StepSchema);
   }
 
   function createPipeline(overrides?: Partial<Pipeline>): Pipeline {

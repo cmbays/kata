@@ -3,7 +3,7 @@ import {
   KataError,
   ConfigNotFoundError,
   ValidationError,
-  StageNotFoundError,
+  StepNotFoundError,
   PipelineNotFoundError,
   CycleNotFoundError,
 } from './errors.js';
@@ -38,17 +38,17 @@ describe('ValidationError', () => {
   });
 });
 
-describe('StageNotFoundError', () => {
+describe('StepNotFoundError', () => {
   it('formats message with type only', () => {
-    const err = new StageNotFoundError('research');
-    expect(err.name).toBe('StageNotFoundError');
+    const err = new StepNotFoundError('research');
+    expect(err.name).toBe('StepNotFoundError');
     expect(err.message).toContain('"research"');
     expect(err.message).toContain('kata stage list');
     expect(err).toBeInstanceOf(KataError);
   });
 
   it('formats message with type and flavor', () => {
-    const err = new StageNotFoundError('research', 'deep');
+    const err = new StepNotFoundError('research', 'deep');
     expect(err.message).toContain('"research:deep"');
   });
 });

@@ -1,6 +1,6 @@
 import type { Command } from 'commander';
 import { KnowledgeStore } from '@infra/knowledge/knowledge-store.js';
-import { StageRegistry } from '@infra/registries/stage-registry.js';
+import { StepRegistry } from '@infra/registries/step-registry.js';
 import { ExecutionHistoryEntrySchema } from '@domain/types/history.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
 import { LearningExtractor } from '@features/self-improvement/learning-extractor.js';
@@ -68,7 +68,7 @@ export function registerLearningReviewCommand(knowledge: Command): void {
 
       // Interactive or auto-accept mode
       const knowledgeStore = new KnowledgeStore(kataDirPath(ctx.kataDir, 'knowledge'));
-      const stageRegistry = new StageRegistry(kataDirPath(ctx.kataDir, 'stages'));
+      const stageRegistry = new StepRegistry(kataDirPath(ctx.kataDir, 'stages'));
       const promptUpdater = new PromptUpdater();
 
       let accepted = 0;
