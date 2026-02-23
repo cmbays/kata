@@ -1,0 +1,52 @@
+{
+  "type": "deploy",
+  "description": "Plan and execute a safe deployment — staging verification, zero-downtime strategy, rollback plan, feature flags, and post-deploy health checks.",
+  "entryGate": {
+    "type": "entry",
+    "conditions": [
+      {
+        "type": "artifact-exists",
+        "description": "Review findings must exist and be clean before deploying",
+        "artifactName": "review-findings"
+      }
+    ],
+    "required": true
+  },
+  "exitGate": {
+    "type": "exit",
+    "conditions": [
+      {
+        "type": "artifact-exists",
+        "description": "Deployment checklist must be completed",
+        "artifactName": "deployment-checklist"
+      },
+      {
+        "type": "artifact-exists",
+        "description": "Rollback plan must be documented",
+        "artifactName": "rollback-plan"
+      }
+    ],
+    "required": true
+  },
+  "artifacts": [
+    {
+      "name": "deployment-checklist",
+      "description": "Step-by-step deployment checklist with pre-deploy, deploy, and post-deploy verification steps",
+      "required": true,
+      "extension": ".md"
+    },
+    {
+      "name": "rollback-plan",
+      "description": "Rollback strategy with trigger conditions, step-by-step rollback procedure, and verification criteria",
+      "required": true,
+      "extension": ".md"
+    }
+  ],
+  "promptTemplate": "../prompts/deploy.md",
+  "learningHooks": [
+    "deployment-patterns",
+    "release-quality",
+    "operational-readiness"
+  ],
+  "config": {}
+}

@@ -1,6 +1,15 @@
 import type { Command } from 'commander';
+import type { ProjectType } from '@features/init/project-detector.js';
 import { handleInit } from '@features/init/init-handler.js';
 import { withCommandContext } from '@cli/utils.js';
+
+const PROJECT_TYPE_LABELS: Record<ProjectType, string> = {
+  node: 'Node.js / TypeScript',
+  rust: 'Rust',
+  go: 'Go',
+  python: 'Python',
+  unknown: 'Generic',
+};
 
 /**
  * Register the `kata init` command — the bow that starts your practice.
@@ -27,18 +36,28 @@ export function registerInitCommand(program: Command): void {
       if (ctx.globalOpts.json) {
         console.log(JSON.stringify(result, null, 2));
       } else {
-        console.log('kata project initialized!');
+        const projectLabel = result.config.project.name
+          ? `kata initialized for ${result.config.project.name}`
+          : 'kata project initialized';
+
+        console.log(`✓ ${projectLabel}`);
         console.log('');
-        console.log(`  Directory: ${result.kataDir}`);
-        console.log(`  Methodology: ${result.config.methodology}`);
-        console.log(`  Adapter: ${result.config.execution.adapter}`);
-        console.log(`  Stages loaded: ${result.stagesLoaded}`);
+        console.log(`  Stages loaded:    ${result.stagesLoaded}`);
         console.log(`  Templates loaded: ${result.templatesLoaded}`);
-        if (result.config.project.name) {
-          console.log(`  Project: ${result.config.project.name}`);
-        }
+        console.log(`  Project type:     ${PROJECT_TYPE_LABELS[result.projectType]}`);
+        console.log(`  Adapter:          ${result.config.execution.adapter}`);
         console.log('');
-        console.log('Run "kata stage list" to see available stages.');
+        console.log('  What\'s next:');
+        console.log('  → Start a pipeline:    kata flow start vertical');
+        console.log('  → See all stages:      kata form list');
+        console.log('  → See templates:       kata flow start --help');
+        console.log('  → Start a new cycle:   kata enbu new "Q1 Sprint"');
+        console.log('');
+        console.log('  Tip: add these lines to your .gitignore:');
+        console.log('    .kata/history/');
+        console.log('    .kata/tracking/');
+        console.log('');
+        console.log('  Docs: https://github.com/cmbays/kata');
       }
     }, { needsKataDir: false }));
 }

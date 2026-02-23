@@ -46,7 +46,11 @@ describe('registerInitCommand', () => {
 
     expect(existsSync(join(baseDir, '.kata'))).toBe(true);
     expect(existsSync(join(baseDir, '.kata', 'config.json'))).toBe(true);
-    expect(consoleSpy).toHaveBeenCalledWith('kata project initialized!');
+    // Check that the "What's next?" guidance was printed
+    const allOutput = consoleSpy.mock.calls.flat().join('\n');
+    expect(allOutput).toMatch(/kata initialized|kata project initialized/);
+    expect(allOutput).toMatch(/What's next/);
+    expect(allOutput).toMatch(/kata flow start/);
   });
 
   it('outputs JSON when --json flag is set', async () => {

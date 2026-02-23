@@ -7,7 +7,7 @@ import { JsonStore } from '@infra/persistence/json-store.js';
 import { loadPipelineTemplates } from '@infra/persistence/pipeline-template-store.js';
 import { KATA_DIRS } from '@shared/constants/paths.js';
 import { logger } from '@shared/lib/logger.js';
-import { detectProject, type ProjectInfo } from './project-detector.js';
+import { detectProject, type ProjectInfo, type ProjectType } from './project-detector.js';
 
 export interface InitOptions {
   cwd: string;
@@ -21,6 +21,7 @@ export interface InitResult {
   config: KataConfig;
   stagesLoaded: number;
   templatesLoaded: number;
+  projectType: ProjectType;
 }
 
 /**
@@ -204,5 +205,6 @@ export async function handleInit(options: InitOptions): Promise<InitResult> {
     config,
     stagesLoaded,
     templatesLoaded,
+    projectType: projectInfo.projectType,
   };
 }
