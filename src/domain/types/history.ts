@@ -6,6 +6,8 @@ export const TokenUsageSchema = z.object({
   cacheCreationTokens: z.number().int().min(0).default(0),
   cacheReadTokens: z.number().int().min(0).default(0),
   total: z.number().int().min(0).default(0),
+  /** Dollar cost (USD) — populated by ComposioAdapter from AO CostEstimate */
+  costUsd: z.number().min(0).optional(),
 });
 
 export type TokenUsage = z.infer<typeof TokenUsageSchema>;

@@ -192,4 +192,50 @@ describe('handleInit', () => {
       expect(promptFiles.has(`${stageName}.md`)).toBe(true);
     }
   });
+
+  it('sets claudeCliDetected in result when adapter is claude-cli', async () => {
+    const result = await handleInit({
+      cwd: baseDir,
+      adapter: 'claude-cli',
+      skipPrompts: true,
+    });
+
+    // claudeCliDetected is boolean (may be true or false depending on environment)
+    expect(typeof result.claudeCliDetected).toBe('boolean');
+  });
+
+  it('does not set claudeCliDetected when adapter is manual', async () => {
+    const result = await handleInit({
+      cwd: baseDir,
+      adapter: 'manual',
+      skipPrompts: true,
+    });
+
+    expect(result.claudeCliDetected).toBeUndefined();
+  });
+
+  it('generates ao-config.yaml when adapter is composio', async () => {
+    const result = await handleInit({
+      cwd: baseDir,
+      adapter: 'composio',
+      skipPrompts: true,
+    });
+
+    expect(result.aoConfigPath).toBeDefined();
+    expect(existsSync(result.aoConfigPath!)).toBe(true);
+
+    const raw = readFileSync(result.aoConfigPath!, 'utf-8');
+    expect(raw).toContain('projects:');
+    expect(raw).toContain(baseDir);
+  });
+
+  it('does not generate ao-config.yaml when adapter is not composio', async () => {
+    const result = await handleInit({
+      cwd: baseDir,
+      adapter: 'manual',
+      skipPrompts: true,
+    });
+
+    expect(result.aoConfigPath).toBeUndefined();
+  });
 });

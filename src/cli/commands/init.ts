@@ -46,6 +46,22 @@ export function registerInitCommand(program: Command): void {
         console.log(`  Templates loaded: ${result.templatesLoaded}`);
         console.log(`  Project type:     ${PROJECT_TYPE_LABELS[result.projectType] ?? result.projectType}`);
         console.log(`  Adapter:          ${result.config.execution.adapter}`);
+
+        // Adapter-specific notes
+        if (result.config.execution.adapter === 'claude-cli') {
+          if (result.claudeCliDetected === false) {
+            console.log('');
+            console.log('  ⚠ claude binary not found on PATH.');
+            console.log('    Install Claude Code before running stages:');
+            console.log('    https://docs.anthropic.com/en/docs/claude-code');
+          } else {
+            console.log('    Stages run in isolated worktrees via: claude -w');
+          }
+        } else if (result.config.execution.adapter === 'composio') {
+          console.log('    [experimental] AO config written to .kata/ao-config.yaml');
+          console.log('    See issue #23 for full integration status.');
+        }
+
         console.log('');
         console.log('  What\'s next:');
         console.log('  → Start a pipeline:    kata flow start vertical');
@@ -56,6 +72,9 @@ export function registerInitCommand(program: Command): void {
         console.log('  Tip: add these lines to your .gitignore:');
         console.log('    .kata/history/');
         console.log('    .kata/tracking/');
+        if (result.config.execution.adapter === 'claude-cli') {
+          console.log('    .claude/worktrees/');
+        }
         console.log('');
         console.log('  Docs: https://github.com/cmbays/kata');
       }

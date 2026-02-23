@@ -6,8 +6,12 @@ export const CycleState = z.enum(['planning', 'active', 'cooldown', 'complete'])
 export type CycleState = z.infer<typeof CycleState>;
 
 export const BudgetSchema = z.object({
-  /** Token budget (total tokens across all bets) */
+  /** Token budget (total tokens across all bets) — for ClaudeCliAdapter */
   tokenBudget: z.number().int().positive().optional(),
+  /** Cost budget in currency units — for ComposioAdapter (dollar cost from AO) */
+  costBudget: z.number().positive().optional(),
+  /** Currency for costBudget (ISO 4217 code). Defaults to 'USD' when not specified. */
+  currency: z.string().optional(),
   /** Time budget as ISO 8601 duration or human-readable (e.g., "2 weeks") */
   timeBudget: z.string().optional(),
 });
