@@ -22,23 +22,29 @@ export {
 export {
   StepType,
   StepRefSchema,
+  StepToolSchema,
+  StepAgentHintSchema,
   StepResourcesSchema,
   StepSchema,
   type StepRef,
+  type StepTool,
+  type StepAgentHint,
   type StepResources,
   type Step,
 } from './step.js';
 
-// Backwards-compatible re-exports
-export {
-  StepType as StageType,
-  StepRefSchema as StageRefSchema,
-  StepResourcesSchema as StageResourcesSchema,
-  StepSchema as StageSchema,
-  type StepRef as StageRef,
-  type StepResources as StageResources,
-  type Step as Stage,
-} from './step.js';
+// Backwards-compatible re-exports (deprecated — migrate to Step* names)
+/** @deprecated Use StepType */ export { StepType as StageType } from './step.js';
+/** @deprecated Use StepRefSchema */ export { StepRefSchema as StageRefSchema } from './step.js';
+/** @deprecated Use StepToolSchema */ export { StepToolSchema as StageToolSchema } from './step.js';
+/** @deprecated Use StepAgentHintSchema */ export { StepAgentHintSchema as StageAgentHintSchema } from './step.js';
+/** @deprecated Use StepResourcesSchema */ export { StepResourcesSchema as StageResourcesSchema } from './step.js';
+/** @deprecated Use StepSchema */ export { StepSchema as StageSchema } from './step.js';
+/** @deprecated Use StepRef */ export type { StepRef as StageRef } from './step.js';
+/** @deprecated Use StepTool */ export type { StepTool as StageTool } from './step.js';
+/** @deprecated Use StepAgentHint */ export type { StepAgentHint as StageAgentHint } from './step.js';
+/** @deprecated Use StepResources */ export type { StepResources as StageResources } from './step.js';
+/** @deprecated Use Step */ export type { Step as Stage } from './step.js';
 
 // Pipeline types
 export {

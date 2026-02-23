@@ -46,7 +46,7 @@ export function registerPipelineCommands(program: Command): void {
       const templateDir = kataDirPath(ctx.kataDir, 'templates');
 
       // Initialize services
-      const stageRegistry = new StepRegistry(stagesDir);
+      const stepRegistry = new StepRegistry(stagesDir);
       const knowledgeStore = new KnowledgeStore(kataDirPath(ctx.kataDir, 'knowledge'));
       const adapterResolver = AdapterResolver;
       const resultCapturer = new ResultCapturer(ctx.kataDir);
@@ -90,7 +90,7 @@ export function registerPipelineCommands(program: Command): void {
 
       // Run the pipeline
       const runner = new PipelineRunner({
-        stageRegistry,
+        stepRegistry,
         knowledgeStore,
         adapterResolver,
         resultCapturer,
@@ -208,14 +208,14 @@ export function registerPipelineCommands(program: Command): void {
       const pipelineDir = kataDirPath(ctx.kataDir, 'pipelines');
 
       // Validate that all stages exist in the registry
-      const stageRegistry = new StepRegistry(stagesDir);
+      const stepRegistry = new StepRegistry(stagesDir);
       const stageRefs = stages.map((s) => {
         const parts = s.split(':');
         const type = parts[0] as string;
         const flavor = parts[1];
 
         // Validate stage exists
-        stageRegistry.get(type, flavor);
+        stepRegistry.get(type, flavor);
 
         return { type, flavor };
       });
@@ -228,7 +228,7 @@ export function registerPipelineCommands(program: Command): void {
       );
 
       // Validate
-      const validation = PipelineComposer.validate(pipeline, stageRegistry);
+      const validation = PipelineComposer.validate(pipeline, stepRegistry);
       if (!validation.valid) {
         console.error('Pipeline validation failed:');
         for (const error of validation.errors) {

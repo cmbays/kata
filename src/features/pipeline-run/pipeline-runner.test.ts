@@ -153,7 +153,7 @@ describe('PipelineRunner', () => {
     };
 
     return {
-      stageRegistry: mockStageRegistry as unknown as PipelineRunnerDeps['stageRegistry'],
+      stepRegistry: mockStageRegistry as unknown as PipelineRunnerDeps['stepRegistry'],
       knowledgeStore: mockKnowledgeStore as unknown as PipelineRunnerDeps['knowledgeStore'],
       adapterResolver: mockAdapterResolver as unknown as PipelineRunnerDeps['adapterResolver'],
       resultCapturer: mockResultCapturer as unknown as PipelineRunnerDeps['resultCapturer'],
@@ -169,7 +169,7 @@ describe('PipelineRunner', () => {
    * Helper to register stages in the mock registry.
    */
   function registerStages(deps: PipelineRunnerDeps, stages: Step[]): void {
-    const registry = deps.stageRegistry as unknown as { get: ReturnType<typeof vi.fn> };
+    const registry = deps.stepRegistry as unknown as { get: ReturnType<typeof vi.fn> };
     registry.get.mockImplementation((type: string) => {
       const found = stages.find((s) => s.type === type);
       if (!found) throw new Error(`Stage not found: ${type}`);

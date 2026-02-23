@@ -18,7 +18,7 @@ import { logger } from '@shared/lib/logger.js';
  * Dependencies injected into the pipeline runner for testability.
  */
 export interface PipelineRunnerDeps {
-  stageRegistry: IStepRegistry;
+  stepRegistry: IStepRegistry;
   knowledgeStore: IKnowledgeStore;
   adapterResolver: IAdapterResolver;
   resultCapturer: IResultCapturer;
@@ -117,7 +117,7 @@ export class PipelineRunner {
 
       try {
         // Get stage definition
-        const stageDef = this.deps.stageRegistry.get(
+        const stageDef = this.deps.stepRegistry.get(
           stageState.stageRef.type,
           stageState.stageRef.flavor,
         );

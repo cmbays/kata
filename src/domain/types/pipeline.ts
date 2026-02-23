@@ -24,6 +24,11 @@ export const PipelineState = z.enum([
 export type PipelineState = z.infer<typeof PipelineState>;
 
 export const PipelineStepStateSchema = z.object({
+  /**
+   * The step definition this state slot references.
+   * Field name is `stageRef` (not `stepRef`) for JSON backwards compatibility
+   * with pipelines persisted before the Stage→Step rename (issue #36).
+   */
   stageRef: StepRefSchema,
   state: z.enum(['pending', 'active', 'skipped', 'complete', 'failed']).default('pending'),
   artifacts: z.array(ArtifactResultSchema).default([]),
