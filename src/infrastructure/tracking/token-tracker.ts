@@ -5,15 +5,16 @@ import { TokenUsageSchema } from '@domain/types/history.js';
 import type { TokenUsage } from '@domain/types/history.js';
 import type { Budget, BudgetAlertLevel } from '@domain/types/cycle.js';
 import { calculateUtilization } from '@domain/rules/budget-rules.js';
+import { logger } from '@shared/lib/logger.js';
 
 export interface BudgetAlert {
   level: BudgetAlertLevel;
   message: string;
   utilizationPercent: number;
-  /** Token budget tracking (populated by checkBudget) */
-  tokensUsed: number;
-  tokenBudget: number;
-  /** Cost budget tracking (populated by checkCostBudget) */
+  /** Token budget tracking (populated by checkBudget; undefined for cost-based alerts) */
+  tokensUsed?: number;
+  tokenBudget?: number;
+  /** Cost budget tracking (populated by checkCostBudget; undefined for token-based alerts) */
   costUsed?: number;
   costBudget?: number;
   currency?: string;
@@ -103,8 +104,6 @@ export class TokenTracker {
     return [{
       level: alertLevel,
       message: messages[alertLevel],
-      tokensUsed: 0,
-      tokenBudget: 0,
       utilizationPercent: percent,
       costUsed,
       costBudget: budget.costBudget,
@@ -152,7 +151,11 @@ export class TokenTracker {
     }
     try {
       return JsonStore.read(this.usagePath, UsageRecordSchema);
-    } catch {
+    } catch (err) {
+      logger.error(
+        `TokenTracker: failed to load usage records from "${this.usagePath}". Budget tracking data is unavailable.`,
+        { error: err instanceof Error ? err.message : String(err) },
+      );
       return {};
     }
   }

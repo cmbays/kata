@@ -176,8 +176,13 @@ export async function handleInit(options: InitOptions): Promise<InitResult> {
   } else if (adapter === 'composio') {
     const projectKey = deriveProjectKey(projectInfo.packageName, cwd);
     const branch = detectGitBranch(cwd);
-    aoConfigPath = join(kataDir, 'ao-config.yaml');
-    generateAoConfig({ projectKey, repoPath: cwd, branch, outputPath: aoConfigPath });
+    const aoPath = join(kataDir, 'ao-config.yaml');
+    try {
+      generateAoConfig({ projectKey, repoPath: cwd, branch, outputPath: aoPath });
+      aoConfigPath = aoPath;
+    } catch (err) {
+      logger.warn(`Failed to write AO config to "${aoPath}": ${err instanceof Error ? err.message : String(err)}. The file can be generated manually.`);
+    }
   }
 
   // Load built-in stages

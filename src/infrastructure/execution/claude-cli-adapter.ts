@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import type { ExecutionManifest, ExecutionResult } from '@domain/types/manifest.js';
 import type { IExecutionAdapter } from './execution-adapter.js';
+import { logger } from '@shared/lib/logger.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -137,10 +138,15 @@ export class ClaudeCliAdapter implements IExecutionAdapter {
       );
 
       const durationMs = Date.now() - startTime;
-      return this.parseResult(stdout, stderr ?? '', durationMs);
+      return this.parseResult(stdout, stderr ?? '', durationMs, manifest.stageType);
     } catch (err) {
       const durationMs = Date.now() - startTime;
       const errorMessage = err instanceof Error ? err.message : String(err);
+      logger.error('ClaudeCliAdapter.execute failed', {
+        stageType: manifest.stageType,
+        manifestPath,
+        error: errorMessage,
+      });
       return {
         success: false,
         artifacts: [],
@@ -208,15 +214,15 @@ export class ClaudeCliAdapter implements IExecutionAdapter {
 
   /**
    * Parse stdout into an ExecutionResult.
-   * Tries JSON extraction first; falls back to unstructured success.
+   * Tries JSON extraction first; falls back to failure result with raw notes.
    *
    * Parsing priority:
    * 1. Last ```json ... ``` fenced block in stdout
    * 2. Last bare top-level {...} object anchored to end of stdout (avoids greedy match
    *    grabbing braces in preceding prose/code)
-   * 3. Unstructured success with raw stdout as notes
+   * 3. No JSON found → failure result with raw output as notes
    */
-  private parseResult(stdout: string, stderr: string, durationMs: number): ExecutionResult {
+  private parseResult(stdout: string, stderr: string, durationMs: number, stageType?: string): ExecutionResult {
     // Try fenced JSON block first (non-greedy, finds last match)
     const jsonBlockMatches = [...stdout.matchAll(/```json\s*([\s\S]*?)\s*```/g)];
     const lastBlockMatch = jsonBlockMatches.at(-1);
@@ -250,16 +256,21 @@ export class ClaudeCliAdapter implements IExecutionAdapter {
       }
     }
 
-    // No valid JSON found — unstructured success
-    const combinedNotes = stderr
+    // No valid JSON found — treat as failure to avoid masking real model errors
+    logger.warn('ClaudeCliAdapter: claude produced no structured JSON output', {
+      stageType,
+      stdoutPreview: stdout.slice(0, 200),
+      hasStderr: stderr.length > 0,
+    });
+    const rawNotes = stderr
       ? `stdout:\n${stdout.slice(0, 2000)}\n\nstderr:\n${stderr.slice(0, 500)}`
       : stdout.slice(0, 2000) || undefined;
 
     return {
-      success: true,
+      success: false,
       artifacts: [],
       durationMs,
-      notes: combinedNotes,
+      notes: `Claude did not produce a structured result.${rawNotes ? `\n\nRaw output:\n${rawNotes}` : ''}`,
       completedAt: new Date().toISOString(),
     };
   }

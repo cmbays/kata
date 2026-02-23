@@ -1,5 +1,6 @@
 import { writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { basename } from 'node:path';
+import { logger } from '@shared/lib/logger.js';
 
 export interface AoConfigOptions {
   /** AO project key (defaults to packageName ?? basename(cwd)) */
@@ -61,8 +62,13 @@ export function detectGitBranch(cwd: string): string {
     const head = readFileSync(headPath, 'utf-8').trim();
     // "ref: refs/heads/main" → "main"
     const match = head.match(/^ref: refs\/heads\/(.+)$/);
-    return match?.[1] ?? 'main';
-  } catch {
+    if (!match) {
+      logger.warn(`detectGitBranch: HEAD is not a branch ref (detached HEAD?) in "${cwd}". Defaulting to 'main' in ao-config.yaml.`);
+      return 'main';
+    }
+    return match[1] ?? 'main';
+  } catch (err) {
+    logger.warn(`detectGitBranch: could not read .git/HEAD in "${cwd}": ${err instanceof Error ? err.message : String(err)}. Defaulting to 'main' in ao-config.yaml.`);
     return 'main';
   }
 }

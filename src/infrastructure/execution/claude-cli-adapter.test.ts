@@ -260,7 +260,7 @@ describe('ClaudeCliAdapter', () => {
       expect(result.notes).toBe('gate failed');
     });
 
-    it('falls back to unstructured success when no JSON in stdout', async () => {
+    it('returns failure when claude produces no JSON in stdout', async () => {
       const adapter = makeAdapter();
       adapter.setExecFunction(vi.fn().mockResolvedValue({
         stdout: 'I completed the task. Everything looks good.',
@@ -269,22 +269,23 @@ describe('ClaudeCliAdapter', () => {
 
       const result = await adapter.execute(makeManifest());
 
-      expect(result.success).toBe(true);
+      expect(result.success).toBe(false);
       expect(result.artifacts).toEqual([]);
+      expect(result.notes).toContain('did not produce a structured result');
       expect(result.notes).toContain('I completed the task');
     });
 
-    it('produces notes: undefined when stdout and stderr are both empty', async () => {
+    it('produces a failure note when stdout and stderr are both empty', async () => {
       const adapter = makeAdapter();
       adapter.setExecFunction(vi.fn().mockResolvedValue({ stdout: '', stderr: '' }));
 
       const result = await adapter.execute(makeManifest());
 
-      expect(result.success).toBe(true);
-      expect(result.notes).toBeUndefined();
+      expect(result.success).toBe(false);
+      expect(result.notes).toContain('did not produce a structured result');
     });
 
-    it('includes stderr in notes when both stdout and stderr present (unstructured fallback)', async () => {
+    it('includes raw output in notes when unstructured (no JSON fallback)', async () => {
       const adapter = makeAdapter();
       adapter.setExecFunction(vi.fn().mockResolvedValue({
         stdout: 'main output',
@@ -293,7 +294,7 @@ describe('ClaudeCliAdapter', () => {
 
       const result = await adapter.execute(makeManifest());
 
-      expect(result.success).toBe(true);
+      expect(result.success).toBe(false);
       expect(result.notes).toContain('stdout:');
       expect(result.notes).toContain('main output');
       expect(result.notes).toContain('stderr:');
