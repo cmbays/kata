@@ -13,15 +13,16 @@ function stageKey(type: string, flavor?: string): string {
 
 /**
  * Build the filename for a stage JSON file.
+ * Uses dot notation: `{type}.json` or `{type}.{flavor}.json`.
  */
 function stageFilename(type: string, flavor?: string): string {
-  return flavor ? `${type}:${flavor}.json` : `${type}.json`;
+  return flavor ? `${type}.${flavor}.json` : `${type}.json`;
 }
 
 /**
  * Stage Registry — manages stage definitions with JSON file persistence.
  *
- * Stages are persisted to `basePath/{type}.json` (or `{type}:{flavor}.json` for flavored stages).
+ * Stages are persisted to `basePath/{type}.json` (or `{type}.{flavor}.json` for flavored stages).
  * Uses an in-memory cache backed by JsonStore for file I/O.
  */
 export class StageRegistry implements IStageRegistry {
@@ -80,6 +81,24 @@ export class StageRegistry implements IStageRegistry {
     }
 
     return all;
+  }
+
+  /**
+   * Return all registered flavors for a given stage type, sorted alphabetically.
+   */
+  listFlavors(type: string): string[] {
+    if (this.stages.size === 0) {
+      this.loadFromDisk();
+    }
+
+    const flavors = new Set<string>();
+    for (const stage of this.stages.values()) {
+      if (stage.type === type && stage.flavor !== undefined) {
+        flavors.add(stage.flavor);
+      }
+    }
+
+    return [...flavors].sort();
   }
 
   /**

@@ -1,0 +1,73 @@
+{
+  "type": "build",
+  "flavor": "go",
+  "description": "Build stage specialized for Go projects. Compile all packages, run vet, and produce binaries in bin/.",
+  "entryGate": {
+    "type": "entry",
+    "conditions": [
+      {
+        "type": "artifact-exists",
+        "description": "Implementation plan must exist before building",
+        "artifactName": "implementation-plan"
+      }
+    ],
+    "required": true
+  },
+  "exitGate": {
+    "type": "exit",
+    "conditions": [
+      {
+        "type": "command-passes",
+        "description": "All packages must compile successfully",
+        "command": "go build ./..."
+      },
+      {
+        "type": "command-passes",
+        "description": "Vet must find no issues",
+        "command": "go vet ./..."
+      },
+      {
+        "type": "artifact-exists",
+        "description": "Build output summary must be produced",
+        "artifactName": "build-output"
+      }
+    ],
+    "required": true
+  },
+  "artifacts": [
+    {
+      "name": "build-output",
+      "description": "Build summary — what was built, files created/modified, test results, acceptance criteria status",
+      "required": true,
+      "extension": ".md"
+    }
+  ],
+  "promptTemplate": "../prompts/build.go.md",
+  "learningHooks": [
+    "build-quality",
+    "go-patterns",
+    "concurrency-safety"
+  ],
+  "config": {},
+  "resources": {
+    "tools": [
+      {
+        "name": "go build",
+        "purpose": "Compile all packages",
+        "command": "go build ./..."
+      },
+      {
+        "name": "go vet",
+        "purpose": "Static analysis for common errors",
+        "command": "go vet ./..."
+      },
+      {
+        "name": "go test",
+        "purpose": "Run the test suite",
+        "command": "go test ./..."
+      }
+    ],
+    "agents": [],
+    "skills": []
+  }
+}

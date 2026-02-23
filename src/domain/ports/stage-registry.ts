@@ -7,4 +7,5 @@ export interface StageFilter {
 export interface IStageRegistry {
   get(type: string, flavor?: string): Stage;
   list(filter?: StageFilter): Stage[];
+  listFlavors(type: string): string[];
 }

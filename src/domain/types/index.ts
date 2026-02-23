@@ -22,8 +22,10 @@ export {
 export {
   StageType,
   StageRefSchema,
+  StageResourcesSchema,
   StageSchema,
   type StageRef,
+  type StageResources,
   type Stage,
 } from './stage.js';
 

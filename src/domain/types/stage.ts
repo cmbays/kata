@@ -23,6 +23,25 @@ export const StageRefSchema = z.object({
 
 export type StageRef = z.infer<typeof StageRefSchema>;
 
+const StageToolSchema = z.object({
+  name: z.string(),
+  purpose: z.string(),
+  command: z.string().optional(),
+});
+
+const StageAgentHintSchema = z.object({
+  name: z.string(),
+  when: z.string().optional(),
+});
+
+export const StageResourcesSchema = z.object({
+  tools: z.array(StageToolSchema).default([]),
+  agents: z.array(StageAgentHintSchema).default([]),
+  skills: z.array(StageAgentHintSchema).default([]),
+});
+
+export type StageResources = z.infer<typeof StageResourcesSchema>;
+
 export const StageSchema = z.object({
   type: z.string().min(1),
   flavor: z.string().optional(),
@@ -35,6 +54,8 @@ export const StageSchema = z.object({
   learningHooks: z.array(z.string()).default([]),
   /** Arbitrary stage-specific configuration */
   config: z.record(z.string(), z.unknown()).default({}),
+  /** Structured tool/agent/skill hints serialized into the system prompt */
+  resources: StageResourcesSchema.optional(),
 });
 
 export type Stage = z.infer<typeof StageSchema>;

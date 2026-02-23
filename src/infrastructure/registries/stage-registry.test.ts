@@ -37,7 +37,7 @@ describe('StageRegistry', () => {
       const stage = makeStage({ flavor: 'competitive-analysis' });
       registry.register(stage);
 
-      expect(existsSync(join(basePath, 'research:competitive-analysis.json'))).toBe(true);
+      expect(existsSync(join(basePath, 'research.competitive-analysis.json'))).toBe(true);
     });
 
     it('should overwrite an existing stage of the same type+flavor', () => {
@@ -248,6 +248,48 @@ describe('StageRegistry', () => {
 
       expect(base.description).toBe('Base');
       expect(deep.description).toBe('Deep');
+    });
+  });
+
+  describe('listFlavors', () => {
+    it('should return all flavors for a given type', () => {
+      registry.register(makeStage({ type: 'build' }));
+      registry.register(makeStage({ type: 'build', flavor: 'typescript' }));
+      registry.register(makeStage({ type: 'build', flavor: 'rust' }));
+      registry.register(makeStage({ type: 'research' }));
+
+      const flavors = registry.listFlavors('build');
+      expect(flavors).toEqual(['rust', 'typescript']);
+    });
+
+    it('should return empty array when type has no flavors', () => {
+      registry.register(makeStage({ type: 'build' }));
+
+      const flavors = registry.listFlavors('build');
+      expect(flavors).toEqual([]);
+    });
+
+    it('should return empty array for unknown type', () => {
+      const flavors = registry.listFlavors('nonexistent');
+      expect(flavors).toEqual([]);
+    });
+
+    it('should return sorted flavor list', () => {
+      registry.register(makeStage({ type: 'review', flavor: 'security' }));
+      registry.register(makeStage({ type: 'review', flavor: 'api' }));
+      registry.register(makeStage({ type: 'review', flavor: 'frontend' }));
+
+      const flavors = registry.listFlavors('review');
+      expect(flavors).toEqual(['api', 'frontend', 'security']);
+    });
+
+    it('should not include base (unflavored) stage in flavor list', () => {
+      registry.register(makeStage({ type: 'build' }));
+      registry.register(makeStage({ type: 'build', flavor: 'go' }));
+
+      const flavors = registry.listFlavors('build');
+      expect(flavors).not.toContain(undefined);
+      expect(flavors).toEqual(['go']);
     });
   });
 });
