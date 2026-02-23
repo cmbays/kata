@@ -856,5 +856,102 @@ describe('PipelineRunner', () => {
       const [, , action] = onGateResult.mock.calls[0] as [unknown, unknown, string];
       expect(action).toBe('skip');
     });
+
+    it('should exhaust retries and abort when gateOverride always returns retry', async () => {
+      const gateOverride = vi.fn(async () => 'retry' as const);
+      const deps = makeDeps({
+        promptFn: {
+          gateOverride,
+          captureLearning: vi.fn(async () => null),
+        },
+      });
+      const stage = makeStage('build', {
+        entryGate: {
+          type: 'entry',
+          conditions: [{ type: 'artifact-exists', artifactName: 'missing' }],
+          required: true,
+        },
+      });
+      registerStages(deps, [stage]);
+      const pipeline = makePipeline(['build']);
+
+      const runner = new PipelineRunner(deps);
+      const result = await runner.run(pipeline);
+
+      // attempt 0 + 3 retries = 4 total gateOverride calls
+      expect(gateOverride).toHaveBeenCalledTimes(4);
+      expect(result.success).toBe(false);
+      expect(result.abortedAt).toBe(0);
+    });
+
+    it('should fire onGateResult with abort when retries are exhausted', async () => {
+      const onGateResult = vi.fn(async () => {});
+      const deps = makeDeps({
+        hooks: { onGateResult },
+        promptFn: {
+          gateOverride: vi.fn(async () => 'retry' as const),
+          captureLearning: vi.fn(async () => null),
+        },
+      });
+      const stage = makeStage('build', {
+        entryGate: {
+          type: 'entry',
+          conditions: [{ type: 'artifact-exists', artifactName: 'missing' }],
+          required: true,
+        },
+      });
+      registerStages(deps, [stage]);
+      const pipeline = makePipeline(['build']);
+
+      const runner = new PipelineRunner(deps);
+      await runner.run(pipeline);
+
+      const abortCalls = onGateResult.mock.calls.filter((c) => c[2] === 'abort');
+      expect(abortCalls.length).toBeGreaterThan(0);
+    });
+
+    it('should fire onStageStart before gate evaluation even if gate then aborts', async () => {
+      const onStageStart = vi.fn(async () => {});
+      const onStageFail = vi.fn(async () => {});
+      const deps = makeDeps({ hooks: { onStageStart, onStageFail } });
+      const stage = makeStage('build', {
+        entryGate: {
+          type: 'entry',
+          conditions: [{ type: 'artifact-exists', artifactName: 'missing' }],
+          required: true,
+        },
+      });
+      registerStages(deps, [stage]);
+      const pipeline = makePipeline(['build']);
+
+      const runner = new PipelineRunner(deps);
+      await runner.run(pipeline);
+
+      // onStageStart fires before gate evaluation
+      expect(onStageStart).toHaveBeenCalledTimes(1);
+      expect(onStageStart).toHaveBeenCalledWith('build', 0);
+      // Gate abort is not a stage exception — onStageFail must NOT fire
+      expect(onStageFail).not.toHaveBeenCalled();
+    });
+
+    it('should propagate original error even when onStageFail hook itself throws', async () => {
+      const onStageFail = vi.fn(async () => {
+        throw new Error('hook itself exploded');
+      });
+      const deps = makeDeps({ hooks: { onStageFail } });
+      const stage = makeStage('research');
+      registerStages(deps, [stage]);
+
+      const mockAdapter = deps.adapterResolver.resolve();
+      (mockAdapter.execute as ReturnType<typeof vi.fn>).mockRejectedValue(
+        new Error('original error'),
+      );
+
+      const pipeline = makePipeline(['research']);
+      const runner = new PipelineRunner(deps);
+
+      await expect(runner.run(pipeline)).rejects.toThrow('original error');
+      expect(onStageFail).toHaveBeenCalledTimes(1);
+    });
   });
 });

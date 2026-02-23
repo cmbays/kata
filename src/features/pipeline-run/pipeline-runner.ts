@@ -106,7 +106,7 @@ export class PipelineRunner {
         pipeline.currentStageIndex = i;
         pipeline.updatedAt = new Date().toISOString();
         this.persistPipeline(pipeline);
-        await this.fireHook(() => this.deps.hooks?.onStageStart?.(stageState.stageRef.type, i));
+        await this.fireHook('onStageStart', () => this.deps.hooks?.onStageStart?.(stageState.stageRef.type, i));
 
         // Build gate evaluation context
         const gateContext = this.buildGateContext(pipeline, i);
@@ -214,8 +214,11 @@ export class PipelineRunner {
                 ],
               });
             }
-          } catch {
-            // Learning capture failure is non-critical — continue pipeline
+          } catch (err) {
+            logger.warn('Learning capture failed — continuing pipeline', {
+              stageType: stageState.stageRef.type,
+              error: err instanceof Error ? err.message : String(err),
+            });
           }
         }
 
@@ -235,7 +238,7 @@ export class PipelineRunner {
         stagesCompleted++;
         pipeline.updatedAt = new Date().toISOString();
         this.persistPipeline(pipeline);
-        await this.fireHook(() => this.deps.hooks?.onStageComplete?.(stageState.stageRef.type, i));
+        await this.fireHook('onStageComplete', () => this.deps.hooks?.onStageComplete?.(stageState.stageRef.type, i));
       } catch (error) {
         // Fatal error — mark stage and pipeline as failed, persist, and stop
         stageState.state = 'failed';
@@ -247,11 +250,14 @@ export class PipelineRunner {
 
         try {
           this.persistPipeline(pipeline);
-        } catch {
-          // Cannot persist — best-effort cleanup
+        } catch (persistErr) {
+          logger.error('Failed to persist abandoned pipeline state — file may be inconsistent', {
+            pipelineId: pipeline.id,
+            error: persistErr instanceof Error ? persistErr.message : String(persistErr),
+          });
         }
 
-        await this.fireHook(() =>
+        await this.fireHook('onStageFail', () =>
           this.deps.hooks?.onStageFail?.(stageState.stageRef.type, i, error),
         );
         throw error;
@@ -326,27 +332,41 @@ export class PipelineRunner {
     context: GateEvalContext,
   ): Promise<'proceed' | 'skip' | 'abort'> {
     const MAX_RETRIES = 3;
+    let lastResult: GateResult | undefined;
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       const result = await evaluateGate(gate, context);
+      lastResult = result;
+
       if (result.passed) {
-        await this.fireHook(() => this.deps.hooks?.onGateResult?.(gate, result, 'proceed'));
+        await this.fireHook('onGateResult', () =>
+          this.deps.hooks?.onGateResult?.(gate, result, 'proceed'),
+        );
         return 'proceed';
       }
 
       const action = await this.handleGateFailure(result);
       if (action === 'skip') {
-        await this.fireHook(() => this.deps.hooks?.onGateResult?.(gate, result, 'skip'));
+        await this.fireHook('onGateResult', () =>
+          this.deps.hooks?.onGateResult?.(gate, result, 'skip'),
+        );
         return 'skip';
       }
       if (action === 'abort') {
-        await this.fireHook(() => this.deps.hooks?.onGateResult?.(gate, result, 'abort'));
+        await this.fireHook('onGateResult', () =>
+          this.deps.hooks?.onGateResult?.(gate, result, 'abort'),
+        );
         return 'abort';
       }
       // action === 'retry' — loop continues to re-evaluate
     }
 
-    // Exhausted retries — abort
+    // Exhausted retries — fire hook with last result before aborting
+    if (lastResult) {
+      await this.fireHook('onGateResult', () =>
+        this.deps.hooks?.onGateResult?.(gate, lastResult!, 'abort'),
+      );
+    }
     return 'abort';
   }
 
@@ -382,12 +402,14 @@ export class PipelineRunner {
   /**
    * Fire a lifecycle hook, swallowing any errors so they never abort the pipeline.
    */
-  private async fireHook(fn: () => Promise<void> | undefined): Promise<void> {
+  private async fireHook(hookName: string, fn: () => Promise<void> | void): Promise<void> {
     try {
       await fn();
     } catch (err) {
       logger.warn('Lifecycle hook error (swallowed)', {
+        hook: hookName,
         error: err instanceof Error ? err.message : String(err),
+        stack: err instanceof Error ? err.stack : undefined,
       });
     }
   }
