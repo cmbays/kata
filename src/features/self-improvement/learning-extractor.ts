@@ -1,6 +1,6 @@
 import type { ExecutionHistoryEntry } from '@domain/types/history.js';
 import type { Learning } from '@domain/types/learning.js';
-import type { Stage } from '@domain/types/stage.js';
+import type { Step } from '@domain/types/step.js';
 
 /**
  * A recurring pattern detected across execution history entries.
@@ -99,7 +99,7 @@ export class LearningExtractor {
    * For each stage with relevant learnings, suggest additions to the prompt
    * that incorporate the learned patterns.
    */
-  suggestPromptUpdates(learnings: Learning[], stages: Stage[]): PromptUpdate[] {
+  suggestPromptUpdates(learnings: Learning[], stages: Step[]): PromptUpdate[] {
     const updates: PromptUpdate[] = [];
 
     // Group learnings by stageType

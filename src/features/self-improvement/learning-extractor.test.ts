@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { ExecutionHistoryEntry } from '@domain/types/history.js';
 import type { Learning } from '@domain/types/learning.js';
-import type { Stage } from '@domain/types/stage.js';
+import type { Step } from '@domain/types/step.js';
 import { LearningExtractor } from './learning-extractor.js';
 import type { Pattern } from './learning-extractor.js';
 
@@ -36,7 +36,7 @@ function makeLearning(overrides: Partial<Learning> = {}): Learning {
   };
 }
 
-function makeStage(overrides: Partial<Stage> = {}): Stage {
+function makeStage(overrides: Partial<Step> = {}): Step {
   return {
     type: 'build',
     artifacts: [],

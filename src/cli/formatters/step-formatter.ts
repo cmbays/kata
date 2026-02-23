@@ -1,16 +1,16 @@
-import type { Stage } from '@domain/types/stage.js';
+import type { Step } from '@domain/types/step.js';
 
 /**
- * Format a list of stages as an aligned text table.
+ * Format a list of steps as an aligned text table.
  */
-export function formatStageTable(stages: Stage[]): string {
-  if (stages.length === 0) {
-    return 'No stages found.';
+export function formatStepTable(steps: Step[]): string {
+  if (steps.length === 0) {
+    return 'No steps found.';
   }
 
   const header = padColumns(['Type', 'Flavor', 'Gates', 'Artifacts']);
   const separator = '-'.repeat(header.length);
-  const rows = stages.map((s) => {
+  const rows = steps.map((s) => {
     const gates = buildGatesSummary(s);
     const artifacts = s.artifacts.map((a) => a.name).join(', ') || '-';
     return padColumns([s.type, s.flavor ?? '-', gates, artifacts]);
@@ -20,41 +20,41 @@ export function formatStageTable(stages: Stage[]): string {
 }
 
 /**
- * Format a single stage with full detail.
+ * Format a single step with full detail.
  */
-export function formatStageDetail(stage: Stage): string {
+export function formatStepDetail(step: Step): string {
   const lines: string[] = [];
 
-  lines.push(`Stage: ${stage.type}${stage.flavor ? ` (${stage.flavor})` : ''}`);
-  if (stage.description) {
-    lines.push(`Description: ${stage.description}`);
+  lines.push(`Step: ${step.type}${step.flavor ? ` (${step.flavor})` : ''}`);
+  if (step.description) {
+    lines.push(`Description: ${step.description}`);
   }
   lines.push('');
 
   // Entry gate
-  if (stage.entryGate) {
+  if (step.entryGate) {
     lines.push('Entry Gate:');
-    lines.push(`  Required: ${stage.entryGate.required}`);
-    for (const cond of stage.entryGate.conditions) {
+    lines.push(`  Required: ${step.entryGate.required}`);
+    for (const cond of step.entryGate.conditions) {
       lines.push(`  - [${cond.type}] ${cond.description ?? cond.artifactName ?? cond.predecessorType ?? ''}`);
     }
     lines.push('');
   }
 
   // Exit gate
-  if (stage.exitGate) {
+  if (step.exitGate) {
     lines.push('Exit Gate:');
-    lines.push(`  Required: ${stage.exitGate.required}`);
-    for (const cond of stage.exitGate.conditions) {
+    lines.push(`  Required: ${step.exitGate.required}`);
+    for (const cond of step.exitGate.conditions) {
       lines.push(`  - [${cond.type}] ${cond.description ?? cond.artifactName ?? cond.predecessorType ?? ''}`);
     }
     lines.push('');
   }
 
   // Artifacts
-  if (stage.artifacts.length > 0) {
+  if (step.artifacts.length > 0) {
     lines.push('Artifacts:');
-    for (const artifact of stage.artifacts) {
+    for (const artifact of step.artifacts) {
       const req = artifact.required ? ' (required)' : ' (optional)';
       lines.push(`  - ${artifact.name}${req}${artifact.extension ? ` [${artifact.extension}]` : ''}`);
       if (artifact.description) {
@@ -65,20 +65,20 @@ export function formatStageDetail(stage: Stage): string {
   }
 
   // Prompt template
-  if (stage.promptTemplate) {
-    lines.push(`Prompt Template: ${stage.promptTemplate}`);
+  if (step.promptTemplate) {
+    lines.push(`Prompt Template: ${step.promptTemplate}`);
     lines.push('');
   }
 
   // Learning hooks
-  if (stage.learningHooks.length > 0) {
-    lines.push(`Learning Hooks: ${stage.learningHooks.join(', ')}`);
+  if (step.learningHooks.length > 0) {
+    lines.push(`Learning Hooks: ${step.learningHooks.join(', ')}`);
     lines.push('');
   }
 
   // Resources
-  if (stage.resources) {
-    const { tools, agents, skills } = stage.resources;
+  if (step.resources) {
+    const { tools, agents, skills } = step.resources;
     const hasResources = tools.length > 0 || agents.length > 0 || skills.length > 0;
     if (hasResources) {
       lines.push('Resources:');
@@ -111,23 +111,23 @@ export function formatStageDetail(stage: Stage): string {
 }
 
 /**
- * Format stages as JSON string.
+ * Format steps as JSON string.
  */
-export function formatStageJson(stages: Stage[]): string {
-  return JSON.stringify(stages, null, 2);
+export function formatStepJson(steps: Step[]): string {
+  return JSON.stringify(steps, null, 2);
 }
 
 // ---- Helpers ----
 
-function buildGatesSummary(stage: Stage): string {
+function buildGatesSummary(step: Step): string {
   const parts: string[] = [];
-  if (stage.entryGate) {
-    const req = stage.entryGate.required ? 'req' : 'opt';
-    parts.push(`entry(${stage.entryGate.conditions.length},${req})`);
+  if (step.entryGate) {
+    const req = step.entryGate.required ? 'req' : 'opt';
+    parts.push(`entry(${step.entryGate.conditions.length},${req})`);
   }
-  if (stage.exitGate) {
-    const req = stage.exitGate.required ? 'req' : 'opt';
-    parts.push(`exit(${stage.exitGate.conditions.length},${req})`);
+  if (step.exitGate) {
+    const req = step.exitGate.required ? 'req' : 'opt';
+    parts.push(`exit(${step.exitGate.conditions.length},${req})`);
   }
   return parts.join(', ') || '-';
 }

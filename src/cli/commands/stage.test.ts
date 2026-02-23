@@ -137,7 +137,7 @@ describe('registerStageCommands', () => {
       await program.parseAsync(['node', 'test', '--cwd', baseDir, 'stage', 'list', '--type', 'nonexistent']);
 
       const output = consoleSpy.mock.calls[0]?.[0] as string;
-      expect(output).toContain('No stages found');
+      expect(output).toContain('No steps found');
     });
   });
 
@@ -149,7 +149,7 @@ describe('registerStageCommands', () => {
       await program.parseAsync(['node', 'test', '--cwd', baseDir, 'stage', 'inspect', 'research']);
 
       const output = consoleSpy.mock.calls[0]?.[0] as string;
-      expect(output).toContain('Stage: research');
+      expect(output).toContain('Step: research');
       expect(output).toContain('Research step');
     });
 
@@ -158,7 +158,7 @@ describe('registerStageCommands', () => {
       await program.parseAsync(['node', 'test', '--cwd', baseDir, 'stage', 'inspect', 'build', '--flavor', 'typescript']);
 
       const output = consoleSpy.mock.calls[0]?.[0] as string;
-      expect(output).toContain('Stage: build (typescript)');
+      expect(output).toContain('Step: build (typescript)');
     });
 
     it('uses --ryu as alias for --flavor', async () => {

@@ -18,25 +18,38 @@ export {
   type ArtifactResult,
 } from './artifact.js';
 
-// Stage types
+// Step types (formerly Stage)
 export {
-  StageType,
-  StageRefSchema,
-  StageResourcesSchema,
-  StageSchema,
-  type StageRef,
-  type StageResources,
-  type Stage,
-} from './stage.js';
+  StepType,
+  StepRefSchema,
+  StepResourcesSchema,
+  StepSchema,
+  type StepRef,
+  type StepResources,
+  type Step,
+} from './step.js';
+
+// Backwards-compatible re-exports
+export {
+  StepType as StageType,
+  StepRefSchema as StageRefSchema,
+  StepResourcesSchema as StageResourcesSchema,
+  StepSchema as StageSchema,
+  type StepRef as StageRef,
+  type StepResources as StageResources,
+  type Step as Stage,
+} from './step.js';
 
 // Pipeline types
 export {
   PipelineType,
   PipelineState,
+  PipelineStepStateSchema,
   PipelineStageStateSchema,
   PipelineMetadataSchema,
   PipelineSchema,
   PipelineTemplateSchema,
+  type PipelineStepState,
   type PipelineStageState,
   type PipelineMetadata,
   type Pipeline,

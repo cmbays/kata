@@ -2,7 +2,7 @@ import { z } from 'zod/v4';
 import { GateSchema } from './gate.js';
 import { ArtifactSchema } from './artifact.js';
 import { LearningSchema } from './learning.js';
-import { StageResourcesSchema } from './stage.js';
+import { StepResourcesSchema } from './step.js';
 
 export const ExecutionContextSchema = z.object({
   pipelineId: z.string().uuid(),
@@ -32,7 +32,7 @@ export const ExecutionManifestSchema = z.object({
    * resources without prompt parsing; the embedded prompt section serves as a
    * fallback when the structured field is not available to the consuming agent.
    */
-  resources: StageResourcesSchema.optional(),
+  resources: StepResourcesSchema.optional(),
 });
 
 export type ExecutionManifest = z.infer<typeof ExecutionManifestSchema>;

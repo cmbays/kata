@@ -6,8 +6,8 @@ import {
   type PipelineMetadata,
   type PipelineType,
 } from '@domain/types/pipeline.js';
-import type { StageRef } from '@domain/types/stage.js';
-import type { IStageRegistry } from '@domain/ports/stage-registry.js';
+import type { StepRef } from '@domain/types/step.js';
+import type { IStepRegistry } from '@domain/ports/step-registry.js';
 
 export interface ValidationResult {
   valid: boolean;
@@ -26,7 +26,7 @@ export const PipelineComposer = {
    * Create a new Pipeline object from a name, type, and stage references.
    * Generates a UUID, sets initial timestamps, and builds stage state tracking.
    */
-  define(name: string, type: PipelineType, stages: StageRef[]): Pipeline {
+  define(name: string, type: PipelineType, stages: StepRef[]): Pipeline {
     const now = new Date().toISOString();
 
     const pipeline: Pipeline = PipelineSchema.parse({
@@ -55,7 +55,7 @@ export const PipelineComposer = {
    * 2. Gate compatibility: stage N exit gate artifact conditions satisfy
    *    stage N+1 entry gate artifact-exists requirements
    */
-  validate(pipeline: Pipeline, registry: IStageRegistry): ValidationResult {
+  validate(pipeline: Pipeline, registry: IStepRegistry): ValidationResult {
     const errors: string[] = [];
 
     // Check each stage exists in the registry

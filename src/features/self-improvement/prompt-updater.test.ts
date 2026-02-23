@@ -1,9 +1,9 @@
 import { join } from 'node:path';
 import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { StageRegistry } from '@infra/registries/stage-registry.js';
+import { StepRegistry } from '@infra/registries/step-registry.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
-import { StageSchema } from '@domain/types/stage.js';
+import { StepSchema } from '@domain/types/step.js';
 import { PromptUpdater } from './prompt-updater.js';
 import type { PromptUpdate } from './learning-extractor.js';
 
@@ -12,7 +12,7 @@ describe('PromptUpdater', () => {
   let baseDir: string;
   let kataDir: string;
   let stagesDir: string;
-  let stageRegistry: StageRegistry;
+  let stageRegistry: StepRegistry;
 
   beforeEach(() => {
     updater = new PromptUpdater();
@@ -20,7 +20,7 @@ describe('PromptUpdater', () => {
     kataDir = join(baseDir, '.kata');
     stagesDir = join(kataDir, 'stages');
     mkdirSync(stagesDir, { recursive: true });
-    stageRegistry = new StageRegistry(stagesDir);
+    stageRegistry = new StepRegistry(stagesDir);
   });
 
   afterEach(() => {
@@ -102,7 +102,7 @@ describe('PromptUpdater', () => {
         config: {},
         promptTemplate: 'prompts/build.md',
       };
-      JsonStore.write(join(stagesDir, 'build.json'), stage, StageSchema);
+      JsonStore.write(join(stagesDir, 'build.json'), stage, StepSchema);
 
       const promptDir = join(kataDir, 'prompts');
       mkdirSync(promptDir, { recursive: true });

@@ -1,17 +1,17 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { Command } from 'commander';
-import { StageRegistry } from '@infra/registries/stage-registry.js';
-import { StageNotFoundError } from '@shared/lib/errors.js';
+import { StepRegistry } from '@infra/registries/step-registry.js';
+import { StepNotFoundError } from '@shared/lib/errors.js';
 import { withCommandContext, kataDirPath } from '@cli/utils.js';
-import { formatStageTable, formatStageDetail, formatStageJson } from '@cli/formatters/stage-formatter.js';
-import { createStage } from '@features/stage-create/stage-creator.js';
-import { editStage } from '@features/stage-create/stage-editor.js';
-import { deleteStage } from '@features/stage-create/stage-deleter.js';
+import { formatStepTable, formatStepDetail, formatStepJson } from '@cli/formatters/step-formatter.js';
+import { createStep } from '@features/step-create/step-creator.js';
+import { editStep } from '@features/step-create/step-editor.js';
+import { deleteStep } from '@features/step-create/step-deleter.js';
 import { GateConditionSchema } from '@domain/types/gate.js';
 import type { Gate, GateCondition } from '@domain/types/gate.js';
 import type { Artifact } from '@domain/types/artifact.js';
-import type { Stage, StageResources } from '@domain/types/stage.js';
+import type { Step, StepResources } from '@domain/types/step.js';
 
 // ---- Preset agent/skill lists for resources ----
 
@@ -63,7 +63,7 @@ function buildPromptContent(
   return lines.join('\n');
 }
 
-function buildStageChoiceLabel(s: Stage): string {
+function buildStageChoiceLabel(s: Step): string {
   const indent = s.flavor ? '  ' : '';
   const label = stageLabel(s.type, s.flavor);
   const artCount = s.artifacts.length;
@@ -83,7 +83,7 @@ function buildStageChoiceLabel(s: Stage): string {
 
 // ---- Interactive: stage selection wizard ----
 
-async function selectStage(registry: StageRegistry): Promise<Stage> {
+async function selectStage(registry: StepRegistry): Promise<Step> {
   const { select } = await import('@inquirer/prompts');
   const all = registry.list();
   if (all.length === 0) throw new Error('No stages found. Run "kata stage create" first.');
@@ -192,7 +192,7 @@ async function promptGateConditions(gateLabel: string, existing: GateCondition[]
 
 // ---- Interactive: resources picker ----
 
-async function promptResources(existing: StageResources | undefined): Promise<StageResources | undefined> {
+async function promptResources(existing: StepResources | undefined): Promise<StepResources | undefined> {
   const { checkbox, confirm, input } = await import('@inquirer/prompts');
 
   // Tools
@@ -272,10 +272,10 @@ async function promptResources(existing: StageResources | undefined): Promise<St
 type EditField = 'description' | 'artifacts' | 'entryGate' | 'exitGate' | 'learningHooks' | 'promptTemplate' | 'resources' | 'save' | 'cancel';
 
 async function editFieldLoop(
-  existing: Stage,
+  existing: Step,
   kataDir: string,
   isJson: boolean,
-): Promise<{ stage: Stage; cancelled: boolean }> {
+): Promise<{ stage: Step; cancelled: boolean }> {
   const { Separator, select, input, confirm, editor } = await import('@inquirer/prompts');
   let draft = { ...existing };
 
@@ -409,13 +409,13 @@ export function registerStageCommands(parent: Command): void {
     .action(withCommandContext((ctx) => {
       const localOpts = ctx.cmd.opts();
       const filter: string | undefined = localOpts.type ?? localOpts.ryu;
-      const registry = new StageRegistry(kataDirPath(ctx.kataDir, 'stages'));
+      const registry = new StepRegistry(kataDirPath(ctx.kataDir, 'stages'));
       const stages = filter ? registry.list({ type: filter }) : registry.list();
 
       if (ctx.globalOpts.json) {
-        console.log(formatStageJson(stages));
+        console.log(formatStepJson(stages));
       } else {
-        console.log(formatStageTable(stages));
+        console.log(formatStepTable(stages));
       }
     }));
 
@@ -428,16 +428,16 @@ export function registerStageCommands(parent: Command): void {
     .action(withCommandContext(async (ctx, type?: string) => {
       const localOpts = ctx.cmd.opts();
       const flavor: string | undefined = localOpts.flavor ?? localOpts.ryu;
-      const registry = new StageRegistry(kataDirPath(ctx.kataDir, 'stages'));
+      const registry = new StepRegistry(kataDirPath(ctx.kataDir, 'stages'));
 
       const stageObj = type
         ? registry.get(type, flavor)
         : await selectStage(registry);
 
       if (ctx.globalOpts.json) {
-        console.log(formatStageJson([stageObj]));
+        console.log(formatStepJson([stageObj]));
       } else {
-        console.log(formatStageDetail(stageObj));
+        console.log(formatStepDetail(stageObj));
       }
     }));
 
@@ -459,9 +459,9 @@ export function registerStageCommands(parent: Command): void {
         } catch (e) {
           throw new Error(`Could not read stage file "${filePath}": ${e instanceof Error ? e.message : String(e)}`, { cause: e });
         }
-        const { stage } = createStage({ stagesDir, input: raw });
+        const { step: stage } = createStep({ stagesDir, input: raw });
         if (isJson) {
-          console.log(formatStageJson([stage]));
+          console.log(formatStepJson([stage]));
         } else {
           console.log(`Stage "${stageLabel(stage.type, stage.flavor)}" created from file.`);
         }
@@ -518,16 +518,16 @@ export function registerStageCommands(parent: Command): void {
         }
       }
 
-      const { stage } = createStage({
+      const { step: stage } = createStep({
         stagesDir,
         input: { type, flavor, description, artifacts, entryGate, exitGate, learningHooks, promptTemplate },
       });
 
       if (isJson) {
-        console.log(formatStageJson([stage]));
+        console.log(formatStepJson([stage]));
       } else {
         console.log(`\nStage "${stageLabel(stage.type, stage.flavor)}" created successfully.`);
-        console.log(formatStageDetail(stage));
+        console.log(formatStepDetail(stage));
       }
     }));
 
@@ -543,7 +543,7 @@ export function registerStageCommands(parent: Command): void {
       const stagesDir = kataDirPath(ctx.kataDir, 'stages');
       const isJson = ctx.globalOpts.json;
 
-      const registry = new StageRegistry(stagesDir);
+      const registry = new StepRegistry(stagesDir);
       const existing = type
         ? registry.get(type, flavor)
         : await selectStage(registry);
@@ -558,7 +558,7 @@ export function registerStageCommands(parent: Command): void {
         return;
       }
 
-      const { stage: saved } = editStage({
+      const { step: saved } = editStep({
         stagesDir,
         type: existing.type,
         flavor: existing.flavor,
@@ -566,10 +566,10 @@ export function registerStageCommands(parent: Command): void {
       });
 
       if (isJson) {
-        console.log(formatStageJson([saved]));
+        console.log(formatStepJson([saved]));
       } else {
         console.log(`\nStage "${stageLabel(saved.type, saved.flavor)}" updated successfully.`);
-        console.log(formatStageDetail(saved));
+        console.log(formatStepDetail(saved));
       }
     }));
 
@@ -599,7 +599,7 @@ export function registerStageCommands(parent: Command): void {
         }
       }
 
-      const { deleted } = deleteStage({ stagesDir, type, flavor });
+      const { deleted } = deleteStep({ stagesDir, type, flavor });
       console.log(`Stage "${stageLabel(deleted.type, deleted.flavor)}" deleted.`);
     }));
 
@@ -617,7 +617,7 @@ export function registerStageCommands(parent: Command): void {
       const newFlavor: string | undefined = localOpts.newFlavor ?? localOpts.newRyu ?? flavor;
       const stagesDir = kataDirPath(ctx.kataDir, 'stages');
 
-      const registry = new StageRegistry(stagesDir);
+      const registry = new StepRegistry(stagesDir);
       const existing = registry.get(type, flavor);
 
       // Guard: refuse if target already exists (unless renaming to same key)
@@ -630,12 +630,12 @@ export function registerStageCommands(parent: Command): void {
             `Stage "${stageLabel(newType, newFlavor)}" already exists. Delete it first or choose a different name.`
           );
         } catch (e) {
-          if (!(e instanceof StageNotFoundError)) throw e;
+          if (!(e instanceof StepNotFoundError)) throw e;
         }
       }
 
       // Build updated stage with new type+flavor
-      let updated: Stage = { ...existing, type: newType, flavor: newFlavor };
+      let updated: Step = { ...existing, type: newType, flavor: newFlavor };
 
       // Plan prompt template file rename (but don't do it yet)
       let oldPromptPath: string | undefined;
@@ -656,11 +656,11 @@ export function registerStageCommands(parent: Command): void {
 
       // Write new stage then delete old; roll back prompt rename on failure
       try {
-        createStage({ stagesDir, input: updated });
-        deleteStage({ stagesDir, type, flavor });
+        createStep({ stagesDir, input: updated });
+        deleteStep({ stagesDir, type, flavor });
       } catch (e) {
         // Roll back newly created stage file (best-effort)
-        try { deleteStage({ stagesDir, type: newType, flavor: newFlavor }); } catch { /* ignore */ }
+        try { deleteStep({ stagesDir, type: newType, flavor: newFlavor }); } catch { /* ignore */ }
         if (newPromptPath && oldPromptPath && existsSync(newPromptPath)) {
           renameSync(newPromptPath, oldPromptPath);
         }

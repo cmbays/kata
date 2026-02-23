@@ -2,13 +2,13 @@ import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
-import type { Stage } from '@domain/types/stage.js';
+import type { Step } from '@domain/types/step.js';
 import type { ExecutionContext } from '@domain/types/manifest.js';
 import type { Learning } from '@domain/types/learning.js';
 import { RefResolver, RefResolutionError } from '@infra/config/ref-resolver.js';
 import { ManifestBuilder } from './manifest-builder.js';
 
-function makeStage(overrides: Partial<Stage> = {}): Stage {
+function makeStage(overrides: Partial<Step> = {}): Step {
   return {
     type: 'research',
     description: 'Research the problem space',

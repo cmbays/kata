@@ -3,7 +3,7 @@ import {
   type ExecutionManifest,
   type ExecutionContext,
 } from '@domain/types/manifest.js';
-import type { Stage, StageResources } from '@domain/types/stage.js';
+import type { Step, StepResources } from '@domain/types/step.js';
 import type { Gate } from '@domain/types/gate.js';
 import type { Learning } from '@domain/types/learning.js';
 import type { IRefResolver } from '@domain/ports/ref-resolver.js';
@@ -24,7 +24,7 @@ export const ManifestBuilder = {
    * @returns A fully composed ExecutionManifest
    */
   build(
-    stage: Stage,
+    stage: Step,
     context: ExecutionContext,
     learnings?: Learning[],
   ): ExecutionManifest {
@@ -83,7 +83,7 @@ export const ManifestBuilder = {
    * Extract gate definitions from a stage.
    * Returns both entry and exit gates if defined.
    */
-  attachGates(stage: Stage): { entryGate?: Gate; exitGate?: Gate } {
+  attachGates(stage: Step): { entryGate?: Gate; exitGate?: Gate } {
     return {
       entryGate: stage.entryGate,
       exitGate: stage.exitGate,
@@ -129,7 +129,7 @@ export const ManifestBuilder = {
    * Serialize stage resources into a ## Suggested Resources section.
    * Returns empty string if resources has no tools, agents, or skills.
    */
-  serializeResources(resources: StageResources): string {
+  serializeResources(resources: StepResources): string {
     const hasTools = resources.tools.length > 0;
     const hasAgents = resources.agents.length > 0;
     const hasSkills = resources.skills.length > 0;

@@ -1,5 +1,5 @@
 import { z } from 'zod/v4';
-import { StageRefSchema } from './stage.js';
+import { StepRefSchema } from './step.js';
 import { ArtifactResultSchema } from './artifact.js';
 
 export const PipelineType = z.enum([
@@ -23,8 +23,8 @@ export const PipelineState = z.enum([
 
 export type PipelineState = z.infer<typeof PipelineState>;
 
-export const PipelineStageStateSchema = z.object({
-  stageRef: StageRefSchema,
+export const PipelineStepStateSchema = z.object({
+  stageRef: StepRefSchema,
   state: z.enum(['pending', 'active', 'skipped', 'complete', 'failed']).default('pending'),
   artifacts: z.array(ArtifactResultSchema).default([]),
   startedAt: z.string().datetime().optional(),
@@ -33,7 +33,12 @@ export const PipelineStageStateSchema = z.object({
   humanApprovedAt: z.string().datetime().optional(),
 });
 
-export type PipelineStageState = z.infer<typeof PipelineStageStateSchema>;
+export type PipelineStepState = z.infer<typeof PipelineStepStateSchema>;
+
+/** @deprecated Use PipelineStepStateSchema */
+export const PipelineStageStateSchema = PipelineStepStateSchema;
+/** @deprecated Use PipelineStepState */
+export type PipelineStageState = PipelineStepState;
 
 export const PipelineMetadataSchema = z.object({
   projectRef: z.string().optional(),
@@ -63,7 +68,7 @@ export const PipelineTemplateSchema = z.object({
   name: z.string().min(1),
   type: PipelineType,
   description: z.string().optional(),
-  stages: z.array(StageRefSchema).min(1),
+  stages: z.array(StepRefSchema).min(1),
 });
 
 export type PipelineTemplate = z.infer<typeof PipelineTemplateSchema>;
