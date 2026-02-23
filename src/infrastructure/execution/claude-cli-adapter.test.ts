@@ -114,6 +114,33 @@ describe('ClaudeCliAdapter', () => {
       const [binary] = mockExec.mock.calls[0] as [string, string[]];
       expect(binary).toBe('/usr/local/bin/claude');
     });
+
+    it('passes projectRoot as cwd to exec', async () => {
+      const adapter2 = makeAdapter({ projectRoot: '/custom/project/root' });
+      adapter2.setExecFunction(mockExec);
+      await adapter2.execute(makeManifest());
+      const [, , options] = mockExec.mock.calls[0] as [string, string[], { cwd: string }];
+      expect(options.cwd).toBe('/custom/project/root');
+    });
+  });
+
+  describe('stageType sanitization', () => {
+    it('sanitizes stageType with special characters in worktree name', async () => {
+      const mockExec = vi.fn().mockResolvedValue({ stdout: '', stderr: '' });
+      const adapter = new ClaudeCliAdapter({ useWorktree: true });
+      adapter.setBinaryChecker(async () => true);
+      adapter.setExecFunction(mockExec);
+      adapter.setFileWriter(vi.fn());
+      adapter.setFileDeleter(vi.fn());
+      adapter.setIdGenerator(() => 'abc12345');
+
+      await adapter.execute(makeManifest({ stageType: 'Build/Feature!' }));
+
+      const [, args] = mockExec.mock.calls[0] as [string, string[]];
+      const worktreeName = args[1];
+      // Should only contain safe characters
+      expect(worktreeName).toMatch(/^kata-[a-z0-9-]+-abc12345$/);
+    });
   });
 
   describe('manifest serialization', () => {
@@ -245,6 +272,16 @@ describe('ClaudeCliAdapter', () => {
       expect(result.success).toBe(true);
       expect(result.artifacts).toEqual([]);
       expect(result.notes).toContain('I completed the task');
+    });
+
+    it('produces notes: undefined when stdout and stderr are both empty', async () => {
+      const adapter = makeAdapter();
+      adapter.setExecFunction(vi.fn().mockResolvedValue({ stdout: '', stderr: '' }));
+
+      const result = await adapter.execute(makeManifest());
+
+      expect(result.success).toBe(true);
+      expect(result.notes).toBeUndefined();
     });
 
     it('includes stderr in notes when both stdout and stderr present (unstructured fallback)', async () => {

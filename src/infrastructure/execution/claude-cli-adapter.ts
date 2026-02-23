@@ -156,7 +156,8 @@ export class ClaudeCliAdapter implements IExecutionAdapter {
   private buildArgs(stageType: string, id: string, manifestPath: string): string[] {
     const args: string[] = [];
     if (this.useWorktree) {
-      args.push('-w', `kata-${stageType}-${id}`);
+      const safeType = stageType.replace(/[^a-z0-9-]/gi, '-').toLowerCase();
+      args.push('-w', `kata-${safeType}-${id}`);
     }
     args.push(
       '-p',
@@ -208,21 +209,38 @@ export class ClaudeCliAdapter implements IExecutionAdapter {
   /**
    * Parse stdout into an ExecutionResult.
    * Tries JSON extraction first; falls back to unstructured success.
+   *
+   * Parsing priority:
+   * 1. Last ```json ... ``` fenced block in stdout
+   * 2. Last bare top-level {...} object anchored to end of stdout (avoids greedy match
+   *    grabbing braces in preceding prose/code)
+   * 3. Unstructured success with raw stdout as notes
    */
   private parseResult(stdout: string, stderr: string, durationMs: number): ExecutionResult {
-    // Try to find a ```json ... ``` block first, then a bare top-level JSON object
-    const jsonBlockMatch = stdout.match(/```json\s*([\s\S]*?)\s*```/);
-    const bareJsonMatch = stdout.match(/(\{[\s\S]*\})/);
-    const rawJson = jsonBlockMatch?.[1] ?? bareJsonMatch?.[1];
+    // Try fenced JSON block first (non-greedy, finds last match)
+    const jsonBlockMatches = [...stdout.matchAll(/```json\s*([\s\S]*?)\s*```/g)];
+    const lastBlockMatch = jsonBlockMatches.at(-1);
+
+    // Bare JSON: anchor to end of string to grab the last {...} block, not the first
+    const bareJsonMatch = stdout.match(/(\{[\s\S]*\})\s*$/);
+    const rawJson = lastBlockMatch?.[1] ?? bareJsonMatch?.[1];
 
     if (rawJson) {
       try {
         const parsed = JSON.parse(rawJson) as Record<string, unknown>;
+        const artifacts = Array.isArray(parsed['artifacts'])
+          ? (parsed['artifacts'] as unknown[]).flatMap((a) => {
+              if (typeof a === 'object' && a !== null && 'name' in a && typeof (a as Record<string, unknown>)['name'] === 'string') {
+                const item = a as Record<string, unknown>;
+                return [{ name: item['name'] as string, path: typeof item['path'] === 'string' ? item['path'] : undefined }];
+              }
+              return [];
+            })
+          : [];
+
         return {
           success: parsed['success'] === true,
-          artifacts: Array.isArray(parsed['artifacts'])
-            ? parsed['artifacts'] as ExecutionResult['artifacts']
-            : [],
+          artifacts,
           durationMs,
           notes: typeof parsed['notes'] === 'string' ? parsed['notes'] : undefined,
           completedAt: new Date().toISOString(),

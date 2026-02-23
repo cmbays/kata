@@ -205,6 +205,12 @@ describe('TokenTracker.checkCostBudget', () => {
     expect(alerts[0]!.level).toBe('critical');
     expect(alerts[0]!.message).toContain('exceeded');
   });
+
+  it('defaults currency to USD when not specified', () => {
+    const alerts = tracker.checkCostBudget({ costBudget: 10 }, 7.5);
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]!.currency).toBe('USD');
+  });
 });
 
 describe('TokenTracker persistence', () => {

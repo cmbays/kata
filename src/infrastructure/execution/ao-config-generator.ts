@@ -13,6 +13,14 @@ export interface AoConfigOptions {
 }
 
 /**
+ * Escape a value for use as a YAML single-quoted scalar.
+ * Single-quotes inside the value are doubled: ' → ''
+ */
+function yamlQuote(val: string): string {
+  return `'${val.replace(/'/g, "''")}'`;
+}
+
+/**
  * Generate a minimal agent-orchestrator.yaml entry for Kata projects.
  *
  * We emit only the fields we've validated work with @composio/ao-core v0.1.x.
@@ -31,9 +39,9 @@ export function generateAoConfig(options: AoConfigOptions): void {
     '#   execution.config.aoConfigPath in .kata/config.json',
     '',
     'projects:',
-    `  ${projectKey}:`,
-    `    repo: ${repoPath}`,
-    `    branch: ${branch}`,
+    `  ${yamlQuote(projectKey)}:`,
+    `    repo: ${yamlQuote(repoPath)}`,
+    `    branch: ${yamlQuote(branch)}`,
     `    symlinks:`,
     `      - .kata`,
     '',
