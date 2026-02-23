@@ -32,6 +32,11 @@ describe('StepOverrideSchema', () => {
     expect(override.confidenceThreshold).toBe(0.8);
   });
 
+  it('accepts boundary values 0 and 1 for confidenceThreshold', () => {
+    expect(StepOverrideSchema.parse({ confidenceThreshold: 0 }).confidenceThreshold).toBe(0);
+    expect(StepOverrideSchema.parse({ confidenceThreshold: 1 }).confidenceThreshold).toBe(1);
+  });
+
   it('rejects confidenceThreshold above 1', () => {
     expect(() => StepOverrideSchema.parse({ confidenceThreshold: 1.5 })).toThrow();
   });

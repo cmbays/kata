@@ -205,6 +205,21 @@ describe('FlavorRegistry', () => {
       registry.loadBuiltins('/tmp/nonexistent-flavors-dir-xyz');
       expect(registry.list()).toHaveLength(0);
     });
+
+    it('skips invalid JSON files and loads valid ones', () => {
+      const builtinDir = mkdtempSync(join(tmpdir(), 'builtin-flavors-'));
+      writeFileSync(
+        join(builtinDir, 'plan.valid.json'),
+        JSON.stringify(makeFlavor({ name: 'valid', stageCategory: 'plan' })),
+      );
+      writeFileSync(join(builtinDir, 'plan.corrupt.json'), '{ not valid json }');
+
+      registry.loadBuiltins(builtinDir);
+
+      const flavors = registry.list();
+      expect(flavors).toHaveLength(1);
+      expect(flavors[0].name).toBe('valid');
+    });
   });
 
   describe('validate — structural only (no stepResolver)', () => {

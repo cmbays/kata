@@ -68,13 +68,21 @@ export class FlavorRegistry implements IFlavorRegistry {
   /**
    * Register a flavor. Validates against FlavorSchema and persists to disk.
    * If a flavor with the same stageCategory+name already exists, it is overwritten.
+   * @throws KataError if the file cannot be written (e.g., permission denied, disk full)
    */
   register(flavor: Flavor): void {
     const validated = FlavorSchema.parse(flavor);
     const key = flavorKey(validated.stageCategory, validated.name);
     const filePath = join(this.basePath, flavorFilename(validated.stageCategory, validated.name));
 
-    JsonStore.write(filePath, validated, FlavorSchema);
+    try {
+      JsonStore.write(filePath, validated, FlavorSchema);
+    } catch (err) {
+      throw new KataError(
+        `Failed to persist flavor "${validated.stageCategory}/${validated.name}" to disk. ` +
+          `Details: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
     this.flavors.set(key, validated);
   }
 
@@ -155,13 +163,28 @@ export class FlavorRegistry implements IFlavorRegistry {
   /**
    * Load built-in flavor definitions from a directory.
    * Each .json file should conform to FlavorSchema. Invalid files are skipped (logged by JsonStore).
+   * Write failures for individual flavors are logged and skipped — partial load is preferred
+   * over aborting the entire builtin initialization.
    */
   loadBuiltins(builtinDir: string): void {
     const flavors = JsonStore.list(builtinDir, FlavorSchema);
     for (const flavor of flavors) {
       const key = flavorKey(flavor.stageCategory, flavor.name);
       const filePath = join(this.basePath, flavorFilename(flavor.stageCategory, flavor.name));
-      JsonStore.write(filePath, flavor, FlavorSchema);
+      try {
+        JsonStore.write(filePath, flavor, FlavorSchema);
+      } catch (err) {
+        logger.warn(
+          `Failed to persist builtin flavor "${flavor.stageCategory}/${flavor.name}" — skipping.`,
+          {
+            stageCategory: flavor.stageCategory,
+            name: flavor.name,
+            filePath,
+            error: err instanceof Error ? err.message : String(err),
+          },
+        );
+        continue;
+      }
       this.flavors.set(key, flavor);
     }
   }
