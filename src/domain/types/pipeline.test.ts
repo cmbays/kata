@@ -81,6 +81,35 @@ describe('PipelineSchema', () => {
     expect(result.state).toBe('draft');
     expect(result.currentStageIndex).toBe(0);
     expect(result.stages).toHaveLength(1);
+    expect(result.kind).toBe('execution');
+  });
+
+  it('defaults kind to execution when absent (backward compat)', () => {
+    const ts = now();
+    const result = PipelineSchema.parse({
+      id: uuid(),
+      name: 'Legacy Pipeline',
+      type: 'vertical',
+      stages: [{ stageRef: { type: 'build' } }],
+      createdAt: ts,
+      updatedAt: ts,
+      // no `kind` field — simulates pre-existing persisted JSON
+    });
+    expect(result.kind).toBe('execution');
+  });
+
+  it('accepts kind: cooldown', () => {
+    const ts = now();
+    const result = PipelineSchema.parse({
+      id: uuid(),
+      name: 'Cycle Cooldown',
+      type: 'cooldown',
+      kind: 'cooldown',
+      stages: [{ stageRef: { type: 'wrap-up' } }],
+      createdAt: ts,
+      updatedAt: ts,
+    });
+    expect(result.kind).toBe('cooldown');
   });
 
   it('parses full pipeline with all fields', () => {
