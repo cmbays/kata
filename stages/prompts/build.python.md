@@ -94,9 +94,3 @@ Produce a `build-output` artifact:
 - [Item]: [Why deferred]
 ```
 
-## Suggested Resources
-
-**Tools**
-- pytest: Run the test suite — `python -m pytest`
-- ruff: Fast linting and formatting — `ruff check . && ruff format --check .`
-- mypy: Static type checking — `mypy .`

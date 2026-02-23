@@ -9,54 +9,64 @@ Perform a structured security review of the codebase or feature. Identify vulner
 Work through each category systematically:
 
 ### A01: Broken Access Control
+
 - [ ] Every endpoint verifies the caller owns/can access the requested resource (IDOR check)
 - [ ] Admin-only endpoints are protected by role checks, not just authentication
 - [ ] Directory traversal is prevented (no user-controlled paths used with `fs` operations)
 
 ### A02: Cryptographic Failures
+
 - [ ] Sensitive data (passwords, tokens, PII) is encrypted at rest
 - [ ] HTTPS-only — no HTTP fallbacks for sensitive endpoints
 - [ ] Passwords are hashed with bcrypt/argon2/scrypt (never SHA256, never MD5)
 - [ ] Secrets are never logged or included in error messages
 
 ### A03: Injection
+
 - [ ] SQL queries use parameterized statements or an ORM — never string concatenation
 - [ ] Shell commands don't incorporate user input (command injection)
 - [ ] Template engines escape output by default (XSS via templates)
 - [ ] XML/YAML parsing has entity expansion disabled (XXE)
 
 ### A04: Insecure Design
+
 - [ ] No business logic bypasses (e.g., price = user-supplied value)
 - [ ] Sensitive workflows have rate limiting (login, password reset, OTP)
 - [ ] Sensitive operations require re-authentication (delete account, change email)
 
 ### A05: Security Misconfiguration
+
 - [ ] No debug mode or verbose errors in production
 - [ ] CORS is restricted to known origins (not `*`)
 - [ ] Security headers are set (CSP, X-Frame-Options, HSTS)
 - [ ] Default credentials changed, unused features disabled
 
 ### A06: Vulnerable and Outdated Components
+
 - [ ] Dependency audit run (`npm audit`, `cargo audit`, `pip-audit`, `govulncheck`)
 - [ ] Critical/high severity findings addressed or documented with justification
 
 ### A07: Identification and Authentication Failures
+
 - [ ] Session tokens are random, long, and invalidated on logout
 - [ ] Password reset links are single-use and time-limited
 - [ ] Multi-factor authentication available for sensitive accounts
 - [ ] Account lockout after repeated failures
 
 ### A08: Software and Data Integrity Failures
+
 - [ ] Dependencies are pinned with lockfiles committed
 - [ ] CI verifies lockfile integrity (not just "npm install")
 - [ ] Deserialization of untrusted data is avoided or hardened
 
 ### A09: Security Logging and Monitoring Failures
+
 - [ ] Auth failures are logged (with timestamp, IP, user)
 - [ ] Logs don't contain passwords, tokens, or PII
 - [ ] Alerts exist for suspicious patterns (brute force, unusual access times)
 
 ### A10: Server-Side Request Forgery (SSRF)
+
 - [ ] User-supplied URLs are validated against an allowlist before fetching
 - [ ] Internal metadata endpoints (169.254.169.254, etc.) are blocked
 
@@ -135,14 +145,3 @@ Produce a `security-report` artifact at `.kata/artifacts/security-report.md`:
 |---------|--------------|-------|-------------|
 ```
 
-## Suggested Resources
-
-**Tools**
-- npm audit: Scan npm dependencies — `npm audit --audit-level=moderate`
-- cargo audit: Scan Rust dependencies — `cargo audit`
-
-**Agents** (spawn when appropriate using the Task tool)
-- everything-claude-code:security-reviewer — for deep OWASP analysis and vulnerability detection
-
-**Skills** (invoke when appropriate using the Skill tool)
-- everything-claude-code:security-review — for comprehensive security checklist and patterns

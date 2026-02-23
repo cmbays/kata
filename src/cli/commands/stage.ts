@@ -15,7 +15,7 @@ export function registerStageCommands(parent: Command): void {
   stage
     .command('list')
     .description('List available stages')
-    .option('--flavor <type>', 'Filter to stages of this type, showing all flavors')
+    .option('--flavor <stage-type>', 'Show only stages of this type (base + all flavors), e.g. --flavor build')
     .action(withCommandContext((ctx) => {
       const localOpts = ctx.cmd.opts();
       const registry = new StageRegistry(kataDirPath(ctx.kataDir, 'stages'));

@@ -19,9 +19,28 @@ describe('registerStageCommands', () => {
     config: {},
   };
 
+  const buildStage = {
+    type: 'build',
+    description: 'Build step',
+    artifacts: [],
+    learningHooks: [],
+    config: {},
+  };
+
+  const buildTypescriptStage = {
+    type: 'build',
+    flavor: 'typescript',
+    description: 'TypeScript build',
+    artifacts: [],
+    learningHooks: [],
+    config: {},
+  };
+
   beforeEach(() => {
     mkdirSync(stagesDir, { recursive: true });
     writeFileSync(join(stagesDir, 'research.json'), JSON.stringify(sampleStage, null, 2));
+    writeFileSync(join(stagesDir, 'build.json'), JSON.stringify(buildStage, null, 2));
+    writeFileSync(join(stagesDir, 'build.typescript.json'), JSON.stringify(buildTypescriptStage, null, 2));
     consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
   });
@@ -56,8 +75,8 @@ describe('registerStageCommands', () => {
 
       const output = consoleSpy.mock.calls[0]?.[0] as string;
       const parsed = JSON.parse(output);
-      expect(parsed).toHaveLength(1);
-      expect(parsed[0].type).toBe('research');
+      expect(parsed.length).toBeGreaterThanOrEqual(1);
+      expect(parsed.some((s: { type: string }) => s.type === 'research')).toBe(true);
     });
 
     it('shows error when .kata/ does not exist', async () => {
@@ -70,6 +89,35 @@ describe('registerStageCommands', () => {
       expect(errorSpy).toHaveBeenCalled();
       rmSync(noKataDir, { recursive: true, force: true });
     });
+
+    it('filters by stage type when --flavor is passed', async () => {
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'stage', 'list', '--flavor', 'build']);
+
+      expect(consoleSpy).toHaveBeenCalled();
+      const output = consoleSpy.mock.calls[0]?.[0] as string;
+      // Should contain build and build:typescript but not research
+      expect(output).toContain('build');
+      expect(output).not.toContain('research');
+    });
+
+    it('returns all stages when --flavor not passed', async () => {
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--json', '--cwd', baseDir, 'stage', 'list']);
+
+      const output = consoleSpy.mock.calls[0]?.[0] as string;
+      const parsed = JSON.parse(output);
+      expect(parsed.some((s: { type: string }) => s.type === 'research')).toBe(true);
+      expect(parsed.some((s: { type: string }) => s.type === 'build')).toBe(true);
+    });
+
+    it('returns empty message when --flavor type has no stages', async () => {
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'stage', 'list', '--flavor', 'nonexistent']);
+
+      const output = consoleSpy.mock.calls[0]?.[0] as string;
+      expect(output).toContain('No stages found');
+    });
   });
 
   describe('stage inspect', () => {
@@ -80,6 +128,14 @@ describe('registerStageCommands', () => {
       const output = consoleSpy.mock.calls[0]?.[0] as string;
       expect(output).toContain('Stage: research');
       expect(output).toContain('Research step');
+    });
+
+    it('shows flavored stage detail with --flavor', async () => {
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'stage', 'inspect', 'build', '--flavor', 'typescript']);
+
+      const output = consoleSpy.mock.calls[0]?.[0] as string;
+      expect(output).toContain('Stage: build (typescript)');
     });
 
     it('shows stage as JSON', async () => {

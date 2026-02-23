@@ -288,8 +288,28 @@ describe('StageRegistry', () => {
       registry.register(makeStage({ type: 'build', flavor: 'go' }));
 
       const flavors = registry.listFlavors('build');
-      expect(flavors).not.toContain(undefined);
       expect(flavors).toEqual(['go']);
+    });
+
+    it('should load flavors from disk on fresh registry (dot-notation round-trip)', () => {
+      // Write dot-notation files directly to disk (simulating what loadBuiltins does)
+      writeFileSync(
+        join(basePath, 'build.typescript.json'),
+        JSON.stringify(makeStage({ type: 'build', flavor: 'typescript' })),
+      );
+      writeFileSync(
+        join(basePath, 'build.rust.json'),
+        JSON.stringify(makeStage({ type: 'build', flavor: 'rust' })),
+      );
+      writeFileSync(
+        join(basePath, 'build.json'),
+        JSON.stringify(makeStage({ type: 'build' })),
+      );
+
+      // Fresh registry — empty in-memory cache; forces loadFromDisk()
+      const freshRegistry = new StageRegistry(basePath);
+      const flavors = freshRegistry.listFlavors('build');
+      expect(flavors).toEqual(['rust', 'typescript']);
     });
   });
 });

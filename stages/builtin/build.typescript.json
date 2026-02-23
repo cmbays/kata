@@ -62,7 +62,7 @@
         "command": "npx tsc --noEmit"
       },
       {
-        "name": "tsup / npm run build",
+        "name": "npm run build",
         "purpose": "Bundling",
         "command": "npm run build"
       }

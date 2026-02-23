@@ -30,7 +30,7 @@
       "description": "Frontend review covering component design, accessibility, responsiveness, performance, and UX quality",
       "required": true,
       "extension": ".md",
-      "path": ".kata/artifacts/review-frontend.md"
+      "path": ".kata/artifacts/frontend-review.md"
     }
   ],
   "promptTemplate": "../prompts/review.frontend.md",
@@ -41,8 +41,6 @@
   ],
   "config": {},
   "resources": {
-    "tools": [],
-    "agents": [],
     "skills": [
       {
         "name": "pr-review-toolkit:code-reviewer",

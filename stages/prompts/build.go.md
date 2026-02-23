@@ -92,9 +92,3 @@ Produce a `build-output` artifact:
 - [Item]: [Why deferred]
 ```
 
-## Suggested Resources
-
-**Tools**
-- go build: Compile all packages — `go build ./...`
-- go vet: Static analysis — `go vet ./...`
-- go test: Run the test suite — `go test ./...`

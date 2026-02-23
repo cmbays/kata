@@ -92,12 +92,3 @@ Produce a `build-output` artifact:
 - [Item]: [Why deferred]
 ```
 
-## Suggested Resources
-
-**Tools**
-- cargo build: Compile the project — `cargo build --release`
-- cargo test: Run the test suite — `cargo test`
-- cargo clippy: Lint for common mistakes — `cargo clippy -- -D warnings`
-
-**Agents** (spawn when appropriate using the Task tool)
-- everything-claude-code:build-error-resolver — when cargo build fails or compilation errors occur

@@ -39,7 +39,8 @@
       "name": "build-output",
       "description": "Build summary — what was built, files created/modified, test results, acceptance criteria status",
       "required": true,
-      "extension": ".md"
+      "extension": ".md",
+      "path": ".kata/artifacts/build-output.md"
     }
   ],
   "promptTemplate": "../prompts/build.go.md",
@@ -67,7 +68,11 @@
         "command": "go test ./..."
       }
     ],
-    "agents": [],
-    "skills": []
+    "agents": [
+      {
+        "name": "everything-claude-code:build-error-resolver",
+        "when": "when go build fails or compilation errors occur"
+      }
+    ]
   }
 }

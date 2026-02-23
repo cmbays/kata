@@ -62,7 +62,7 @@ For each endpoint, verify:
 
 ## Output Format
 
-Produce a `api-review` artifact at `.kata/artifacts/review-api.md`:
+Produce an `api-review` artifact at `.kata/artifacts/review-api.md`:
 
 ```markdown
 # API Review: [Feature/Component Name]
@@ -97,10 +97,3 @@ Produce a `api-review` artifact at `.kata/artifacts/review-api.md`:
 - [Priority action 2]
 ```
 
-## Suggested Resources
-
-**Agents** (spawn when appropriate using the Task tool)
-- everything-claude-code:security-reviewer — when reviewing authentication or user input handling
-
-**Skills** (invoke when appropriate using the Skill tool)
-- pr-review-toolkit:type-design-analyzer — when evaluating request/response type design

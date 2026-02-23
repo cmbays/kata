@@ -56,6 +56,24 @@ describe('StageResourcesSchema', () => {
     expect(result.tools[0]!.command).toBeUndefined();
   });
 
+  it('rejects tool with empty name', () => {
+    expect(() => StageResourcesSchema.parse({
+      tools: [{ name: '', purpose: 'Linting' }],
+    })).toThrow();
+  });
+
+  it('rejects tool with empty purpose', () => {
+    expect(() => StageResourcesSchema.parse({
+      tools: [{ name: 'eslint', purpose: '' }],
+    })).toThrow();
+  });
+
+  it('rejects agent with empty name', () => {
+    expect(() => StageResourcesSchema.parse({
+      agents: [{ name: '' }],
+    })).toThrow();
+  });
+
   it('parses agents with when hint', () => {
     const result = StageResourcesSchema.parse({
       agents: [{ name: 'everything-claude-code:build-error-resolver', when: 'when build fails' }],

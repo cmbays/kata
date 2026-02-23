@@ -24,16 +24,40 @@ export const StageRefSchema = z.object({
 export type StageRef = z.infer<typeof StageRefSchema>;
 
 const StageToolSchema = z.object({
-  name: z.string(),
-  purpose: z.string(),
+  /** Display name for the tool (e.g. "tsc"). Must be non-empty. */
+  name: z.string().min(1),
+  /** Human-readable explanation of why this tool is relevant. Must be non-empty. */
+  purpose: z.string().min(1),
+  /**
+   * Optional invocation hint shown as an inline code block in the prompt
+   * (e.g. "npx tsc --noEmit"). This is a display string for the agent,
+   * NOT a shell command executed by the runtime — unlike GateConditionSchema.command.
+   */
   command: z.string().optional(),
 });
 
+/**
+ * Hint for an agent (spawned via the Task tool) or skill (invoked via the Skill tool).
+ * Separate arrays on StageResourcesSchema distinguish the two invocation semantics,
+ * even though the hint shape is identical.
+ */
 const StageAgentHintSchema = z.object({
-  name: z.string(),
+  /** Fully-qualified agent or skill name (e.g. "everything-claude-code:build-error-resolver"). Must be non-empty. */
+  name: z.string().min(1),
+  /** Optional condition under which to invoke (e.g. "when build fails"). */
   when: z.string().optional(),
 });
 
+/**
+ * Structured tool/agent/skill hints attached to a stage definition.
+ *
+ * - `tools`: CLI tools the agent may find useful (shown as inline code hints in the prompt).
+ * - `agents`: Sub-agents to spawn via the Task tool under stated conditions.
+ * - `skills`: Skills to invoke via the Skill tool under stated conditions.
+ *
+ * ManifestBuilder serializes these into a "## Suggested Resources" section appended
+ * to the stage prompt. Hints are guidance for the executing agent, not hard-wired invocations.
+ */
 export const StageResourcesSchema = z.object({
   tools: z.array(StageToolSchema).default([]),
   agents: z.array(StageAgentHintSchema).default([]),

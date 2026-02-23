@@ -33,7 +33,8 @@
       "name": "build-output",
       "description": "Build summary — what was built, files created/modified, test results, acceptance criteria status",
       "required": true,
-      "extension": ".md"
+      "extension": ".md",
+      "path": ".kata/artifacts/build-output.md"
     }
   ],
   "promptTemplate": "../prompts/build.python.md",
@@ -61,7 +62,11 @@
         "command": "mypy ."
       }
     ],
-    "agents": [],
-    "skills": []
+    "agents": [
+      {
+        "name": "everything-claude-code:build-error-resolver",
+        "when": "when tests fail or type checking errors occur"
+      }
+    ]
   }
 }

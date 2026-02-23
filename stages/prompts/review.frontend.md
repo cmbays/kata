@@ -31,7 +31,7 @@ For each significant component, evaluate:
 - [ ] Layout works on mobile (360px), tablet (768px), and desktop (1280px+)
 - [ ] No horizontal overflow on small screens
 - [ ] Touch targets are ≥44×44px on mobile
-- [ ] Images are responsive (`max-width: 100%` or Next.js `<Image>`)
+- [ ] Images are responsive (`max-width: 100%`, framework image components, or native `loading="lazy"`)
 - [ ] Typography scales appropriately — no fixed px sizes for body text
 
 ### 4. Performance
@@ -113,8 +113,3 @@ Produce a `frontend-review` artifact at `.kata/artifacts/review-frontend.md`:
 2. [Priority 2 action]
 ```
 
-## Suggested Resources
-
-**Skills** (invoke when appropriate using the Skill tool)
-- pr-review-toolkit:code-reviewer — for general code quality review of component implementations
-- frontend-design:frontend-design — when evaluating UI component design quality

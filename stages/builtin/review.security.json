@@ -55,6 +55,16 @@
         "name": "cargo audit",
         "purpose": "Scan Rust dependencies for known vulnerabilities",
         "command": "cargo audit"
+      },
+      {
+        "name": "pip-audit",
+        "purpose": "Scan Python dependencies for known vulnerabilities",
+        "command": "pip-audit"
+      },
+      {
+        "name": "govulncheck",
+        "purpose": "Scan Go dependencies for known vulnerabilities",
+        "command": "govulncheck ./..."
       }
     ],
     "agents": [

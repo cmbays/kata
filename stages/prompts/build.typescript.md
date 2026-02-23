@@ -28,7 +28,7 @@ Implement the planned work in a TypeScript codebase. Produce type-correct, teste
 
 - **Circular imports**: TypeScript won't always warn you. Use `import type` for type-only imports to break cycles.
 - **Missing `.js` extensions**: The most common ESM error. If build fails with "Cannot find module", check extensions first.
-- **Zod v4 path**: If the project uses `import { z } from 'zod/v4'`, don't use the default `zod` path — they're different registries.
+- **Zod v4 path**: If the project imports from `'zod/v4'`, use that path consistently — don't mix `'zod'` and `'zod/v4'` imports in the same project.
 - **Declaration files**: If `declaration: true` is in tsconfig, check that `.d.ts` files are generated in the expected location.
 
 ## Process
@@ -92,14 +92,3 @@ Produce a `build-output` artifact summarizing:
 - [Item]: [Why deferred]
 ```
 
-## Suggested Resources
-
-**Tools**
-- tsc: Type checking — `npx tsc --noEmit`
-- tsup / npm run build: Bundling — `npm run build`
-
-**Agents** (spawn when appropriate using the Task tool)
-- everything-claude-code:build-error-resolver — when TypeScript build fails or type errors occur
-
-**Skills** (invoke when appropriate using the Skill tool)
-- pr-review-toolkit:code-reviewer — before marking stage complete
