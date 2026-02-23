@@ -1,13 +1,14 @@
 import { join } from 'node:path';
-import { mkdirSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { deleteStage } from './stage-deleter.js';
+import { StageNotFoundError } from '@shared/lib/errors.js';
 
 describe('deleteStage', () => {
-  const baseDir = join(tmpdir(), `kata-stage-delete-test-${Date.now()}`);
+  let baseDir: string;
 
   beforeEach(() => {
-    mkdirSync(baseDir, { recursive: true });
+    baseDir = mkdtempSync(join(tmpdir(), 'kata-stage-delete-test-'));
   });
 
   afterEach(() => {
@@ -26,7 +27,7 @@ describe('deleteStage', () => {
   });
 
   it('throws StageNotFoundError for a missing stage', () => {
-    expect(() => deleteStage({ stagesDir: baseDir, type: 'nonexistent' })).toThrow('Stage not found');
+    expect(() => deleteStage({ stagesDir: baseDir, type: 'nonexistent' })).toThrow(StageNotFoundError);
   });
 
   it('deletes a flavored stage with dot-notation filename', () => {

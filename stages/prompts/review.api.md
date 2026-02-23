@@ -11,7 +11,7 @@ Review the API implementation for correctness, security, contract completeness, 
 For each endpoint, verify:
 
 - **URL structure**: RESTful naming (`/resources/{id}` not `/getResource?id=`)
-- **HTTP methods**: Correct verb semantics (GET is safe/idempotent, POST creates, PUT replaces, PATCH updates)
+- **HTTP methods**: Correct verb semantics (GET is safe/idempotent, POST creates, PUT replaces, PATCH updates, DELETE removes and is idempotent)
 - **Status codes**: Correct codes for all outcomes (200, 201, 204, 400, 401, 403, 404, 409, 422, 500)
 - **Consistency**: Same patterns across all endpoints (error shapes, pagination, filtering)
 

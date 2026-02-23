@@ -83,13 +83,13 @@ describe('createStage', () => {
   it('throws when type is empty', () => {
     expect(() =>
       createStage({ stagesDir: baseDir, input: { type: '' } }),
-    ).toThrow();
+    ).toThrow(/too_small|Too small/i);
   });
 
   it('throws when input is missing type', () => {
     expect(() =>
       createStage({ stagesDir: baseDir, input: { flavor: 'x' } }),
-    ).toThrow();
+    ).toThrow(/invalid_type|Invalid input/i);
   });
 
   it('overwrites an existing stage with the same type', () => {

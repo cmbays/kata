@@ -103,6 +103,7 @@ export function formatStageDetail(stage: Stage): string {
           lines.push(`    - ${skill.name}${when}`);
         }
       }
+      lines.push('');
     }
   }
 

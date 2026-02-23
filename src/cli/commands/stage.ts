@@ -8,6 +8,7 @@ import { formatStageTable, formatStageDetail, formatStageJson } from '@cli/forma
 import { createStage } from '@features/stage-create/stage-creator.js';
 import { editStage } from '@features/stage-create/stage-editor.js';
 import { deleteStage } from '@features/stage-create/stage-deleter.js';
+import { GateConditionSchema } from '@domain/types/gate.js';
 import type { Gate, GateCondition } from '@domain/types/gate.js';
 import type { Artifact } from '@domain/types/artifact.js';
 import type { Stage, StageResources } from '@domain/types/stage.js';
@@ -32,6 +33,7 @@ const PRESET_SKILLS: string[] = [
   'everything-claude-code:plan',
   'everything-claude-code:security-review',
   'pr-review-toolkit:review-pr',
+  'pr-review-toolkit:type-design-analyzer',
 ];
 
 // ---- Shared helpers ----
@@ -176,13 +178,13 @@ async function promptGateConditions(gateLabel: string, existing: GateCondition[]
     } else if (condType === 'command-passes') {
       command = (await input({ message: '  Shell command to run:' })).trim() || undefined;
     }
-    conditions.push({
+    conditions.push(GateConditionSchema.parse({
       type: condType,
       ...(condDesc ? { description: condDesc } : {}),
       ...(artifactName ? { artifactName } : {}),
       ...(predecessorType ? { predecessorType } : {}),
       ...(command ? { command } : {}),
-    } as GateCondition);
+    }));
     addCond = await confirm({ message: `Add another ${gateLabel} gate condition?`, default: false });
   }
   return conditions;
@@ -619,8 +621,8 @@ export function registerStageCommands(parent: Command): void {
       const existing = registry.get(type, flavor);
 
       // Guard: refuse if target already exists (unless renaming to same key)
-      const oldKey = `${type}:${flavor ?? ''}`;
-      const newKey = `${newType}:${newFlavor ?? ''}`;
+      const oldKey = flavor ? `${type}:${flavor}` : type;
+      const newKey = newFlavor ? `${newType}:${newFlavor}` : newType;
       if (oldKey !== newKey) {
         try {
           registry.get(newType, newFlavor);
@@ -657,6 +659,8 @@ export function registerStageCommands(parent: Command): void {
         createStage({ stagesDir, input: updated });
         deleteStage({ stagesDir, type, flavor });
       } catch (e) {
+        // Roll back newly created stage file (best-effort)
+        try { deleteStage({ stagesDir, type: newType, flavor: newFlavor }); } catch { /* ignore */ }
         if (newPromptPath && oldPromptPath && existsSync(newPromptPath)) {
           renameSync(newPromptPath, oldPromptPath);
         }
