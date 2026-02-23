@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import {
   PipelineSchema,
-  PipelineTemplateSchema,
   type Pipeline,
   type PipelineTemplate,
   type PipelineMetadata,
@@ -9,7 +8,6 @@ import {
 } from '@domain/types/pipeline.js';
 import type { StageRef } from '@domain/types/stage.js';
 import type { IStageRegistry } from '@domain/ports/stage-registry.js';
-import { JsonStore } from '@infra/persistence/json-store.js';
 
 export interface ValidationResult {
   valid: boolean;
@@ -139,14 +137,6 @@ export const PipelineComposer = {
       valid: errors.length === 0,
       errors,
     };
-  },
-
-  /**
-   * Load pipeline template JSON files from a directory.
-   * Each .json file should conform to PipelineTemplateSchema.
-   */
-  loadTemplates(templateDir: string): PipelineTemplate[] {
-    return JsonStore.list(templateDir, PipelineTemplateSchema);
   },
 
   /**

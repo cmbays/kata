@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { JsonStore } from '@infra/persistence/json-store.js';
+import type { IPersistence } from '@domain/ports/persistence.js';
 import { CycleSchema } from '@domain/types/cycle.js';
 import type { Cycle, Budget, BudgetStatus, BudgetAlertLevel } from '@domain/types/cycle.js';
 import { BetSchema, BetOutcome } from '@domain/types/bet.js';
@@ -36,10 +36,12 @@ export interface CooldownBetReport {
  */
 export class CycleManager {
   private readonly basePath: string;
+  private readonly persistence: IPersistence;
 
-  constructor(basePath: string) {
+  constructor(basePath: string, persistence: IPersistence) {
     this.basePath = basePath;
-    JsonStore.ensureDir(basePath);
+    this.persistence = persistence;
+    this.persistence.ensureDir(basePath);
   }
 
   /**
@@ -68,17 +70,17 @@ export class CycleManager {
    */
   get(cycleId: string): Cycle {
     const path = this.cyclePath(cycleId);
-    if (!JsonStore.exists(path)) {
+    if (!this.persistence.exists(path)) {
       throw new CycleNotFoundError(cycleId);
     }
-    return JsonStore.read(path, CycleSchema);
+    return this.persistence.read(path, CycleSchema);
   }
 
   /**
    * List all cycles.
    */
   list(): Cycle[] {
-    return JsonStore.list(this.basePath, CycleSchema);
+    return this.persistence.list(this.basePath, CycleSchema);
   }
 
   /**
@@ -250,7 +252,7 @@ export class CycleManager {
   }
 
   private save(cycle: Cycle): void {
-    JsonStore.write(this.cyclePath(cycle.id), cycle, CycleSchema);
+    this.persistence.write(this.cyclePath(cycle.id), cycle, CycleSchema);
   }
 }
 

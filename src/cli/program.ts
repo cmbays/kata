@@ -5,6 +5,7 @@ import { registerStageCommands } from './commands/stage.js';
 import { registerPipelineCommands } from './commands/pipeline.js';
 import { registerCycleCommands } from './commands/cycle.js';
 import { registerKnowledgeCommands } from './commands/knowledge.js';
+import { registerExecuteCommands } from './commands/execute.js';
 
 const VERSION = '0.1.0';
 
@@ -33,27 +34,7 @@ export function createProgram(): Command {
   registerPipelineCommands(program);
   registerCycleCommands(program);
   registerKnowledgeCommands(program);
-
-  // kata execute — Execution management (stub — Wave 3+)
-  const execute = program
-    .command('execute')
-    .alias('kiai')
-    .description('Manage execution sessions (alias: kiai)');
-
-  execute
-    .command('run <stage>')
-    .description('Run a focused execution of a stage')
-    .option('-p, --pipeline <id>', 'Pipeline context')
-    .action((stage: string) => {
-      console.log(`kata execute run ${stage} — not yet implemented`);
-    });
-
-  execute
-    .command('status')
-    .description('Show current execution session status')
-    .action(() => {
-      console.log('kata execute status — not yet implemented');
-    });
+  registerExecuteCommands(program);
 
   return program;
 }

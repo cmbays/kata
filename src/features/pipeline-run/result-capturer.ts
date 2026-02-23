@@ -4,23 +4,11 @@ import {
   ExecutionHistoryEntrySchema,
   type ExecutionHistoryEntry,
 } from '@domain/types/history.js';
-import type { ExecutionResult } from '@domain/types/manifest.js';
+import type { CaptureOptions } from '@domain/ports/result-capturer.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
 import { KATA_DIRS } from '@shared/constants/paths.js';
 
-/**
- * Options for capturing an execution result as a history entry.
- */
-export interface CaptureOptions {
-  pipelineId: string;
-  stageType: string;
-  stageFlavor?: string;
-  stageIndex: number;
-  adapterName: string;
-  result: ExecutionResult;
-  cycleId?: string;
-  betId?: string;
-}
+export type { CaptureOptions } from '@domain/ports/result-capturer.js';
 
 /**
  * Result Capturer — records execution results as history entries.

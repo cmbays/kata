@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { CycleManager } from './cycle-manager.js';
+import { JsonStore } from '@infra/persistence/json-store.js';
 import { CycleNotFoundError } from '@shared/lib/errors.js';
 import type { Budget } from '@domain/types/cycle.js';
 import type { Bet } from '@domain/types/bet.js';
@@ -12,7 +13,7 @@ let manager: CycleManager;
 
 beforeEach(() => {
   tempDir = mkdtempSync(join(tmpdir(), 'kata-cycle-test-'));
-  manager = new CycleManager(tempDir);
+  manager = new CycleManager(tempDir, JsonStore);
 });
 
 afterEach(() => {

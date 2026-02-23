@@ -29,6 +29,8 @@ export const PipelineStageStateSchema = z.object({
   artifacts: z.array(ArtifactResultSchema).default([]),
   startedAt: z.string().datetime().optional(),
   completedAt: z.string().datetime().optional(),
+  /** Set when a human has approved this stage via `kata flow approve` */
+  humanApprovedAt: z.string().datetime().optional(),
 });
 
 export type PipelineStageState = z.infer<typeof PipelineStageStateSchema>;
