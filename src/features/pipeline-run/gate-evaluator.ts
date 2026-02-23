@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import type { Gate, GateCondition, GateResult } from '@domain/types/gate.js';
 
 /**
@@ -34,7 +35,7 @@ export interface ConditionResult {
  * - `gate.required` is false (non-required gates always pass), OR
  * - ALL conditions pass
  */
-export function evaluateGate(gate: Gate, context: GateEvalContext): GateResult {
+export async function evaluateGate(gate: Gate, context: GateEvalContext): Promise<GateResult> {
   const results: ConditionResult[] = gate.conditions.map((condition) =>
     evaluateCondition(condition, context),
   );
@@ -114,6 +115,42 @@ function evaluateCondition(condition: GateCondition, context: GateEvalContext): 
         condition,
         passed: true,
         detail: 'Schema validation deferred to capture time',
+      };
+    }
+
+    case 'command-passes': {
+      if (!condition.command) {
+        return {
+          condition,
+          passed: false,
+          detail: 'command-passes condition missing command string',
+        };
+      }
+      const proc = spawnSync(condition.command, { shell: true, encoding: 'utf8', timeout: 30_000 });
+      if (proc.error) {
+        throw new Error(
+          `command-passes: failed to spawn shell for "${condition.command}": ${proc.error.message}`,
+        );
+      }
+      if (proc.status === 0) {
+        return { condition, passed: true, detail: `Command exited 0` };
+      }
+      const MAX_OUTPUT = 500;
+      const truncate = (s: string) =>
+        s.length > MAX_OUTPUT ? s.slice(0, MAX_OUTPUT) + '... (truncated)' : s;
+      const stderr = truncate(proc.stderr ?? '');
+      const stdout = truncate(proc.stdout ?? '');
+      const output = [stderr, stdout].filter(Boolean).join(' | ');
+      const exitDescription =
+        proc.status !== null
+          ? `exited ${proc.status}`
+          : proc.signal
+            ? `killed by signal ${proc.signal}`
+            : 'exited with null status';
+      return {
+        condition,
+        passed: false,
+        detail: `Command ${exitDescription}${output ? `: ${output}` : ''}`,
       };
     }
 

@@ -3,7 +3,7 @@ import { GateConditionType, GateConditionSchema, GateType, GateSchema, GateResul
 
 describe('GateConditionType', () => {
   it('accepts valid condition types', () => {
-    for (const type of ['artifact-exists', 'schema-valid', 'human-approved', 'predecessor-complete']) {
+    for (const type of ['artifact-exists', 'schema-valid', 'human-approved', 'predecessor-complete', 'command-passes']) {
       expect(GateConditionType.parse(type)).toBe(type);
     }
   });
@@ -36,6 +36,15 @@ describe('GateConditionSchema', () => {
       predecessorType: 'research',
     });
     expect(result.predecessorType).toBe('research');
+  });
+
+  it('parses command-passes with command field', () => {
+    const result = GateConditionSchema.parse({
+      type: 'command-passes',
+      command: 'node --version',
+    });
+    expect(result.type).toBe('command-passes');
+    expect(result.command).toBe('node --version');
   });
 });
 
