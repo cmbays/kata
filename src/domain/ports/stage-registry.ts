@@ -8,4 +8,5 @@ export interface IStageRegistry {
   get(type: string, flavor?: string): Stage;
   list(filter?: StageFilter): Stage[];
   listFlavors(type: string): string[];
+  delete(type: string, flavor?: string): void;
 }
