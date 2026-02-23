@@ -9,9 +9,14 @@ import { calculateUtilization } from '@domain/rules/budget-rules.js';
 export interface BudgetAlert {
   level: BudgetAlertLevel;
   message: string;
+  utilizationPercent: number;
+  /** Token budget tracking (populated by checkBudget) */
   tokensUsed: number;
   tokenBudget: number;
-  utilizationPercent: number;
+  /** Cost budget tracking (populated by checkCostBudget) */
+  costUsed?: number;
+  costBudget?: number;
+  currency?: string;
 }
 
 /** Schema for persisted usage records: a map of stageId -> TokenUsage */
@@ -57,6 +62,54 @@ export class TokenTracker {
       total += usage.total;
     }
     return total;
+  }
+
+  /**
+   * Sum all recorded dollar costs across all stages (for ComposioAdapter).
+   * Returns 0 if no cost data has been recorded.
+   */
+  getTotalCost(): number {
+    const records = this.loadRecords();
+    let total = 0;
+    for (const usage of Object.values(records)) {
+      total += usage.costUsd ?? 0;
+    }
+    return total;
+  }
+
+  /**
+   * Evaluate current dollar cost against costBudget, return any alerts.
+   */
+  checkCostBudget(budget: Budget, costUsed: number): BudgetAlert[] {
+    if (!budget.costBudget) {
+      return [];
+    }
+
+    const percent = (costUsed / budget.costBudget) * 100;
+    let alertLevel: BudgetAlertLevel | undefined;
+    if (percent >= 100) alertLevel = 'critical';
+    else if (percent >= 90) alertLevel = 'warning';
+    else if (percent >= 75) alertLevel = 'info';
+
+    if (!alertLevel) return [];
+
+    const currency = budget.currency ?? 'USD';
+    const messages: Record<BudgetAlertLevel, string> = {
+      info: `Cost at ${percent.toFixed(1)}% of budget — consider wrapping up soon`,
+      warning: `Cost at ${percent.toFixed(1)}% of budget — approaching limit`,
+      critical: `Cost at ${percent.toFixed(1)}% of budget — budget exceeded`,
+    };
+
+    return [{
+      level: alertLevel,
+      message: messages[alertLevel],
+      tokensUsed: 0,
+      tokenBudget: 0,
+      utilizationPercent: percent,
+      costUsed,
+      costBudget: budget.costBudget,
+      currency,
+    }];
   }
 
   /**

@@ -1,5 +1,9 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { writeFileSync, unlinkSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { randomUUID } from 'node:crypto';
 import type { ExecutionManifest, ExecutionResult } from '@domain/types/manifest.js';
 import type { IExecutionAdapter } from './execution-adapter.js';
 
@@ -11,10 +15,19 @@ const execFileAsync = promisify(execFile);
 export interface ClaudeCliAdapterOptions {
   /** Path to the claude binary. Defaults to 'claude'. */
   binaryPath?: string;
-  /** Additional CLI arguments to pass to the claude command. */
-  additionalArgs?: string[];
-  /** Maximum execution time in milliseconds. Defaults to 300000 (5 minutes). */
+  /**
+   * Project root directory — when useWorktree is true, claude creates worktrees under
+   * `<projectRoot>/.claude/worktrees/kata-<stageType>-<id>/`.
+   * Defaults to process.cwd().
+   */
+  projectRoot?: string;
+  /** Maximum execution time in milliseconds. Defaults to 1,800,000 (30 min). */
   timeoutMs?: number;
+  /**
+   * Whether to use `claude -w` for workspace-isolated execution.
+   * Defaults to true. Set false to skip worktree creation (e.g. in tests).
+   */
+  useWorktree?: boolean;
 }
 
 /**
@@ -23,8 +36,7 @@ export interface ClaudeCliAdapterOptions {
  */
 export async function checkBinaryExists(binaryPath: string): Promise<boolean> {
   try {
-    // Use 'which' on macOS/Linux to find the binary
-    await execFileAsync('which', [binaryPath]);
+    await promisify(execFile)('which', [binaryPath]);
     return true;
   } catch {
     return false;
@@ -32,73 +44,92 @@ export async function checkBinaryExists(binaryPath: string): Promise<boolean> {
 }
 
 /**
- * Execution adapter that spawns the `claude` CLI as a subprocess with
- * the manifest prompt as input.
+ * Execution adapter that spawns `claude` as a subprocess using:
+ * - `-w kata-<stageType>-<id>` for workspace isolation (claude creates a git worktree)
+ * - `-p` for non-interactive print mode
+ * - `--system-prompt-file <path>` for large manifest delivery without truncation
+ *
+ * The adapter writes the full execution manifest to a temp file, invokes claude,
+ * parses the JSON result from stdout, and cleans up the temp file.
  */
 export class ClaudeCliAdapter implements IExecutionAdapter {
   readonly name = 'claude-cli';
 
   private readonly binaryPath: string;
-  private readonly additionalArgs: string[];
+  private readonly projectRoot: string;
   private readonly timeoutMs: number;
+  private readonly useWorktree: boolean;
 
-  /**
-   * Internal hook for testing: allows injection of a mock binary checker
-   * and a mock exec function.
-   */
+  // Injection points for testing
   private _checkBinary: (path: string) => Promise<boolean>;
   private _execFile: typeof execFileAsync;
+  private _writeFile: (path: string, content: string) => void;
+  private _deleteFile: (path: string) => void;
+  private _generateId: () => string;
 
   constructor(options: ClaudeCliAdapterOptions = {}) {
     this.binaryPath = options.binaryPath ?? 'claude';
-    this.additionalArgs = options.additionalArgs ?? [];
-    this.timeoutMs = options.timeoutMs ?? 300_000;
+    this.projectRoot = options.projectRoot ?? process.cwd();
+    this.timeoutMs = options.timeoutMs ?? 1_800_000;
+    this.useWorktree = options.useWorktree ?? true;
     this._checkBinary = checkBinaryExists;
     this._execFile = execFileAsync;
+    this._writeFile = (path, content) => writeFileSync(path, content, 'utf-8');
+    this._deleteFile = (path) => unlinkSync(path);
+    this._generateId = () => randomUUID().replace(/-/g, '').slice(0, 8);
   }
 
-  /**
-   * Replace the binary existence check (for testing).
-   */
+  /** Replace the binary existence check (for testing). */
   setBinaryChecker(checker: (path: string) => Promise<boolean>): void {
     this._checkBinary = checker;
   }
 
-  /**
-   * Replace the exec function (for testing).
-   */
+  /** Replace the exec function (for testing). */
   setExecFunction(execFn: typeof execFileAsync): void {
     this._execFile = execFn;
+  }
+
+  /** Replace file write (for testing). */
+  setFileWriter(fn: (path: string, content: string) => void): void {
+    this._writeFile = fn;
+  }
+
+  /** Replace file delete (for testing). */
+  setFileDeleter(fn: (path: string) => void): void {
+    this._deleteFile = fn;
+  }
+
+  /** Replace ID generator for deterministic testing. */
+  setIdGenerator(fn: () => string): void {
+    this._generateId = fn;
   }
 
   async execute(manifest: ExecutionManifest): Promise<ExecutionResult> {
     const startTime = Date.now();
 
-    // Check if claude binary exists
     const exists = await this._checkBinary(this.binaryPath);
     if (!exists) {
       return {
         success: false,
         artifacts: [],
-        notes: `Claude CLI binary not found at "${this.binaryPath}". Install it from https://docs.anthropic.com/en/docs/claude-cli or use the "manual" adapter instead.`,
+        notes: `Claude CLI binary not found at "${this.binaryPath}". Install Claude Code or use the "manual" adapter instead.`,
         completedAt: new Date().toISOString(),
       };
     }
 
-    // Build the prompt string from manifest
-    const prompt = this.buildPrompt(manifest);
+    const id = this._generateId();
+    const manifestPath = join(tmpdir(), `kata-manifest-${id}.md`);
 
     try {
-      const args = [
-        '--print',
-        ...this.additionalArgs,
-        prompt,
-      ];
+      this._writeFile(manifestPath, this.serializeManifest(manifest));
+
+      const args = this.buildArgs(manifest.stageType, id, manifestPath);
 
       const { stdout, stderr } = await this._execFile(
         this.binaryPath,
         args,
         {
+          cwd: this.projectRoot,
           timeout: this.timeoutMs,
           maxBuffer: 10 * 1024 * 1024, // 10MB
           encoding: 'utf-8',
@@ -106,18 +137,10 @@ export class ClaudeCliAdapter implements IExecutionAdapter {
       );
 
       const durationMs = Date.now() - startTime;
-
-      return {
-        success: true,
-        artifacts: [],
-        durationMs,
-        notes: stderr ? `stdout:\n${stdout}\n\nstderr:\n${stderr}` : stdout,
-        completedAt: new Date().toISOString(),
-      };
+      return this.parseResult(stdout, stderr ?? '', durationMs);
     } catch (err) {
       const durationMs = Date.now() - startTime;
       const errorMessage = err instanceof Error ? err.message : String(err);
-
       return {
         success: false,
         artifacts: [],
@@ -125,37 +148,101 @@ export class ClaudeCliAdapter implements IExecutionAdapter {
         notes: `Claude CLI execution failed: ${errorMessage}`,
         completedAt: new Date().toISOString(),
       };
+    } finally {
+      try { this._deleteFile(manifestPath); } catch { /* best-effort cleanup */ }
     }
   }
 
-  private buildPrompt(manifest: ExecutionManifest): string {
+  private buildArgs(stageType: string, id: string, manifestPath: string): string[] {
+    const args: string[] = [];
+    if (this.useWorktree) {
+      args.push('-w', `kata-${stageType}-${id}`);
+    }
+    args.push(
+      '-p',
+      '--system-prompt-file', manifestPath,
+      'Execute the stage described in your system prompt. When complete, output results as JSON.',
+    );
+    return args;
+  }
+
+  private serializeManifest(manifest: ExecutionManifest): string {
     const sections: string[] = [];
 
-    // Stage context
     const flavor = manifest.stageFlavor ? ` (${manifest.stageFlavor})` : '';
-    sections.push(`# Stage: ${manifest.stageType}${flavor}\n`);
-
-    // Main prompt
+    sections.push(`# Kata Stage: ${manifest.stageType}${flavor}\n`);
     sections.push(manifest.prompt);
 
-    // Artifacts to produce
     if (manifest.artifacts.length > 0) {
       sections.push('\n## Artifacts to Produce\n');
       for (const artifact of manifest.artifacts) {
         const req = artifact.required ? 'required' : 'optional';
-        const desc = artifact.description ? ` - ${artifact.description}` : '';
+        const desc = artifact.description ? ` — ${artifact.description}` : '';
         sections.push(`- ${artifact.name} (${req})${desc}`);
       }
     }
 
-    // Learnings context
     if (manifest.learnings.length > 0) {
       sections.push('\n## Relevant Learnings\n');
       for (const learning of manifest.learnings) {
-        sections.push(`- [${learning.tier}/${learning.category}] ${learning.content} (confidence: ${(learning.confidence * 100).toFixed(0)}%)`);
+        sections.push(
+          `- [${learning.tier}/${learning.category}] ${learning.content} ` +
+          `(confidence: ${(learning.confidence * 100).toFixed(0)}%)`,
+        );
       }
     }
 
+    sections.push(`\n## Execution Context\n`);
+    sections.push(`- Pipeline: ${manifest.context.pipelineId}`);
+    sections.push(`- Stage index: ${manifest.context.stageIndex}`);
+
+    sections.push('\n## Output Instructions\n');
+    sections.push('When complete, print to stdout a JSON object:');
+    sections.push('```json');
+    sections.push('{ "success": true, "artifacts": [{ "name": "...", "path": "..." }], "notes": "..." }');
+    sections.push('```');
+
     return sections.join('\n');
+  }
+
+  /**
+   * Parse stdout into an ExecutionResult.
+   * Tries JSON extraction first; falls back to unstructured success.
+   */
+  private parseResult(stdout: string, stderr: string, durationMs: number): ExecutionResult {
+    // Try to find a ```json ... ``` block first, then a bare top-level JSON object
+    const jsonBlockMatch = stdout.match(/```json\s*([\s\S]*?)\s*```/);
+    const bareJsonMatch = stdout.match(/(\{[\s\S]*\})/);
+    const rawJson = jsonBlockMatch?.[1] ?? bareJsonMatch?.[1];
+
+    if (rawJson) {
+      try {
+        const parsed = JSON.parse(rawJson) as Record<string, unknown>;
+        return {
+          success: parsed['success'] === true,
+          artifacts: Array.isArray(parsed['artifacts'])
+            ? parsed['artifacts'] as ExecutionResult['artifacts']
+            : [],
+          durationMs,
+          notes: typeof parsed['notes'] === 'string' ? parsed['notes'] : undefined,
+          completedAt: new Date().toISOString(),
+        };
+      } catch {
+        // JSON parse failed — fall through
+      }
+    }
+
+    // No valid JSON found — unstructured success
+    const combinedNotes = stderr
+      ? `stdout:\n${stdout.slice(0, 2000)}\n\nstderr:\n${stderr.slice(0, 500)}`
+      : stdout.slice(0, 2000) || undefined;
+
+    return {
+      success: true,
+      artifacts: [],
+      durationMs,
+      notes: combinedNotes,
+      completedAt: new Date().toISOString(),
+    };
   }
 }

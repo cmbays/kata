@@ -5,6 +5,8 @@ import { KataConfigSchema, type KataConfig } from '@domain/types/config.js';
 import { StageRegistry } from '@infra/registries/stage-registry.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
 import { loadPipelineTemplates } from '@infra/persistence/pipeline-template-store.js';
+import { checkBinaryExists } from '@infra/execution/claude-cli-adapter.js';
+import { generateAoConfig, detectGitBranch, deriveProjectKey } from '@infra/execution/ao-config-generator.js';
 import { KATA_DIRS } from '@shared/constants/paths.js';
 import { logger } from '@shared/lib/logger.js';
 import { detectProject, type ProjectInfo, type ProjectType } from './project-detector.js';
@@ -22,6 +24,10 @@ export interface InitResult {
   stagesLoaded: number;
   templatesLoaded: number;
   projectType: ProjectType;
+  /** Whether the claude binary was found on PATH (only set when adapter = claude-cli) */
+  claudeCliDetected?: boolean;
+  /** Path to generated AO config file (only set when adapter = composio) */
+  aoConfigPath?: string;
 }
 
 /**
@@ -158,6 +164,22 @@ export async function handleInit(options: InitOptions): Promise<InitResult> {
   const configPath = join(kataDir, KATA_DIRS.config);
   JsonStore.write(configPath, config, KataConfigSchema);
 
+  // Adapter-specific setup
+  let claudeCliDetected: boolean | undefined;
+  let aoConfigPath: string | undefined;
+
+  if (adapter === 'claude-cli') {
+    claudeCliDetected = await checkBinaryExists('claude');
+    if (!claudeCliDetected) {
+      logger.warn('claude binary not found on PATH. Install Claude Code before running stages.');
+    }
+  } else if (adapter === 'composio') {
+    const projectKey = deriveProjectKey(projectInfo.packageName, cwd);
+    const branch = detectGitBranch(cwd);
+    aoConfigPath = join(kataDir, 'ao-config.yaml');
+    generateAoConfig({ projectKey, repoPath: cwd, branch, outputPath: aoConfigPath });
+  }
+
   // Load built-in stages
   const packageRoot = resolvePackageRoot();
   const builtinStagesDir = join(packageRoot, KATA_DIRS.stages, KATA_DIRS.builtin);
@@ -217,5 +239,7 @@ export async function handleInit(options: InitOptions): Promise<InitResult> {
     stagesLoaded,
     templatesLoaded,
     projectType: projectInfo.projectType,
+    claudeCliDetected,
+    aoConfigPath,
   };
 }

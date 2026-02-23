@@ -28,9 +28,24 @@ describe('ComposioAdapter', () => {
 
     expect(result.success).toBe(false);
     expect(result.notes).toContain('not yet implemented');
+    expect(result.notes).toContain('issue #23');
+    expect(result.completedAt).toBeDefined();
+  });
+
+  it('includes alternative adapter suggestions in notes', async () => {
+    const adapter = new ComposioAdapter();
+    const result = await adapter.execute(makeManifest());
+
     expect(result.notes).toContain('manual');
     expect(result.notes).toContain('claude-cli');
-    expect(result.completedAt).toBeDefined();
+  });
+
+  it('includes AO prerequisites in notes', async () => {
+    const adapter = new ComposioAdapter();
+    const result = await adapter.execute(makeManifest());
+
+    expect(result.notes).toContain('@composio/ao-core');
+    expect(result.notes).toContain('GITHUB_TOKEN');
   });
 
   it('returns empty artifacts array', async () => {

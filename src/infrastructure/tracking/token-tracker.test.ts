@@ -146,6 +146,67 @@ describe('TokenTracker.checkBudget', () => {
   });
 });
 
+describe('TokenTracker.getTotalCost', () => {
+  it('returns 0 when no cost recorded', () => {
+    expect(tracker.getTotalCost()).toBe(0);
+  });
+
+  it('returns 0 when usages have no costUsd', () => {
+    tracker.recordUsage('stage-1', makeUsage({ total: 100 }));
+    expect(tracker.getTotalCost()).toBe(0);
+  });
+
+  it('sums costUsd across all stages', () => {
+    tracker.recordUsage('stage-1', makeUsage({ costUsd: 0.05 }));
+    tracker.recordUsage('stage-2', makeUsage({ costUsd: 0.12 }));
+
+    expect(tracker.getTotalCost()).toBeCloseTo(0.17);
+  });
+
+  it('mixes stages with and without costUsd', () => {
+    tracker.recordUsage('stage-1', makeUsage({ total: 500 }));           // no cost
+    tracker.recordUsage('stage-2', makeUsage({ total: 200, costUsd: 0.08 }));
+
+    expect(tracker.getTotalCost()).toBeCloseTo(0.08);
+    expect(tracker.getTotalUsage()).toBe(700);
+  });
+});
+
+describe('TokenTracker.checkCostBudget', () => {
+  it('returns empty array when no costBudget set', () => {
+    const alerts = tracker.checkCostBudget({ currency: 'USD' }, 1.5);
+    expect(alerts).toHaveLength(0);
+  });
+
+  it('returns empty array when cost is below 75%', () => {
+    const alerts = tracker.checkCostBudget({ costBudget: 10, currency: 'USD' }, 5);
+    expect(alerts).toHaveLength(0);
+  });
+
+  it('returns info alert at 75% cost', () => {
+    const alerts = tracker.checkCostBudget({ costBudget: 10, currency: 'USD' }, 7.5);
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]!.level).toBe('info');
+    expect(alerts[0]!.costUsed).toBe(7.5);
+    expect(alerts[0]!.costBudget).toBe(10);
+    expect(alerts[0]!.currency).toBe('USD');
+  });
+
+  it('returns warning alert at 90% cost', () => {
+    const alerts = tracker.checkCostBudget({ costBudget: 10, currency: 'USD' }, 9);
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]!.level).toBe('warning');
+    expect(alerts[0]!.message).toContain('approaching limit');
+  });
+
+  it('returns critical alert at 100%+ cost', () => {
+    const alerts = tracker.checkCostBudget({ costBudget: 10, currency: 'USD' }, 12);
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]!.level).toBe('critical');
+    expect(alerts[0]!.message).toContain('exceeded');
+  });
+});
+
 describe('TokenTracker persistence', () => {
   it('persists data across tracker instances', () => {
     tracker.recordUsage('stage-1', makeUsage({ total: 100 }));
