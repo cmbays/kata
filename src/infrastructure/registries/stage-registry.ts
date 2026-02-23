@@ -5,15 +5,20 @@ import { JsonStore } from '@infra/persistence/json-store.js';
 import { StageNotFoundError } from '@shared/lib/errors.js';
 
 /**
- * Build the storage key for a stage: `{type}` or `{type}:{flavor}`.
+ * Build the in-memory cache key for a stage: `{type}` or `{type}:{flavor}`.
+ * Intentionally uses `:` as separator to keep cache keys distinct from
+ * dot-notation filenames (see stageFilename). A type named "build.go" would
+ * otherwise collide with a base type "build" plus flavor "go".
  */
 function stageKey(type: string, flavor?: string): string {
   return flavor ? `${type}:${flavor}` : type;
 }
 
 /**
- * Build the filename for a stage JSON file.
+ * Build the on-disk filename for a stage JSON file.
  * Uses dot notation: `{type}.json` or `{type}.{flavor}.json`.
+ * Intentionally uses `.` (not `:`) to produce valid filenames on all OS.
+ * See stageKey for the corresponding in-memory cache key format.
  */
 function stageFilename(type: string, flavor?: string): string {
   return flavor ? `${type}.${flavor}.json` : `${type}.json`;

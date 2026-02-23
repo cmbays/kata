@@ -33,8 +33,7 @@
       "name": "security-report",
       "description": "Security review report covering OWASP Top 10, dependency advisories, secrets handling, and recommended remediations",
       "required": true,
-      "extension": ".md",
-      "path": ".kata/artifacts/security-report.md"
+      "extension": ".md"
     }
   ],
   "promptTemplate": "../prompts/review.security.md",
