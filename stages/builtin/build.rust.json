@@ -1,0 +1,78 @@
+{
+  "type": "build",
+  "flavor": "rust",
+  "description": "Build stage specialized for Rust projects. Compile with cargo, run tests, and produce a release binary in target/release/.",
+  "entryGate": {
+    "type": "entry",
+    "conditions": [
+      {
+        "type": "artifact-exists",
+        "description": "Implementation plan must exist before building",
+        "artifactName": "implementation-plan"
+      }
+    ],
+    "required": true
+  },
+  "exitGate": {
+    "type": "exit",
+    "conditions": [
+      {
+        "type": "command-passes",
+        "description": "Release build must succeed",
+        "command": "cargo build --release"
+      },
+      {
+        "type": "command-passes",
+        "description": "All tests must pass",
+        "command": "cargo test"
+      },
+      {
+        "type": "artifact-exists",
+        "description": "Build output summary must be produced",
+        "artifactName": "build-output"
+      }
+    ],
+    "required": true
+  },
+  "artifacts": [
+    {
+      "name": "build-output",
+      "description": "Build summary — what was built, files created/modified, test results, acceptance criteria status",
+      "required": true,
+      "extension": ".md"
+    }
+  ],
+  "promptTemplate": "../prompts/build.rust.md",
+  "learningHooks": [
+    "build-quality",
+    "rust-patterns",
+    "ownership-safety"
+  ],
+  "config": {},
+  "resources": {
+    "tools": [
+      {
+        "name": "cargo build",
+        "purpose": "Compile the project",
+        "command": "cargo build --release"
+      },
+      {
+        "name": "cargo test",
+        "purpose": "Run the test suite",
+        "command": "cargo test"
+      },
+      {
+        "name": "cargo clippy",
+        "purpose": "Lint for common mistakes and style issues",
+        "command": "cargo clippy -- -D warnings"
+      }
+    ],
+    "agents": [
+      {
+        "name": "everything-claude-code:build-error-resolver",
+        "when": "when cargo build fails or compilation errors occur"
+      }
+    ],
+    "skills": []
+  }
+}

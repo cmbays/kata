@@ -103,6 +103,36 @@ describe('formatStageDetail', () => {
     const result = formatStageDetail(makeStage({ learningHooks: ['quality', 'insights'] }));
     expect(result).toContain('Learning Hooks: quality, insights');
   });
+
+  it('shows resources section when present', () => {
+    const stage = makeStage({
+      resources: {
+        tools: [{ name: 'tsc', purpose: 'Type checking', command: 'npx tsc --noEmit' }],
+        agents: [{ name: 'everything-claude-code:build-error-resolver', when: 'when build fails' }],
+        skills: [{ name: 'pr-review-toolkit:code-reviewer' }],
+      },
+    });
+    const result = formatStageDetail(stage);
+    expect(result).toContain('Resources:');
+    expect(result).toContain('Tools:');
+    expect(result).toContain('tsc: Type checking (npx tsc --noEmit)');
+    expect(result).toContain('Agents:');
+    expect(result).toContain('everything-claude-code:build-error-resolver — when build fails');
+    expect(result).toContain('Skills:');
+    expect(result).toContain('pr-review-toolkit:code-reviewer');
+  });
+
+  it('omits resources section when absent', () => {
+    const result = formatStageDetail(makeStage({ resources: undefined }));
+    expect(result).not.toContain('Resources:');
+  });
+
+  it('omits resources section when all arrays are empty', () => {
+    const result = formatStageDetail(makeStage({
+      resources: { tools: [], agents: [], skills: [] },
+    }));
+    expect(result).not.toContain('Resources:');
+  });
 });
 
 describe('formatStageJson', () => {

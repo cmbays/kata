@@ -15,9 +15,13 @@ export function registerStageCommands(parent: Command): void {
   stage
     .command('list')
     .description('List available stages')
+    .option('--flavor <stage-type>', 'Show only stages of this type (base + all flavors), e.g. --flavor build')
     .action(withCommandContext((ctx) => {
+      const localOpts = ctx.cmd.opts();
       const registry = new StageRegistry(kataDirPath(ctx.kataDir, 'stages'));
-      const stages = registry.list();
+      const stages = localOpts.flavor
+        ? registry.list({ type: localOpts.flavor })
+        : registry.list();
 
       if (ctx.globalOpts.json) {
         console.log(formatStageJson(stages));
@@ -33,12 +37,12 @@ export function registerStageCommands(parent: Command): void {
     .action(withCommandContext((ctx, type: string) => {
       const localOpts = ctx.cmd.opts();
       const registry = new StageRegistry(kataDirPath(ctx.kataDir, 'stages'));
-      const stage = registry.get(type, localOpts.flavor);
+      const stageObj = registry.get(type, localOpts.flavor);
 
       if (ctx.globalOpts.json) {
-        console.log(formatStageJson([stage]));
+        console.log(formatStageJson([stageObj]));
       } else {
-        console.log(formatStageDetail(stage));
+        console.log(formatStageDetail(stageObj));
       }
     }));
 }

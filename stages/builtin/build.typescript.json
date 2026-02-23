@@ -1,0 +1,83 @@
+{
+  "type": "build",
+  "flavor": "typescript",
+  "description": "Build stage specialized for TypeScript projects. Compile, type-check, and bundle using tsc and tsup. Produces type-correct, importable dist/ output.",
+  "entryGate": {
+    "type": "entry",
+    "conditions": [
+      {
+        "type": "artifact-exists",
+        "description": "Implementation plan must exist before building",
+        "artifactName": "implementation-plan"
+      }
+    ],
+    "required": true
+  },
+  "exitGate": {
+    "type": "exit",
+    "conditions": [
+      {
+        "type": "command-passes",
+        "description": "TypeScript build must succeed",
+        "command": "npm run build"
+      },
+      {
+        "type": "command-passes",
+        "description": "Type checking must pass with no errors",
+        "command": "npx tsc --noEmit"
+      },
+      {
+        "type": "artifact-exists",
+        "description": "Build output summary must be produced",
+        "artifactName": "build-output"
+      }
+    ],
+    "required": true
+  },
+  "artifacts": [
+    {
+      "name": "build-output",
+      "description": "Build summary — what was built, files created/modified, test results, acceptance criteria status",
+      "required": true,
+      "extension": ".md"
+    },
+    {
+      "name": "type-declarations",
+      "description": "TypeScript declaration files (.d.ts) generated in dist/",
+      "required": false
+    }
+  ],
+  "promptTemplate": "../prompts/build.typescript.md",
+  "learningHooks": [
+    "build-quality",
+    "typescript-patterns",
+    "type-safety"
+  ],
+  "config": {},
+  "resources": {
+    "tools": [
+      {
+        "name": "tsc",
+        "purpose": "Type checking",
+        "command": "npx tsc --noEmit"
+      },
+      {
+        "name": "npm run build",
+        "purpose": "Bundling",
+        "command": "npm run build"
+      }
+    ],
+    "agents": [
+      {
+        "name": "everything-claude-code:build-error-resolver",
+        "when": "when TypeScript build fails or type errors occur"
+      }
+    ],
+    "skills": [
+      {
+        "name": "pr-review-toolkit:code-reviewer",
+        "when": "before marking stage complete"
+      }
+    ]
+  }
+}

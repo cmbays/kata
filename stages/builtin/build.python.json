@@ -1,0 +1,72 @@
+{
+  "type": "build",
+  "flavor": "python",
+  "description": "Build stage specialized for Python projects. Run tests, lint, and type-check. Produce a dist/ package when applicable.",
+  "entryGate": {
+    "type": "entry",
+    "conditions": [
+      {
+        "type": "artifact-exists",
+        "description": "Implementation plan must exist before building",
+        "artifactName": "implementation-plan"
+      }
+    ],
+    "required": true
+  },
+  "exitGate": {
+    "type": "exit",
+    "conditions": [
+      {
+        "type": "human-approved",
+        "description": "Verify tests pass (run: python -m pytest) and code meets quality standards"
+      },
+      {
+        "type": "artifact-exists",
+        "description": "Build output summary must be produced",
+        "artifactName": "build-output"
+      }
+    ],
+    "required": true
+  },
+  "artifacts": [
+    {
+      "name": "build-output",
+      "description": "Build summary — what was built, files created/modified, test results, acceptance criteria status",
+      "required": true,
+      "extension": ".md",
+      "path": ".kata/artifacts/build-output.md"
+    }
+  ],
+  "promptTemplate": "../prompts/build.python.md",
+  "learningHooks": [
+    "build-quality",
+    "python-patterns",
+    "type-hint-coverage"
+  ],
+  "config": {},
+  "resources": {
+    "tools": [
+      {
+        "name": "pytest",
+        "purpose": "Run the test suite",
+        "command": "python -m pytest"
+      },
+      {
+        "name": "ruff",
+        "purpose": "Fast linting and formatting",
+        "command": "ruff check . && ruff format --check ."
+      },
+      {
+        "name": "mypy",
+        "purpose": "Static type checking",
+        "command": "mypy ."
+      }
+    ],
+    "agents": [
+      {
+        "name": "everything-claude-code:build-error-resolver",
+        "when": "when tests fail or type checking errors occur"
+      }
+    ]
+  }
+}

@@ -2,6 +2,7 @@ import { z } from 'zod/v4';
 import { GateSchema } from './gate.js';
 import { ArtifactSchema } from './artifact.js';
 import { LearningSchema } from './learning.js';
+import { StageResourcesSchema } from './stage.js';
 
 export const ExecutionContextSchema = z.object({
   pipelineId: z.string().uuid(),
@@ -22,6 +23,16 @@ export const ExecutionManifestSchema = z.object({
   artifacts: z.array(ArtifactSchema).default([]),
   /** Learnings injected as additional context */
   learnings: z.array(LearningSchema).default([]),
+  /**
+   * Structured tool/agent/skill hints for this stage.
+   *
+   * Note: ManifestBuilder also serializes these into the `prompt` field as a
+   * "## Suggested Resources" section. The two representations are intentionally
+   * kept in sync — the structured field enables downstream adapters to act on
+   * resources without prompt parsing; the embedded prompt section serves as a
+   * fallback when the structured field is not available to the consuming agent.
+   */
+  resources: StageResourcesSchema.optional(),
 });
 
 export type ExecutionManifest = z.infer<typeof ExecutionManifestSchema>;

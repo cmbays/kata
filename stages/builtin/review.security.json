@@ -1,0 +1,83 @@
+{
+  "type": "review",
+  "flavor": "security",
+  "description": "Security review stage. Identify OWASP Top 10 vulnerabilities, check dependency advisories, verify secrets handling, and produce a security report.",
+  "entryGate": {
+    "type": "entry",
+    "conditions": [
+      {
+        "type": "artifact-exists",
+        "description": "Build output must exist before security review",
+        "artifactName": "build-output"
+      }
+    ],
+    "required": true
+  },
+  "exitGate": {
+    "type": "exit",
+    "conditions": [
+      {
+        "type": "artifact-exists",
+        "description": "Security report must be produced",
+        "artifactName": "security-report"
+      },
+      {
+        "type": "human-approved",
+        "description": "Confirm dependency audit has been run (npm audit --audit-level=moderate or cargo audit) and findings reviewed"
+      }
+    ],
+    "required": true
+  },
+  "artifacts": [
+    {
+      "name": "security-report",
+      "description": "Security review report covering OWASP Top 10, dependency advisories, secrets handling, and recommended remediations",
+      "required": true,
+      "extension": ".md",
+      "path": ".kata/artifacts/security-report.md"
+    }
+  ],
+  "promptTemplate": "../prompts/review.security.md",
+  "learningHooks": [
+    "security-patterns",
+    "vulnerability-detection",
+    "dependency-hygiene"
+  ],
+  "config": {},
+  "resources": {
+    "tools": [
+      {
+        "name": "npm audit",
+        "purpose": "Scan npm dependencies for known vulnerabilities",
+        "command": "npm audit --audit-level=moderate"
+      },
+      {
+        "name": "cargo audit",
+        "purpose": "Scan Rust dependencies for known vulnerabilities",
+        "command": "cargo audit"
+      },
+      {
+        "name": "pip-audit",
+        "purpose": "Scan Python dependencies for known vulnerabilities",
+        "command": "pip-audit"
+      },
+      {
+        "name": "govulncheck",
+        "purpose": "Scan Go dependencies for known vulnerabilities",
+        "command": "govulncheck ./..."
+      }
+    ],
+    "agents": [
+      {
+        "name": "everything-claude-code:security-reviewer",
+        "when": "for deep OWASP analysis and vulnerability detection"
+      }
+    ],
+    "skills": [
+      {
+        "name": "everything-claude-code:security-review",
+        "when": "for comprehensive security checklist and patterns"
+      }
+    ]
+  }
+}

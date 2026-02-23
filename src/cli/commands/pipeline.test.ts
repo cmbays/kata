@@ -49,7 +49,7 @@ describe('registerPipelineCommands', () => {
   });
 
   function registerStage(stage: Stage): void {
-    const filename = stage.flavor ? `${stage.type}:${stage.flavor}.json` : `${stage.type}.json`;
+    const filename = stage.flavor ? `${stage.type}.${stage.flavor}.json` : `${stage.type}.json`;
     JsonStore.write(join(kataDir, 'stages', filename), stage, StageSchema);
   }
 

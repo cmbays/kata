@@ -1,0 +1,55 @@
+{
+  "type": "review",
+  "flavor": "frontend",
+  "description": "Frontend review stage. Evaluate UI components, accessibility, responsive design, performance, and user experience. Produce a structured frontend review.",
+  "entryGate": {
+    "type": "entry",
+    "conditions": [
+      {
+        "type": "artifact-exists",
+        "description": "Build output must exist before frontend review",
+        "artifactName": "build-output"
+      }
+    ],
+    "required": true
+  },
+  "exitGate": {
+    "type": "exit",
+    "conditions": [
+      {
+        "type": "artifact-exists",
+        "description": "Frontend review document must be produced",
+        "artifactName": "frontend-review"
+      }
+    ],
+    "required": true
+  },
+  "artifacts": [
+    {
+      "name": "frontend-review",
+      "description": "Frontend review covering component design, accessibility, responsiveness, performance, and UX quality",
+      "required": true,
+      "extension": ".md",
+      "path": ".kata/artifacts/frontend-review.md"
+    }
+  ],
+  "promptTemplate": "../prompts/review.frontend.md",
+  "learningHooks": [
+    "ui-quality",
+    "accessibility-patterns",
+    "performance-patterns"
+  ],
+  "config": {},
+  "resources": {
+    "skills": [
+      {
+        "name": "pr-review-toolkit:code-reviewer",
+        "when": "for general code quality review of component implementations"
+      },
+      {
+        "name": "frontend-design:frontend-design",
+        "when": "when evaluating UI component design quality"
+      }
+    ]
+  }
+}

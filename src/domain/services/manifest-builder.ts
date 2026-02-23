@@ -3,7 +3,7 @@ import {
   type ExecutionManifest,
   type ExecutionContext,
 } from '@domain/types/manifest.js';
-import type { Stage } from '@domain/types/stage.js';
+import type { Stage, StageResources } from '@domain/types/stage.js';
 import type { Gate } from '@domain/types/gate.js';
 import type { Learning } from '@domain/types/learning.js';
 import type { IRefResolver } from '@domain/ports/ref-resolver.js';
@@ -41,6 +41,14 @@ export const ManifestBuilder = {
       prompt = `${prompt}\n\n${learningsText}`;
     }
 
+    // Inject resources into the prompt if present
+    if (stage.resources) {
+      const resourcesText = ManifestBuilder.serializeResources(stage.resources);
+      if (resourcesText) {
+        prompt = `${prompt}\n\n${resourcesText}`;
+      }
+    }
+
     // Extract gates
     const gates = ManifestBuilder.attachGates(stage);
 
@@ -53,6 +61,7 @@ export const ManifestBuilder = {
       exitGate: gates.exitGate,
       artifacts: stage.artifacts,
       learnings: learnings ?? [],
+      resources: stage.resources,
     });
 
     return manifest;
@@ -110,6 +119,55 @@ export const ManifestBuilder = {
         }
       }
 
+      lines.push('');
+    }
+
+    return lines.join('\n');
+  },
+
+  /**
+   * Serialize stage resources into a ## Suggested Resources section.
+   * Returns empty string if resources has no tools, agents, or skills.
+   */
+  serializeResources(resources: StageResources): string {
+    const hasTools = resources.tools.length > 0;
+    const hasAgents = resources.agents.length > 0;
+    const hasSkills = resources.skills.length > 0;
+
+    if (!hasTools && !hasAgents && !hasSkills) {
+      return '';
+    }
+
+    const lines: string[] = [
+      '---',
+      '## Suggested Resources',
+      '',
+    ];
+
+    if (hasTools) {
+      lines.push('**Tools**');
+      for (const tool of resources.tools) {
+        const cmd = tool.command ? ` — \`${tool.command}\`` : '';
+        lines.push(`- ${tool.name}: ${tool.purpose}${cmd}`);
+      }
+      lines.push('');
+    }
+
+    if (hasAgents) {
+      lines.push('**Agents** (spawn when appropriate using the Task tool)');
+      for (const agent of resources.agents) {
+        const when = agent.when ? ` — ${agent.when}` : '';
+        lines.push(`- ${agent.name}${when}`);
+      }
+      lines.push('');
+    }
+
+    if (hasSkills) {
+      lines.push('**Skills** (invoke when appropriate using the Skill tool)');
+      for (const skill of resources.skills) {
+        const when = skill.when ? ` — ${skill.when}` : '';
+        lines.push(`- ${skill.name}${when}`);
+      }
       lines.push('');
     }
 

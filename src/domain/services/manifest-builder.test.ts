@@ -274,4 +274,109 @@ describe('ManifestBuilder', () => {
       expect(text).toContain('92%');
     });
   });
+
+  describe('serializeResources', () => {
+    it('should render ## Suggested Resources section with tools', () => {
+      const text = ManifestBuilder.serializeResources({
+        tools: [{ name: 'tsc', purpose: 'Type checking', command: 'npx tsc --noEmit' }],
+        agents: [],
+        skills: [],
+      });
+      expect(text).toContain('## Suggested Resources');
+      expect(text).toContain('**Tools**');
+      expect(text).toContain('tsc: Type checking');
+      expect(text).toContain('`npx tsc --noEmit`');
+    });
+
+    it('should render agents section', () => {
+      const text = ManifestBuilder.serializeResources({
+        tools: [],
+        agents: [{ name: 'everything-claude-code:build-error-resolver', when: 'when build fails' }],
+        skills: [],
+      });
+      expect(text).toContain('**Agents**');
+      expect(text).toContain('everything-claude-code:build-error-resolver');
+      expect(text).toContain('when build fails');
+    });
+
+    it('should render skills section', () => {
+      const text = ManifestBuilder.serializeResources({
+        tools: [],
+        agents: [],
+        skills: [{ name: 'pr-review-toolkit:code-reviewer', when: 'before marking stage complete' }],
+      });
+      expect(text).toContain('**Skills**');
+      expect(text).toContain('pr-review-toolkit:code-reviewer');
+      expect(text).toContain('before marking stage complete');
+    });
+
+    it('should return empty string when all arrays are empty', () => {
+      const text = ManifestBuilder.serializeResources({ tools: [], agents: [], skills: [] });
+      expect(text).toBe('');
+    });
+
+    it('should omit absent sections', () => {
+      const text = ManifestBuilder.serializeResources({
+        tools: [{ name: 'tsc', purpose: 'Type checking' }],
+        agents: [],
+        skills: [],
+      });
+      expect(text).not.toContain('**Agents**');
+      expect(text).not.toContain('**Skills**');
+    });
+
+    it('should render tool without command (no backtick suffix)', () => {
+      const text = ManifestBuilder.serializeResources({
+        tools: [{ name: 'eslint', purpose: 'Linting' }],
+        agents: [],
+        skills: [],
+      });
+      expect(text).toContain('eslint: Linting');
+      // No command suffix
+      expect(text).not.toContain('`undefined`');
+    });
+  });
+
+  describe('build with resources', () => {
+    it('should inject ## Suggested Resources into prompt when resources present', () => {
+      const stage = makeStage({
+        resources: {
+          tools: [{ name: 'tsc', purpose: 'Type checking', command: 'npx tsc --noEmit' }],
+          agents: [],
+          skills: [],
+        },
+      });
+      const context = makeContext();
+      const manifest = ManifestBuilder.build(stage, context);
+
+      expect(manifest.prompt).toContain('## Suggested Resources');
+      expect(manifest.prompt).toContain('tsc: Type checking');
+    });
+
+    it('should omit ## Suggested Resources section when resources absent', () => {
+      const stage = makeStage({ resources: undefined });
+      const context = makeContext();
+      const manifest = ManifestBuilder.build(stage, context);
+
+      expect(manifest.prompt).not.toContain('## Suggested Resources');
+    });
+
+    it('should pass resources through to manifest field', () => {
+      const resources = {
+        tools: [{ name: 'tsc', purpose: 'Checking' }],
+        agents: [],
+        skills: [],
+      };
+      const stage = makeStage({ resources });
+      const manifest = ManifestBuilder.build(stage, makeContext());
+
+      expect(manifest.resources).toBeDefined();
+      expect(manifest.resources!.tools).toHaveLength(1);
+    });
+
+    it('should have undefined resources on manifest when stage has no resources', () => {
+      const manifest = ManifestBuilder.build(makeStage(), makeContext());
+      expect(manifest.resources).toBeUndefined();
+    });
+  });
 });

@@ -73,6 +73,37 @@ export function formatStageDetail(stage: Stage): string {
   // Learning hooks
   if (stage.learningHooks.length > 0) {
     lines.push(`Learning Hooks: ${stage.learningHooks.join(', ')}`);
+    lines.push('');
+  }
+
+  // Resources
+  if (stage.resources) {
+    const { tools, agents, skills } = stage.resources;
+    const hasResources = tools.length > 0 || agents.length > 0 || skills.length > 0;
+    if (hasResources) {
+      lines.push('Resources:');
+      if (tools.length > 0) {
+        lines.push('  Tools:');
+        for (const tool of tools) {
+          const cmd = tool.command ? ` (${tool.command})` : '';
+          lines.push(`    - ${tool.name}: ${tool.purpose}${cmd}`);
+        }
+      }
+      if (agents.length > 0) {
+        lines.push('  Agents:');
+        for (const agent of agents) {
+          const when = agent.when ? ` — ${agent.when}` : '';
+          lines.push(`    - ${agent.name}${when}`);
+        }
+      }
+      if (skills.length > 0) {
+        lines.push('  Skills:');
+        for (const skill of skills) {
+          const when = skill.when ? ` — ${skill.when}` : '';
+          lines.push(`    - ${skill.name}${when}`);
+        }
+      }
+    }
   }
 
   return lines.join('\n').trimEnd();
