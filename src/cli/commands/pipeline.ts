@@ -48,7 +48,7 @@ export function registerPipelineCommands(program: Command): void {
       // Initialize services
       const stageRegistry = new StageRegistry(stagesDir);
       const knowledgeStore = new KnowledgeStore(kataDirPath(ctx.kataDir, 'knowledge'));
-      const adapterResolver = new AdapterResolver();
+      const adapterResolver = AdapterResolver;
       const resultCapturer = new ResultCapturer(ctx.kataDir);
       const tokenTracker = new TokenTracker(kataDirPath(ctx.kataDir, 'tracking'));
 
