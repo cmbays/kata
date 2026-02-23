@@ -1,4 +1,4 @@
-import { vi } from 'vitest';
+import { vi, afterEach } from 'vitest';
 import { spawnSync } from 'node:child_process';
 import type { Gate } from '@domain/types/gate.js';
 import { evaluateGate, type GateEvalContext } from './gate-evaluator.js';
@@ -263,6 +263,10 @@ describe('evaluateGate', () => {
     });
   });
 
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
   describe('command-passes condition', () => {
     it('should pass when command exits 0', async () => {
       const gate: Gate = {
@@ -360,22 +364,26 @@ describe('evaluateGate', () => {
     });
 
     it('should include signal name in detail when process is killed by a signal', async () => {
+      vi.mocked(spawnSync).mockReturnValueOnce({
+        pid: 0,
+        output: [null, '', ''],
+        stdout: '',
+        stderr: '',
+        status: null,
+        signal: 'SIGTERM',
+        error: undefined,
+      } as unknown as ReturnType<typeof spawnSync>);
+
       const gate: Gate = {
         type: 'entry',
-        conditions: [
-          {
-            type: 'command-passes',
-            command: 'node -e "process.kill(process.pid, \'SIGTERM\')"',
-          },
-        ],
+        conditions: [{ type: 'command-passes', command: 'any-cmd' }],
         required: true,
       };
 
       const result = await evaluateGate(gate, baseContext);
 
       expect(result.passed).toBe(false);
-      const detail = result.results[0]?.detail ?? '';
-      expect(detail.toLowerCase()).toMatch(/signal|sigterm/);
+      expect(result.results[0]?.detail).toBe('Command killed by signal SIGTERM');
     });
 
     it('should truncate long output and append truncation marker', async () => {
