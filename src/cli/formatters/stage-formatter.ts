@@ -121,10 +121,12 @@ export function formatStageJson(stages: Stage[]): string {
 function buildGatesSummary(stage: Stage): string {
   const parts: string[] = [];
   if (stage.entryGate) {
-    parts.push(`entry(${stage.entryGate.conditions.length})`);
+    const req = stage.entryGate.required ? 'req' : 'opt';
+    parts.push(`entry(${stage.entryGate.conditions.length},${req})`);
   }
   if (stage.exitGate) {
-    parts.push(`exit(${stage.exitGate.conditions.length})`);
+    const req = stage.exitGate.required ? 'req' : 'opt';
+    parts.push(`exit(${stage.exitGate.conditions.length},${req})`);
   }
   return parts.join(', ') || '-';
 }
