@@ -35,7 +35,7 @@ describe('formatStageTable', () => {
     expect(dataRow).toContain('-');
   });
 
-  it('summarizes gates', () => {
+  it('summarizes required gates with req suffix', () => {
     const stages = [
       makeStage({
         entryGate: { type: 'entry', conditions: [{ type: 'predecessor-complete' }], required: true },
@@ -43,8 +43,20 @@ describe('formatStageTable', () => {
       }),
     ];
     const result = formatStageTable(stages);
-    expect(result).toContain('entry(1)');
-    expect(result).toContain('exit(1)');
+    expect(result).toContain('entry(1,req)');
+    expect(result).toContain('exit(1,req)');
+  });
+
+  it('summarizes optional gates with opt suffix', () => {
+    const stages = [
+      makeStage({
+        entryGate: { type: 'entry', conditions: [{ type: 'human-approved' }], required: false },
+        exitGate: { type: 'exit', conditions: [{ type: 'artifact-exists', artifactName: 'y' }, { type: 'human-approved' }], required: false },
+      }),
+    ];
+    const result = formatStageTable(stages);
+    expect(result).toContain('entry(1,opt)');
+    expect(result).toContain('exit(2,opt)');
   });
 });
 

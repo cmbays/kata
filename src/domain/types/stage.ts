@@ -23,7 +23,7 @@ export const StageRefSchema = z.object({
 
 export type StageRef = z.infer<typeof StageRefSchema>;
 
-const StageToolSchema = z.object({
+export const StageToolSchema = z.object({
   /** Display name for the tool (e.g. "tsc"). Must be non-empty. */
   name: z.string().min(1),
   /** Human-readable explanation of why this tool is relevant. Must be non-empty. */
@@ -36,17 +36,21 @@ const StageToolSchema = z.object({
   command: z.string().optional(),
 });
 
+export type StageTool = z.infer<typeof StageToolSchema>;
+
 /**
  * Hint for an agent (spawned via the Task tool) or skill (invoked via the Skill tool).
  * Separate arrays on StageResourcesSchema distinguish the two invocation semantics,
  * even though the hint shape is identical.
  */
-const StageAgentHintSchema = z.object({
+export const StageAgentHintSchema = z.object({
   /** Fully-qualified agent or skill name (e.g. "everything-claude-code:build-error-resolver"). Must be non-empty. */
   name: z.string().min(1),
   /** Optional condition under which to invoke (e.g. "when build fails"). */
   when: z.string().optional(),
 });
+
+export type StageAgentHint = z.infer<typeof StageAgentHintSchema>;
 
 /**
  * Structured tool/agent/skill hints attached to a stage definition.

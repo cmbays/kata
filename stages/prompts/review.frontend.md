@@ -70,7 +70,7 @@ For each significant component, evaluate:
 
 ## Output Format
 
-Produce a `frontend-review` artifact at `.kata/artifacts/review-frontend.md`:
+Produce a `frontend-review` artifact at `.kata/artifacts/frontend-review.md`:
 
 ```markdown
 # Frontend Review: [Feature/Component Name]

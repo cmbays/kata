@@ -4,13 +4,7 @@
   "description": "Review stage specialized for API design and implementation. Evaluate endpoint contracts, authentication, input validation, error responses, and OpenAPI/schema completeness.",
   "entryGate": {
     "type": "entry",
-    "conditions": [
-      {
-        "type": "artifact-exists",
-        "description": "Build output must exist before API review",
-        "artifactName": "build-output"
-      }
-    ],
+    "conditions": [],
     "required": true
   },
   "exitGate": {
@@ -19,18 +13,17 @@
       {
         "type": "artifact-exists",
         "description": "API review document must be produced",
-        "artifactName": "api-review"
+        "artifactName": "review-api"
       }
     ],
     "required": true
   },
   "artifacts": [
     {
-      "name": "api-review",
+      "name": "review-api",
       "description": "Structured API review covering endpoint contracts, auth, validation, error handling, and schema completeness",
       "required": true,
-      "extension": ".md",
-      "path": ".kata/artifacts/review-api.md"
+      "extension": ".md"
     }
   ],
   "promptTemplate": "../prompts/review.api.md",
