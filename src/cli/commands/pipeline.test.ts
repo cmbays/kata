@@ -248,4 +248,43 @@ describe('registerPipelineCommands', () => {
       expect(output).toContain('completed successfully');
     });
   });
+
+  describe('pipeline approve', () => {
+    it('should set humanApprovedAt on the current stage and persist', async () => {
+      const pipeline = createPipeline({
+        stages: [
+          { stageRef: { type: 'shape' }, state: 'active' as const, artifacts: [] },
+          { stageRef: { type: 'build' }, state: 'pending' as const, artifacts: [] },
+        ],
+        currentStageIndex: 0,
+      });
+
+      await program.parseAsync(
+        ['pipeline', 'approve', pipeline.id, '--cwd', parentDir],
+        { from: 'user' },
+      );
+
+      const updated = JsonStore.read(
+        join(kataDir, 'pipelines', `${pipeline.id}.json`),
+        PipelineSchema,
+      );
+      expect(updated.stages[0]?.humanApprovedAt).toBeDefined();
+      expect(typeof updated.stages[0]?.humanApprovedAt).toBe('string');
+
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('approved'),
+      );
+    });
+
+    it('should error for non-existent pipeline ID', async () => {
+      await program.parseAsync(
+        ['pipeline', 'approve', 'nonexistent-id', '--cwd', parentDir],
+        { from: 'user' },
+      );
+
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Pipeline not found'),
+      );
+    });
+  });
 });

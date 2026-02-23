@@ -703,4 +703,160 @@ describe('PipelineRunner', () => {
       expect(result.abortedAt).toBe(1);
     });
   });
+
+  describe('yolo mode', () => {
+    it('should bypass all gate checks when yolo is true', async () => {
+      const deps = makeDeps({ yolo: true });
+      // Gate requires artifact that doesn't exist — would normally abort
+      const stage = makeStage('build', {
+        entryGate: {
+          type: 'entry',
+          conditions: [{ type: 'artifact-exists', artifactName: 'missing-artifact' }],
+          required: true,
+        },
+      });
+      registerStages(deps, [stage]);
+      const pipeline = makePipeline(['build']);
+
+      const runner = new PipelineRunner(deps);
+      const result = await runner.run(pipeline);
+
+      // Gate bypassed, stage completes
+      expect(result.success).toBe(true);
+      expect(result.stagesCompleted).toBe(1);
+    });
+
+    it('should not call gateOverride promptFn when yolo is true', async () => {
+      const gateOverride = vi.fn(async () => 'abort' as const);
+      const deps = makeDeps({
+        yolo: true,
+        promptFn: { gateOverride, captureLearning: vi.fn(async () => null) },
+      });
+      const stage = makeStage('build', {
+        entryGate: {
+          type: 'entry',
+          conditions: [{ type: 'artifact-exists', artifactName: 'missing' }],
+          required: true,
+        },
+      });
+      registerStages(deps, [stage]);
+      const pipeline = makePipeline(['build']);
+
+      const runner = new PipelineRunner(deps);
+      await runner.run(pipeline);
+
+      expect(gateOverride).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('prompt template resolution', () => {
+    it('should resolve prompt template ref when stagesDir and refResolver are provided', async () => {
+      const mockRefResolver = {
+        resolveRef: vi.fn(() => '# Resolved prompt content'),
+      };
+      const deps = makeDeps({
+        stagesDir: '/fake/stages',
+        refResolver: mockRefResolver,
+      });
+      const stage = makeStage('research', { promptTemplate: '../prompts/research.md' });
+      registerStages(deps, [stage]);
+      const pipeline = makePipeline(['research']);
+
+      const runner = new PipelineRunner(deps);
+      await runner.run(pipeline);
+
+      expect(deps.manifestBuilder.resolveRefs).toHaveBeenCalledWith(
+        '../prompts/research.md',
+        '/fake/stages',
+        mockRefResolver,
+      );
+    });
+
+    it('should skip resolution when stagesDir is not provided', async () => {
+      const deps = makeDeps({ stagesDir: undefined });
+      const stage = makeStage('research', { promptTemplate: '../prompts/research.md' });
+      registerStages(deps, [stage]);
+      const pipeline = makePipeline(['research']);
+
+      const runner = new PipelineRunner(deps);
+      await runner.run(pipeline);
+
+      expect(deps.manifestBuilder.resolveRefs).not.toHaveBeenCalled();
+    });
+
+    it('should continue with path-as-is when resolution fails with RefResolutionError', async () => {
+      const { RefResolutionError } = await import('@infra/config/ref-resolver.js');
+      const deps = makeDeps({ stagesDir: '/fake/stages' });
+      // Make manifestBuilder.resolveRefs throw RefResolutionError (the only error that falls back silently)
+      vi.spyOn(deps.manifestBuilder, 'resolveRefs').mockImplementation(() => {
+        throw new RefResolutionError('../prompts/missing.md', 'File not found');
+      });
+      const stage = makeStage('research', { promptTemplate: '../prompts/missing.md' });
+      registerStages(deps, [stage]);
+      const pipeline = makePipeline(['research']);
+
+      const runner = new PipelineRunner(deps);
+      // Should not throw — falls back to path as-is for RefResolutionError
+      const result = await runner.run(pipeline);
+      expect(result.success).toBe(true);
+    });
+
+    it('should re-throw non-RefResolutionError errors from resolution', async () => {
+      const mockRefResolver = { resolveRef: vi.fn() };
+      const deps = makeDeps({ stagesDir: '/fake/stages', refResolver: mockRefResolver });
+      vi.spyOn(deps.manifestBuilder, 'resolveRefs').mockImplementation(() => {
+        throw new TypeError('Unexpected internal error');
+      });
+      const stage = makeStage('research', { promptTemplate: '../prompts/missing.md' });
+      registerStages(deps, [stage]);
+      const pipeline = makePipeline(['research']);
+
+      const runner = new PipelineRunner(deps);
+      await expect(runner.run(pipeline)).rejects.toThrow(TypeError);
+    });
+  });
+
+  describe('human-approved gate', () => {
+    it('should pass human-approved gate when humanApprovedAt is set on stage state', async () => {
+      const deps = makeDeps();
+      const stage = makeStage('shape', {
+        entryGate: {
+          type: 'entry',
+          conditions: [{ type: 'human-approved' }],
+          required: true,
+        },
+      });
+      registerStages(deps, [stage]);
+
+      const pipeline = makePipeline(['shape']);
+      // Pre-set humanApprovedAt on the stage
+      pipeline.stages[0]!.humanApprovedAt = new Date().toISOString();
+
+      const runner = new PipelineRunner(deps);
+      const result = await runner.run(pipeline);
+
+      expect(result.success).toBe(true);
+      expect(result.stagesCompleted).toBe(1);
+    });
+
+    it('should fail human-approved gate when humanApprovedAt is absent', async () => {
+      const deps = makeDeps();
+      const stage = makeStage('shape', {
+        entryGate: {
+          type: 'entry',
+          conditions: [{ type: 'human-approved' }],
+          required: true,
+        },
+      });
+      registerStages(deps, [stage]);
+      const pipeline = makePipeline(['shape']);
+      // humanApprovedAt is undefined — gate should fail and abort
+
+      const runner = new PipelineRunner(deps);
+      const result = await runner.run(pipeline);
+
+      expect(result.success).toBe(false);
+      expect(result.abortedAt).toBe(0);
+    });
+  });
 });

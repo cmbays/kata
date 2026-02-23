@@ -1,11 +1,12 @@
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync, copyFileSync } from 'node:fs';
 import { KataConfigSchema, type KataConfig } from '@domain/types/config.js';
 import { StageRegistry } from '@infra/registries/stage-registry.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
 import { loadPipelineTemplates } from '@infra/persistence/pipeline-template-store.js';
 import { KATA_DIRS } from '@shared/constants/paths.js';
+import { logger } from '@shared/lib/logger.js';
 import { detectProject, type ProjectInfo } from './project-detector.js';
 
 export interface InitOptions {
@@ -86,8 +87,9 @@ async function promptOptions(): Promise<{ methodology: string; adapter: string }
  * 2. Create .kata/ directory structure
  * 3. Write .kata/config.json
  * 4. Load built-in stages into .kata/stages/
- * 5. Load pipeline templates into .kata/templates/
- * 6. Return summary
+ * 5. Copy built-in prompt templates into .kata/prompts/
+ * 6. Load pipeline templates into .kata/templates/
+ * 7. Return summary
  */
 export async function handleInit(options: InitOptions): Promise<InitResult> {
   const { cwd, skipPrompts = false } = options;
@@ -164,6 +166,23 @@ export async function handleInit(options: InitOptions): Promise<InitResult> {
   if (existsSync(builtinStagesDir)) {
     registry.loadBuiltins(builtinStagesDir);
     stagesLoaded = registry.list().length;
+  }
+
+  // Copy prompt templates to .kata/prompts/
+  // Stage JSONs reference "../prompts/<name>.md" (relative to .kata/stages/),
+  // so they resolve to .kata/prompts/<name>.md at runtime.
+  // Source: {packageRoot}/stages/prompts/*.md
+  const builtinPromptsDir = join(packageRoot, KATA_DIRS.stages, KATA_DIRS.prompts);
+  if (existsSync(builtinPromptsDir)) {
+    const promptsDir = join(kataDir, KATA_DIRS.prompts);
+    const mdFiles = readdirSync(builtinPromptsDir).filter((f) => f.endsWith('.md'));
+    for (const mdFile of mdFiles) {
+      try {
+        copyFileSync(join(builtinPromptsDir, mdFile), join(promptsDir, mdFile));
+      } catch (err) {
+        logger.warn(`Could not copy prompt template "${mdFile}": ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
   }
 
   // Load pipeline templates

@@ -8,8 +8,11 @@ import type { IKnowledgeStore } from '@domain/ports/knowledge-store.js';
 import type { IAdapterResolver } from '@domain/ports/adapter-resolver.js';
 import type { ITokenTracker } from '@domain/ports/token-tracker.js';
 import type { IResultCapturer } from '@domain/ports/result-capturer.js';
+import type { IRefResolver } from '@domain/ports/ref-resolver.js';
 import { ManifestBuilder } from '@domain/services/manifest-builder.js';
 import { evaluateGate, type GateEvalContext } from './gate-evaluator.js';
+import { RefResolutionError } from '@infra/config/ref-resolver.js';
+import { logger } from '@shared/lib/logger.js';
 
 /**
  * Dependencies injected into the pipeline runner for testability.
@@ -23,6 +26,18 @@ export interface PipelineRunnerDeps {
   manifestBuilder: typeof ManifestBuilder;
   /** Persist an updated pipeline snapshot to storage. */
   persistPipeline: (pipeline: Pipeline) => void;
+  /**
+   * Directory where stages are stored — used to resolve relative prompt template
+   * paths (e.g. "../prompts/research.md") before building the manifest.
+   */
+  stagesDir?: string;
+  /** Resolves $ref-style prompt template file paths to their contents. */
+  refResolver?: IRefResolver;
+  /**
+   * When true, all gate checks are bypassed ("yolo mode").
+   * Useful for testing pipelines without waiting on human approvals or artifact gates.
+   */
+  yolo?: boolean;
   /** Optional prompt function for interactive overrides */
   promptFn?: {
     gateOverride: (gateResult: GateResult) => Promise<'retry' | 'skip' | 'abort'>;
@@ -50,14 +65,15 @@ export interface PipelineResult {
  * 1. Get stage definition from registry
  * 2. Evaluate entry gate
  * 3. Load learnings (Tier 1 + Tier 2)
- * 4. Build execution manifest
- * 5. Resolve and execute adapter
- * 6. Capture result to history
- * 7. Record token usage
- * 8. Evaluate exit gate
- * 9. Optionally capture learnings
- * 10. Update pipeline state
- * 11. Persist pipeline
+ * 4. Resolve prompt template ref (if stagesDir + refResolver provided)
+ * 5. Build execution manifest
+ * 6. Resolve and execute adapter
+ * 7. Capture result to history
+ * 8. Record token usage
+ * 9. Evaluate exit gate
+ * 10. Optionally capture learnings
+ * 11. Update pipeline state
+ * 12. Persist pipeline
  */
 export class PipelineRunner {
   constructor(private readonly deps: PipelineRunnerDeps) {}
@@ -69,6 +85,10 @@ export class PipelineRunner {
     const historyIds: string[] = [];
     let stagesCompleted = 0;
     let abortedAt: number | undefined;
+
+    if (this.deps.yolo) {
+      logger.warn('YOLO mode enabled — all gate checks are bypassed. Use only in non-production environments.');
+    }
 
     // Mark pipeline as active
     pipeline.state = 'active';
@@ -122,9 +142,12 @@ export class PipelineRunner {
         // Load learnings: Tier 1 (stage-level) + Tier 2 (subscriptions)
         const learnings = this.loadLearnings(stageDef);
 
+        // Resolve prompt template ref if provided (e.g. "../prompts/research.md" → file content)
+        const resolvedStageDef = this.resolvePromptTemplate(stageDef);
+
         // Build execution manifest
         const manifest = this.deps.manifestBuilder.build(
-          stageDef,
+          resolvedStageDef,
           {
             pipelineId: pipeline.id,
             stageIndex: i,
@@ -264,6 +287,32 @@ export class PipelineRunner {
   }
 
   /**
+   * If the stage has a promptTemplate that looks like a file reference and
+   * stagesDir + refResolver are provided, resolve the file content and return
+   * a new stage object with the resolved prompt. Otherwise returns the stage as-is.
+   */
+  private resolvePromptTemplate(stageDef: Stage): Stage {
+    if (!stageDef.promptTemplate || !this.deps.stagesDir || !this.deps.refResolver) {
+      return stageDef;
+    }
+    try {
+      const resolvedPrompt = this.deps.manifestBuilder.resolveRefs(
+        stageDef.promptTemplate,
+        this.deps.stagesDir,
+        this.deps.refResolver,
+      );
+      return { ...stageDef, promptTemplate: resolvedPrompt };
+    } catch (err) {
+      if (err instanceof RefResolutionError) {
+        // File missing — use the template path as-is (adapter receives the path string).
+        logger.warn(`Could not resolve prompt template "${stageDef.promptTemplate}": ${err.message}`);
+        return stageDef;
+      }
+      throw err;
+    }
+  }
+
+  /**
    * Build gate evaluation context from the pipeline's current state.
    */
   private buildGateContext(
@@ -289,23 +338,30 @@ export class PipelineRunner {
       availableArtifacts.push(...additionalArtifacts);
     }
 
+    const currentStage = pipeline.stages[currentIndex];
     return {
       availableArtifacts,
       completedStages,
-      // TODO: Wire human approval state (tracked per-stage or via promptFn).
-      // Currently, human-approved gates always fail and require skip/abort via gate override.
-      humanApproved: false,
+      // Human approval is set via `kata flow approve <pipeline-id>`, which
+      // writes humanApprovedAt onto the PipelineStageState and persists it.
+      humanApproved: currentStage?.humanApprovedAt != null,
     };
   }
 
   /**
    * Evaluate a gate, retrying up to MAX_GATE_RETRIES when the user selects 'retry'.
    * Returns 'proceed' if the gate passes, or the terminal action ('skip'/'abort').
+   * If `yolo` is true, always returns 'proceed' without evaluating conditions.
    */
   private async evaluateGateWithRetry(
     gate: Gate,
     context: GateEvalContext,
   ): Promise<'proceed' | 'skip' | 'abort'> {
+    if (this.deps.yolo) {
+      logger.warn(`Gate bypassed (yolo mode): ${gate.type} gate with ${gate.conditions.length} condition(s)`);
+      return 'proceed';
+    }
+
     const MAX_RETRIES = 3;
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
