@@ -54,6 +54,16 @@ export {
   type Stage,
 } from './stage.js';
 
+// Flavor types (second tier — named, ordered composition of Steps within a Stage)
+export {
+  FlavorStepRefSchema,
+  StepOverrideSchema,
+  FlavorSchema,
+  type FlavorStepRef,
+  type StepOverride,
+  type Flavor,
+} from './flavor.js';
+
 // Pipeline types
 export {
   PipelineType,
