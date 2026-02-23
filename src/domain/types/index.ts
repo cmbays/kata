@@ -126,3 +126,13 @@ export {
   KataConfigSchema,
   type KataConfig,
 } from './config.js';
+
+// Decision types
+export {
+  DecisionTypeSchema,
+  DecisionOutcomeSchema,
+  DecisionSchema,
+  type DecisionType,
+  type DecisionOutcome,
+  type Decision,
+} from './decision.js';

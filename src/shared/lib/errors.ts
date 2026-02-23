@@ -48,3 +48,10 @@ export class CycleNotFoundError extends KataError {
     this.name = 'CycleNotFoundError';
   }
 }
+
+export class DecisionNotFoundError extends KataError {
+  constructor(id: string) {
+    super(`Decision not found: "${id}".`);
+    this.name = 'DecisionNotFoundError';
+  }
+}
