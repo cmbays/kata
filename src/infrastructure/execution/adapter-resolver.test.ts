@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { afterEach } from 'vitest';
 import type { KataConfig } from '@domain/types/config.js';
 import type { IExecutionAdapter } from './execution-adapter.js';
 import { AdapterResolver } from './adapter-resolver.js';
@@ -64,7 +64,10 @@ describe('AdapterResolver', () => {
       const config = makeConfig('nonexistent');
       expect(() => resolver.resolve(config)).toThrow('Unknown execution adapter');
       expect(() => resolver.resolve(config)).toThrow('nonexistent');
-      expect(() => resolver.resolve(config)).toThrow('manual, claude-cli, composio');
+      // Check each built-in name is listed (order-independent)
+      for (const name of ['manual', 'claude-cli', 'composio']) {
+        expect(() => resolver.resolve(config)).toThrow(name);
+      }
     });
   });
 

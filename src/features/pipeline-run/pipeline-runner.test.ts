@@ -784,22 +784,35 @@ describe('PipelineRunner', () => {
       expect(deps.manifestBuilder.resolveRefs).not.toHaveBeenCalled();
     });
 
-    it('should continue with path-as-is when resolution fails', async () => {
-      const mockRefResolver = {
-        resolveRef: vi.fn(() => { throw new Error('File not found'); }),
-      };
-      const deps = makeDeps({
-        stagesDir: '/fake/stages',
-        refResolver: mockRefResolver,
+    it('should continue with path-as-is when resolution fails with RefResolutionError', async () => {
+      const { RefResolutionError } = await import('@infra/config/ref-resolver.js');
+      const deps = makeDeps({ stagesDir: '/fake/stages' });
+      // Make manifestBuilder.resolveRefs throw RefResolutionError (the only error that falls back silently)
+      vi.spyOn(deps.manifestBuilder, 'resolveRefs').mockImplementation(() => {
+        throw new RefResolutionError('../prompts/missing.md', 'File not found');
       });
       const stage = makeStage('research', { promptTemplate: '../prompts/missing.md' });
       registerStages(deps, [stage]);
       const pipeline = makePipeline(['research']);
 
       const runner = new PipelineRunner(deps);
-      // Should not throw — falls back to path as-is
+      // Should not throw — falls back to path as-is for RefResolutionError
       const result = await runner.run(pipeline);
       expect(result.success).toBe(true);
+    });
+
+    it('should re-throw non-RefResolutionError errors from resolution', async () => {
+      const mockRefResolver = { resolveRef: vi.fn() };
+      const deps = makeDeps({ stagesDir: '/fake/stages', refResolver: mockRefResolver });
+      vi.spyOn(deps.manifestBuilder, 'resolveRefs').mockImplementation(() => {
+        throw new TypeError('Unexpected internal error');
+      });
+      const stage = makeStage('research', { promptTemplate: '../prompts/missing.md' });
+      registerStages(deps, [stage]);
+      const pipeline = makePipeline(['research']);
+
+      const runner = new PipelineRunner(deps);
+      await expect(runner.run(pipeline)).rejects.toThrow(TypeError);
     });
   });
 

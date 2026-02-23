@@ -38,7 +38,7 @@ export function registerPipelineCommands(program: Command): void {
     .description('Start a new pipeline from a template type')
     .option('--cycle <cycle-id>', 'Link to a cycle')
     .option('--focus <bet-id>', 'Link to a bet within an enbu')
-    .option('--yolo', 'Bypass all gate checks (skips human-approved and artifact gates)')
+    .option('--yolo', 'Bypass all gate checks including exit gates (entry, exit, artifact, human-approved) — use only in dev/test')
     .action(withCommandContext(async (ctx, type: string) => {
       const localOpts = ctx.cmd.opts();
       const pipelineDir = kataDirPath(ctx.kataDir, 'pipelines');
