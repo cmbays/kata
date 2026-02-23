@@ -75,7 +75,7 @@ Work through each category systematically:
 - [ ] No hardcoded secrets, API keys, or passwords in source code
 - [ ] `.env` files are gitignored
 - [ ] Secrets are loaded from environment variables or a secrets manager
-- [ ] Check git history for accidentally committed secrets (`git log -p | grep -i 'api_key\|secret\|password'`)
+- [ ] Scan recent history for accidentally committed secrets: `git log -p --max-count=200 | grep -iE 'api_key|secret|password'` — or use a dedicated tool (`trufflehog git file://.` or `gitleaks detect`) for full history
 
 ## Dependency Audit
 
