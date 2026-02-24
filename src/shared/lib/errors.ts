@@ -62,3 +62,10 @@ export class DecisionNotFoundError extends KataError {
     this.name = 'DecisionNotFoundError';
   }
 }
+
+export class OrchestratorError extends KataError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'OrchestratorError';
+  }
+}

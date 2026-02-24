@@ -14,3 +14,10 @@ export type {
   StepResolver,
 } from './flavor-registry.js';
 export type { IDecisionRegistry, DecisionQuery, DecisionStats } from './decision-registry.js';
+export type {
+  IStageOrchestrator,
+  IFlavorExecutor,
+  OrchestratorContext,
+  OrchestratorResult,
+  FlavorExecutionResult,
+} from './stage-orchestrator.js';
