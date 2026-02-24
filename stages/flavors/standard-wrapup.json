@@ -5,5 +5,5 @@
   "steps": [
     { "stepName": "wrapup", "stepType": "wrapup-general" }
   ],
-  "synthesisArtifact": "wrap-up-summary"
+  "synthesisArtifact": "wrapup-summary"
 }

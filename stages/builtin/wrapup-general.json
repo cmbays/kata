@@ -19,14 +19,14 @@
       {
         "type": "artifact-exists",
         "description": "Wrap-up summary with learnings must be produced",
-        "artifactName": "wrap-up-summary"
+        "artifactName": "wrapup-summary"
       }
     ],
     "required": true
   },
   "artifacts": [
     {
-      "name": "wrap-up-summary",
+      "name": "wrapup-summary",
       "description": "Retrospective summary including captured learnings, pattern observations, improvement proposals, and documentation updates",
       "required": true,
       "extension": ".md"
