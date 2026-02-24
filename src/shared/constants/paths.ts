@@ -10,6 +10,7 @@ export const KATA_DIRS = {
   tracking: 'tracking',
   prompts: 'prompts',
   artifacts: 'artifacts',
+  rules: 'rules',
   config: 'config.json',
   builtin: 'builtin',
 } as const;

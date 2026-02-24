@@ -106,7 +106,7 @@ describe('FlavorSchema', () => {
   });
 
   it('accepts all valid stage categories', () => {
-    const categories = ['research', 'plan', 'build', 'review', 'wrapup'] as const;
+    const categories = ['research', 'plan', 'build', 'review'] as const;
     for (const cat of categories) {
       const flavor = FlavorSchema.parse({ ...minimalFlavor, stageCategory: cat });
       expect(flavor.stageCategory).toBe(cat);

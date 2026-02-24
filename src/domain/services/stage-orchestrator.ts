@@ -1,8 +1,11 @@
 import type { Stage, StageCategory, OrchestratorConfig } from '@domain/types/stage.js';
+import type { StageVocabulary } from '@domain/types/vocabulary.js';
 import type { Flavor } from '@domain/types/flavor.js';
 import type { Decision } from '@domain/types/decision.js';
+import type { CapabilityProfile, MatchReport, ReflectionResult } from '@domain/types/orchestration.js';
 import type { IFlavorRegistry } from '@domain/ports/flavor-registry.js';
 import type { IDecisionRegistry } from '@domain/ports/decision-registry.js';
+import type { IStageRuleRegistry } from '@domain/ports/rule-registry.js';
 import type {
   IStageOrchestrator,
   IFlavorExecutor,
@@ -18,107 +21,229 @@ export interface StageOrchestratorDeps {
   flavorRegistry: IFlavorRegistry;
   decisionRegistry: IDecisionRegistry;
   executor: IFlavorExecutor;
+  ruleRegistry?: IStageRuleRegistry;
 }
 
 /**
  * Describes a synthesis strategy for merging per-flavor results into a stage artifact.
- * Returned by the abstract `getSynthesisStrategy()` method.
  */
 export interface SynthesisStrategy {
-  /**
-   * The chosen approach name.
-   * MUST be one of the values in `alternatives` — `synthesize()` will throw
-   * `OrchestratorError` if this invariant is violated.
-   */
   approach: string;
-  /**
-   * All approaches considered by the subclass, including `approach`.
-   * Must contain at least one entry.
-   * The Decision `options` array is built directly from this list.
-   */
   alternatives: [string, ...string[]];
-  /** Human-readable explanation of why this approach was chosen. Must be non-empty. */
   reasoning: string;
 }
 
+// ---------------------------------------------------------------------------
+// Scoring helpers
+// ---------------------------------------------------------------------------
+
 /**
- * Abstract base class for Stage Orchestrators.
+ * Extract a lowercase string from a bet field for keyword matching.
+ */
+export function betText(context: OrchestratorContext): string {
+  const { bet } = context;
+  if (!bet) return '';
+  const parts: string[] = [];
+  if (typeof bet.title === 'string') parts.push(bet.title);
+  if (typeof bet.description === 'string') parts.push(bet.description);
+  if (Array.isArray(bet.tags)) {
+    for (const tag of bet.tags) {
+      if (typeof tag === 'string') parts.push(tag);
+    }
+  }
+  return parts.join(' ').toLowerCase();
+}
+
+/**
+ * Score a Flavor by how many of the given keywords appear in its name,
+ * description, or the bet context. Returns a value in [0, 1].
+ */
+export function keywordScore(
+  flavor: Flavor,
+  context: OrchestratorContext,
+  keywords: string[],
+): number {
+  const text = betText(context);
+  const flavorName = flavor.name.toLowerCase();
+  const description = (flavor.description ?? '').toLowerCase();
+
+  let hits = 0;
+  for (const kw of keywords) {
+    const kwLower = kw.toLowerCase();
+    if (flavorName.includes(kwLower) || description.includes(kwLower) || text.includes(kwLower)) {
+      hits++;
+    }
+  }
+
+  return keywords.length > 0 ? Math.min(1, hits / keywords.length) : 0.5;
+}
+
+/**
+ * Boost score for learnings that mention a flavor by name.
+ */
+export function learningBoost(flavor: Flavor, context: OrchestratorContext): number {
+  const learnings = context.learnings ?? [];
+  const flavorName = flavor.name.toLowerCase();
+  return learnings.some((l) => l.toLowerCase().includes(flavorName)) ? 0.1 : 0;
+}
+
+// ---------------------------------------------------------------------------
+// Internal types for match phase output
+// ---------------------------------------------------------------------------
+
+interface MatchPhaseResult {
+  candidates: Flavor[];
+  pinnedFlavors: Flavor[];
+  matchReports: MatchReport[];
+  excluded: Set<string>;
+  pinned: Set<string>;
+}
+
+// ---------------------------------------------------------------------------
+// Concrete Stage Orchestrator — vocabulary-driven, 6-phase loop
+// ---------------------------------------------------------------------------
+
+/**
+ * Concrete Stage Orchestrator driven by vocabulary configuration.
  *
- * Implements the four-phase orchestration loop:
- *   1. Flavor selection — choose the best Flavor(s) from the Stage's available list.
- *   2. Execution mode  — decide sequential vs. parallel execution.
- *   3. Execution       — run each selected Flavor via the injected IFlavorExecutor.
- *   4. Synthesis       — merge per-flavor outputs into a single stage-level artifact.
+ * Implements the 6-phase orchestration loop:
+ *   1. Analyze    — build capability profile from context, artifacts, and active rules.
+ *   2. Match      — score all candidate flavors against the profile.
+ *   3. Plan       — select flavors and decide sequential vs. parallel execution.
+ *   4. Execute    — run each selected Flavor via the injected IFlavorExecutor.
+ *   5. Synthesize — merge per-flavor outputs into a single stage-level artifact.
+ *   6. Reflect    — capture decision outcomes and generate rule suggestions.
  *
  * Every non-deterministic judgment is recorded as a Decision via IDecisionRegistry.
- * Subclasses implement `scoreFlavorForContext()` and `getSynthesisStrategy()` for
- * category-specific intelligence.
+ * Category-specific intelligence is driven by the injected StageVocabulary config.
  */
-export abstract class BaseStageOrchestrator implements IStageOrchestrator {
+export class BaseStageOrchestrator implements IStageOrchestrator {
   constructor(
     protected readonly stageCategory: StageCategory,
     protected readonly deps: StageOrchestratorDeps,
     protected readonly config: OrchestratorConfig,
+    protected readonly vocabulary?: StageVocabulary,
   ) {}
 
   async run(stage: Stage, context: OrchestratorContext): Promise<OrchestratorResult> {
-    // Phase 1: Select flavors — records 'flavor-selection' Decision
-    const { selectedFlavors, flavorSelectionDecision } = this.selectFlavors(stage, context);
+    const decisions: Decision[] = [];
 
-    // Phase 2: Decide execution mode — records 'execution-mode' Decision
-    const { executionMode, executionModeDecision } = this.decideExecutionMode(
-      selectedFlavors,
-      context,
-    );
+    // Phase 1: Analyze — build capability profile
+    const { capabilityProfile, analysisDecision } = this.analyze(stage, context);
+    decisions.push(analysisDecision);
 
-    // Phase 3: Execute selected flavors via the injected executor
+    // Phase 2: Match — score all candidate flavors
+    const matchResult = this.match(stage, context);
+
+    // Phase 3: Plan — select flavors and decide execution mode
+    const { selectedFlavors, executionMode, selectionDecision, modeDecision } =
+      this.planExecution(matchResult, context);
+    decisions.push(selectionDecision, modeDecision);
+
+    // Phase 4: Execute — run selected flavors via the injected executor
     const flavorResults = await this.executeFlavors(selectedFlavors, executionMode, context);
 
-    // Phase 4: Synthesize results — records 'synthesis-approach' Decision
+    // Phase 5: Synthesize — merge per-flavor outputs into stage artifact
     const { stageArtifact, synthesisDecision } = this.synthesize(flavorResults, context);
+    decisions.push(synthesisDecision);
 
-    // selectedFlavors is guaranteed non-empty by selectFlavors() which throws otherwise.
+    // Phase 6: Reflect — capture outcomes, generate rule suggestions
+    const reflection = this.reflect(decisions, flavorResults);
+
+    // selectedFlavors is guaranteed non-empty by planExecution() which throws otherwise.
     const selectedFlavorNames = selectedFlavors.map((f) => f.name) as [string, ...string[]];
 
     return {
       stageCategory: this.stageCategory,
       selectedFlavors: selectedFlavorNames,
-      decisions: [flavorSelectionDecision, executionModeDecision, synthesisDecision],
+      decisions,
       flavorResults,
       stageArtifact,
       executionMode,
+      capabilityProfile,
+      matchReports: matchResult.matchReports,
+      reflection,
     };
   }
 
+  // ---------------------------------------------------------------------------
+  // Phase 1: Analyze
+  // ---------------------------------------------------------------------------
+
   /**
-   * Select which Flavors to run from the Stage's available list.
-   *
-   * Selection rules:
-   * - `excludedFlavors` are always removed from candidates.
-   * - Remaining candidates are scored via `scoreFlavorForContext()`.
-   * - The top-scoring non-pinned candidate is added to the selected set.
-   * - `pinnedFlavors` are always included, regardless of score.
-   * - The final set is deduplicated (a pinned flavor that is also top-scored appears once).
-   *
-   * Records a 'flavor-selection' Decision.
-   *
-   * @throws OrchestratorError if no candidates remain after exclusion.
-   * @throws OrchestratorError if no candidates can be resolved from the FlavorRegistry.
+   * Build a CapabilityProfile describing the current execution context.
+   * Records a 'capability-analysis' Decision.
    */
-  protected selectFlavors(
+  protected analyze(
     stage: Stage,
     context: OrchestratorContext,
-  ): { selectedFlavors: Flavor[]; flavorSelectionDecision: Decision } {
+  ): { capabilityProfile: CapabilityProfile; analysisDecision: Decision } {
+    // Load active rules for this category (if registry is available)
+    const activeRuleIds: string[] = [];
+    if (this.deps.ruleRegistry) {
+      const rules = this.deps.ruleRegistry.loadRules(this.stageCategory);
+      activeRuleIds.push(...rules.map((r) => r.id));
+    }
+
+    const capabilityProfile: CapabilityProfile = {
+      betContext: context.bet,
+      availableArtifacts: [...context.availableArtifacts],
+      activeRules: activeRuleIds,
+      learnings: [...(context.learnings ?? [])],
+      stageCategory: this.stageCategory,
+    };
+
+    let analysisDecision: Decision;
+    try {
+      analysisDecision = this.deps.decisionRegistry.record({
+        stageCategory: this.stageCategory,
+        decisionType: 'capability-analysis',
+        context: {
+          availableArtifacts: context.availableArtifacts,
+          bet: context.bet,
+          learningCount: context.learnings?.length ?? 0,
+          activeRuleCount: activeRuleIds.length,
+          availableFlavorCount: stage.availableFlavors.length,
+        },
+        options: ['proceed', 'insufficient-context'],
+        selection: 'proceed',
+        reasoning:
+          `Analyzed context for ${this.stageCategory} stage: ` +
+          `${context.availableArtifacts.length} artifact(s), ` +
+          `${context.learnings?.length ?? 0} learning(s), ` +
+          `${activeRuleIds.length} active rule(s), ` +
+          `${stage.availableFlavors.length} available flavor(s).`,
+        confidence: 0.95,
+        decidedAt: new Date().toISOString(),
+      });
+    } catch (err) {
+      throw new OrchestratorError(
+        `Stage "${this.stageCategory}" failed to record capability-analysis decision: ` +
+          `${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
+    return { capabilityProfile, analysisDecision };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Phase 2: Match
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Resolve and score all candidate flavors. Produces MatchReport[] with
+   * detailed scoring breakdowns. Does not record a decision — scoring is
+   * deterministic given the same vocabulary and context.
+   */
+  protected match(stage: Stage, context: OrchestratorContext): MatchPhaseResult {
     const excluded = new Set(stage.excludedFlavors ?? []);
     const pinned = new Set(stage.pinnedFlavors ?? []);
 
     // Warn when a flavor appears in both pinnedFlavors and excludedFlavors.
-    // excludedFlavors wins (project-level override takes precedence over stage-level pin).
     for (const name of pinned) {
       if (excluded.has(name)) {
         logger.warn(
-          `Orchestrator: flavor "${this.stageCategory}/${name}" is both pinned and excluded — excludedFlavors wins. ` +
-            `Remove the conflict in your Stage or project configuration.`,
+          `Orchestrator: flavor "${this.stageCategory}/${name}" is both pinned and excluded — excludedFlavors wins.`,
           { name, stageCategory: this.stageCategory },
         );
       }
@@ -127,9 +252,7 @@ export abstract class BaseStageOrchestrator implements IStageOrchestrator {
     // Filter out excluded flavors from the available set
     const candidateNames = stage.availableFlavors.filter((name) => !excluded.has(name));
 
-    // Resolve pinned flavors directly from the registry — they bypass the availableFlavors
-    // list so that stages can pin flavors that are not in their declared available set.
-    // Pinned flavors that are also excluded are NOT resolved (excluded wins, see warning above).
+    // Resolve pinned flavors from registry
     const pinnedFlavors: Flavor[] = [];
     for (const name of pinned) {
       if (excluded.has(name)) continue;
@@ -149,20 +272,18 @@ export abstract class BaseStageOrchestrator implements IStageOrchestrator {
       }
     }
 
-    // If there are no non-excluded available candidates and no pinned flavors, throw.
+    // If there are no candidates and no pinned flavors, throw.
     if (candidateNames.length === 0 && pinnedFlavors.length === 0) {
       throw new OrchestratorError(
-        `Stage "${this.stageCategory}" has no available flavors after applying excludedFlavors filter. ` +
-          `Check that excludedFlavors does not cover all entries in availableFlavors and pinnedFlavors.`,
+        `Stage "${this.stageCategory}" has no available flavors after applying excludedFlavors filter.`,
       );
     }
 
-    // Resolve Flavor objects from availableFlavors (excluding excluded); skip unresolvable with a warning.
-    // Pinned flavors already resolved above are not re-resolved here.
+    // Resolve non-pinned candidate Flavors
     const pinnedNames = new Set(pinnedFlavors.map((f) => f.name));
     const candidates: Flavor[] = [];
     for (const name of candidateNames) {
-      if (pinnedNames.has(name)) continue; // already resolved as pinned
+      if (pinnedNames.has(name)) continue;
       try {
         candidates.push(this.deps.flavorRegistry.get(this.stageCategory, name));
       } catch (err) {
@@ -190,18 +311,124 @@ export abstract class BaseStageOrchestrator implements IStageOrchestrator {
       );
     }
 
-    // Score non-pinned candidates; pinned flavors always run and skip scoring
-    const nonPinned = candidates;
+    // Score each candidate and produce MatchReports
+    const keywords = this.vocabulary?.keywords ?? [];
+    const matchReports: MatchReport[] = candidates.map((flavor) => {
+      const base = this.scoreFlavorForContext(flavor, context);
+      const kwHits = this.countKeywordHits(flavor, context, keywords);
+      const lBoost = learningBoost(flavor, context);
+      const ruleAdj = this.computeRuleAdjustments(flavor);
 
-    // Sort non-pinned by descending score
-    const scored = nonPinned
-      .map((flavor) => ({ flavor, score: this.scoreFlavorForContext(flavor, context) }))
+      return {
+        flavorName: flavor.name,
+        score: base,
+        keywordHits: kwHits,
+        ruleAdjustments: ruleAdj,
+        learningBoost: lBoost,
+        reasoning:
+          `Score ${base.toFixed(2)}: ${kwHits} keyword hit(s), ` +
+          `learning boost ${lBoost.toFixed(2)}, rule adj ${ruleAdj.toFixed(2)}.`,
+      };
+    });
+
+    return { candidates, pinnedFlavors, matchReports, excluded, pinned };
+  }
+
+  /**
+   * Score a Flavor's relevance to the current context using vocabulary config.
+   * Falls back to a neutral score of 0.5 if no vocabulary is provided.
+   */
+  protected scoreFlavorForContext(
+    flavor: Flavor,
+    context: OrchestratorContext,
+  ): number {
+    if (!this.vocabulary) {
+      return 0.5;
+    }
+
+    const base = keywordScore(flavor, context, this.vocabulary.keywords);
+
+    // Apply artifact-based boost rules from vocabulary
+    let boostTotal = 0;
+    for (const rule of this.vocabulary.boostRules) {
+      if (rule.artifactPattern === '*') {
+        if (context.availableArtifacts.length > 0) {
+          boostTotal += rule.magnitude;
+        }
+      } else {
+        if (context.availableArtifacts.some((a) => a.includes(rule.artifactPattern))) {
+          boostTotal += rule.magnitude;
+        }
+      }
+    }
+
+    const boost = learningBoost(flavor, context);
+    return Math.min(1, base + boostTotal + boost);
+  }
+
+  /**
+   * Count how many vocabulary keywords match the flavor name, description, or bet.
+   */
+  private countKeywordHits(
+    flavor: Flavor,
+    context: OrchestratorContext,
+    keywords: string[],
+  ): number {
+    const text = betText(context);
+    const flavorName = flavor.name.toLowerCase();
+    const description = (flavor.description ?? '').toLowerCase();
+
+    let hits = 0;
+    for (const kw of keywords) {
+      const kwLower = kw.toLowerCase();
+      if (flavorName.includes(kwLower) || description.includes(kwLower) || text.includes(kwLower)) {
+        hits++;
+      }
+    }
+    return hits;
+  }
+
+  /**
+   * Compute rule-based score adjustments for a flavor.
+   * Returns 0 if no rule registry is available.
+   */
+  private computeRuleAdjustments(_flavor: Flavor): number {
+    // Rule adjustments will be fully implemented when rules are integrated
+    // into scoring. For now, returns 0 (no adjustment).
+    return 0;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Phase 3: Plan
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Select flavors and decide execution mode based on match results.
+   * Records 'flavor-selection' and 'execution-mode' Decisions.
+   */
+  protected planExecution(
+    matchResult: MatchPhaseResult,
+    context: OrchestratorContext,
+  ): {
+    selectedFlavors: Flavor[];
+    executionMode: 'sequential' | 'parallel';
+    selectionDecision: Decision;
+    modeDecision: Decision;
+  } {
+    const { candidates, pinnedFlavors, matchReports, pinned, excluded } = matchResult;
+
+    // Sort non-pinned candidates by descending score using match reports
+    const scored = candidates
+      .map((flavor) => {
+        const report = matchReports.find((r) => r.flavorName === flavor.name);
+        return { flavor, score: report?.score ?? this.scoreFlavorForContext(flavor, context) };
+      })
       .sort((a, b) => b.score - a.score);
 
-    // Top-scored non-pinned candidate (if any)
+    // Top-scored non-pinned candidate
     const topNonPinned = scored.length > 0 ? [scored[0]!.flavor] : [];
 
-    // Build selected set: pinned first, then top non-pinned (deduplicated by name)
+    // Build selected set: pinned first, then top non-pinned (deduplicated)
     const seen = new Set<string>();
     const selected: Flavor[] = [];
     for (const f of [...pinnedFlavors, ...topNonPinned]) {
@@ -211,18 +438,16 @@ export abstract class BaseStageOrchestrator implements IStageOrchestrator {
       }
     }
 
-    // Compute confidence from top scorer's score (normalised to [0, 1])
+    // Compute confidence from top scorer
     const topScore = scored[0]?.score ?? 0;
     const confidence = Math.min(1, Math.max(0, topScore));
 
-    // Decision options = all resolvable flavors (non-pinned candidates + pinned).
-    // selection = top-scored non-pinned name, or first pinned name if no non-pinned candidates.
+    // Decision options = all resolvable flavors
     const options = [...candidates, ...pinnedFlavors].map((f) => f.name);
     const selection =
       scored[0]?.flavor.name ??
       (pinnedFlavors[0]?.name ?? candidates[0]!.name);
 
-    // Ensure selection is in options (invariant required by DecisionSchema)
     if (!options.includes(selection)) {
       options.push(selection);
     }
@@ -232,9 +457,9 @@ export abstract class BaseStageOrchestrator implements IStageOrchestrator {
       .map(({ flavor, score }) => `${flavor.name}(${score.toFixed(2)})`)
       .join(', ');
 
-    let flavorSelectionDecision: Decision;
+    let selectionDecision: Decision;
     try {
-      flavorSelectionDecision = this.deps.decisionRegistry.record({
+      selectionDecision = this.deps.decisionRegistry.record({
         stageCategory: this.stageCategory,
         decisionType: 'flavor-selection',
         context: {
@@ -261,48 +486,31 @@ export abstract class BaseStageOrchestrator implements IStageOrchestrator {
       );
     }
 
-    return { selectedFlavors: selected, flavorSelectionDecision };
-  }
-
-  /**
-   * Decide whether to execute selected Flavors sequentially or in parallel.
-   *
-   * Decision rules:
-   * - 1 flavor  → sequential (no benefit to parallelism).
-   * - ≤ maxParallelFlavors → parallel (within resource limits).
-   * - > maxParallelFlavors → sequential (avoid overwhelming the executor).
-   *
-   * Records an 'execution-mode' Decision with high confidence (deterministic rule).
-   */
-  protected decideExecutionMode(
-    flavors: Flavor[],
-    _context: OrchestratorContext,
-  ): { executionMode: 'sequential' | 'parallel'; executionModeDecision: Decision } {
+    // Decide execution mode
     const maxParallel = this.config.maxParallelFlavors;
     const executionMode: 'sequential' | 'parallel' =
-      flavors.length > 1 && flavors.length <= maxParallel ? 'parallel' : 'sequential';
+      selected.length > 1 && selected.length <= maxParallel ? 'parallel' : 'sequential';
 
-    const reasoning =
-      flavors.length <= 1
+    const modeReasoning =
+      selected.length <= 1
         ? 'Only one flavor selected; sequential is optimal.'
-        : flavors.length <= maxParallel
-          ? `${flavors.length} flavors fit within maxParallelFlavors=${maxParallel}; parallelizing for efficiency.`
-          : `${flavors.length} flavors exceeds maxParallelFlavors=${maxParallel}; running sequentially to respect resource limits.`;
+        : selected.length <= maxParallel
+          ? `${selected.length} flavors fit within maxParallelFlavors=${maxParallel}; parallelizing for efficiency.`
+          : `${selected.length} flavors exceeds maxParallelFlavors=${maxParallel}; running sequentially to respect resource limits.`;
 
-    let executionModeDecision: Decision;
+    let modeDecision: Decision;
     try {
-      executionModeDecision = this.deps.decisionRegistry.record({
+      modeDecision = this.deps.decisionRegistry.record({
         stageCategory: this.stageCategory,
         decisionType: 'execution-mode',
         context: {
-          flavorCount: flavors.length,
+          flavorCount: selected.length,
           maxParallelFlavors: maxParallel,
-          selectedFlavors: flavors.map((f) => f.name),
+          selectedFlavors: selected.map((f) => f.name),
         },
         options: ['sequential', 'parallel'],
         selection: executionMode,
-        reasoning,
-        // Execution mode is a deterministic rule — confidence is always high
+        reasoning: modeReasoning,
         confidence: 0.95,
         decidedAt: new Date().toISOString(),
       });
@@ -313,23 +521,19 @@ export abstract class BaseStageOrchestrator implements IStageOrchestrator {
       );
     }
 
-    return { executionMode, executionModeDecision };
+    return { selectedFlavors: selected, executionMode, selectionDecision, modeDecision };
   }
 
-  /**
-   * Execute selected Flavors via the injected IFlavorExecutor.
-   *
-   * - sequential: Flavors run one at a time in order. Useful when downstream Flavors
-   *   may consume artifacts produced by earlier ones.
-   * - parallel: All Flavors are launched concurrently via Promise.all.
-   */
+  // ---------------------------------------------------------------------------
+  // Phase 4: Execute
+  // ---------------------------------------------------------------------------
+
   protected async executeFlavors(
     flavors: Flavor[],
     executionMode: 'sequential' | 'parallel',
     context: OrchestratorContext,
   ): Promise<FlavorExecutionResult[]> {
     if (executionMode === 'parallel') {
-      // Use allSettled so all flavors run even if some fail — collect all failures before throwing.
       const settled = await Promise.allSettled(
         flavors.map((flavor) => this.deps.executor.execute(flavor, context)),
       );
@@ -352,46 +556,56 @@ export abstract class BaseStageOrchestrator implements IStageOrchestrator {
     return results;
   }
 
+  // ---------------------------------------------------------------------------
+  // Phase 5: Synthesize
+  // ---------------------------------------------------------------------------
+
   /**
-   * Synthesize per-flavor results into a single stage-level artifact.
-   *
-   * Validates that all synthesis artifacts are present (non-null/undefined),
-   * then merges them into a keyed record: `{ [flavorName]: synthesisArtifactValue }`.
-   * Records a 'synthesis-approach' Decision.
-   *
-   * @throws OrchestratorError if any FlavorExecutionResult has a missing synthesis artifact.
+   * Return the synthesis strategy using vocabulary config.
+   * Falls back to merge-all if no vocabulary is provided.
    */
+  protected getSynthesisStrategy(
+    results: FlavorExecutionResult[],
+    _context: OrchestratorContext,
+  ): SynthesisStrategy {
+    const pref = this.vocabulary?.synthesisPreference ?? 'merge-all';
+    const alts = this.vocabulary?.synthesisAlternatives ?? ['merge-all', 'first-wins', 'cascade'];
+    const template = this.vocabulary?.reasoningTemplate ??
+      'Merging all {count} flavor synthesis artifact(s) into a single keyed record for downstream stage consumption.';
+
+    const reasoning = template.replace('{count}', String(results.length));
+
+    return {
+      approach: pref,
+      alternatives: alts as [string, ...string[]],
+      reasoning,
+    };
+  }
+
   protected synthesize(
     flavorResults: FlavorExecutionResult[],
     context: OrchestratorContext,
   ): { stageArtifact: ArtifactValue; synthesisDecision: Decision } {
-    // Guard: all synthesis artifacts must be present.
-    // Intentionally uses strict null/undefined checks — 0, false, and "" are valid artifact values.
     const missing = flavorResults.filter(
       (r) => r.synthesisArtifact.value === null || r.synthesisArtifact.value === undefined,
     );
     if (missing.length > 0) {
       throw new OrchestratorError(
         `Stage "${this.stageCategory}" synthesis failed: ` +
-          `synthesis artifact missing from flavor(s): ${missing.map((r) => r.flavorName).join(', ')}. ` +
-          `Ensure each Flavor's executor returns a non-null synthesisArtifact value.`,
+          `synthesis artifact missing from flavor(s): ${missing.map((r) => r.flavorName).join(', ')}.`,
       );
     }
 
-    // Delegate strategy selection to the subclass
     const strategy = this.getSynthesisStrategy(flavorResults, context);
 
-    // Guard: approach must be one of the declared alternatives — a missing entry
-    // indicates a buggy subclass implementation, not a user error.
     if (!strategy.alternatives.includes(strategy.approach)) {
       throw new OrchestratorError(
         `Stage "${this.stageCategory}" getSynthesisStrategy() returned approach ` +
           `"${strategy.approach}" which is not present in alternatives: ` +
-          `[${strategy.alternatives.join(', ')}]. Fix the subclass implementation.`,
+          `[${strategy.alternatives.join(', ')}]. Fix the vocabulary configuration.`,
       );
     }
 
-    // Build merged artifact: keyed by flavor name
     const mergedValue: Record<string, unknown> = {};
     for (const result of flavorResults) {
       mergedValue[result.flavorName] = result.synthesisArtifact.value;
@@ -402,7 +616,6 @@ export abstract class BaseStageOrchestrator implements IStageOrchestrator {
       value: mergedValue,
     };
 
-    // Use alternatives directly as options (approach is already guaranteed to be in alternatives)
     const options = strategy.alternatives;
 
     let synthesisDecision: Decision;
@@ -430,26 +643,68 @@ export abstract class BaseStageOrchestrator implements IStageOrchestrator {
     return { stageArtifact, synthesisDecision };
   }
 
-  /**
-   * Score a Flavor's relevance to the current context.
-   *
-   * Score must be in the range [0, 1].
-   * Higher scores mean the Flavor is more appropriate for this context.
-   * Subclasses implement category-specific keyword matching and heuristics.
-   */
-  protected abstract scoreFlavorForContext(
-    flavor: Flavor,
-    context: OrchestratorContext,
-  ): number;
+  // ---------------------------------------------------------------------------
+  // Phase 6: Reflect
+  // ---------------------------------------------------------------------------
 
   /**
-   * Return the synthesis strategy to use for merging Flavor results.
-   *
-   * The returned `approach` must appear in `alternatives` (or be the only option).
-   * This is used to build the 'synthesis-approach' Decision with well-formed options.
+   * Post-execution reflection: update decision outcomes and generate rule suggestions.
+   * Skips gracefully when rule registry is absent.
    */
-  protected abstract getSynthesisStrategy(
-    results: FlavorExecutionResult[],
-    context: OrchestratorContext,
-  ): SynthesisStrategy;
+  protected reflect(
+    decisions: Decision[],
+    flavorResults: FlavorExecutionResult[],
+  ): ReflectionResult {
+    const allSucceeded = flavorResults.length > 0 &&
+      flavorResults.every((r) => r.synthesisArtifact.value !== null && r.synthesisArtifact.value !== undefined);
+
+    const overallQuality = allSucceeded ? 'good' : 'partial';
+
+    // Update outcomes for each decision made during this run
+    const decisionOutcomes: ReflectionResult['decisionOutcomes'] = [];
+    for (const decision of decisions) {
+      const outcome = {
+        artifactQuality: overallQuality as 'good' | 'partial' | 'poor',
+        gateResult: allSucceeded ? 'passed' as const : undefined,
+        reworkRequired: !allSucceeded,
+      };
+
+      try {
+        this.deps.decisionRegistry.updateOutcome(decision.id, outcome);
+        decisionOutcomes.push({ decisionId: decision.id, outcome });
+      } catch (err) {
+        // Non-fatal: log and continue
+        logger.warn(
+          `Reflect: failed to update outcome for decision "${decision.id}": ${err instanceof Error ? err.message : String(err)}`,
+          { decisionId: decision.id },
+        );
+      }
+    }
+
+    // Generate learnings
+    const learnings: string[] = [];
+    if (allSucceeded) {
+      learnings.push(
+        `${this.stageCategory} stage completed successfully with ${flavorResults.length} flavor(s).`,
+      );
+    } else {
+      learnings.push(
+        `${this.stageCategory} stage had partial results — review flavor outputs for quality.`,
+      );
+    }
+
+    // Generate rule suggestions if rule registry is available
+    const ruleSuggestions: string[] = [];
+    if (this.deps.ruleRegistry && flavorResults.length > 1) {
+      // Future: analyze patterns across multiple runs to suggest meaningful rules.
+      // For now, rule suggestion generation is a no-op — the infrastructure is ready.
+    }
+
+    return {
+      decisionOutcomes,
+      learnings,
+      ruleSuggestions,
+      overallQuality,
+    };
+  }
 }

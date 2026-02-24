@@ -2,9 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { StageCategorySchema, OrchestratorConfigSchema, StageSchema } from './stage.js';
 
 describe('StageCategorySchema', () => {
-  const validCategories = ['research', 'plan', 'build', 'review', 'wrapup'];
+  const validCategories = ['research', 'plan', 'build', 'review'];
 
-  it('accepts all five stage categories', () => {
+  it('accepts all four stage categories', () => {
     for (const category of validCategories) {
       expect(StageCategorySchema.parse(category)).toBe(category);
     }
@@ -33,7 +33,7 @@ describe('OrchestratorConfigSchema', () => {
   });
 
   it('accepts all valid orchestrator types', () => {
-    const types = ['research', 'plan', 'build', 'review', 'wrapup'];
+    const types = ['research', 'plan', 'build', 'review'];
     for (const type of types) {
       expect(OrchestratorConfigSchema.parse({ type }).type).toBe(type);
     }
@@ -133,13 +133,14 @@ describe('StageSchema', () => {
     expect(result.excludedFlavors).toEqual(['legacy-planning']);
   });
 
-  it('accepts wrapup category', () => {
-    const result = StageSchema.parse({
-      category: 'wrapup',
-      orchestrator: { type: 'wrapup' },
-      availableFlavors: ['docs', 'learning-capture'],
-    });
-    expect(result.category).toBe('wrapup');
+  it('rejects wrapup category (removed in v1)', () => {
+    expect(() =>
+      StageSchema.parse({
+        category: 'wrapup',
+        orchestrator: { type: 'wrapup' },
+        availableFlavors: ['docs', 'learning-capture'],
+      })
+    ).toThrow();
   });
 
   it('parses full stage with all optional fields', () => {

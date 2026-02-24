@@ -10,7 +10,8 @@ import type {
   IFlavorExecutor,
   FlavorExecutionResult,
 } from '@domain/ports/stage-orchestrator.js';
-import { FlavorNotFoundError } from '@shared/lib/errors.js';
+import { FlavorNotFoundError, OrchestratorError } from '@shared/lib/errors.js';
+import { UsageAnalytics } from '@infra/tracking/usage-analytics.js';
 import { KiaiRunner, type KiaiRunnerDeps } from './kiai-runner.js';
 
 // ---------------------------------------------------------------------------
@@ -133,11 +134,11 @@ describe('KiaiRunner', () => {
       expect(result.selectedFlavors.length).toBeGreaterThan(0);
     });
 
-    it('returns exactly 3 decisions', async () => {
+    it('returns exactly 4 decisions (capability-analysis, flavor-selection, execution-mode, synthesis-approach)', async () => {
       const deps = makeDeps({ kataDir: baseDir });
       const runner = new KiaiRunner(deps);
       const result = await runner.runStage('build');
-      expect(result.decisions).toHaveLength(3);
+      expect(result.decisions).toHaveLength(4);
     });
 
     it('produces a stageArtifact', async () => {
@@ -197,7 +198,7 @@ describe('KiaiRunner', () => {
   });
 
   describe('runStage() — different categories', () => {
-    const categories: StageCategory[] = ['research', 'plan', 'build', 'review', 'wrapup'];
+    const categories: StageCategory[] = ['research', 'plan', 'build', 'review'];
 
     for (const category of categories) {
       it(`executes ${category} category`, async () => {
@@ -228,6 +229,159 @@ describe('KiaiRunner', () => {
       expect(artifacts.length).toBeGreaterThan(0);
       expect(artifacts[0]).toHaveProperty('name');
       expect(artifacts[0]).toHaveProperty('timestamp');
+    });
+  });
+
+  describe('runPipeline() — happy path', () => {
+    function makePipelineDeps(overrides: Partial<KiaiRunnerDeps> = {}): KiaiRunnerDeps {
+      const flavors = [
+        makeFlavor('research-standard', 'research'),
+        makeFlavor('plan-standard', 'plan'),
+        makeFlavor('build-standard', 'build'),
+        makeFlavor('review-standard', 'review'),
+      ];
+
+      return {
+        flavorRegistry: makeFlavorRegistry(flavors),
+        decisionRegistry: makeDecisionRegistry(),
+        executor: makeExecutor(),
+        kataDir: baseDir,
+        ...overrides,
+      };
+    }
+
+    it('runs a single-stage pipeline', async () => {
+      const deps = makePipelineDeps();
+      const runner = new KiaiRunner(deps);
+      const result = await runner.runPipeline(['build']);
+      expect(result.stageResults).toHaveLength(1);
+      expect(result.stageResults[0]!.stageCategory).toBe('build');
+    });
+
+    it('runs a multi-stage pipeline in order', async () => {
+      const deps = makePipelineDeps();
+      const runner = new KiaiRunner(deps);
+      const result = await runner.runPipeline(['research', 'plan', 'build']);
+      expect(result.stageResults).toHaveLength(3);
+      expect(result.stageResults.map((r) => r.stageCategory)).toEqual([
+        'research', 'plan', 'build',
+      ]);
+    });
+
+    it('produces a pipeline reflection', async () => {
+      const deps = makePipelineDeps();
+      const runner = new KiaiRunner(deps);
+      const result = await runner.runPipeline(['build']);
+      expect(result.pipelineReflection).toBeDefined();
+      expect(result.pipelineReflection.overallQuality).toBeDefined();
+      expect(result.pipelineReflection.learnings.length).toBeGreaterThan(0);
+    });
+
+    it('persists artifacts for each stage', async () => {
+      const deps = makePipelineDeps();
+      const runner = new KiaiRunner(deps);
+      await runner.runPipeline(['research', 'build']);
+      const artifactsDir = join(baseDir, 'artifacts');
+      const files = readdirSync(artifactsDir).filter((f) => f.endsWith('.json'));
+      expect(files.length).toBeGreaterThanOrEqual(2);
+      expect(files.some((f) => f.startsWith('research-'))).toBe(true);
+      expect(files.some((f) => f.startsWith('build-'))).toBe(true);
+    });
+
+    it('dryRun does not persist artifacts', async () => {
+      const deps = makePipelineDeps();
+      const runner = new KiaiRunner(deps);
+      const result = await runner.runPipeline(['research', 'build'], { dryRun: true });
+      expect(result.stageResults).toHaveLength(2);
+      const artifactsDir = join(baseDir, 'artifacts');
+      const files = readdirSync(artifactsDir).filter((f) => f.endsWith('.json'));
+      expect(files).toHaveLength(0);
+    });
+
+    it('passes bet to meta-orchestrator', async () => {
+      const deps = makePipelineDeps();
+      const runner = new KiaiRunner(deps);
+      const result = await runner.runPipeline(['build'], { bet: { title: 'Add search' } });
+      // The bet context should appear in the capability-analysis decision
+      const analysis = result.stageResults[0]!.decisions.find(
+        (d) => d.decisionType === 'capability-analysis',
+      );
+      expect(analysis).toBeDefined();
+      const ctx = analysis!.context as Record<string, unknown>;
+      expect(ctx.bet).toEqual({ title: 'Add search' });
+    });
+  });
+
+  describe('runPipeline() — error handling', () => {
+    it('throws OrchestratorError for empty pipeline', async () => {
+      const flavors = [makeFlavor('build-standard', 'build')];
+      const deps: KiaiRunnerDeps = {
+        flavorRegistry: makeFlavorRegistry(flavors),
+        decisionRegistry: makeDecisionRegistry(),
+        executor: makeExecutor(),
+        kataDir: baseDir,
+      };
+      const runner = new KiaiRunner(deps);
+      await expect(runner.runPipeline([])).rejects.toThrow(OrchestratorError);
+    });
+
+    it('throws when no flavors registered for a category', async () => {
+      const flavors = [makeFlavor('build-standard', 'build')];
+      const deps: KiaiRunnerDeps = {
+        flavorRegistry: makeFlavorRegistry(flavors),
+        decisionRegistry: makeDecisionRegistry(),
+        executor: makeExecutor(),
+        kataDir: baseDir,
+      };
+      const runner = new KiaiRunner(deps);
+      await expect(runner.runPipeline(['research'])).rejects.toThrow(OrchestratorError);
+    });
+  });
+
+  describe('analytics integration', () => {
+    it('records analytics events after runStage', async () => {
+      const analytics = new UsageAnalytics(baseDir);
+      const deps = makeDeps({ kataDir: baseDir, analytics });
+      const runner = new KiaiRunner(deps);
+      await runner.runStage('build');
+      const events = analytics.getEvents();
+      expect(events).toHaveLength(1);
+      expect(events[0]!.stageCategory).toBe('build');
+      expect(events[0]!.selectedFlavors.length).toBeGreaterThan(0);
+    });
+
+    it('records analytics events for each stage in runPipeline', async () => {
+      const flavors = [
+        makeFlavor('research-standard', 'research'),
+        makeFlavor('build-standard', 'build'),
+      ];
+      const analytics = new UsageAnalytics(baseDir);
+      const deps: KiaiRunnerDeps = {
+        flavorRegistry: makeFlavorRegistry(flavors),
+        decisionRegistry: makeDecisionRegistry(),
+        executor: makeExecutor(),
+        kataDir: baseDir,
+        analytics,
+      };
+      const runner = new KiaiRunner(deps);
+      await runner.runPipeline(['research', 'build']);
+      const events = analytics.getEvents();
+      expect(events).toHaveLength(2);
+      expect(events[0]!.stageCategory).toBe('research');
+      expect(events[1]!.stageCategory).toBe('build');
+    });
+
+    it('does not crash when analytics fails', async () => {
+      const analytics = {
+        recordEvent: vi.fn(() => { throw new Error('Disk full'); }),
+        getEvents: vi.fn(() => []),
+        getStats: vi.fn(),
+      } as unknown as UsageAnalytics;
+      const deps = makeDeps({ kataDir: baseDir, analytics });
+      const runner = new KiaiRunner(deps);
+      // Should not throw despite analytics failure
+      const result = await runner.runStage('build');
+      expect(result.stageCategory).toBe('build');
     });
   });
 });

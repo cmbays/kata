@@ -11,7 +11,6 @@ export const StageCategorySchema = z.enum([
   'plan', // Shaping, design, implementation planning
   'build', // Code production, TDD, implementation
   'review', // Quality validation, security, architecture review
-  'wrapup', // Documentation, artifact indexing, learning capture
 ]);
 
 export type StageCategory = z.infer<typeof StageCategorySchema>;
@@ -38,7 +37,7 @@ export type OrchestratorConfig = z.infer<typeof OrchestratorConfigSchema>;
  * The macro-level execution unit in the three-tier hierarchy:
  *   Stage → Flavor → Step
  *
- * A Stage represents a mode of work (research, plan, build, review, wrap-up).
+ * A Stage represents a mode of work (research, plan, build, review).
  * Its orchestrator selects and runs Flavors, then produces a synthesis artifact
  * as a handoff to the next Stage.
  */

@@ -1,0 +1,13 @@
+{
+  "category": "research",
+  "keywords": [
+    "explore", "investigate", "discover", "survey", "analysis",
+    "competitive", "domain", "technical", "feasibility", "breadth"
+  ],
+  "boostRules": [
+    { "artifactPattern": "*", "magnitude": 0.05 }
+  ],
+  "synthesisPreference": "merge-all",
+  "synthesisAlternatives": ["merge-all", "first-wins", "cascade"],
+  "reasoningTemplate": "Merging all {count} flavor synthesis artifact(s) into a single keyed record for downstream stage consumption."
+}
