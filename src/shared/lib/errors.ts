@@ -51,7 +51,7 @@ export class CycleNotFoundError extends KataError {
 
 export class DecisionNotFoundError extends KataError {
   constructor(id: string) {
-    super(`Decision not found: "${id}".`);
+    super(`Decision not found: "${id}". Decisions are recorded automatically by orchestrators — verify the id is correct.`);
     this.name = 'DecisionNotFoundError';
   }
 }

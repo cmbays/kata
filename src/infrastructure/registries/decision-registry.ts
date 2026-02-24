@@ -9,6 +9,7 @@ import type {
 } from '@domain/ports/decision-registry.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
 import { KataError, DecisionNotFoundError } from '@shared/lib/errors.js';
+import { logger } from '@shared/lib/logger.js';
 
 /**
  * Build the on-disk filename for a decision JSON file.
@@ -30,6 +31,8 @@ function decisionFilename(stageCategory: StageCategory, id: string): string {
  */
 export class DecisionRegistry implements IDecisionRegistry {
   private readonly decisions = new Map<string, Decision>();
+  /** True once the in-memory cache has been fully populated from disk. */
+  private diskLoaded = false;
 
   constructor(private readonly basePath: string) {}
 
@@ -62,9 +65,14 @@ export class DecisionRegistry implements IDecisionRegistry {
     const cached = this.decisions.get(id);
     if (cached) return cached;
 
-    // Not in cache — load all decisions from disk to find this id.
-    // The {stageCategory}.{id}.json naming scheme means we cannot construct
-    // the filename from the id alone, so a full scan is required.
+    // If the cache is already fully populated from disk, the id does not exist.
+    if (this.diskLoaded) {
+      throw new DecisionNotFoundError(id);
+    }
+
+    // Not in cache and disk not yet loaded — scan all files to find this id.
+    // The {stageCategory}.{id}.json naming scheme means the filename cannot be
+    // constructed from the id alone without knowing the stageCategory prefix.
     this.loadFromDisk();
 
     const loaded = this.decisions.get(id);
@@ -79,7 +87,7 @@ export class DecisionRegistry implements IDecisionRegistry {
    * Results are sorted by decidedAt ascending (oldest first).
    */
   list(filters?: DecisionQuery): Decision[] {
-    if (this.decisions.size === 0) {
+    if (!this.diskLoaded) {
       this.loadFromDisk();
     }
 
@@ -165,11 +173,24 @@ export class DecisionRegistry implements IDecisionRegistry {
 
   /**
    * Load all decisions from basePath into the in-memory cache.
+   * Sets diskLoaded = true so subsequent calls are skipped.
+   * @throws KataError if the directory cannot be read (e.g., EACCES).
    */
   private loadFromDisk(): void {
-    const loaded = JsonStore.list(this.basePath, DecisionSchema);
-    for (const decision of loaded) {
-      this.decisions.set(decision.id, decision);
+    try {
+      const loaded = JsonStore.list(this.basePath, DecisionSchema);
+      for (const decision of loaded) {
+        this.decisions.set(decision.id, decision);
+      }
+      logger.debug('DecisionRegistry: loaded decisions from disk', {
+        basePath: this.basePath,
+        count: loaded.length,
+      });
+    } catch (err) {
+      throw new KataError(
+        `Failed to load decisions from "${this.basePath}": ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
+    this.diskLoaded = true;
   }
 }
