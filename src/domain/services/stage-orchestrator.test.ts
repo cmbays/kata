@@ -221,21 +221,20 @@ describe('BaseStageOrchestrator', () => {
       expect(result.executionMode).toBe('sequential');
     });
 
-    it('executionMode is "sequential" for multiple selected flavors (with pinned)', async () => {
+    it('executionMode is "parallel" for 2 selected flavors when count ≤ maxParallelFlavors', async () => {
       const flavors = [
         makeFlavor('typescript-feature'),
-        makeFlavor('bug-fix'),
         makeFlavor('pinned-extra'),
       ];
       const deps = makeDeps({ flavors });
-      const orch = makeOrchestrator(deps);
+      const orch = makeOrchestrator(deps); // maxParallelFlavors=5
       const stage = makeStage({
-        availableFlavors: ['typescript-feature', 'bug-fix'],
+        availableFlavors: ['typescript-feature'],
         pinnedFlavors: ['pinned-extra'],
       });
       const result = await orch.run(stage, makeContext());
-      // 2+ flavors: depends on maxParallelFlavors
-      expect(['sequential', 'parallel']).toContain(result.executionMode);
+      // 2 flavors, maxParallel=5 → parallel
+      expect(result.executionMode).toBe('parallel');
     });
 
     it('flavorResults has one entry per selected flavor', async () => {
@@ -339,6 +338,21 @@ describe('BaseStageOrchestrator', () => {
       expect(result.selectedFlavors).toContain('typescript-feature');
     });
 
+    it('sets flavor-selection confidence to 0 when all candidates are pinned (no scoring)', async () => {
+      const flavors = [makeFlavor('typescript-feature'), makeFlavor('bug-fix')];
+      const deps = makeDeps({ flavors });
+      const orch = makeOrchestrator(deps);
+      // All availableFlavors are also pinned → nonPinned is empty, topScore=0
+      const stage = makeStage({
+        availableFlavors: ['typescript-feature', 'bug-fix'],
+        pinnedFlavors: ['typescript-feature', 'bug-fix'],
+      });
+      await orch.run(stage, makeContext());
+      const recordCalls = vi.mocked(deps.decisionRegistry.record).mock.calls;
+      const selectionCall = recordCalls.find(([input]) => input.decisionType === 'flavor-selection')!;
+      expect(selectionCall[0].confidence).toBe(0);
+    });
+
     it('deduplicates when a pinnedFlavor is also in availableFlavors', async () => {
       const flavors = [makeFlavor('typescript-feature'), makeFlavor('bug-fix')];
       const deps = makeDeps({ flavors });
@@ -401,22 +415,18 @@ describe('BaseStageOrchestrator', () => {
       expect(['sequential', 'parallel']).toContain(modeCall[0].selection);
     });
 
-    it('uses "parallel" when multiple flavors selected and count ≤ maxParallelFlavors', async () => {
-      const flavors = [
-        makeFlavor('typescript-feature'),
-        makeFlavor('bug-fix'),
-        makeFlavor('pinned-extra'),
-      ];
+    it('uses "parallel" when 2 flavors selected and count ≤ maxParallelFlavors', async () => {
+      const flavors = [makeFlavor('typescript-feature'), makeFlavor('pinned-extra')];
       const deps = makeDeps({ flavors });
-      const orch = makeOrchestrator(deps);
+      const orch = makeOrchestrator(deps); // maxParallelFlavors=5
       const stage = makeStage({
-        availableFlavors: ['typescript-feature', 'bug-fix'],
+        availableFlavors: ['typescript-feature'],
         pinnedFlavors: ['pinned-extra'],
         orchestrator: { type: 'build', confidenceThreshold: 0.7, maxParallelFlavors: 5 },
       });
       const result = await orch.run(stage, makeContext());
-      // 3 flavors selected (1 from scoring + 1 pinned = 2; see dedup logic)
-      expect(['sequential', 'parallel']).toContain(result.executionMode);
+      // 2 flavors ≤ maxParallelFlavors=5 → parallel
+      expect(result.executionMode).toBe('parallel');
     });
 
     it('uses "sequential" when only 1 flavor selected', async () => {
@@ -445,18 +455,39 @@ describe('BaseStageOrchestrator', () => {
       expect(result.executionMode).toBe('sequential');
     });
 
-    it('runs flavors in parallel when executionMode is "parallel"', async () => {
+    it('initiates all flavor executions before awaiting any result in parallel mode', async () => {
+      // Verify concurrency: both execute() calls must be issued before any promise resolves
+      const resolvers: Array<() => void> = [];
+      const executor: IFlavorExecutor = {
+        execute: vi.fn((flavor: Flavor) =>
+          new Promise<FlavorExecutionResult>((resolve) => {
+            resolvers.push(() => resolve(makeFlavorResult(flavor.name)));
+          }),
+        ),
+      };
       const flavors = [makeFlavor('typescript-feature'), makeFlavor('pinned-extra')];
-      const executor = makeExecutor();
       const deps = makeDeps({ flavors, executor });
-      const orch = makeOrchestrator(deps);
+      const orch = makeOrchestrator(deps); // maxParallelFlavors=5
       const stage = makeStage({
         availableFlavors: ['typescript-feature'],
         pinnedFlavors: ['pinned-extra'],
       });
-      await orch.run(stage, makeContext());
-      // executor called once for each selected flavor
-      expect(executor.execute).toHaveBeenCalled();
+      const runPromise = orch.run(stage, makeContext());
+      // Both execute() calls must have been dispatched before any resolved
+      expect(executor.execute).toHaveBeenCalledTimes(2);
+      // Now allow them to resolve
+      resolvers.forEach((r) => r());
+      await runPromise;
+    });
+
+    it('propagates sequential executor rejection without wrapping', async () => {
+      const executorError = new OrchestratorError('executor failed intentionally');
+      const executor: IFlavorExecutor = {
+        execute: vi.fn().mockRejectedValue(executorError),
+      };
+      const deps = makeDeps({ executor });
+      const orch = makeOrchestrator(deps);
+      await expect(orch.run(makeStage(), makeContext())).rejects.toBe(executorError);
     });
   });
 
@@ -687,5 +718,49 @@ describe('createStageOrchestrator factory', () => {
         { type: 'build', confidenceThreshold: 0.7, maxParallelFlavors: 5 },
       ),
     ).toThrow(OrchestratorError);
+  });
+
+  it('review orchestrator records synthesis-approach Decision with selection "cascade"', async () => {
+    const deps = makeDeps({
+      flavors: [makeFlavor('review-standard', 'review')],
+    });
+    const orch = createStageOrchestrator('review', deps, {
+      type: 'review',
+      confidenceThreshold: 0.7,
+      maxParallelFlavors: 5,
+    });
+    const stage: Stage = {
+      category: 'review',
+      orchestrator: { type: 'review', confidenceThreshold: 0.7, maxParallelFlavors: 5 },
+      availableFlavors: ['review-standard'],
+    };
+    await orch.run(stage, makeContext());
+    const recordCalls = vi.mocked(deps.decisionRegistry.record).mock.calls;
+    const synthCall = recordCalls.find(([input]) => input.decisionType === 'synthesis-approach')!;
+    expect(synthCall[0].selection).toBe('cascade');
+  });
+
+  it('plan orchestrator boosts score when research artifacts are available', async () => {
+    const flavors = [
+      makeFlavor('plan-with-research', 'plan'),
+      makeFlavor('plain-plan', 'plan'),
+    ];
+    const deps = makeDeps({ flavors });
+    const orch = createStageOrchestrator('plan', deps, {
+      type: 'plan',
+      confidenceThreshold: 0.7,
+      maxParallelFlavors: 5,
+    });
+    const stage: Stage = {
+      category: 'plan',
+      orchestrator: { type: 'plan', confidenceThreshold: 0.7, maxParallelFlavors: 5 },
+      availableFlavors: ['plan-with-research', 'plain-plan'],
+    };
+    // With research artifact, plan orchestrator should record a confidence > 0
+    const contextWithResearch = makeContext({ availableArtifacts: ['research-summary'] });
+    await orch.run(stage, contextWithResearch);
+    const recordCalls = vi.mocked(deps.decisionRegistry.record).mock.calls;
+    const selectionCall = recordCalls.find(([input]) => input.decisionType === 'flavor-selection')!;
+    expect(selectionCall[0].confidence).toBeGreaterThan(0);
   });
 });
