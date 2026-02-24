@@ -50,7 +50,7 @@ describe('registerInitCommand', () => {
     const allOutput = consoleSpy.mock.calls.flat().join('\n');
     expect(allOutput).toMatch(/kata initialized|kata project initialized/);
     expect(allOutput).toMatch(/What's next/);
-    expect(allOutput).toMatch(/kata flow start/);
+    expect(allOutput).toMatch(/kata kiai build/);
     expect(allOutput).toContain('Project type:     Generic');
   });
 

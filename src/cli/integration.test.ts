@@ -46,7 +46,7 @@ describe('Integration: null-state flow', () => {
     expect(output).toContain('Steps loaded:');
   });
 
-  it('kata stage list shows built-in stages after init', async () => {
+  it('kata stage list shows stage categories after init', async () => {
     // Init first
     const p1 = makeProgram();
     await p1.parseAsync(['node', 'test', '--cwd', baseDir, 'init', '--skip-prompts']);
@@ -60,93 +60,40 @@ describe('Integration: null-state flow', () => {
     expect(output).toContain('research');
   });
 
-  it('kata stage inspect research shows stage detail', async () => {
+  it('kata stage inspect research shows stage category detail', async () => {
     const p1 = makeProgram();
     await p1.parseAsync(['node', 'test', '--cwd', baseDir, 'init', '--skip-prompts']);
     logSpy.mockClear();
 
     const p2 = makeProgram();
-    await p2.parseAsync(['node', 'test', '--cwd', baseDir, 'stage', 'inspect', 'research-general']);
+    await p2.parseAsync(['node', 'test', '--cwd', baseDir, 'stage', 'inspect', 'research']);
 
     const output = logSpy.mock.calls.map((c) => c[0]).join('\n');
     expect(output).toContain('research');
   });
 
-  it('kata form list (alias) works the same as stage list', async () => {
+  it('kata step list shows built-in steps after init', async () => {
     const p1 = makeProgram();
     await p1.parseAsync(['node', 'test', '--cwd', baseDir, 'init', '--skip-prompts']);
     logSpy.mockClear();
 
     const p2 = makeProgram();
-    await p2.parseAsync(['node', 'test', '--cwd', baseDir, 'form', 'list']);
+    await p2.parseAsync(['node', 'test', '--cwd', baseDir, 'step', 'list']);
 
     const output = logSpy.mock.calls.map((c) => c[0]).join('\n');
     expect(output).toContain('research');
   });
-});
 
-describe('Integration: pipeline flow', () => {
-  let baseDir: string;
-  let logSpy: ReturnType<typeof vi.spyOn>;
-  let errorSpy: ReturnType<typeof vi.spyOn>;
-
-  beforeEach(() => {
-    baseDir = mkdtempSync(join(tmpdir(), 'kata-integ-pipe-'));
-    logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-  });
-
-  afterEach(() => {
-    rmSync(baseDir, { recursive: true, force: true });
-    logSpy.mockRestore();
-    errorSpy.mockRestore();
-    process.exitCode = undefined;
-  });
-
-  it('kata pipeline start vertical runs pipeline with ManualAdapter', async () => {
-    // Init
+  it('kata gyo list (alias) works the same as stage list', async () => {
     const p1 = makeProgram();
     await p1.parseAsync(['node', 'test', '--cwd', baseDir, 'init', '--skip-prompts']);
     logSpy.mockClear();
 
-    // Start pipeline
     const p2 = makeProgram();
-    await p2.parseAsync(['node', 'test', '--cwd', baseDir, 'pipeline', 'start', 'vertical']);
-
-    // ManualAdapter prints stage prompts — check it ran
-    const allOutput = logSpy.mock.calls.map((c) => c[0]).join('\n');
-    expect(allOutput.length).toBeGreaterThan(0);
-  });
-
-  it('kata pipeline status lists pipelines after a run', async () => {
-    const p1 = makeProgram();
-    await p1.parseAsync(['node', 'test', '--cwd', baseDir, 'init', '--skip-prompts']);
-
-    const p2 = makeProgram();
-    await p2.parseAsync(['node', 'test', '--cwd', baseDir, 'pipeline', 'start', 'vertical']);
-    logSpy.mockClear();
-
-    const p3 = makeProgram();
-    await p3.parseAsync(['node', 'test', '--cwd', baseDir, 'pipeline', 'status']);
+    await p2.parseAsync(['node', 'test', '--cwd', baseDir, 'gyo', 'list']);
 
     const output = logSpy.mock.calls.map((c) => c[0]).join('\n');
-    // Should show at least one pipeline
-    expect(output.length).toBeGreaterThan(0);
-  });
-
-  it('kata flow status (alias) works the same as pipeline status', async () => {
-    const p1 = makeProgram();
-    await p1.parseAsync(['node', 'test', '--cwd', baseDir, 'init', '--skip-prompts']);
-
-    const p2 = makeProgram();
-    await p2.parseAsync(['node', 'test', '--cwd', baseDir, 'pipeline', 'start', 'vertical']);
-    logSpy.mockClear();
-
-    const p3 = makeProgram();
-    await p3.parseAsync(['node', 'test', '--cwd', baseDir, 'flow', 'status']);
-
-    const output = logSpy.mock.calls.map((c) => c[0]).join('\n');
-    expect(output.length).toBeGreaterThan(0);
+    expect(output).toContain('research');
   });
 });
 
@@ -202,7 +149,7 @@ describe('Integration: cycle flow', () => {
     expect(output).toContain('my-cycle');
   });
 
-  it('kata enbu status (alias) works the same as cycle status', async () => {
+  it('kata keiko status (alias) works the same as cycle status', async () => {
     const p1 = makeProgram();
     await p1.parseAsync(['node', 'test', '--cwd', baseDir, 'init', '--skip-prompts']);
 
@@ -214,7 +161,7 @@ describe('Integration: cycle flow', () => {
     logSpy.mockClear();
 
     const p3 = makeProgram();
-    await p3.parseAsync(['node', 'test', '--cwd', baseDir, 'enbu', 'status']);
+    await p3.parseAsync(['node', 'test', '--cwd', baseDir, 'keiko', 'status']);
 
     const output = logSpy.mock.calls.map((c) => c[0]).join('\n');
     expect(output).toContain('alias-test');
@@ -249,7 +196,7 @@ describe('Integration: error handling', () => {
     expect(process.exitCode).toBe(1);
   });
 
-  it('kata stage inspect nonexistent shows stage not found', async () => {
+  it('kata stage inspect invalid-category shows error', async () => {
     const p1 = makeProgram();
     await p1.parseAsync(['node', 'test', '--cwd', baseDir, 'init', '--skip-prompts']);
     errorSpy.mockClear();
@@ -259,21 +206,7 @@ describe('Integration: error handling', () => {
     await p2.parseAsync(['node', 'test', '--cwd', baseDir, 'stage', 'inspect', 'nonexistent']);
 
     const output = errorSpy.mock.calls.map((c) => c[0]).join('\n');
-    expect(output).toContain('Step not found');
-    expect(process.exitCode).toBe(1);
-  });
-
-  it('kata pipeline status with bad id shows error', async () => {
-    const p1 = makeProgram();
-    await p1.parseAsync(['node', 'test', '--cwd', baseDir, 'init', '--skip-prompts']);
-    errorSpy.mockClear();
-    process.exitCode = undefined;
-
-    const p2 = makeProgram();
-    await p2.parseAsync(['node', 'test', '--cwd', baseDir, 'pipeline', 'status', 'fake-id']);
-
-    const output = errorSpy.mock.calls.map((c) => c[0]).join('\n');
-    expect(output).toContain('not found');
+    expect(output).toContain('Invalid stage category');
     expect(process.exitCode).toBe(1);
   });
 
