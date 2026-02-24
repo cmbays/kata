@@ -1,22 +1,25 @@
 import type { StageCategory } from '@domain/types/stage.js';
-import type { Flavor } from '@domain/types/flavor.js';
+import type { Flavor, FlavorStepRef } from '@domain/types/flavor.js';
 import type { Step } from '@domain/types/step.js';
 
-export interface FlavorValidationResult {
-  valid: boolean;
-  /** Human-readable error messages describing why the flavor is invalid. */
-  errors: string[];
-}
+/**
+ * Discriminated union for flavor validation results.
+ * When valid is true, there are no errors (the inconsistent states
+ * `{ valid: true, errors: ['oops'] }` and `{ valid: false, errors: [] }` are unrepresentable).
+ */
+export type FlavorValidationResult =
+  | { valid: true }
+  | { valid: false; errors: [string, ...string[]] };
 
 /**
- * Resolves a step reference (stepName + stepType) to a Step definition.
+ * Resolves a step reference to a Step definition.
  * Used by validate() to check artifact dependencies during DAG validation.
  *
  * Implementations MUST return undefined for unknown steps rather than throwing.
  * If an implementation may throw (e.g., a registry-backed resolver), the
  * FlavorRegistry will catch the exception and treat it as undefined.
  */
-export type StepResolver = (stepName: string, stepType: string) => Step | undefined;
+export type StepResolver = (ref: FlavorStepRef) => Step | undefined;
 
 export interface IFlavorRegistry {
   register(flavor: Flavor): void;
@@ -38,7 +41,7 @@ export interface IFlavorRegistry {
    *
    * @param flavor - The flavor to validate.
    * @param stepResolver - Optional function to look up step definitions by
-   *   (stepName, stepType). Required for DAG artifact dependency checks.
+   *   FlavorStepRef ({ stepName, stepType }). Required for DAG artifact dependency checks.
    *   Without a resolver, valid: true does NOT guarantee the synthesisArtifact
    *   is reachable — only structural constraints are checked.
    * @param stageInputArtifacts - Artifact names available as stage-level inputs
