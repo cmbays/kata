@@ -1,7 +1,7 @@
 {
-  "type": "build",
-  "flavor": "rust",
-  "description": "Build stage specialized for Rust projects. Compile with cargo, run tests, and produce a release binary in target/release/.",
+  "type": "implementation-go",
+  "stageCategory": "build",
+  "description": "Build stage specialized for Go projects. Compile all packages, run vet, and produce binaries in bin/.",
   "entryGate": {
     "type": "entry",
     "conditions": [
@@ -18,18 +18,13 @@
     "conditions": [
       {
         "type": "command-passes",
-        "description": "Release build must succeed",
-        "command": "cargo build --release"
+        "description": "All packages must compile successfully",
+        "command": "go build ./..."
       },
       {
         "type": "command-passes",
-        "description": "All tests must pass",
-        "command": "cargo test"
-      },
-      {
-        "type": "command-passes",
-        "description": "Clippy lints must pass with no warnings",
-        "command": "cargo clippy -- -D warnings"
+        "description": "Vet must find no issues",
+        "command": "go vet ./..."
       },
       {
         "type": "artifact-exists",
@@ -47,37 +42,36 @@
       "extension": ".md"
     }
   ],
-  "promptTemplate": "../prompts/build.rust.md",
+  "promptTemplate": "../prompts/build.go.md",
   "learningHooks": [
     "build-quality",
-    "rust-patterns",
-    "ownership-safety"
+    "go-patterns",
+    "concurrency-safety"
   ],
   "config": {},
   "resources": {
     "tools": [
       {
-        "name": "cargo build",
-        "purpose": "Compile the project",
-        "command": "cargo build --release"
+        "name": "go build",
+        "purpose": "Compile all packages",
+        "command": "go build ./..."
       },
       {
-        "name": "cargo test",
+        "name": "go vet",
+        "purpose": "Static analysis for common errors",
+        "command": "go vet ./..."
+      },
+      {
+        "name": "go test",
         "purpose": "Run the test suite",
-        "command": "cargo test"
-      },
-      {
-        "name": "cargo clippy",
-        "purpose": "Lint for common mistakes and style issues",
-        "command": "cargo clippy -- -D warnings"
+        "command": "go test ./..."
       }
     ],
     "agents": [
       {
         "name": "everything-claude-code:build-error-resolver",
-        "when": "when cargo build fails or compilation errors occur"
+        "when": "when go build fails or compilation errors occur"
       }
-    ],
-    "skills": []
+    ]
   }
 }

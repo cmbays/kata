@@ -1,0 +1,9 @@
+{
+  "name": "standard-wrapup",
+  "description": "Standard wrap-up: retrospective, learning capture, and documentation updates.",
+  "stageCategory": "wrapup",
+  "steps": [
+    { "stepName": "wrapup", "stepType": "wrapup-general" }
+  ],
+  "synthesisArtifact": "wrapup-summary"
+}

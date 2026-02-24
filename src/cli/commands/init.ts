@@ -42,7 +42,8 @@ export function registerInitCommand(program: Command): void {
 
         console.log(`✓ ${projectLabel}`);
         console.log('');
-        console.log(`  Stages loaded:    ${result.stagesLoaded}`);
+        console.log(`  Steps loaded:     ${result.stagesLoaded}`);
+        console.log(`  Flavors loaded:   ${result.flavorsLoaded}`);
         console.log(`  Templates loaded: ${result.templatesLoaded}`);
         console.log(`  Project type:     ${PROJECT_TYPE_LABELS[result.projectType] ?? result.projectType}`);
         console.log(`  Adapter:          ${result.config.execution.adapter}`);

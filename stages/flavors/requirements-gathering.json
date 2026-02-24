@@ -1,0 +1,10 @@
+{
+  "name": "requirements-gathering",
+  "description": "Gather requirements through stakeholder interviews and background research.",
+  "stageCategory": "research",
+  "steps": [
+    { "stepName": "research", "stepType": "research-general" },
+    { "stepName": "interview", "stepType": "user-interview" }
+  ],
+  "synthesisArtifact": "research-summary"
+}

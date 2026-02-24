@@ -1,6 +1,7 @@
 import { z } from 'zod/v4';
 import { GateSchema } from './gate.js';
 import { ArtifactSchema } from './artifact.js';
+import { StageCategorySchema } from './stage.js';
 
 export const StepType = z.enum([
   'research',
@@ -73,6 +74,8 @@ export type StepResources = z.infer<typeof StepResourcesSchema>;
 export const StepSchema = z.object({
   type: z.string().min(1),
   flavor: z.string().optional(),
+  /** Which Stage category this step belongs to. */
+  stageCategory: StageCategorySchema.optional(),
   description: z.string().optional(),
   entryGate: GateSchema.optional(),
   exitGate: GateSchema.optional(),

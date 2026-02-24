@@ -1,0 +1,9 @@
+{
+  "name": "standard-plan",
+  "description": "Produce an implementation plan directly — suitable for well-understood tasks that skip shaping.",
+  "stageCategory": "plan",
+  "steps": [
+    { "stepName": "plan", "stepType": "impl-planning" }
+  ],
+  "synthesisArtifact": "implementation-plan"
+}

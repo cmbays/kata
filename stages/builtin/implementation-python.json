@@ -1,6 +1,6 @@
 {
-  "type": "build",
-  "flavor": "python",
+  "type": "implementation-python",
+  "stageCategory": "build",
   "description": "Build stage specialized for Python projects. Run tests, lint, and type-check. Produce a dist/ package when applicable.",
   "entryGate": {
     "type": "entry",
@@ -33,8 +33,7 @@
       "name": "build-output",
       "description": "Build summary — what was built, files created/modified, test results, acceptance criteria status",
       "required": true,
-      "extension": ".md",
-      "path": ".kata/artifacts/build-output.md"
+      "extension": ".md"
     }
   ],
   "promptTemplate": "../prompts/build.python.md",

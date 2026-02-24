@@ -1,5 +1,6 @@
 {
-  "type": "review",
+  "type": "review-general",
+  "stageCategory": "review",
   "description": "Quality gate — review code, design, and artifacts for correctness, completeness, and adherence to standards. Produces review findings and a gate decision.",
   "entryGate": {
     "type": "entry",

@@ -1,0 +1,10 @@
+{
+  "name": "full-review",
+  "description": "Comprehensive review combining general code quality with security audit.",
+  "stageCategory": "review",
+  "steps": [
+    { "stepName": "quality", "stepType": "review-general" },
+    { "stepName": "security", "stepType": "security-audit" }
+  ],
+  "synthesisArtifact": "review-findings"
+}

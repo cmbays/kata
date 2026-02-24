@@ -1,5 +1,6 @@
 {
-  "type": "research",
+  "type": "research-general",
+  "stageCategory": "research",
   "description": "Investigate the problem space, competitors, prior art, and technical landscape. Produces a research summary that informs all downstream stages.",
   "exitGate": {
     "type": "exit",

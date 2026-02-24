@@ -1,0 +1,9 @@
+{
+  "name": "code-quality",
+  "description": "General code quality review checking correctness, patterns, and standards.",
+  "stageCategory": "review",
+  "steps": [
+    { "stepName": "review", "stepType": "review-general" }
+  ],
+  "synthesisArtifact": "review-findings"
+}

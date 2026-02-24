@@ -1,0 +1,53 @@
+{
+  "type": "security-audit-deep",
+  "stageCategory": "review",
+  "description": "Systematic security review — OWASP Top 10, dependency scanning, secrets detection, threat modeling, and auth/authz verification. Produces security findings and a threat model before deployment.",
+  "entryGate": {
+    "type": "entry",
+    "conditions": [
+      {
+        "type": "artifact-exists",
+        "description": "Build output must exist before security audit",
+        "artifactName": "build-output"
+      }
+    ],
+    "required": true
+  },
+  "exitGate": {
+    "type": "exit",
+    "conditions": [
+      {
+        "type": "artifact-exists",
+        "description": "Security findings document must be produced",
+        "artifactName": "security-findings"
+      },
+      {
+        "type": "artifact-exists",
+        "description": "Threat model must be produced",
+        "artifactName": "threat-model"
+      }
+    ],
+    "required": true
+  },
+  "artifacts": [
+    {
+      "name": "security-findings",
+      "description": "Security audit findings with severity classification, CVSS scores where applicable, and remediation guidance",
+      "required": true,
+      "extension": ".md"
+    },
+    {
+      "name": "threat-model",
+      "description": "Threat model covering assets, attack surfaces, trust boundaries, and mitigations",
+      "required": true,
+      "extension": ".md"
+    }
+  ],
+  "promptTemplate": "../prompts/security-audit.md",
+  "learningHooks": [
+    "security-patterns",
+    "threat-modeling",
+    "vulnerability-detection"
+  ],
+  "config": {}
+}

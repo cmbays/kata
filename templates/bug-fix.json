@@ -3,9 +3,9 @@
   "type": "bug-fix",
   "description": "Quick fix pipeline for known bugs: research the root cause, plan the fix, build it, and review. Skips shaping and breadboarding since the problem and solution space are already understood.",
   "stages": [
-    { "type": "research" },
-    { "type": "plan" },
-    { "type": "build" },
-    { "type": "review" }
+    { "type": "research-general" },
+    { "type": "impl-planning" },
+    { "type": "implementation" },
+    { "type": "review-general" }
   ]
 }

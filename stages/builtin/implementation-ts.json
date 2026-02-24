@@ -1,6 +1,6 @@
 {
-  "type": "build",
-  "flavor": "typescript",
+  "type": "implementation-ts",
+  "stageCategory": "build",
   "description": "Build stage specialized for TypeScript projects. Compile, type-check, and bundle using tsc and tsup. Produces type-correct, importable dist/ output.",
   "entryGate": {
     "type": "entry",

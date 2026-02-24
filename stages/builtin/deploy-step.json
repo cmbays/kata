@@ -1,5 +1,6 @@
 {
-  "type": "deploy",
+  "type": "deploy-step",
+  "stageCategory": "build",
   "description": "Plan and execute a safe deployment — staging verification, zero-downtime strategy, rollback plan, feature flags, and post-deploy health checks.",
   "entryGate": {
     "type": "entry",

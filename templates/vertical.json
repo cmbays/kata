@@ -3,13 +3,13 @@
   "type": "vertical",
   "description": "Full vertical pipeline: research through wrap-up. The complete Shape Up-inspired development cycle for new features or significant enhancements.",
   "stages": [
-    { "type": "research" },
-    { "type": "interview" },
-    { "type": "shape" },
-    { "type": "breadboard" },
-    { "type": "plan" },
-    { "type": "build" },
-    { "type": "review" },
-    { "type": "wrap-up" }
+    { "type": "research-general" },
+    { "type": "user-interview" },
+    { "type": "shaping" },
+    { "type": "breadboarding" },
+    { "type": "impl-planning" },
+    { "type": "implementation" },
+    { "type": "review-general" },
+    { "type": "wrapup-general" }
   ]
 }

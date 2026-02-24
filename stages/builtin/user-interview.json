@@ -1,5 +1,6 @@
 {
-  "type": "interview",
+  "type": "user-interview",
+  "stageCategory": "research",
   "description": "Gather user needs, pain points, priorities, and workflow context through structured stakeholder interviews. Produces interview notes that ground the shaping process.",
   "entryGate": {
     "type": "entry",
