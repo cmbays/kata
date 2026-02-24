@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { unlinkSync } from 'node:fs';
-import { FlavorSchema, type Flavor } from '@domain/types/flavor.js';
+import { FlavorSchema, type Flavor, type FlavorStepRef } from '@domain/types/flavor.js';
 import type { Step } from '@domain/types/step.js';
 import type { StageCategory } from '@domain/types/stage.js';
 import type {
@@ -34,17 +34,13 @@ function flavorFilename(stageCategory: StageCategory, name: string): string {
  * but a resolver backed by a throwing registry would otherwise escape validate()
  * and bypass the FlavorValidationResult error accumulation contract.
  */
-function safeResolve(
-  stepResolver: StepResolver,
-  stepName: string,
-  stepType: string,
-): Step | undefined {
+function safeResolve(stepResolver: StepResolver, ref: FlavorStepRef): Step | undefined {
   try {
-    return stepResolver(stepName, stepType);
+    return stepResolver(ref);
   } catch (err) {
     logger.warn(
-      `StepResolver threw unexpectedly for step "${stepName}" (type: "${stepType}") — treating as unresolvable.`,
-      { stepName, stepType, error: err instanceof Error ? err.message : String(err) },
+      `StepResolver threw unexpectedly for step "${ref.stepName}" (type: "${ref.stepType}") — treating as unresolvable.`,
+      { stepName: ref.stepName, stepType: ref.stepType, error: err instanceof Error ? err.message : String(err) },
     );
     return undefined;
   }
@@ -210,7 +206,7 @@ export class FlavorRegistry implements IFlavorRegistry {
       for (const issue of parseResult.error.issues) {
         errors.push(`Schema error: ${issue.message} (at ${issue.path.join('.')})`);
       }
-      return { valid: false, errors };
+      return { valid: false, errors: errors as [string, ...string[]] };
     }
 
     // Validate overrides reference existing step names
@@ -227,13 +223,13 @@ export class FlavorRegistry implements IFlavorRegistry {
     }
 
     if (!stepResolver) {
-      return { valid: errors.length === 0, errors };
+      return errors.length === 0 ? { valid: true } : { valid: false, errors: errors as [string, ...string[]] };
     }
 
     // Pre-resolve all steps once to avoid O(n²) resolver calls in the inner loop
     const resolvedSteps = new Map<string, Step | undefined>();
     for (const stepRef of flavor.steps) {
-      resolvedSteps.set(stepRef.stepName, safeResolve(stepResolver, stepRef.stepName, stepRef.stepType));
+      resolvedSteps.set(stepRef.stepName, safeResolve(stepResolver, stepRef));
     }
 
     // Full DAG validation: track artifacts available at each position
@@ -295,7 +291,7 @@ export class FlavorRegistry implements IFlavorRegistry {
       );
     }
 
-    return { valid: errors.length === 0, errors };
+    return errors.length === 0 ? { valid: true } : { valid: false, errors: errors as [string, ...string[]] };
   }
 
   /**

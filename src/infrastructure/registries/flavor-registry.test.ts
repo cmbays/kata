@@ -1,7 +1,8 @@
+import assert from 'node:assert';
 import { mkdtempSync, writeFileSync, existsSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import type { Flavor } from '@domain/types/flavor.js';
+import type { Flavor, FlavorStepRef } from '@domain/types/flavor.js';
 import type { Step } from '@domain/types/step.js';
 import { KataError, FlavorNotFoundError } from '@shared/lib/errors.js';
 import { FlavorRegistry } from './flavor-registry.js';
@@ -226,12 +227,11 @@ describe('FlavorRegistry', () => {
     it('returns valid for a well-formed flavor', () => {
       const result = registry.validate(makeFlavor());
       expect(result.valid).toBe(true);
-      expect(result.errors).toHaveLength(0);
     });
 
     it('returns invalid for a flavor with empty name', () => {
       const result = registry.validate({ ...makeFlavor(), name: '' });
-      expect(result.valid).toBe(false);
+      assert(!result.valid);
       expect(result.errors.length).toBeGreaterThan(0);
     });
 
@@ -245,7 +245,7 @@ describe('FlavorRegistry', () => {
         overrides: { 'nonexistent-step': { humanApproval: true } },
       });
       const result = registry.validate(flavor);
-      expect(result.valid).toBe(false);
+      assert(!result.valid);
       expect(result.errors.some((e) => e.includes('nonexistent-step'))).toBe(true);
     });
 
@@ -274,7 +274,7 @@ describe('FlavorRegistry', () => {
         artifacts: [{ name: 'breadboard-sketch', required: true }],
       });
 
-      const stepResolver = (stepName: string) => {
+      const stepResolver = ({ stepName }: FlavorStepRef) => {
         if (stepName === 'shaping') return shapingStep;
         if (stepName === 'breadboarding') return breadboardStep;
         return undefined;
@@ -290,7 +290,6 @@ describe('FlavorRegistry', () => {
 
       const result = registry.validate(flavor, stepResolver);
       expect(result.valid).toBe(true);
-      expect(result.errors).toHaveLength(0);
     });
 
     it('returns valid when artifact comes from stage input', () => {
@@ -331,7 +330,7 @@ describe('FlavorRegistry', () => {
         artifacts: [{ name: 'breadboard-sketch', required: true }],
       });
 
-      const stepResolver = (stepName: string) => {
+      const stepResolver = ({ stepName }: FlavorStepRef) => {
         if (stepName === 'shaping') return shapingStep;
         if (stepName === 'breadboarding') return breadboardStep;
         return undefined;
@@ -346,7 +345,7 @@ describe('FlavorRegistry', () => {
       });
 
       const result = registry.validate(flavor, stepResolver);
-      expect(result.valid).toBe(false);
+      assert(!result.valid);
       expect(result.errors.some((e) => e.includes('shape-document'))).toBe(true);
       expect(result.errors.some((e) => e.includes('shaping'))).toBe(true);
     });
@@ -370,7 +369,7 @@ describe('FlavorRegistry', () => {
       });
 
       const result = registry.validate(flavor, stepResolver);
-      expect(result.valid).toBe(false);
+      assert(!result.valid);
       expect(result.errors.some((e) => e.includes('nonexistent-artifact'))).toBe(true);
       expect(result.errors.some((e) => e.includes('not produced by any step'))).toBe(true);
     });
@@ -389,7 +388,7 @@ describe('FlavorRegistry', () => {
       });
 
       const result = registry.validate(flavor, stepResolver);
-      expect(result.valid).toBe(false);
+      assert(!result.valid);
       expect(result.errors.some((e) => e.includes('undeclared-synthesis-artifact'))).toBe(true);
     });
 
@@ -399,7 +398,7 @@ describe('FlavorRegistry', () => {
         artifacts: [{ name: 'shape-document', required: true }],
       });
 
-      const stepResolver = (stepName: string) => {
+      const stepResolver = ({ stepName }: FlavorStepRef) => {
         if (stepName === 'known') return knownStep;
         return undefined;
       };
@@ -413,7 +412,7 @@ describe('FlavorRegistry', () => {
       });
 
       const result = registry.validate(flavor, stepResolver);
-      expect(result.valid).toBe(false);
+      assert(!result.valid);
       expect(result.errors.some((e) => e.includes('unknown'))).toBe(true);
     });
 
@@ -483,7 +482,7 @@ describe('FlavorRegistry', () => {
         },
       });
       const result = registry.validate(flavor);
-      expect(result.valid).toBe(false);
+      assert(!result.valid);
       expect(result.errors.some((e) => e.includes('nonexistent'))).toBe(true);
       // 'shaping' is valid — must not appear in errors
       expect(result.errors.some((e) => e.includes('"shaping"'))).toBe(false);
@@ -507,7 +506,7 @@ describe('FlavorRegistry', () => {
         artifacts: [{ name: 'breadboard-sketch', required: true }],
       });
 
-      const stepResolver = (stepName: string) => {
+      const stepResolver = ({ stepName }: FlavorStepRef) => {
         if (stepName === 'shaping') return step1;
         if (stepName === 'breadboarding') return step2;
         return undefined;
@@ -522,7 +521,7 @@ describe('FlavorRegistry', () => {
       });
 
       const result = registry.validate(flavor, stepResolver);
-      expect(result.valid).toBe(false);
+      assert(!result.valid);
       // Only the unsatisfied artifact produces an error
       expect(result.errors.some((e) => e.includes('missing-artifact'))).toBe(true);
       expect(result.errors.some((e) => e.includes('shape-document'))).toBe(false);
@@ -540,7 +539,7 @@ describe('FlavorRegistry', () => {
       });
 
       // Resolver dispatches on stepType, not just stepName
-      const stepResolver = (_stepName: string, stepType: string) => {
+      const stepResolver = ({ stepType }: FlavorStepRef) => {
         if (stepType === 'shape') return shapeStep;
         if (stepType === 'plan') return planStep;
         return undefined;
@@ -569,7 +568,7 @@ describe('FlavorRegistry', () => {
       });
 
       const result = registry.validate(flavor, throwingResolver);
-      expect(result.valid).toBe(false);
+      assert(!result.valid);
       // Should report as unresolvable, not crash
       expect(result.errors.some((e) => e.includes('could not be resolved'))).toBe(true);
     });

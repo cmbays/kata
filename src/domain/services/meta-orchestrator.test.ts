@@ -47,7 +47,7 @@ function makeFlavorRegistry(flavors: Flavor[]): IFlavorRegistry {
     ),
     delete: vi.fn(),
     loadBuiltins: vi.fn(),
-    validate: vi.fn(() => ({ valid: true, errors: [] })),
+    validate: vi.fn(() => ({ valid: true })),
   };
 }
 
