@@ -91,7 +91,13 @@ export const JsonStore = {
       return [];
     }
 
-    const files = readdirSync(dir).filter((f) => f.endsWith('.json'));
+    let files: string[];
+    try {
+      files = readdirSync(dir).filter((f) => f.endsWith('.json'));
+    } catch (err) {
+      throw new JsonStoreError(`Failed to read directory: ${dir}`, dir, err);
+    }
+
     const results: T[] = [];
 
     for (const file of files) {

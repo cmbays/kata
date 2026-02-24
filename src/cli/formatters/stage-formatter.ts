@@ -6,8 +6,7 @@ import type { Decision } from '@domain/types/decision.js';
 export interface StageCategoryEntry {
   category: StageCategory;
   flavorCount: number;
-  ruleCount?: number;
-  flavors?: string[];
+  ruleCount: number;
 }
 
 export interface StageInspectData {

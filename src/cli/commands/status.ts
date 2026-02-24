@@ -15,17 +15,26 @@ export function handleStatus(ctx: { kataDir: string; globalOpts: { json?: boolea
   const isJson = ctx.globalOpts.json;
 
   // Active cycle
-  const cycleManager = new CycleManager(kataDirPath(ctx.kataDir, 'cycles'), JsonStore);
-  const cycles = cycleManager.list();
-  const activeCycle = cycles.find((c) => c.state === 'active') ?? null;
+  let cycles: ReturnType<CycleManager['list']> = [];
+  let activeCycle: (typeof cycles)[number] | null = null;
+  try {
+    const cycleManager = new CycleManager(kataDirPath(ctx.kataDir, 'cycles'), JsonStore);
+    cycles = cycleManager.list();
+    activeCycle = cycles.find((c) => c.state === 'active') ?? null;
+  } catch { /* degraded: cycles section unavailable */ }
 
   // Recent artifacts
-  const artifacts = listRecentArtifacts(ctx.kataDir);
-  const recentArtifacts = artifacts.slice(0, 5);
+  let recentArtifacts: ReturnType<typeof listRecentArtifacts> = [];
+  try {
+    recentArtifacts = listRecentArtifacts(ctx.kataDir).slice(0, 5);
+  } catch { /* degraded: artifacts section unavailable */ }
 
   // Knowledge summary
-  const knowledgeStore = new KnowledgeStore(kataDirPath(ctx.kataDir, 'knowledge'));
-  const knowledgeStats = knowledgeStore.stats();
+  let knowledgeStats: ReturnType<KnowledgeStore['stats']> = { total: 0, averageConfidence: 0, byTier: { stage: 0, category: 0, agent: 0 }, topCategories: [] };
+  try {
+    const knowledgeStore = new KnowledgeStore(kataDirPath(ctx.kataDir, 'knowledge'));
+    knowledgeStats = knowledgeStore.stats();
+  } catch { /* degraded: knowledge section unavailable */ }
 
   if (isJson) {
     console.log(JSON.stringify({
@@ -76,12 +85,24 @@ export function handleStats(
   const isJson = ctx.globalOpts.json;
 
   // Execution analytics
-  const analytics = new UsageAnalytics(ctx.kataDir);
-  const executionStats = analytics.getStats(categoryFilter);
+  let executionStats: ReturnType<UsageAnalytics['getStats']> = {
+    totalRuns: 0,
+    runsByCategory: {},
+    avgConfidence: 0,
+    outcomeDistribution: { good: 0, partial: 0, poor: 0, unknown: 0 },
+    avgDurationMs: undefined,
+  };
+  try {
+    const analytics = new UsageAnalytics(ctx.kataDir);
+    executionStats = analytics.getStats(categoryFilter);
+  } catch { /* degraded: analytics section unavailable */ }
 
   // Knowledge stats
-  const knowledgeStore = new KnowledgeStore(kataDirPath(ctx.kataDir, 'knowledge'));
-  const knowledgeStats = knowledgeStore.stats();
+  let knowledgeStats: ReturnType<KnowledgeStore['stats']> = { total: 0, averageConfidence: 0, byTier: { stage: 0, category: 0, agent: 0 }, topCategories: [] };
+  try {
+    const knowledgeStore = new KnowledgeStore(kataDirPath(ctx.kataDir, 'knowledge'));
+    knowledgeStats = knowledgeStore.stats();
+  } catch { /* degraded: knowledge section unavailable */ }
 
   if (isJson) {
     console.log(JSON.stringify({
@@ -162,23 +183,28 @@ export function registerStatusCommands(parent: Command): void {
   parent
     .command('status')
     .description('Show project overview — active cycle, recent artifacts, knowledge summary')
+    .option('--json', 'Output as JSON')
     .action(withCommandContext((ctx) => {
-      handleStatus(ctx);
+      const localOpts = ctx.cmd.opts() as { json?: boolean };
+      const isJson = !!(localOpts.json || ctx.globalOpts.json);
+      handleStatus({ kataDir: ctx.kataDir, globalOpts: { ...ctx.globalOpts, json: isJson } });
     }));
 
   // ---- kata stats ----
   parent
     .command('stats')
     .description('Show aggregate analytics — execution runs, outcomes, decision quality')
+    .option('--json', 'Output as JSON')
     .option('--category <cat>', 'Filter stats by stage category')
     .option('--gyo <cat>', 'Filter stats by stage category (alias for --category)')
     .action(withCommandContext((ctx) => {
-      const localOpts = ctx.cmd.opts();
+      const localOpts = ctx.cmd.opts() as { json?: boolean; category?: string; gyo?: string };
       const rawCategory = (localOpts.category ?? localOpts.gyo) as string | undefined;
 
       const categoryFilter = parseCategoryFilter(rawCategory);
       if (categoryFilter === false) { process.exitCode = 1; return; }
 
-      handleStats(ctx, categoryFilter);
+      const isJson = !!(localOpts.json || ctx.globalOpts.json);
+      handleStats({ kataDir: ctx.kataDir, globalOpts: { ...ctx.globalOpts, json: isJson } }, categoryFilter);
     }));
 }

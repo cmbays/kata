@@ -171,6 +171,12 @@ export {
   type RuleSuggestion,
 } from './rule.js';
 
+// Saved kata types
+export {
+  SavedKataSchema,
+  type SavedKata,
+} from './saved-kata.js';
+
 // Orchestration types
 export {
   CapabilityProfileSchema,

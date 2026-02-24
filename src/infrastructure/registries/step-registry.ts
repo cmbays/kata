@@ -63,9 +63,17 @@ export class StepRegistry implements IStepRegistry {
     // Try loading from disk
     const filePath = join(this.basePath, stepFilename(type, flavor));
     if (JsonStore.exists(filePath)) {
-      const step = JsonStore.read(filePath, StepSchema);
-      this.steps.set(key, step);
-      return step;
+      try {
+        const step = JsonStore.read(filePath, StepSchema);
+        this.steps.set(key, step);
+        return step;
+      } catch (e) {
+        const name = flavor ? `${type}:${flavor}` : type;
+        throw new Error(
+          `Failed to load step "${name}": ${e instanceof Error ? e.message : String(e)}`,
+          { cause: e },
+        );
+      }
     }
 
     throw new StepNotFoundError(type, flavor);
@@ -116,7 +124,15 @@ export class StepRegistry implements IStepRegistry {
     const step = this.get(type, flavor);
     const key = stepKey(type, flavor);
     const filePath = join(this.basePath, stepFilename(type, flavor));
-    unlinkSync(filePath);
+    try {
+      unlinkSync(filePath);
+    } catch (e) {
+      const name = flavor ? `${type}:${flavor}` : type;
+      throw new Error(
+        `Failed to delete step "${name}": ${e instanceof Error ? e.message : String(e)}`,
+        { cause: e },
+      );
+    }
     this.steps.delete(key);
     return step;
   }
