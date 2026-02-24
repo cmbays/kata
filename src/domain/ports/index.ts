@@ -8,3 +8,4 @@ export type { IKnowledgeStore } from './knowledge-store.js';
 export type { IAdapterResolver } from './adapter-resolver.js';
 export type { ITokenTracker } from './token-tracker.js';
 export type { IResultCapturer, CaptureOptions } from './result-capturer.js';
+export type { IDecisionRegistry, DecisionQuery, DecisionStats } from './decision-registry.js';
