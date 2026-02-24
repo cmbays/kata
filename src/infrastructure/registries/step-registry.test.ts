@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, existsSync, chmodSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { Step } from '@domain/types/step.js';
@@ -291,6 +291,31 @@ describe('StepRegistry', () => {
 
       expect(existsSync(join(basePath, 'build.json'))).toBe(true);
       expect(() => registry.get('build')).not.toThrow();
+    });
+  });
+
+  describe('error handling', () => {
+    it('get() wraps JsonStore errors with step-specific context', () => {
+      writeFileSync(join(basePath, 'research.json'), '{ invalid json }');
+
+      expect(() => registry.get('research')).toThrow('Failed to load step "research"');
+    });
+
+    it('get() includes flavor in context for flavored steps', () => {
+      writeFileSync(join(basePath, 'build.go.json'), '{ invalid json }');
+
+      expect(() => registry.get('build', 'go')).toThrow('Failed to load step "build:go"');
+    });
+
+    it('delete() wraps unlink OS errors with step context', () => {
+      registry.register(makeStep({ type: 'build' }));
+      const originalMode = statSync(basePath).mode & 0o777;
+      chmodSync(basePath, 0o555); // make directory read-only (no delete permission)
+      try {
+        expect(() => registry.delete('build')).toThrow('Failed to delete step "build"');
+      } finally {
+        chmodSync(basePath, originalMode);
+      }
     });
   });
 

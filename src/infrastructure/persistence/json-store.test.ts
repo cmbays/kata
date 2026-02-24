@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, existsSync, mkdirSync, chmodSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { z } from 'zod/v4';
@@ -154,6 +154,18 @@ describe('JsonStore.list', () => {
 
     const results = JsonStore.list(dir, TestSchema);
     expect(results).toHaveLength(1);
+  });
+
+  it('throws JsonStoreError when directory is not readable (EACCES)', () => {
+    const dir = join(tempDir, 'locked-dir');
+    mkdirSync(dir);
+    chmodSync(dir, 0o000); // remove all permissions — readdirSync will fail
+    try {
+      expect(() => JsonStore.list(dir, TestSchema)).toThrow(JsonStoreError);
+      expect(() => JsonStore.list(dir, TestSchema)).toThrow('Failed to read directory');
+    } finally {
+      chmodSync(dir, 0o755); // restore so cleanup can proceed
+    }
   });
 });
 
