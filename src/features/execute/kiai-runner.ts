@@ -8,15 +8,19 @@ import type {
   OrchestratorContext,
   OrchestratorResult,
 } from '@domain/ports/stage-orchestrator.js';
+import type { PipelineOrchestrationResult } from '@domain/ports/meta-orchestrator.js';
 import { createStageOrchestrator } from '@domain/services/orchestrators/index.js';
+import { MetaOrchestrator } from '@domain/services/meta-orchestrator.js';
 import { KATA_DIRS } from '@shared/constants/paths.js';
 import { logger } from '@shared/lib/logger.js';
+import type { UsageAnalytics } from '@infra/tracking/usage-analytics.js';
 
 export interface KiaiRunnerDeps {
   flavorRegistry: IFlavorRegistry;
   decisionRegistry: IDecisionRegistry;
   executor: IFlavorExecutor;
   kataDir: string;
+  analytics?: UsageAnalytics;
 }
 
 export interface KiaiRunOptions {
@@ -93,7 +97,72 @@ export class KiaiRunner {
 
     // Persist stage artifact
     if (!options.dryRun) {
-      this.persistArtifact(stageCategory, result);
+      try {
+        this.persistArtifact(stageCategory, result);
+      } catch (err) {
+        logger.warn('Failed to persist stage artifact — result is still valid.', {
+          stageCategory,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    // Record analytics event (never crash on analytics failure)
+    try {
+      this.deps.analytics?.recordEvent({
+        stageCategory: result.stageCategory,
+        selectedFlavors: [...result.selectedFlavors],
+        executionMode: result.executionMode,
+        decisionConfidences: result.decisions.map((d) => d.confidence),
+      });
+    } catch {
+      // Analytics failures must never crash a successful orchestration
+    }
+
+    return result;
+  }
+
+  /**
+   * Run a multi-stage pipeline via the MetaOrchestrator.
+   *
+   * Processes stages linearly, passing artifacts between stages.
+   * Persists each stage's artifact and records analytics events.
+   */
+  async runPipeline(
+    categories: StageCategory[],
+    options: KiaiRunOptions = {},
+  ): Promise<PipelineOrchestrationResult> {
+    const metaOrchestrator = new MetaOrchestrator({
+      flavorRegistry: this.deps.flavorRegistry,
+      decisionRegistry: this.deps.decisionRegistry,
+      executor: this.deps.executor,
+    });
+
+    const result = await metaOrchestrator.runPipeline(categories, options.bet);
+
+    // Persist each stage artifact and record analytics
+    for (const stageResult of result.stageResults) {
+      if (!options.dryRun) {
+        try {
+          this.persistArtifact(stageResult.stageCategory, stageResult);
+        } catch (err) {
+          logger.warn('Failed to persist stage artifact — result is still valid.', {
+            stageCategory: stageResult.stageCategory,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+
+      try {
+        this.deps.analytics?.recordEvent({
+          stageCategory: stageResult.stageCategory,
+          selectedFlavors: [...stageResult.selectedFlavors],
+          executionMode: stageResult.executionMode,
+          decisionConfidences: stageResult.decisions.map((d) => d.confidence),
+        });
+      } catch {
+        // Analytics failures must never crash a successful orchestration
+      }
     }
 
     return result;

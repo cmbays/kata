@@ -63,6 +63,20 @@ export class DecisionNotFoundError extends KataError {
   }
 }
 
+export class RuleNotFoundError extends KataError {
+  constructor(id: string) {
+    super(`Rule not found: "${id}". Use "kata knowledge rules" to see active rules.`);
+    this.name = 'RuleNotFoundError';
+  }
+}
+
+export class SuggestionNotFoundError extends KataError {
+  constructor(id: string) {
+    super(`Rule suggestion not found: "${id}". Use "kata bunkai review" to see pending suggestions.`);
+    this.name = 'SuggestionNotFoundError';
+  }
+}
+
 export class OrchestratorError extends KataError {
   constructor(message: string) {
     super(message);

@@ -54,6 +54,14 @@ export {
   type Stage,
 } from './stage.js';
 
+// Vocabulary types (stage category scoring configuration)
+export {
+  BoostRuleSchema,
+  StageVocabularySchema,
+  type BoostRule,
+  type StageVocabulary,
+} from './vocabulary.js';
+
 // Flavor types (second tier — named, ordered composition of Steps within a Stage)
 export {
   FlavorStepRefSchema,
@@ -141,8 +149,38 @@ export {
 export {
   DecisionTypeSchema,
   DecisionOutcomeSchema,
+  ScoringBreakdownSchema,
   DecisionSchema,
   type DecisionType,
   type DecisionOutcome,
+  type ScoringBreakdown,
   type Decision,
 } from './decision.js';
+
+// Rule types
+export {
+  RuleEffectSchema,
+  RuleSourceSchema,
+  StageRuleSchema,
+  RuleSuggestionStatusSchema,
+  RuleSuggestionSchema,
+  type RuleEffect,
+  type RuleSource,
+  type StageRule,
+  type RuleSuggestionStatus,
+  type RuleSuggestion,
+} from './rule.js';
+
+// Orchestration types
+export {
+  CapabilityProfileSchema,
+  MatchReportSchema,
+  GapReportSchema,
+  ExecutionPlanSchema,
+  ReflectionResultSchema,
+  type CapabilityProfile,
+  type MatchReport,
+  type GapReport,
+  type ExecutionPlan,
+  type ReflectionResult,
+} from './orchestration.js';

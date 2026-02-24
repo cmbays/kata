@@ -1,6 +1,7 @@
 import type { Stage, StageCategory } from '@domain/types/stage.js';
 import type { Flavor } from '@domain/types/flavor.js';
 import type { Decision } from '@domain/types/decision.js';
+import type { CapabilityProfile, MatchReport, ReflectionResult } from '@domain/types/orchestration.js';
 
 /**
  * A named artifact value — used for both Flavor-level synthesis artifacts
@@ -64,11 +65,11 @@ export interface OrchestratorResult {
    */
   readonly selectedFlavors: [string, ...string[]];
   /**
-   * The three Decisions recorded during orchestration, in phase order:
-   *   [0] flavor-selection, [1] execution-mode, [2] synthesis-approach
-   * Exactly three entries are always present — one per orchestration phase.
+   * All Decisions recorded during the 6-phase orchestration loop.
+   * Contains at least: capability-analysis, flavor-selection, execution-mode, synthesis-approach.
+   * The reflect phase may add additional decisions.
    */
-  readonly decisions: [Decision, Decision, Decision];
+  readonly decisions: Decision[];
   /** Per-flavor execution results — one entry per selected Flavor. */
   readonly flavorResults: FlavorExecutionResult[];
   /**
@@ -78,6 +79,12 @@ export interface OrchestratorResult {
   readonly stageArtifact: ArtifactValue;
   /** Whether selected Flavors were run sequentially or in parallel. */
   readonly executionMode: 'sequential' | 'parallel';
+  /** Capability profile built during the analyze phase. */
+  readonly capabilityProfile?: CapabilityProfile;
+  /** Per-flavor scoring reports from the match phase. */
+  readonly matchReports?: MatchReport[];
+  /** Reflection results from the post-execution reflect phase. */
+  readonly reflection?: ReflectionResult;
 }
 
 /**
@@ -102,11 +109,13 @@ export interface IFlavorExecutor {
 /**
  * The Stage Orchestrator — intelligence layer between PipelineRunner and step execution.
  *
- * Responsibilities (in execution order):
- * 1. **Flavor selection** — choose which Flavors to run based on context and scoring.
- * 2. **Execution mode** — decide sequential vs. parallel Flavor execution.
- * 3. **Execution** — run each selected Flavor via IFlavorExecutor.
- * 4. **Synthesis** — merge per-flavor outputs into a single stage-level handoff artifact.
+ * Responsibilities (6-phase loop, in execution order):
+ * 1. **Analyze**    — build a CapabilityProfile from context, artifacts, and rules.
+ * 2. **Match**      — score all candidate Flavors against the profile.
+ * 3. **Plan**       — select Flavors and decide sequential vs. parallel execution.
+ * 4. **Execute**    — run each selected Flavor via IFlavorExecutor.
+ * 5. **Synthesize** — merge per-flavor outputs into a single stage-level handoff artifact.
+ * 6. **Reflect**    — capture decision outcomes and generate rule suggestions.
  *
  * Every non-deterministic judgment is recorded as a Decision via IDecisionRegistry.
  */

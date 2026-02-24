@@ -189,7 +189,7 @@ describe('DecisionRegistry', () => {
 
     it('returns empty array when no decisions match filters', () => {
       registry.record(makeInput({ stageCategory: 'build' }));
-      expect(registry.list({ stageCategory: 'wrapup' })).toEqual([]);
+      expect(registry.list({ stageCategory: 'review' })).toEqual([]);
     });
   });
 
@@ -315,7 +315,7 @@ describe('DecisionRegistry', () => {
 
     it('returns zero stats for stageCategory with no decisions', () => {
       registry.record(makeInput({ stageCategory: 'build' }));
-      const stats = registry.getStats('wrapup');
+      const stats = registry.getStats('review');
       expect(stats.count).toBe(0);
       expect(stats.avgConfidence).toBe(0);
     });

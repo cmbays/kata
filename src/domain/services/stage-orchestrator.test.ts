@@ -163,12 +163,13 @@ describe('BaseStageOrchestrator', () => {
       expect(result.stageCategory).toBe('build');
     });
 
-    it('includes exactly 3 decisions (flavor-selection, execution-mode, synthesis-approach)', async () => {
+    it('includes 4 decisions (capability-analysis, flavor-selection, execution-mode, synthesis-approach)', async () => {
       const deps = makeDeps();
       const orch = makeOrchestrator(deps);
       const result = await orch.run(makeStage(), makeContext());
-      expect(result.decisions).toHaveLength(3);
+      expect(result.decisions).toHaveLength(4);
       const types = result.decisions.map((d) => d.decisionType);
+      expect(types).toContain('capability-analysis');
       expect(types).toContain('flavor-selection');
       expect(types).toContain('execution-mode');
       expect(types).toContain('synthesis-approach');
@@ -178,7 +179,39 @@ describe('BaseStageOrchestrator', () => {
       const deps = makeDeps();
       const orch = makeOrchestrator(deps);
       await orch.run(makeStage(), makeContext());
-      expect(deps.decisionRegistry.record).toHaveBeenCalledTimes(3);
+      expect(deps.decisionRegistry.record).toHaveBeenCalledTimes(4);
+    });
+
+    it('returns capabilityProfile from analyze phase', async () => {
+      const deps = makeDeps();
+      const orch = makeOrchestrator(deps);
+      const result = await orch.run(makeStage(), makeContext());
+      expect(result.capabilityProfile).toBeDefined();
+      expect(result.capabilityProfile!.stageCategory).toBe('build');
+    });
+
+    it('returns matchReports from match phase', async () => {
+      const deps = makeDeps();
+      const orch = makeOrchestrator(deps);
+      const result = await orch.run(makeStage(), makeContext());
+      expect(result.matchReports).toBeDefined();
+      expect(result.matchReports!.length).toBeGreaterThan(0);
+    });
+
+    it('returns reflection from reflect phase', async () => {
+      const deps = makeDeps();
+      const orch = makeOrchestrator(deps);
+      const result = await orch.run(makeStage(), makeContext());
+      expect(result.reflection).toBeDefined();
+      expect(result.reflection!.overallQuality).toBe('good');
+      expect(result.reflection!.decisionOutcomes).toHaveLength(4);
+    });
+
+    it('calls decisionRegistry.updateOutcome() for each decision in reflect phase', async () => {
+      const deps = makeDeps();
+      const orch = makeOrchestrator(deps);
+      await orch.run(makeStage(), makeContext());
+      expect(deps.decisionRegistry.updateOutcome).toHaveBeenCalledTimes(4);
     });
 
     it('returns selectedFlavors containing the top-scored flavor', async () => {
@@ -673,7 +706,7 @@ describe('BaseStageOrchestrator', () => {
 // ---------------------------------------------------------------------------
 
 describe('createStageOrchestrator factory', () => {
-  const categories = ['research', 'plan', 'build', 'review', 'wrapup'] as const;
+  const categories = ['research', 'plan', 'build', 'review'] as const;
 
   for (const category of categories) {
     it(`creates a ${category} orchestrator that implements IStageOrchestrator`, () => {
@@ -704,7 +737,7 @@ describe('createStageOrchestrator factory', () => {
       };
       const result = await orch.run(stage, makeContext());
       expect(result.stageCategory).toBe(category);
-      expect(result.decisions).toHaveLength(3);
+      expect(result.decisions).toHaveLength(4);
       expect(result.stageArtifact.name).toBe(`${category}-synthesis`);
     });
   }

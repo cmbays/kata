@@ -1,7 +1,9 @@
 import type { Command } from 'commander';
 import { KnowledgeStore } from '@infra/knowledge/knowledge-store.js';
 import { StepRegistry } from '@infra/registries/step-registry.js';
+import { RuleRegistry } from '@infra/registries/rule-registry.js';
 import { ExecutionHistoryEntrySchema } from '@domain/types/history.js';
+import type { RuleSuggestion } from '@domain/types/rule.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
 import { LearningExtractor } from '@features/self-improvement/learning-extractor.js';
 import type { SuggestedLearning } from '@features/self-improvement/learning-extractor.js';
@@ -149,12 +151,113 @@ export function registerLearningReviewCommand(knowledge: Command): void {
         }
       }
 
+      // Rule suggestion review
+      let rulesAccepted = 0;
+      let rulesRejected = 0;
+      const ruleRegistry = new RuleRegistry(
+        kataDirPath(ctx.kataDir, 'rules'),
+      );
+      const pendingSuggestions = ruleRegistry.getPendingSuggestions();
+
+      if (pendingSuggestions.length > 0) {
+        console.log(`\n${pendingSuggestions.length} rule suggestion(s) to review:\n`);
+
+        if (localOpts.skipPrompts) {
+          for (const suggestion of pendingSuggestions) {
+            try {
+              console.log(formatRuleSuggestion(suggestion));
+              console.log('  [Auto-accepted]\n');
+              ruleRegistry.acceptSuggestion(suggestion.id);
+              rulesAccepted++;
+            } catch (err) {
+              console.error(`  Failed to accept rule suggestion: ${err instanceof Error ? err.message : String(err)}\n`);
+            }
+          }
+        } else {
+          const { select, input } = await import('@inquirer/prompts');
+
+          for (const suggestion of pendingSuggestions) {
+            try {
+              console.log(formatRuleSuggestion(suggestion));
+              console.log('');
+
+              const action = await select({
+                message: 'Action for this rule suggestion?',
+                choices: [
+                  { name: 'Accept', value: 'accept' },
+                  { name: 'Accept with notes', value: 'accept-edit' },
+                  { name: 'Reject', value: 'reject' },
+                  { name: 'Skip', value: 'skip' },
+                ],
+              });
+
+              if (action === 'accept') {
+                ruleRegistry.acceptSuggestion(suggestion.id);
+                rulesAccepted++;
+                console.log('  Promoted to active rule!\n');
+              } else if (action === 'accept-edit') {
+                const editDelta = await input({
+                  message: 'Edit notes (what you changed):',
+                });
+                ruleRegistry.acceptSuggestion(suggestion.id, editDelta);
+                rulesAccepted++;
+                console.log('  Promoted to active rule (with edits)!\n');
+              } else if (action === 'reject') {
+                const reason = await input({
+                  message: 'Rejection reason:',
+                });
+                ruleRegistry.rejectSuggestion(suggestion.id, reason);
+                rulesRejected++;
+                console.log('  Rejected.\n');
+              } else {
+                console.log('  Skipped.\n');
+              }
+            } catch (err) {
+              console.error(`  Failed to process rule suggestion: ${err instanceof Error ? err.message : String(err)}\n`);
+            }
+          }
+        }
+      }
+
       console.log('');
       console.log(formatReviewSummary(accepted, rejected, promptsUpdated));
+      if (rulesAccepted > 0 || rulesRejected > 0) {
+        console.log('');
+        console.log(`  Rules accepted:      ${rulesAccepted}`);
+        console.log(`  Rules rejected:      ${rulesRejected}`);
+      }
     }));
 }
 
 // ---- Helpers ----
+
+function formatRuleSuggestion(suggestion: RuleSuggestion): string {
+  const rule = suggestion.suggestedRule;
+  const lines: string[] = [];
+  lines.push('=== Rule Suggestion ===');
+  lines.push('');
+  lines.push(`  Category:     ${rule.category}`);
+  lines.push(`  Name:         ${rule.name}`);
+  lines.push(`  Condition:    ${rule.condition}`);
+  lines.push(`  Effect:       ${rule.effect} (magnitude: ${rule.magnitude.toFixed(2)})`);
+  lines.push(`  Confidence:   ${rule.confidence.toFixed(2)}`);
+  lines.push(`  Source:       ${rule.source}`);
+  lines.push(`  Observations: ${suggestion.observationCount}`);
+  lines.push('');
+  lines.push(`  Reasoning:`);
+  lines.push(`    ${suggestion.reasoning}`);
+  if (rule.evidence.length > 0) {
+    lines.push('');
+    lines.push('  Evidence:');
+    for (const e of rule.evidence.slice(0, 3)) {
+      lines.push(`    - ${e}`);
+    }
+    if (rule.evidence.length > 3) {
+      lines.push(`    ... and ${rule.evidence.length - 3} more`);
+    }
+  }
+  return lines.join('\n');
+}
 
 function captureLearning(store: KnowledgeStore, suggestion: SuggestedLearning): void {
   store.capture({

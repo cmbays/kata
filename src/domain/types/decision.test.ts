@@ -26,9 +26,11 @@ describe('DecisionTypeSchema', () => {
     'synthesis-approach',
     'retry',
     'confidence-gate',
+    'capability-analysis',
+    'gap-assessment',
   ] as const;
 
-  it('accepts all five decision types', () => {
+  it('accepts all seven decision types', () => {
     for (const type of validTypes) {
       expect(DecisionTypeSchema.parse(type)).toBe(type);
     }
@@ -128,7 +130,7 @@ describe('DecisionSchema', () => {
   });
 
   it('accepts all valid stage categories', () => {
-    for (const cat of ['research', 'plan', 'build', 'review', 'wrapup'] as const) {
+    for (const cat of ['research', 'plan', 'build', 'review'] as const) {
       expect(DecisionSchema.parse(makeDecision({ stageCategory: cat })).stageCategory).toBe(cat);
     }
   });
@@ -140,6 +142,8 @@ describe('DecisionSchema', () => {
       'synthesis-approach',
       'retry',
       'confidence-gate',
+      'capability-analysis',
+      'gap-assessment',
     ] as const) {
       expect(
         DecisionSchema.parse(makeDecision({ decisionType: type })).decisionType,

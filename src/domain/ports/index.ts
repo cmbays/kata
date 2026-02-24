@@ -14,6 +14,7 @@ export type {
   StepResolver,
 } from './flavor-registry.js';
 export type { IDecisionRegistry, DecisionQuery, DecisionStats } from './decision-registry.js';
+export type { IStageRuleRegistry } from './rule-registry.js';
 export type {
   IStageOrchestrator,
   IFlavorExecutor,
@@ -22,3 +23,7 @@ export type {
   OrchestratorResult,
   FlavorExecutionResult,
 } from './stage-orchestrator.js';
+export type {
+  IMetaOrchestrator,
+  PipelineOrchestrationResult,
+} from './meta-orchestrator.js';

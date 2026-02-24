@@ -1,0 +1,14 @@
+{
+  "category": "plan",
+  "keywords": [
+    "shape", "design", "plan", "roadmap", "architecture", "spec",
+    "breadboard", "wireframe", "decompose", "structure"
+  ],
+  "boostRules": [
+    { "artifactPattern": "research", "magnitude": 0.1 },
+    { "artifactPattern": "summary", "magnitude": 0.1 }
+  ],
+  "synthesisPreference": "merge-all",
+  "synthesisAlternatives": ["merge-all", "first-wins", "cascade"],
+  "reasoningTemplate": "Merging all {count} flavor synthesis artifact(s) into a single keyed record for downstream stage consumption."
+}

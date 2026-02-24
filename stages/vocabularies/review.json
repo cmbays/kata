@@ -1,0 +1,14 @@
+{
+  "category": "review",
+  "keywords": [
+    "security", "api", "frontend", "architecture", "performance",
+    "quality", "audit", "accessibility", "compliance", "review"
+  ],
+  "boostRules": [
+    { "artifactPattern": "build", "magnitude": 0.1 },
+    { "artifactPattern": "implementation", "magnitude": 0.1 }
+  ],
+  "synthesisPreference": "cascade",
+  "synthesisAlternatives": ["merge-all", "first-wins", "cascade"],
+  "reasoningTemplate": "Using cascade synthesis for {count} review flavor(s) so that later reviewers can reference earlier findings."
+}

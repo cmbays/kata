@@ -12,6 +12,8 @@ export const DecisionTypeSchema = z.enum([
   'synthesis-approach', // How to synthesize flavor outputs into a stage artifact
   'retry', // Whether to retry a failed step or flavor
   'confidence-gate', // Whether to proceed or require human review
+  'capability-analysis', // Orchestrator assessed capability profile for flavor matching
+  'gap-assessment', // Orchestrator identified gaps in flavor coverage
 ]);
 
 export type DecisionType = z.infer<typeof DecisionTypeSchema>;
@@ -32,12 +34,37 @@ export const DecisionOutcomeSchema = z
     reworkRequired: z.boolean().optional(),
     /** Free-text notes about the outcome — useful for nuanced cases. */
     notes: z.string().optional(),
+    /** How the decision's output was consumed by downstream stages/decisions. */
+    downstreamUsage: z.string().optional(),
+    /** Whether and how a user overrode or adjusted the orchestrator's choice. */
+    userOverrides: z.string().optional(),
+    /** Approximate token cost attributable to this decision's execution. */
+    tokenCost: z.number().int().nonnegative().optional(),
   })
   .refine((o) => Object.values(o).some((v) => v !== undefined), {
     message: 'At least one outcome field must be set',
   });
 
 export type DecisionOutcome = z.infer<typeof DecisionOutcomeSchema>;
+
+/**
+ * Breakdown of how a score was computed during flavor selection.
+ * Enables rich provenance for decision analysis and self-improvement.
+ */
+export const ScoringBreakdownSchema = z.object({
+  /** Raw score before any boosts or rule adjustments. */
+  baseScore: z.number().min(0).max(1),
+  /** Number of keyword matches that contributed to the base score. */
+  keywordHits: z.number().int().nonnegative(),
+  /** Additive boost from relevant learnings mentioning this flavor. */
+  learningBoost: z.number().nonnegative(),
+  /** Adjustments applied by active stage rules (positive or negative). */
+  ruleAdjustments: z.number(),
+  /** Final clamped score in [0, 1] after all adjustments. */
+  finalScore: z.number().min(0).max(1),
+});
+
+export type ScoringBreakdown = z.infer<typeof ScoringBreakdownSchema>;
 
 /**
  * A Decision record captures a non-deterministic choice made by an orchestrator.

@@ -1,6 +1,8 @@
 import type { Command } from 'commander';
 import { KnowledgeStore } from '@infra/knowledge/knowledge-store.js';
+import { RuleRegistry } from '@infra/registries/rule-registry.js';
 import type { LearningFilter } from '@domain/types/learning.js';
+import { StageCategorySchema, type StageCategory } from '@domain/types/stage.js';
 import { withCommandContext, kataDirPath } from '@cli/utils.js';
 import {
   formatLearningTable,
@@ -58,6 +60,63 @@ export function registerKnowledgeCommands(parent: Command): void {
         console.log(formatKnowledgeStatsJson(stats));
       } else {
         console.log(formatKnowledgeStats(stats));
+      }
+    }));
+
+  // kata knowledge rules — list active rules per category
+  knowledge
+    .command('rules')
+    .description('List active stage rules')
+    .option('--category <cat>', 'Filter by stage category (research, plan, build, review)')
+    .action(withCommandContext((ctx) => {
+      const localOpts = ctx.cmd.opts();
+      const ruleRegistry = new RuleRegistry(
+        kataDirPath(ctx.kataDir, 'rules'),
+      );
+
+      // Validate category filter if provided
+      let categoryFilter: StageCategory | undefined;
+      if (localOpts.category) {
+        const parseResult = StageCategorySchema.safeParse(localOpts.category);
+        if (!parseResult.success) {
+          const valid = StageCategorySchema.options.join(', ');
+          console.error(`Invalid category: "${localOpts.category}". Valid categories: ${valid}`);
+          process.exitCode = 1;
+          return;
+        }
+        categoryFilter = parseResult.data;
+      }
+
+      const categories: StageCategory[] = categoryFilter
+        ? [categoryFilter]
+        : (['research', 'plan', 'build', 'review'] as StageCategory[]);
+
+      const allRules = categories.flatMap((cat) => ruleRegistry.loadRules(cat));
+
+      if (ctx.globalOpts.json) {
+        console.log(JSON.stringify(allRules, null, 2));
+        return;
+      }
+
+      if (allRules.length === 0) {
+        console.log('No active rules found. Rules are created via "kata bunkai review" or the reflect phase.');
+        return;
+      }
+
+      for (const cat of categories) {
+        const catRules = allRules.filter((r) => r.category === cat);
+        if (catRules.length === 0) continue;
+
+        console.log(`${cat} (${catRules.length} rule${catRules.length > 1 ? 's' : ''}):`);
+        for (const rule of catRules) {
+          console.log(`  ${rule.name}`);
+          console.log(`    Condition: ${rule.condition}`);
+          console.log(`    Effect:    ${rule.effect} (magnitude: ${rule.magnitude.toFixed(2)})`);
+          console.log(`    Confidence: ${rule.confidence.toFixed(2)}`);
+          console.log(`    Source:    ${rule.source}`);
+          console.log(`    ID:        ${rule.id}`);
+          console.log('');
+        }
       }
     }));
 
