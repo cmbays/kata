@@ -7,4 +7,7 @@ export {
   StageNotFoundError,
   PipelineNotFoundError,
   CycleNotFoundError,
+  FlavorNotFoundError,
+  DecisionNotFoundError,
+  OrchestratorError,
 } from './errors.js';
