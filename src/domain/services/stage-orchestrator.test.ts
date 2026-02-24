@@ -271,7 +271,7 @@ describe('BaseStageOrchestrator', () => {
       expect(result.selectedFlavors).not.toContain('excluded-flavor');
     });
 
-    it('throws OrchestratorError when all flavors are excluded', async () => {
+    it('throws OrchestratorError when all flavors are excluded (no pinned)', async () => {
       const flavors = [makeFlavor('typescript-feature')];
       const deps = makeDeps({ flavors });
       const orch = makeOrchestrator(deps);
@@ -280,6 +280,45 @@ describe('BaseStageOrchestrator', () => {
         excludedFlavors: ['typescript-feature'],
       });
       await expect(orch.run(stage, makeContext())).rejects.toThrow(OrchestratorError);
+    });
+
+    it('includes pinnedFlavors not listed in availableFlavors', async () => {
+      // 'extra-pinned' is not in availableFlavors but is in pinnedFlavors
+      const flavors = [makeFlavor('typescript-feature'), makeFlavor('extra-pinned')];
+      const deps = makeDeps({ flavors });
+      const orch = makeOrchestrator(deps);
+      const stage = makeStage({
+        availableFlavors: ['typescript-feature'],
+        pinnedFlavors: ['extra-pinned'],
+      });
+      const result = await orch.run(stage, makeContext());
+      expect(result.selectedFlavors).toContain('extra-pinned');
+    });
+
+    it('excludedFlavors wins over pinnedFlavors (conflict resolution)', async () => {
+      const flavors = [makeFlavor('typescript-feature'), makeFlavor('conflicted')];
+      const deps = makeDeps({ flavors });
+      const orch = makeOrchestrator(deps);
+      const stage = makeStage({
+        availableFlavors: ['typescript-feature', 'conflicted'],
+        pinnedFlavors: ['conflicted'],
+        excludedFlavors: ['conflicted'],
+      });
+      const result = await orch.run(stage, makeContext());
+      expect(result.selectedFlavors).not.toContain('conflicted');
+    });
+
+    it('succeeds when all availableFlavors are excluded but pinnedFlavors provides a fallback', async () => {
+      const flavors = [makeFlavor('excluded-flavor'), makeFlavor('pinned-only')];
+      const deps = makeDeps({ flavors });
+      const orch = makeOrchestrator(deps);
+      const stage = makeStage({
+        availableFlavors: ['excluded-flavor'],
+        excludedFlavors: ['excluded-flavor'],
+        pinnedFlavors: ['pinned-only'],
+      });
+      const result = await orch.run(stage, makeContext());
+      expect(result.selectedFlavors).toContain('pinned-only');
     });
 
     it('throws OrchestratorError when no flavors are available', async () => {

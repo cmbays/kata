@@ -103,18 +103,51 @@ export abstract class BaseStageOrchestrator implements IStageOrchestrator {
     const excluded = new Set(stage.excludedFlavors ?? []);
     const pinned = new Set(stage.pinnedFlavors ?? []);
 
-    // Filter out excluded flavors
+    // Warn when a flavor appears in both pinnedFlavors and excludedFlavors.
+    // excludedFlavors wins (project-level override takes precedence over stage-level pin).
+    for (const name of pinned) {
+      if (excluded.has(name)) {
+        logger.warn(
+          `Orchestrator: flavor "${this.stageCategory}/${name}" is both pinned and excluded — excludedFlavors wins. ` +
+            `Remove the conflict in your Stage or project configuration.`,
+          { name, stageCategory: this.stageCategory },
+        );
+      }
+    }
+
+    // Filter out excluded flavors from the available set
     const candidateNames = stage.availableFlavors.filter((name) => !excluded.has(name));
-    if (candidateNames.length === 0) {
+
+    // Resolve pinned flavors directly from the registry — they bypass the availableFlavors
+    // list so that stages can pin flavors that are not in their declared available set.
+    // Pinned flavors that are also excluded are NOT resolved (excluded wins, see warning above).
+    const pinnedFlavors: Flavor[] = [];
+    for (const name of pinned) {
+      if (excluded.has(name)) continue;
+      try {
+        pinnedFlavors.push(this.deps.flavorRegistry.get(this.stageCategory, name));
+      } catch (err) {
+        logger.warn(
+          `Orchestrator: pinned flavor "${this.stageCategory}/${name}" not found in registry — skipping.`,
+          { name, error: err instanceof Error ? err.message : String(err) },
+        );
+      }
+    }
+
+    // If there are no non-excluded available candidates and no pinned flavors, throw.
+    if (candidateNames.length === 0 && pinnedFlavors.length === 0) {
       throw new OrchestratorError(
         `Stage "${this.stageCategory}" has no available flavors after applying excludedFlavors filter. ` +
-          `Check that excludedFlavors does not cover all entries in availableFlavors.`,
+          `Check that excludedFlavors does not cover all entries in availableFlavors and pinnedFlavors.`,
       );
     }
 
-    // Resolve Flavor objects from the registry; skip unresolvable with a warning
+    // Resolve Flavor objects from availableFlavors (excluding excluded); skip unresolvable with a warning.
+    // Pinned flavors already resolved above are not re-resolved here.
+    const pinnedNames = new Set(pinnedFlavors.map((f) => f.name));
     const candidates: Flavor[] = [];
     for (const name of candidateNames) {
+      if (pinnedNames.has(name)) continue; // already resolved as pinned
       try {
         candidates.push(this.deps.flavorRegistry.get(this.stageCategory, name));
       } catch (err) {
@@ -125,7 +158,7 @@ export abstract class BaseStageOrchestrator implements IStageOrchestrator {
       }
     }
 
-    if (candidates.length === 0) {
+    if (candidates.length === 0 && pinnedFlavors.length === 0) {
       throw new OrchestratorError(
         `Stage "${this.stageCategory}" has no resolvable flavors. ` +
           `Ensure all flavors listed in availableFlavors are registered in FlavorRegistry.`,
@@ -133,8 +166,7 @@ export abstract class BaseStageOrchestrator implements IStageOrchestrator {
     }
 
     // Score non-pinned candidates; pinned flavors always run and skip scoring
-    const nonPinned = candidates.filter((f) => !pinned.has(f.name));
-    const pinnedFlavors = candidates.filter((f) => pinned.has(f.name));
+    const nonPinned = candidates;
 
     // Sort non-pinned by descending score
     const scored = nonPinned
@@ -158,9 +190,9 @@ export abstract class BaseStageOrchestrator implements IStageOrchestrator {
     const topScore = scored[0]?.score ?? 0;
     const confidence = Math.min(1, Math.max(0, topScore));
 
-    // Decision options = all non-excluded candidate names; selection = top-scored name
-    // (or first pinned name if all candidates were pinned)
-    const options = candidates.map((f) => f.name);
+    // Decision options = all resolvable flavors (non-pinned candidates + pinned).
+    // selection = top-scored non-pinned name, or first pinned name if no non-pinned candidates.
+    const options = [...candidates, ...pinnedFlavors].map((f) => f.name);
     const selection =
       scored[0]?.flavor.name ??
       (pinnedFlavors[0]?.name ?? candidates[0]!.name);
