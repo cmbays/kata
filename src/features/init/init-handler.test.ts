@@ -88,6 +88,17 @@ describe('handleInit', () => {
     expect(result.stagesLoaded).toBeGreaterThan(0);
   });
 
+  it('loads built-in flavors', async () => {
+    const result = await handleInit({
+      cwd: baseDir,
+      skipPrompts: true,
+    });
+
+    // Should load the builtin flavors from stages/flavors/ at package root
+    expect(result.flavorsLoaded).toBeGreaterThan(0);
+    expect(existsSync(join(baseDir, '.kata', 'flavors'))).toBe(true);
+  });
+
   it('loads pipeline templates', async () => {
     const result = await handleInit({
       cwd: baseDir,
@@ -174,22 +185,26 @@ describe('handleInit', () => {
     expect(result.projectType).toBe('rust');
   });
 
-  it('prompt files in .kata/prompts/ match builtin stage names', async () => {
+  it('each step with a promptTemplate has a matching prompt file', async () => {
     await handleInit({ cwd: baseDir, skipPrompts: true });
 
     const stagesDir = join(baseDir, '.kata', 'stages');
     const promptsDir = join(baseDir, '.kata', 'prompts');
 
-    // Stages in .kata/stages/ reference "../prompts/<name>.md"
-    // Verify that each builtin stage with a promptTemplate has a matching file in prompts/
+    // Each step JSON references a promptTemplate like "../prompts/<name>.md"
+    // Verify that each referenced prompt file exists in .kata/prompts/
     const stageFiles = readdirSync(stagesDir).filter((f) => f.endsWith('.json'));
     expect(stageFiles.length).toBeGreaterThan(0);
 
     const promptFiles = new Set(readdirSync(promptsDir));
     for (const stageFile of stageFiles) {
-      const stageName = stageFile.replace(/\.json$/, '');
-      // Each builtin stage should have a corresponding .md prompt file
-      expect(promptFiles.has(`${stageName}.md`)).toBe(true);
+      const raw = readFileSync(join(stagesDir, stageFile), 'utf-8');
+      const step = JSON.parse(raw);
+      if (step.promptTemplate) {
+        // promptTemplate is like "../prompts/research.md" — extract the filename
+        const promptFilename = step.promptTemplate.split('/').pop();
+        expect(promptFiles.has(promptFilename)).toBe(true);
+      }
     }
   });
 

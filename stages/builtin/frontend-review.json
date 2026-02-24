@@ -1,6 +1,6 @@
 {
-  "type": "review",
-  "flavor": "frontend",
+  "type": "frontend-review",
+  "stageCategory": "review",
   "description": "Frontend review stage. Evaluate UI components, accessibility, responsive design, performance, and user experience. Produce a structured frontend review.",
   "entryGate": {
     "type": "entry",
@@ -29,8 +29,7 @@
       "name": "frontend-review",
       "description": "Frontend review covering component design, accessibility, responsiveness, performance, and UX quality",
       "required": true,
-      "extension": ".md",
-      "path": ".kata/artifacts/frontend-review.md"
+      "extension": ".md"
     }
   ],
   "promptTemplate": "../prompts/review.frontend.md",

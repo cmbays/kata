@@ -1,5 +1,6 @@
 {
-  "type": "plan",
+  "type": "impl-planning",
+  "stageCategory": "plan",
   "description": "Produce an implementation plan with waves, sessions, dependencies, and task breakdowns. Translates breadboard slices into executable work units.",
   "entryGate": {
     "type": "entry",

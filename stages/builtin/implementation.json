@@ -1,5 +1,6 @@
 {
-  "type": "build",
+  "type": "implementation",
+  "stageCategory": "build",
   "description": "Execute the implementation work defined in the plan. Produce code, tests, and artifacts. Follow session protocols for quality and completeness.",
   "entryGate": {
     "type": "entry",

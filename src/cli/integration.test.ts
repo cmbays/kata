@@ -43,7 +43,7 @@ describe('Integration: null-state flow', () => {
 
     const output = logSpy.mock.calls.map((c) => c[0]).join('\n');
     expect(output).toContain('kata project initialized');
-    expect(output).toContain('Stages loaded:');
+    expect(output).toContain('Steps loaded:');
   });
 
   it('kata stage list shows built-in stages after init', async () => {
@@ -66,7 +66,7 @@ describe('Integration: null-state flow', () => {
     logSpy.mockClear();
 
     const p2 = makeProgram();
-    await p2.parseAsync(['node', 'test', '--cwd', baseDir, 'stage', 'inspect', 'research']);
+    await p2.parseAsync(['node', 'test', '--cwd', baseDir, 'stage', 'inspect', 'research-general']);
 
     const output = logSpy.mock.calls.map((c) => c[0]).join('\n');
     expect(output).toContain('research');

@@ -1,0 +1,11 @@
+{
+  "name": "tdd-build",
+  "description": "Test-driven development: write tests first, implement to pass, then verify again.",
+  "stageCategory": "build",
+  "steps": [
+    { "stepName": "test-first", "stepType": "test-execution" },
+    { "stepName": "implement", "stepType": "implementation" },
+    { "stepName": "verify", "stepType": "test-execution" }
+  ],
+  "synthesisArtifact": "build-output"
+}

@@ -1,0 +1,9 @@
+{
+  "name": "security",
+  "description": "Security-focused review: OWASP Top 10, dependency audits, secrets handling.",
+  "stageCategory": "review",
+  "steps": [
+    { "stepName": "audit", "stepType": "security-audit" }
+  ],
+  "synthesisArtifact": "security-report"
+}

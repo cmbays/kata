@@ -1,0 +1,10 @@
+{
+  "name": "standard-build",
+  "description": "Standard build workflow: implement the plan then verify with tests.",
+  "stageCategory": "build",
+  "steps": [
+    { "stepName": "implement", "stepType": "implementation" },
+    { "stepName": "test", "stepType": "test-execution" }
+  ],
+  "synthesisArtifact": "build-output"
+}

@@ -1,12 +1,13 @@
 {
   "type": "security-audit",
-  "description": "Systematic security review — OWASP Top 10, dependency scanning, secrets detection, threat modeling, and auth/authz verification. Produces security findings and a threat model before deployment.",
+  "stageCategory": "review",
+  "description": "Security review stage. Identify OWASP Top 10 vulnerabilities, check dependency advisories, verify secrets handling, and produce a security report.",
   "entryGate": {
     "type": "entry",
     "conditions": [
       {
         "type": "artifact-exists",
-        "description": "Build output must exist before security audit",
+        "description": "Build output must exist before security review",
         "artifactName": "build-output"
       }
     ],
@@ -17,36 +18,65 @@
     "conditions": [
       {
         "type": "artifact-exists",
-        "description": "Security findings document must be produced",
-        "artifactName": "security-findings"
+        "description": "Security report must be produced",
+        "artifactName": "security-report"
       },
       {
-        "type": "artifact-exists",
-        "description": "Threat model must be produced",
-        "artifactName": "threat-model"
+        "type": "human-approved",
+        "description": "Confirm dependency audit has been run (npm audit --audit-level=moderate or cargo audit) and findings reviewed"
       }
     ],
     "required": true
   },
   "artifacts": [
     {
-      "name": "security-findings",
-      "description": "Security audit findings with severity classification, CVSS scores where applicable, and remediation guidance",
-      "required": true,
-      "extension": ".md"
-    },
-    {
-      "name": "threat-model",
-      "description": "Threat model covering assets, attack surfaces, trust boundaries, and mitigations",
+      "name": "security-report",
+      "description": "Security review report covering OWASP Top 10, dependency advisories, secrets handling, and recommended remediations",
       "required": true,
       "extension": ".md"
     }
   ],
-  "promptTemplate": "../prompts/security-audit.md",
+  "promptTemplate": "../prompts/review.security.md",
   "learningHooks": [
     "security-patterns",
-    "threat-modeling",
-    "vulnerability-detection"
+    "vulnerability-detection",
+    "dependency-hygiene"
   ],
-  "config": {}
+  "config": {},
+  "resources": {
+    "tools": [
+      {
+        "name": "npm audit",
+        "purpose": "Scan npm dependencies for known vulnerabilities",
+        "command": "npm audit --audit-level=moderate"
+      },
+      {
+        "name": "cargo audit",
+        "purpose": "Scan Rust dependencies for known vulnerabilities",
+        "command": "cargo audit"
+      },
+      {
+        "name": "pip-audit",
+        "purpose": "Scan Python dependencies for known vulnerabilities",
+        "command": "pip-audit"
+      },
+      {
+        "name": "govulncheck",
+        "purpose": "Scan Go dependencies for known vulnerabilities",
+        "command": "govulncheck ./..."
+      }
+    ],
+    "agents": [
+      {
+        "name": "everything-claude-code:security-reviewer",
+        "when": "for deep OWASP analysis and vulnerability detection"
+      }
+    ],
+    "skills": [
+      {
+        "name": "everything-claude-code:security-review",
+        "when": "for comprehensive security checklist and patterns"
+      }
+    ]
+  }
 }

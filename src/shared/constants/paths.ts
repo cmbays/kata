@@ -1,6 +1,7 @@
 export const KATA_DIRS = {
   root: '.kata',
   stages: 'stages',
+  flavors: 'flavors',
   pipelines: 'pipelines',
   cycles: 'cycles',
   history: 'history',
@@ -8,6 +9,7 @@ export const KATA_DIRS = {
   templates: 'templates',
   tracking: 'tracking',
   prompts: 'prompts',
+  artifacts: 'artifacts',
   config: 'config.json',
   builtin: 'builtin',
 } as const;

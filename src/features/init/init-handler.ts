@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { existsSync, readdirSync, copyFileSync } from 'node:fs';
 import { KataConfigSchema, type KataConfig } from '@domain/types/config.js';
 import { StepRegistry } from '@infra/registries/step-registry.js';
+import { FlavorRegistry } from '@infra/registries/flavor-registry.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
 import { loadPipelineTemplates } from '@infra/persistence/pipeline-template-store.js';
 import { checkBinaryExists } from '@infra/execution/claude-cli-adapter.js';
@@ -22,6 +23,7 @@ export interface InitResult {
   kataDir: string;
   config: KataConfig;
   stagesLoaded: number;
+  flavorsLoaded: number;
   templatesLoaded: number;
   projectType: ProjectType;
   /** Whether the claude binary was found on PATH (only set when adapter = claude-cli) */
@@ -131,6 +133,7 @@ export async function handleInit(options: InitOptions): Promise<InitResult> {
   // Resolve paths
   const kataDir = join(cwd, KATA_DIRS.root);
   const stagesDir = join(kataDir, KATA_DIRS.stages);
+  const flavorsDir = join(kataDir, KATA_DIRS.flavors);
   const templatesDir = join(kataDir, KATA_DIRS.templates);
   const cyclesDir = join(kataDir, KATA_DIRS.cycles);
   const knowledgeDir = join(kataDir, KATA_DIRS.knowledge);
@@ -138,6 +141,7 @@ export async function handleInit(options: InitOptions): Promise<InitResult> {
   // Create directory structure
   JsonStore.ensureDir(kataDir);
   JsonStore.ensureDir(stagesDir);
+  JsonStore.ensureDir(flavorsDir);
   JsonStore.ensureDir(templatesDir);
   JsonStore.ensureDir(cyclesDir);
   JsonStore.ensureDir(knowledgeDir);
@@ -145,6 +149,7 @@ export async function handleInit(options: InitOptions): Promise<InitResult> {
   JsonStore.ensureDir(join(kataDir, KATA_DIRS.history));
   JsonStore.ensureDir(join(kataDir, KATA_DIRS.tracking));
   JsonStore.ensureDir(join(kataDir, KATA_DIRS.prompts));
+  JsonStore.ensureDir(join(kataDir, KATA_DIRS.artifacts));
 
   // Build config
   const config: KataConfig = KataConfigSchema.parse({
@@ -198,6 +203,18 @@ export async function handleInit(options: InitOptions): Promise<InitResult> {
     logger.warn(`Built-in stages not found at "${builtinStagesDir}". Stages were not loaded — check your installation.`);
   }
 
+  // Load built-in flavors
+  const builtinFlavorsDir = join(packageRoot, KATA_DIRS.stages, KATA_DIRS.flavors);
+  const flavorRegistry = new FlavorRegistry(flavorsDir);
+
+  let flavorsLoaded = 0;
+  if (existsSync(builtinFlavorsDir)) {
+    flavorRegistry.loadBuiltins(builtinFlavorsDir);
+    flavorsLoaded = flavorRegistry.list().length;
+  } else {
+    logger.warn(`Built-in flavors not found at "${builtinFlavorsDir}". Flavors were not loaded — check your installation.`);
+  }
+
   // Copy prompt templates to .kata/prompts/
   // Stage JSONs reference "../prompts/<name>.md" (relative to .kata/stages/),
   // so they resolve to .kata/prompts/<name>.md at runtime.
@@ -242,6 +259,7 @@ export async function handleInit(options: InitOptions): Promise<InitResult> {
     kataDir,
     config,
     stagesLoaded,
+    flavorsLoaded,
     templatesLoaded,
     projectType: projectInfo.projectType,
     claudeCliDetected,

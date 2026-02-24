@@ -1,0 +1,10 @@
+{
+  "name": "typescript-feature",
+  "description": "Build a TypeScript feature with type-safe implementation and test verification.",
+  "stageCategory": "build",
+  "steps": [
+    { "stepName": "implement", "stepType": "implementation-ts" },
+    { "stepName": "test", "stepType": "test-execution" }
+  ],
+  "synthesisArtifact": "build-output"
+}

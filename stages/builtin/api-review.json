@@ -1,6 +1,6 @@
 {
-  "type": "review",
-  "flavor": "api",
+  "type": "api-review",
+  "stageCategory": "review",
   "description": "Review stage specialized for API design and implementation. Evaluate endpoint contracts, authentication, input validation, error responses, and OpenAPI/schema completeness.",
   "entryGate": {
     "type": "entry",

@@ -1,5 +1,6 @@
 {
-  "type": "test",
+  "type": "test-execution",
+  "stageCategory": "build",
   "description": "Verify correctness and coverage. Design and execute a test strategy — unit, integration, and E2E — that proves the build works as intended and catches regressions.",
   "entryGate": {
     "type": "entry",

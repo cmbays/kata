@@ -1,0 +1,11 @@
+{
+  "name": "ui-feature",
+  "description": "Plan a user-facing feature through shaping, breadboarding, and implementation planning.",
+  "stageCategory": "plan",
+  "steps": [
+    { "stepName": "shape", "stepType": "shaping" },
+    { "stepName": "breadboard", "stepType": "breadboarding" },
+    { "stepName": "plan", "stepType": "impl-planning" }
+  ],
+  "synthesisArtifact": "implementation-plan"
+}

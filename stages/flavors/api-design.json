@@ -1,0 +1,10 @@
+{
+  "name": "api-design",
+  "description": "Design an API through shaping and implementation planning (no breadboarding needed).",
+  "stageCategory": "plan",
+  "steps": [
+    { "stepName": "shape", "stepType": "shaping" },
+    { "stepName": "plan", "stepType": "impl-planning" }
+  ],
+  "synthesisArtifact": "implementation-plan"
+}

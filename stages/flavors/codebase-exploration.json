@@ -1,0 +1,9 @@
+{
+  "name": "codebase-exploration",
+  "description": "Explore an existing codebase to understand architecture, patterns, and conventions before making changes.",
+  "stageCategory": "research",
+  "steps": [
+    { "stepName": "explore", "stepType": "research-general" }
+  ],
+  "synthesisArtifact": "research-summary"
+}

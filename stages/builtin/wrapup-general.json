@@ -1,5 +1,6 @@
 {
-  "type": "wrap-up",
+  "type": "wrapup-general",
+  "stageCategory": "wrapup",
   "description": "Retrospective and knowledge capture. Synthesize learnings from the pipeline run, extract patterns, update documentation, and propose improvements for future cycles.",
   "entryGate": {
     "type": "entry",

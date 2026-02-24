@@ -1,5 +1,6 @@
 {
-  "type": "breadboard",
+  "type": "breadboarding",
+  "stageCategory": "plan",
   "description": "Map the solution as places, affordances, and wiring. Define vertical slices for incremental delivery. Produces a breadboard document with complete interaction model.",
   "entryGate": {
     "type": "entry",

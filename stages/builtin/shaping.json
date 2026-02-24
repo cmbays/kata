@@ -1,5 +1,6 @@
 {
-  "type": "shape",
+  "type": "shaping",
+  "stageCategory": "plan",
   "description": "Define requirements, solution shapes, and constraints. Evaluate options using fit checks. Select a shape with defined appetite and boundaries. Produces a shaping document.",
   "entryGate": {
     "type": "entry",
