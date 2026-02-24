@@ -178,7 +178,7 @@ export function registerStepCommands(parent: Command): void {
       const label = stepLabel(existing.type, existing.flavor);
       if (!isJson) console.log(`Editing step: ${label}`);
 
-      const { stage, cancelled } = await editFieldLoop(existing, ctx.kataDir, isJson);
+      const { step: edited, cancelled } = await editFieldLoop(existing, ctx.kataDir, isJson);
 
       if (cancelled) {
         if (!isJson) console.log('Edit cancelled.');
@@ -189,7 +189,7 @@ export function registerStepCommands(parent: Command): void {
         stagesDir,
         type: existing.type,
         flavor: existing.flavor,
-        input: stage,
+        input: edited,
       });
 
       if (isJson) {

@@ -337,8 +337,12 @@ function listSavedKatas(kataDir: string): Array<{ name: string; stages: StageCat
       try {
         const raw = JSON.parse(readFileSync(join(dir, f), 'utf-8'));
         return SavedKataSchema.parse(raw);
-      } catch {
-        return null;
+      } catch (e) {
+        if (e instanceof SyntaxError || (e instanceof Error && e.constructor.name === 'ZodError')) {
+          console.error(`Warning: skipping invalid kata file "${f}": ${e.message}`);
+          return null;
+        }
+        throw e;
       }
     })
     .filter((k): k is NonNullable<typeof k> => k !== null);
@@ -349,8 +353,23 @@ function loadSavedKata(kataDir: string, name: string): { stages: StageCategory[]
   if (!existsSync(filePath)) {
     throw new Error(`Kata "${name}" not found. Use --list-katas to see available katas.`);
   }
-  const raw = JSON.parse(readFileSync(filePath, 'utf-8'));
-  return SavedKataSchema.parse(raw);
+  let raw: unknown;
+  try {
+    raw = JSON.parse(readFileSync(filePath, 'utf-8'));
+  } catch (e) {
+    throw new Error(
+      `Kata "${name}" has invalid JSON: ${e instanceof Error ? e.message : String(e)}`,
+      { cause: e },
+    );
+  }
+  try {
+    return SavedKataSchema.parse(raw);
+  } catch (e) {
+    throw new Error(
+      `Kata "${name}" has invalid structure. Ensure it has "name" (string) and "stages" (array of categories).`,
+      { cause: e },
+    );
+  }
 }
 
 function saveSavedKata(kataDir: string, name: string, stages: StageCategory[]): void {
@@ -363,7 +382,14 @@ function saveSavedKata(kataDir: string, name: string, stages: StageCategory[]): 
 function deleteSavedKata(kataDir: string, name: string): void {
   const filePath = join(katasDir(kataDir), `${name}.json`);
   if (!existsSync(filePath)) {
-    throw new Error(`Kata "${name}" not found.`);
+    throw new Error(`Kata "${name}" not found. Use --list-katas to see available katas.`);
   }
-  unlinkSync(filePath);
+  try {
+    unlinkSync(filePath);
+  } catch (e) {
+    throw new Error(
+      `Could not delete kata "${name}": ${e instanceof Error ? e.message : String(e)}`,
+      { cause: e },
+    );
+  }
 }

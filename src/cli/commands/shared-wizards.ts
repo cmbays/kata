@@ -268,7 +268,7 @@ export async function editFieldLoop(
   existing: Step,
   kataDir: string,
   isJson: boolean,
-): Promise<{ stage: Step; cancelled: boolean }> {
+): Promise<{ step: Step; cancelled: boolean }> {
   const { Separator, select, input, confirm, editor } = await import('@inquirer/prompts');
   let draft = { ...existing };
 
@@ -307,8 +307,8 @@ export async function editFieldLoop(
       ],
     });
 
-    if (choice === 'save') return { stage: draft, cancelled: false };
-    if (choice === 'cancel') return { stage: existing, cancelled: true };
+    if (choice === 'save') return { step: draft, cancelled: false };
+    if (choice === 'cancel') return { step: existing, cancelled: true };
 
     if (choice === 'description') {
       const raw = await input({ message: 'Description:', default: draft.description ?? '' });
