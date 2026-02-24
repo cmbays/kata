@@ -123,5 +123,23 @@ describe('registerStatusCommands', () => {
       expect(parsed).toHaveProperty('execution');
       expect(parsed).toHaveProperty('knowledge');
     });
+
+    it('accepts --gyo as alias for --category', async () => {
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'stats', '--gyo', 'build']);
+
+      const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('Kata Analytics (build)');
+    });
+
+    it('rejects invalid --gyo value', async () => {
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'stats', '--gyo', 'nope']);
+
+      expect(process.exitCode).toBe(1);
+      const output = errorSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('Invalid category');
+      process.exitCode = undefined as unknown as number;
+    });
   });
 });

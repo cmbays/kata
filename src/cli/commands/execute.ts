@@ -11,9 +11,10 @@ import { DecisionRegistry } from '@infra/registries/decision-registry.js';
 import { AdapterResolver } from '@infra/execution/adapter-resolver.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
 import { StepFlavorExecutor } from '@features/execute/step-flavor-executor.js';
-import { KiaiRunner, listRecentArtifacts } from '@features/execute/kiai-runner.js';
+import { KiaiRunner } from '@features/execute/kiai-runner.js';
 import { UsageAnalytics } from '@infra/tracking/usage-analytics.js';
 import { KATA_DIRS } from '@shared/constants/paths.js';
+import { handleStatus, handleStats, parseCategoryFilter } from './status.js';
 
 /**
  * Register execute commands on the given parent Command.
@@ -37,81 +38,28 @@ export function registerExecuteCommands(program: Command): void {
     .alias('kiai')
     .description('Run stage orchestration — select and execute flavors (alias: kiai)');
 
-  // ---- status (subcommand, resolved before default handler) ----
+  // ---- status (delegates to top-level kata status) ----
   execute
     .command('status')
-    .description('Show recent stage execution artifacts')
-    .option('--json', 'Output results as JSON')
+    .description('Show project status (same as "kata status")')
     .action(withCommandContext(async (ctx) => {
-      const localOpts = ctx.cmd.opts();
-      const artifacts = listRecentArtifacts(ctx.kataDir);
-
-      if (ctx.globalOpts.json || localOpts.json) {
-        console.log(JSON.stringify(artifacts, null, 2));
-      } else if (artifacts.length === 0) {
-        console.log('No stage artifacts found. Run "kata kiai <category>" to execute a stage.');
-      } else {
-        console.log('Recent stage artifacts:');
-        console.log('');
-        for (const artifact of artifacts) {
-          console.log(`  ${artifact.name}`);
-          console.log(`    Time: ${artifact.timestamp}`);
-          console.log(`    File: ${artifact.file}`);
-          console.log('');
-        }
-      }
+      handleStatus(ctx);
     }));
 
-  // ---- stats (subcommand) ----
+  // ---- stats (delegates to top-level kata stats) ----
   execute
     .command('stats')
-    .description('Show analytics for stage orchestration runs')
+    .description('Show analytics (same as "kata stats")')
     .option('--category <cat>', 'Filter stats by stage category')
-    .option('--json', 'Output results as JSON')
+    .option('--gyo <cat>', 'Filter stats by stage category (alias)')
     .action(withCommandContext(async (ctx) => {
       const localOpts = ctx.cmd.opts();
+      const rawCategory = (localOpts.category ?? localOpts.gyo) as string | undefined;
 
-      let categoryFilter: StageCategory | undefined;
-      if (localOpts.category) {
-        const parseResult = StageCategorySchema.safeParse(localOpts.category);
-        if (!parseResult.success) {
-          const valid = StageCategorySchema.options.join(', ');
-          console.error(`Invalid category: "${localOpts.category}". Valid categories: ${valid}`);
-          process.exitCode = 1;
-          return;
-        }
-        categoryFilter = parseResult.data;
-      }
+      const categoryFilter = parseCategoryFilter(rawCategory);
+      if (categoryFilter === false) { process.exitCode = 1; return; }
 
-      const analytics = new UsageAnalytics(ctx.kataDir);
-      const stats = analytics.getStats(categoryFilter);
-
-      if (ctx.globalOpts.json || localOpts.json) {
-        console.log(JSON.stringify(stats, null, 2));
-      } else if (stats.totalRuns === 0) {
-        console.log('No analytics events recorded yet. Run "kata kiai <category>" to generate data.');
-      } else {
-        console.log(categoryFilter ? `Analytics for "${categoryFilter}":` : 'Analytics overview:');
-        console.log('');
-        console.log(`  Total runs: ${stats.totalRuns}`);
-        console.log('');
-        console.log('  Runs by category:');
-        for (const [cat, count] of Object.entries(stats.runsByCategory)) {
-          console.log(`    ${cat}: ${count}`);
-        }
-        console.log('');
-        console.log(`  Avg confidence: ${(stats.avgConfidence * 100).toFixed(1)}%`);
-        console.log('');
-        console.log('  Outcome distribution:');
-        console.log(`    good: ${stats.outcomeDistribution.good}`);
-        console.log(`    partial: ${stats.outcomeDistribution.partial}`);
-        console.log(`    poor: ${stats.outcomeDistribution.poor}`);
-        console.log(`    unknown: ${stats.outcomeDistribution.unknown}`);
-        if (stats.avgDurationMs !== undefined) {
-          console.log('');
-          console.log(`  Avg duration: ${stats.avgDurationMs.toFixed(0)}ms`);
-        }
-      }
+      handleStats(ctx, categoryFilter);
     }));
 
   // ---- run (hidden backward compat) ----
