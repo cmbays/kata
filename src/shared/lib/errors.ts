@@ -55,3 +55,10 @@ export class FlavorNotFoundError extends KataError {
     this.name = 'FlavorNotFoundError';
   }
 }
+
+export class DecisionNotFoundError extends KataError {
+  constructor(id: string) {
+    super(`Decision not found: "${id}". Decisions are recorded automatically by orchestrators — verify the id is correct.`);
+    this.name = 'DecisionNotFoundError';
+  }
+}
