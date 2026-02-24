@@ -3,8 +3,8 @@
   "description": "Gather requirements through stakeholder interviews and background research.",
   "stageCategory": "research",
   "steps": [
-    { "stepName": "interview", "stepType": "user-interview" },
-    { "stepName": "research", "stepType": "research-general" }
+    { "stepName": "research", "stepType": "research-general" },
+    { "stepName": "interview", "stepType": "user-interview" }
   ],
   "synthesisArtifact": "research-summary"
 }

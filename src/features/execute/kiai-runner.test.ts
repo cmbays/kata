@@ -181,13 +181,18 @@ describe('KiaiRunner', () => {
       expect(result.selectedFlavors).toContain('pinned-one');
     });
 
-    it('dryRun returns result without executing flavors', async () => {
+    it('dryRun runs orchestrator but does not persist artifacts', async () => {
       const executor = makeExecutor();
       const deps = makeDeps({ kataDir: baseDir, executor });
       const runner = new KiaiRunner(deps);
       const result = await runner.runStage('build', { dryRun: true });
-      // dryRun should still return a result shape but may not execute
       expect(result).toBeDefined();
+      expect(result.stageCategory).toBe('build');
+      // Orchestrator still runs, but no artifact files should be written
+      const { readdirSync } = await import('node:fs');
+      const { join } = await import('node:path');
+      const files = readdirSync(join(baseDir, 'artifacts')).filter((f) => f.endsWith('.json'));
+      expect(files).toHaveLength(0);
     });
   });
 

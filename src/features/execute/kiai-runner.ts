@@ -10,6 +10,7 @@ import type {
 } from '@domain/ports/stage-orchestrator.js';
 import { createStageOrchestrator } from '@domain/services/orchestrators/index.js';
 import { KATA_DIRS } from '@shared/constants/paths.js';
+import { logger } from '@shared/lib/logger.js';
 
 export interface KiaiRunnerDeps {
   flavorRegistry: IFlavorRegistry;
@@ -102,27 +103,7 @@ export class KiaiRunner {
    * List recent stage artifacts from .kata/artifacts/.
    */
   listRecentArtifacts(): ArtifactEntry[] {
-    const artifactsDir = join(this.deps.kataDir, KATA_DIRS.artifacts);
-    if (!existsSync(artifactsDir)) return [];
-
-    const files = readdirSync(artifactsDir)
-      .filter((f) => f.endsWith('.json'))
-      .sort()
-      .reverse();
-
-    return files.map((file) => {
-      try {
-        const raw = readFileSync(join(artifactsDir, file), 'utf-8');
-        const data = JSON.parse(raw);
-        return {
-          name: data.name ?? file.replace('.json', ''),
-          timestamp: data.timestamp ?? data.completedAt ?? 'unknown',
-          file,
-        };
-      } catch {
-        return { name: file.replace('.json', ''), timestamp: 'unknown', file };
-      }
-    });
+    return listRecentArtifacts(this.deps.kataDir);
   }
 
   /**
@@ -161,4 +142,36 @@ export class KiaiRunner {
 
     writeFileSync(filePath, JSON.stringify(payload, null, 2));
   }
+}
+
+/**
+ * List recent stage artifacts from .kata/artifacts/.
+ * Standalone function usable without full KiaiRunner initialization.
+ */
+export function listRecentArtifacts(kataDir: string): ArtifactEntry[] {
+  const artifactsDir = join(kataDir, KATA_DIRS.artifacts);
+  if (!existsSync(artifactsDir)) return [];
+
+  const files = readdirSync(artifactsDir)
+    .filter((f) => f.endsWith('.json'))
+    .sort()
+    .reverse();
+
+  return files.map((file) => {
+    try {
+      const raw = readFileSync(join(artifactsDir, file), 'utf-8');
+      const data = JSON.parse(raw);
+      return {
+        name: data.name ?? file.replace('.json', ''),
+        timestamp: data.timestamp ?? data.completedAt ?? 'unknown',
+        file,
+      };
+    } catch (err) {
+      logger.warn(`Could not parse artifact file "${file}" — showing partial info.`, {
+        file,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return { name: file.replace('.json', ''), timestamp: 'unknown', file };
+    }
+  });
 }

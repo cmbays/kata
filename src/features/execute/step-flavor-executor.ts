@@ -51,25 +51,28 @@ export class StepFlavorExecutor implements IFlavorExecutor {
     const allArtifacts: Record<string, unknown> = {};
     let lastResult: ExecutionResult | undefined;
 
+    // Build learnings once — they don't change between steps
+    const learnings = (context.learnings ?? []).map((content) => ({
+      id: randomUUID(),
+      tier: 'stage' as const,
+      category: 'execution',
+      content,
+      confidence: 0.7,
+      evidence: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }));
+
+    // Single pipelineId correlates all steps within this flavor execution
+    const pipelineId = randomUUID();
+
     for (const stepRef of flavor.steps) {
       const step = this.deps.stepRegistry.get(stepRef.stepType);
-
-      // Build learnings as proper Learning objects for ManifestBuilder
-      const learnings = (context.learnings ?? []).map((content) => ({
-        id: randomUUID(),
-        tier: 'stage' as const,
-        category: 'execution',
-        content,
-        confidence: 0.7,
-        evidence: [],
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      }));
 
       const manifest: ExecutionManifest = ManifestBuilder.build(
         step,
         {
-          pipelineId: randomUUID(),
+          pipelineId,
           stageIndex: 0,
           metadata: {
             flavorName: flavor.name,

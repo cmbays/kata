@@ -8,7 +8,7 @@ import { DecisionRegistry } from '@infra/registries/decision-registry.js';
 import { AdapterResolver } from '@infra/execution/adapter-resolver.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
 import { StepFlavorExecutor } from '@features/execute/step-flavor-executor.js';
-import { KiaiRunner } from '@features/execute/kiai-runner.js';
+import { KiaiRunner, listRecentArtifacts } from '@features/execute/kiai-runner.js';
 
 /**
  * Register execute commands on the given parent Command.
@@ -80,7 +80,13 @@ export function registerExecuteCommands(program: Command): void {
       let bet: Record<string, unknown> | undefined;
       if (localOpts.bet) {
         try {
-          bet = JSON.parse(localOpts.bet);
+          const parsed = JSON.parse(localOpts.bet);
+          if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+            console.error('Error: --bet must be a JSON object (e.g., \'{"title":"Add search"}\')');
+            process.exitCode = 1;
+            return;
+          }
+          bet = parsed as Record<string, unknown>;
         } catch {
           console.error('Error: --bet must be valid JSON');
           process.exitCode = 1;
@@ -122,32 +128,7 @@ export function registerExecuteCommands(program: Command): void {
     .option('--json', 'Output results as JSON')
     .action(withCommandContext(async (ctx) => {
       const localOpts = ctx.cmd.opts();
-      const flavorsDir = kataDirPath(ctx.kataDir, 'flavors');
-      const flavorRegistry = new FlavorRegistry(flavorsDir);
-      const decisionRegistry = new DecisionRegistry(
-        kataDirPath(ctx.kataDir, 'history'),
-      );
-
-      // Create a no-op executor for status (won't be used)
-      const executor = new StepFlavorExecutor({
-        stepRegistry: new StepRegistry(kataDirPath(ctx.kataDir, 'stages')),
-        adapterResolver: AdapterResolver,
-        config: KataConfigSchema.parse({
-          methodology: 'shape-up',
-          execution: { adapter: 'manual', config: {} },
-          customStagePaths: [],
-          project: {},
-        }),
-      });
-
-      const runner = new KiaiRunner({
-        flavorRegistry,
-        decisionRegistry,
-        executor,
-        kataDir: ctx.kataDir,
-      });
-
-      const artifacts = runner.listRecentArtifacts();
+      const artifacts = listRecentArtifacts(ctx.kataDir);
 
       if (ctx.globalOpts.json || localOpts.json) {
         console.log(JSON.stringify(artifacts, null, 2));
