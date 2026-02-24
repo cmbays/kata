@@ -1,4 +1,5 @@
 import type { Command } from 'commander';
+import type { FlavorStepRef } from '@domain/types/flavor.js';
 import { StageCategorySchema, type StageCategory } from '@domain/types/stage.js';
 import { FlavorRegistry } from '@infra/registries/flavor-registry.js';
 import { StepRegistry } from '@infra/registries/step-registry.js';
@@ -250,7 +251,7 @@ export function registerFlavorCommands(parent: Command): void {
 
       // Use StepRegistry as step resolver for DAG validation
       const stepRegistry = new StepRegistry(kataDirPath(ctx.kataDir, 'stages'));
-      const stepResolver = ({ stepType }: { stepType: string }) => {
+      const stepResolver = ({ stepType }: FlavorStepRef) => {
         try { return stepRegistry.get(stepType, undefined); } catch (e) {
           if (e instanceof StepNotFoundError) return undefined;
           throw e;

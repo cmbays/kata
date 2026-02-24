@@ -41,7 +41,7 @@ export interface IFlavorRegistry {
    *
    * @param flavor - The flavor to validate.
    * @param stepResolver - Optional function to look up step definitions by
-   *   (stepName, stepType). Required for DAG artifact dependency checks.
+   *   FlavorStepRef ({ stepName, stepType }). Required for DAG artifact dependency checks.
    *   Without a resolver, valid: true does NOT guarantee the synthesisArtifact
    *   is reachable — only structural constraints are checked.
    * @param stageInputArtifacts - Artifact names available as stage-level inputs
