@@ -17,6 +17,7 @@ export type { IDecisionRegistry, DecisionQuery, DecisionStats } from './decision
 export type {
   IStageOrchestrator,
   IFlavorExecutor,
+  ArtifactValue,
   OrchestratorContext,
   OrchestratorResult,
   FlavorExecutionResult,

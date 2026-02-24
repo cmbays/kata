@@ -120,7 +120,7 @@ class TestOrchestrator extends BaseStageOrchestrator {
   protected getSynthesisStrategy(results: FlavorExecutionResult[]) {
     return {
       approach: 'merge-all',
-      alternatives: ['first-wins', 'cascade'],
+      alternatives: ['merge-all', 'first-wins', 'cascade'] as [string, ...string[]],
       reasoning: `Merging ${results.length} flavor output(s).`,
     };
   }
@@ -488,6 +488,24 @@ describe('BaseStageOrchestrator', () => {
       };
       const deps = makeDeps({ executor });
       const orch = makeOrchestrator(deps);
+      await expect(orch.run(makeStage(), makeContext())).rejects.toThrow(OrchestratorError);
+    });
+
+    it('throws OrchestratorError when getSynthesisStrategy approach is not in alternatives', async () => {
+      class BrokenOrchestrator extends BaseStageOrchestrator {
+        protected scoreFlavorForContext() { return 0.5; }
+        protected getSynthesisStrategy() {
+          return {
+            approach: 'nonexistent-approach',
+            alternatives: ['merge-all', 'first-wins'] as [string, ...string[]],
+            reasoning: 'bad impl',
+          };
+        }
+      }
+      const deps = makeDeps();
+      const orch = new BrokenOrchestrator('build', deps, {
+        type: 'build', confidenceThreshold: 0.7, maxParallelFlavors: 5,
+      });
       await expect(orch.run(makeStage(), makeContext())).rejects.toThrow(OrchestratorError);
     });
 

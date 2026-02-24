@@ -6,6 +6,7 @@ import type { IDecisionRegistry } from '@domain/ports/decision-registry.js';
 import type {
   IStageOrchestrator,
   IFlavorExecutor,
+  ArtifactValue,
   OrchestratorContext,
   OrchestratorResult,
   FlavorExecutionResult,
@@ -24,14 +25,19 @@ export interface StageOrchestratorDeps {
  * Returned by the abstract `getSynthesisStrategy()` method.
  */
 export interface SynthesisStrategy {
-  /** The chosen approach name — must appear in `alternatives` (or be the sole option). */
+  /**
+   * The chosen approach name.
+   * MUST be one of the values in `alternatives` — `synthesize()` will throw
+   * `OrchestratorError` if this invariant is violated.
+   */
   approach: string;
   /**
-   * All approaches considered by the subclass.
-   * The Decision `options` array is built from this list (deduplicated, includes `approach`).
+   * All approaches considered by the subclass, including `approach`.
+   * Must contain at least one entry.
+   * The Decision `options` array is built directly from this list.
    */
-  alternatives: string[];
-  /** Human-readable explanation of why this approach was chosen. */
+  alternatives: [string, ...string[]];
+  /** Human-readable explanation of why this approach was chosen. Must be non-empty. */
   reasoning: string;
 }
 
@@ -71,9 +77,12 @@ export abstract class BaseStageOrchestrator implements IStageOrchestrator {
     // Phase 4: Synthesize results — records 'synthesis-approach' Decision
     const { stageArtifact, synthesisDecision } = this.synthesize(flavorResults, context);
 
+    // selectedFlavors is guaranteed non-empty by selectFlavors() which throws otherwise.
+    const selectedFlavorNames = selectedFlavors.map((f) => f.name) as [string, ...string[]];
+
     return {
       stageCategory: this.stageCategory,
-      selectedFlavors: selectedFlavors.map((f) => f.name),
+      selectedFlavors: selectedFlavorNames,
       decisions: [flavorSelectionDecision, executionModeDecision, synthesisDecision],
       flavorResults,
       stageArtifact,
@@ -310,7 +319,7 @@ export abstract class BaseStageOrchestrator implements IStageOrchestrator {
   protected synthesize(
     flavorResults: FlavorExecutionResult[],
     context: OrchestratorContext,
-  ): { stageArtifact: { name: string; value: unknown }; synthesisDecision: Decision } {
+  ): { stageArtifact: ArtifactValue; synthesisDecision: Decision } {
     // Guard: all synthesis artifacts must be present
     const missing = flavorResults.filter(
       (r) => r.synthesisArtifact.value === null || r.synthesisArtifact.value === undefined,
@@ -326,6 +335,16 @@ export abstract class BaseStageOrchestrator implements IStageOrchestrator {
     // Delegate strategy selection to the subclass
     const strategy = this.getSynthesisStrategy(flavorResults, context);
 
+    // Guard: approach must be one of the declared alternatives — a missing entry
+    // indicates a buggy subclass implementation, not a user error.
+    if (!strategy.alternatives.includes(strategy.approach)) {
+      throw new OrchestratorError(
+        `Stage "${this.stageCategory}" getSynthesisStrategy() returned approach ` +
+          `"${strategy.approach}" which is not present in alternatives: ` +
+          `[${strategy.alternatives.join(', ')}]. Fix the subclass implementation.`,
+      );
+    }
+
     // Build merged artifact: keyed by flavor name
     const mergedValue: Record<string, unknown> = {};
     for (const result of flavorResults) {
@@ -337,8 +356,8 @@ export abstract class BaseStageOrchestrator implements IStageOrchestrator {
       value: mergedValue,
     };
 
-    // Ensure the chosen approach appears in the options list
-    const options = [...new Set([strategy.approach, ...strategy.alternatives])];
+    // Use alternatives directly as options (approach is already guaranteed to be in alternatives)
+    const options = strategy.alternatives;
 
     const synthesisDecision = this.deps.decisionRegistry.record({
       stageCategory: this.stageCategory,

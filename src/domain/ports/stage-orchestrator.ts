@@ -3,23 +3,33 @@ import type { Flavor } from '@domain/types/flavor.js';
 import type { Decision } from '@domain/types/decision.js';
 
 /**
+ * A named artifact value — used for both Flavor-level synthesis artifacts
+ * and the Stage-level artifact produced after synthesis.
+ */
+export interface ArtifactValue {
+  readonly name: string;
+  readonly value: unknown;
+}
+
+/**
  * Runtime context available to the Stage Orchestrator when making decisions.
  * Contains everything needed to score Flavor relevance and record decisions.
  */
 export interface OrchestratorContext {
   /** Artifact names already available at stage entry (handoff from the prior Stage). */
-  availableArtifacts: string[];
+  readonly availableArtifacts: readonly string[];
   /**
    * Bet context: metadata about the work unit being executed.
-   * May include id, title, description, appetite, tags, etc.
+   * May include `id`, `title`, `description`, `appetite`, `tags`, and arbitrary keys.
    * Used for keyword matching and relevance scoring during flavor selection.
    */
   bet?: Record<string, unknown>;
   /**
    * Learnings from the KnowledgeStore pre-filtered for this stage category.
    * Each string is a human-readable learning that may influence scoring heuristics.
+   * Treat `undefined` and `[]` as equivalent ("no applicable learnings").
    */
-  learnings?: string[];
+  readonly learnings?: readonly string[];
 }
 
 /**
@@ -28,17 +38,16 @@ export interface OrchestratorContext {
  */
 export interface FlavorExecutionResult {
   /** Name of the Flavor that produced this result. */
-  flavorName: string;
+  readonly flavorName: string;
   /** All named artifacts collected from the Flavor's steps, keyed by artifact name. */
-  artifacts: Record<string, unknown>;
+  readonly artifacts: Record<string, unknown>;
   /**
    * The primary synthesis artifact declared by the Flavor.
-   * Its `name` must match the Flavor's `synthesisArtifact` field.
+   * The `name` field MUST match the executing Flavor's `synthesisArtifact` field.
+   * The `value` field MUST be non-null and non-undefined — `synthesize()` will
+   * throw `OrchestratorError` if a null or undefined value is returned here.
    */
-  synthesisArtifact: {
-    name: string;
-    value: unknown;
-  };
+  readonly synthesisArtifact: ArtifactValue;
 }
 
 /**
@@ -47,23 +56,28 @@ export interface FlavorExecutionResult {
  */
 export interface OrchestratorResult {
   /** Stage category this result covers. */
-  stageCategory: StageCategory;
-  /** Names of Flavors that were selected and executed. */
-  selectedFlavors: string[];
-  /** All Decisions recorded during orchestration, in the order they were made. */
-  decisions: Decision[];
+  readonly stageCategory: StageCategory;
+  /**
+   * Names of Flavors that were selected and executed.
+   * Always contains at least one entry — the orchestrator throws before producing
+   * a result if no flavors could be selected.
+   */
+  readonly selectedFlavors: [string, ...string[]];
+  /**
+   * The three Decisions recorded during orchestration, in phase order:
+   *   [0] flavor-selection, [1] execution-mode, [2] synthesis-approach
+   * Exactly three entries are always present — one per orchestration phase.
+   */
+  readonly decisions: [Decision, Decision, Decision];
   /** Per-flavor execution results — one entry per selected Flavor. */
-  flavorResults: FlavorExecutionResult[];
+  readonly flavorResults: FlavorExecutionResult[];
   /**
    * Stage-level synthesis artifact — the handoff to the next Stage.
    * Produced by merging or summarizing the per-flavor synthesis artifacts.
    */
-  stageArtifact: {
-    name: string;
-    value: unknown;
-  };
+  readonly stageArtifact: ArtifactValue;
   /** Whether selected Flavors were run sequentially or in parallel. */
-  executionMode: 'sequential' | 'parallel';
+  readonly executionMode: 'sequential' | 'parallel';
 }
 
 /**
@@ -74,8 +88,13 @@ export interface OrchestratorResult {
 export interface IFlavorExecutor {
   /**
    * Execute all steps in the given Flavor and collect their artifacts.
-   * @returns A FlavorExecutionResult with all collected artifacts.
-   * @throws OrchestratorError if required step artifacts are missing post-execution.
+   *
+   * **Contract**: The returned `synthesisArtifact.name` MUST equal
+   * `flavor.synthesisArtifact`, and `synthesisArtifact.value` MUST NOT be
+   * `null` or `undefined`. Violations will cause `synthesize()` to throw
+   * `OrchestratorError`.
+   *
+   * @returns A FlavorExecutionResult with all collected artifacts and the synthesis output.
    */
   execute(flavor: Flavor, context: OrchestratorContext): Promise<FlavorExecutionResult>;
 }
