@@ -13,3 +13,4 @@ export type {
   FlavorValidationResult,
   StepResolver,
 } from './flavor-registry.js';
+export type { IDecisionRegistry, DecisionQuery, DecisionStats } from './decision-registry.js';
