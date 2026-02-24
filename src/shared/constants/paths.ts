@@ -13,6 +13,7 @@ export const KATA_DIRS = {
   rules: 'rules',
   config: 'config.json',
   builtin: 'builtin',
+  katas: 'katas',
 } as const;
 
 export type KataDirKey = keyof typeof KATA_DIRS;

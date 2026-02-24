@@ -65,10 +65,11 @@ export function registerInitCommand(program: Command): void {
 
         console.log('');
         console.log('  What\'s next:');
-        console.log('  → Start a pipeline:    kata flow start vertical');
-        console.log('  → See all stages:      kata form list');
-        console.log('  → See templates:       kata flow start --help');
-        console.log('  → Start a new cycle:   kata enbu new "Q1 Sprint"');
+        console.log('  → See stages:          kata gyo list');
+        console.log('  → See steps:           kata waza list');
+        console.log('  → Create a step:       kata waza create');
+        console.log('  → Start execution:     kata kiai build');
+        console.log('  → Start a cycle:       kata keiko new');
         console.log('');
         console.log('  Tip: add these lines to your .gitignore:');
         console.log('    .kata/history/');

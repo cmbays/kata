@@ -1,6 +1,9 @@
+import { join } from 'node:path';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
 import type { Command } from 'commander';
 import { withCommandContext, kataDirPath } from '@cli/utils.js';
 import { StageCategorySchema, type StageCategory } from '@domain/types/stage.js';
+import { SavedKataSchema } from '@domain/types/saved-kata.js';
 import { KataConfigSchema } from '@domain/types/config.js';
 import { StepRegistry } from '@infra/registries/step-registry.js';
 import { FlavorRegistry } from '@infra/registries/flavor-registry.js';
@@ -8,13 +11,26 @@ import { DecisionRegistry } from '@infra/registries/decision-registry.js';
 import { AdapterResolver } from '@infra/execution/adapter-resolver.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
 import { StepFlavorExecutor } from '@features/execute/step-flavor-executor.js';
-import { KiaiRunner, listRecentArtifacts } from '@features/execute/kiai-runner.js';
+import { KiaiRunner } from '@features/execute/kiai-runner.js';
 import { UsageAnalytics } from '@infra/tracking/usage-analytics.js';
+import { KATA_DIRS } from '@shared/constants/paths.js';
+import { handleStatus, handleStats, parseCategoryFilter } from './status.js';
 
 /**
  * Register execute commands on the given parent Command.
- * kata execute run <stage-category>  — alias: kata kiai run
- * kata execute status                — alias: kata kiai status
+ *
+ * Flattened invocation:
+ *   kata kiai <categories...>           — run one or more stage categories
+ *   kata kiai status                    — show recent artifacts
+ *   kata kiai stats [--category <cat>]  — show analytics
+ *
+ * Flags:
+ *   --ryu <flavor>    Pin a flavor (repeatable)
+ *   --kata <name>     Load a saved sequence
+ *   --gyo <stages>    Inline comma-separated stage specification
+ *   --save-kata <n>   Save a successful run as a named kata
+ *   --list-katas      List saved katas
+ *   --delete-kata <n> Delete a saved kata
  */
 export function registerExecuteCommands(program: Command): void {
   const execute = program
@@ -22,199 +38,238 @@ export function registerExecuteCommands(program: Command): void {
     .alias('kiai')
     .description('Run stage orchestration — select and execute flavors (alias: kiai)');
 
+  // ---- status (delegates to top-level kata status) ----
   execute
-    .command('run <stage-category>')
-    .description('Run a stage orchestration for the given category (research, plan, build, review)')
+    .command('status')
+    .description('Show project status (same as "kata status")')
+    .action(withCommandContext(async (ctx) => {
+      handleStatus(ctx);
+    }));
+
+  // ---- stats (delegates to top-level kata stats) ----
+  execute
+    .command('stats')
+    .description('Show analytics (same as "kata stats")')
+    .option('--category <cat>', 'Filter stats by stage category')
+    .option('--gyo <cat>', 'Filter stats by stage category (alias)')
+    .action(withCommandContext(async (ctx) => {
+      const localOpts = ctx.cmd.opts();
+      const rawCategory = (localOpts.category ?? localOpts.gyo) as string | undefined;
+
+      const categoryFilter = parseCategoryFilter(rawCategory);
+      if (categoryFilter === false) { process.exitCode = 1; return; }
+
+      handleStats(ctx, categoryFilter);
+    }));
+
+  // ---- run (hidden backward compat) ----
+  execute
+    .command('run <stage-category>', { hidden: true })
+    .description('(deprecated: use "kata kiai <category>" instead)')
     .option('--bet <json>', 'Inline JSON for bet context')
     .option('--pin <flavor>', 'Pin a specific flavor (can be repeated)', collect, [])
+    .option('--ryu <flavor>', 'Pin a specific flavor (can be repeated)', collect, [])
     .option('--dry-run', 'Print selected flavors without executing')
     .option('--json', 'Output results as JSON')
     .action(withCommandContext(async (ctx, category: string) => {
       const localOpts = ctx.cmd.opts();
-
-      // Validate stage category
-      const parseResult = StageCategorySchema.safeParse(category);
-      if (!parseResult.success) {
-        const valid = StageCategorySchema.options.join(', ');
-        console.error(`Invalid stage category: "${category}". Valid categories: ${valid}`);
-        process.exitCode = 1;
-        return;
-      }
-      const stageCategory: StageCategory = parseResult.data;
-
-      const runner = buildRunner(ctx.kataDir);
-
-      const bet = parseBetOption(localOpts.bet);
-      if (bet === false) { process.exitCode = 1; return; }
-
-      // Run
-      const result = await runner.runStage(stageCategory, {
-        bet,
-        pin: localOpts.pin?.length > 0 ? localOpts.pin : undefined,
+      await runCategories(ctx, [category], {
+        bet: localOpts.bet,
+        pin: [...(localOpts.pin ?? []), ...(localOpts.ryu ?? [])],
         dryRun: localOpts.dryRun,
+        json: localOpts.json,
       });
-
-      // Output
-      if (ctx.globalOpts.json || localOpts.json) {
-        console.log(JSON.stringify(result, null, 2));
-      } else {
-        console.log(`Stage: ${result.stageCategory}`);
-        console.log(`Execution mode: ${result.executionMode}`);
-        console.log(`Selected flavors: ${result.selectedFlavors.join(', ')}`);
-        console.log('');
-        console.log('Decisions:');
-        for (const decision of result.decisions) {
-          console.log(`  ${decision.decisionType}: ${decision.selection} (confidence: ${(decision.confidence * 100).toFixed(0)}%)`);
-        }
-        console.log('');
-        console.log(`Stage artifact: ${result.stageArtifact.name}`);
-        if (localOpts.dryRun) {
-          console.log('');
-          console.log('(dry-run — no artifacts persisted)');
-        }
-      }
     }));
 
+  // ---- pipeline (hidden backward compat) ----
   execute
-    .command('status')
-    .description('Show recent stage execution artifacts')
-    .option('--json', 'Output results as JSON')
-    .action(withCommandContext(async (ctx) => {
-      const localOpts = ctx.cmd.opts();
-      const artifacts = listRecentArtifacts(ctx.kataDir);
-
-      if (ctx.globalOpts.json || localOpts.json) {
-        console.log(JSON.stringify(artifacts, null, 2));
-      } else if (artifacts.length === 0) {
-        console.log('No stage artifacts found. Run "kata kiai run <category>" to execute a stage.');
-      } else {
-        console.log('Recent stage artifacts:');
-        console.log('');
-        for (const artifact of artifacts) {
-          console.log(`  ${artifact.name}`);
-          console.log(`    Time: ${artifact.timestamp}`);
-          console.log(`    File: ${artifact.file}`);
-          console.log('');
-        }
-      }
-    }));
-  execute
-    .command('pipeline <categories...>')
-    .description('Run a multi-stage pipeline (e.g., research plan build review)')
+    .command('pipeline <categories...>', { hidden: true })
+    .description('(deprecated: use "kata kiai <cat1> <cat2> ..." instead)')
     .option('--bet <json>', 'Inline JSON for bet context')
     .option('--dry-run', 'Print results without persisting artifacts')
     .option('--json', 'Output results as JSON')
     .action(withCommandContext(async (ctx, cats: string[]) => {
       const localOpts = ctx.cmd.opts();
-
-      // Validate all stage categories
-      const categories: StageCategory[] = [];
-      for (const cat of cats) {
-        const parseResult = StageCategorySchema.safeParse(cat);
-        if (!parseResult.success) {
-          const valid = StageCategorySchema.options.join(', ');
-          console.error(`Invalid stage category: "${cat}". Valid categories: ${valid}`);
-          process.exitCode = 1;
-          return;
-        }
-        categories.push(parseResult.data);
-      }
-
-      const runner = buildRunner(ctx.kataDir);
-
-      const bet = parseBetOption(localOpts.bet);
-      if (bet === false) { process.exitCode = 1; return; }
-
-      const result = await runner.runPipeline(categories, { bet, dryRun: localOpts.dryRun });
-
-      if (ctx.globalOpts.json || localOpts.json) {
-        console.log(JSON.stringify(result, null, 2));
-      } else {
-        console.log(`Pipeline: ${categories.join(' -> ')}`);
-        console.log(`Stages completed: ${result.stageResults.length}`);
-        console.log(`Overall quality: ${result.pipelineReflection.overallQuality}`);
-        console.log('');
-        for (const stageResult of result.stageResults) {
-          console.log(`  ${stageResult.stageCategory}:`);
-          console.log(`    Flavors: ${stageResult.selectedFlavors.join(', ')}`);
-          console.log(`    Mode: ${stageResult.executionMode}`);
-          console.log(`    Artifact: ${stageResult.stageArtifact.name}`);
-        }
-        if (result.pipelineReflection.learnings.length > 0) {
-          console.log('');
-          console.log('Learnings:');
-          for (const learning of result.pipelineReflection.learnings) {
-            console.log(`  - ${learning}`);
-          }
-        }
-        if (localOpts.dryRun) {
-          console.log('');
-          console.log('(dry-run — no artifacts persisted)');
-        }
-      }
+      await runCategories(ctx, cats, {
+        bet: localOpts.bet,
+        dryRun: localOpts.dryRun,
+        json: localOpts.json,
+      });
     }));
 
+  // ---- Default handler: kata kiai <categories...> ----
   execute
-    .command('stats')
-    .description('Show analytics for stage orchestration runs')
-    .option('--category <cat>', 'Filter stats by stage category')
-    .option('--json', 'Output results as JSON')
-    .action(withCommandContext(async (ctx) => {
+    .argument('[categories...]', 'Stage categories to run (research, plan, build, review)')
+    .option('--bet <json>', 'Inline JSON for bet context')
+    .option('--ryu <flavor>', 'Pin a specific flavor (can be repeated)', collect, [])
+    .option('--pin <flavor>', 'Pin a specific flavor (hidden backward compat)', collect, [])
+    .option('--dry-run', 'Print selected flavors without executing')
+    .option('--kata <name>', 'Load a saved kata sequence')
+    .option('--gyo <stages>', 'Inline comma-separated stage categories')
+    .option('--save-kata <name>', 'Save this run as a named kata after success')
+    .option('--list-katas', 'List saved katas and exit')
+    .option('--delete-kata <name>', 'Delete a saved kata and exit')
+    .action(withCommandContext(async (ctx, categories: string[]) => {
       const localOpts = ctx.cmd.opts();
 
-      // Validate category filter if provided
-      let categoryFilter: StageCategory | undefined;
-      if (localOpts.category) {
-        const parseResult = StageCategorySchema.safeParse(localOpts.category);
-        if (!parseResult.success) {
-          const valid = StageCategorySchema.options.join(', ');
-          console.error(`Invalid category: "${localOpts.category}". Valid categories: ${valid}`);
-          process.exitCode = 1;
-          return;
+      // --list-katas: show and exit
+      if (localOpts.listKatas) {
+        const katas = listSavedKatas(ctx.kataDir);
+        if (ctx.globalOpts.json) {
+          console.log(JSON.stringify(katas, null, 2));
+        } else if (katas.length === 0) {
+          console.log('No saved katas. Use --save-kata <name> after a successful run.');
+        } else {
+          console.log('Saved katas:');
+          for (const k of katas) {
+            const desc = k.description ? ` — ${k.description}` : '';
+            console.log(`  ${k.name}: ${k.stages.join(' -> ')}${desc}`);
+          }
         }
-        categoryFilter = parseResult.data;
+        return;
       }
 
-      const analytics = new UsageAnalytics(ctx.kataDir);
-      const stats = analytics.getStats(categoryFilter);
-
-      if (ctx.globalOpts.json || localOpts.json) {
-        console.log(JSON.stringify(stats, null, 2));
-      } else if (stats.totalRuns === 0) {
-        console.log('No analytics events recorded yet. Run "kata kiai run <category>" to generate data.');
-      } else {
-        console.log(categoryFilter ? `Analytics for "${categoryFilter}":` : 'Analytics overview:');
-        console.log('');
-        console.log(`  Total runs: ${stats.totalRuns}`);
-        console.log('');
-        console.log('  Runs by category:');
-        for (const [cat, count] of Object.entries(stats.runsByCategory)) {
-          console.log(`    ${cat}: ${count}`);
-        }
-        console.log('');
-        console.log(`  Avg confidence: ${(stats.avgConfidence * 100).toFixed(1)}%`);
-        console.log('');
-        console.log('  Outcome distribution:');
-        console.log(`    good: ${stats.outcomeDistribution.good}`);
-        console.log(`    partial: ${stats.outcomeDistribution.partial}`);
-        console.log(`    poor: ${stats.outcomeDistribution.poor}`);
-        console.log(`    unknown: ${stats.outcomeDistribution.unknown}`);
-        if (stats.avgDurationMs !== undefined) {
-          console.log('');
-          console.log(`  Avg duration: ${stats.avgDurationMs.toFixed(0)}ms`);
-        }
+      // --delete-kata: delete and exit
+      if (localOpts.deleteKata) {
+        deleteSavedKata(ctx.kataDir, localOpts.deleteKata);
+        console.log(`Kata "${localOpts.deleteKata}" deleted.`);
+        return;
       }
+
+      // Resolve categories from: positional args OR --kata OR --gyo
+      let resolvedCategories: string[] = categories;
+
+      if (localOpts.kata) {
+        const kata = loadSavedKata(ctx.kataDir, localOpts.kata);
+        resolvedCategories = kata.stages;
+      } else if (localOpts.gyo) {
+        resolvedCategories = (localOpts.gyo as string).split(',').map((s: string) => s.trim()).filter(Boolean);
+      }
+
+      if (resolvedCategories.length === 0) {
+        const valid = StageCategorySchema.options.join(', ');
+        console.error(`No categories specified. Usage: kata kiai <category> [category...]`);
+        console.error(`Valid categories: ${valid}`);
+        console.error('Or use: --kata <name>, --gyo <stages>');
+        process.exitCode = 1;
+        return;
+      }
+
+      const pin = [...(localOpts.ryu ?? []), ...(localOpts.pin ?? [])];
+
+      await runCategories(ctx, resolvedCategories, {
+        bet: localOpts.bet,
+        pin: pin.length > 0 ? pin : undefined,
+        dryRun: localOpts.dryRun,
+        saveKata: localOpts.saveKata,
+      });
     }));
 }
 
 // ---------------------------------------------------------------------------
-// Shared helpers
+// Shared execution logic
 // ---------------------------------------------------------------------------
 
-/**
- * Build a KiaiRunner with standard config, registries, and analytics.
- * Shared by `run`, `pipeline`, and any future execute subcommands.
- */
+interface RunOptions {
+  bet?: string;
+  pin?: string[];
+  dryRun?: boolean;
+  json?: boolean;
+  saveKata?: string;
+}
+
+async function runCategories(
+  ctx: { kataDir: string; globalOpts: { json?: boolean }; cmd: { opts(): Record<string, unknown> } },
+  rawCategories: string[],
+  opts: RunOptions,
+): Promise<void> {
+  // Validate all categories
+  const categories: StageCategory[] = [];
+  for (const cat of rawCategories) {
+    const parseResult = StageCategorySchema.safeParse(cat);
+    if (!parseResult.success) {
+      const valid = StageCategorySchema.options.join(', ');
+      console.error(`Invalid stage category: "${cat}". Valid categories: ${valid}`);
+      process.exitCode = 1;
+      return;
+    }
+    categories.push(parseResult.data);
+  }
+
+  const runner = buildRunner(ctx.kataDir);
+  const bet = parseBetOption(opts.bet);
+  if (bet === false) { process.exitCode = 1; return; }
+
+  const isJson = ctx.globalOpts.json || opts.json;
+
+  if (categories.length === 1) {
+    // Single stage
+    const result = await runner.runStage(categories[0]!, {
+      bet,
+      pin: opts.pin,
+      dryRun: opts.dryRun,
+    });
+
+    if (isJson) {
+      console.log(JSON.stringify(result, null, 2));
+    } else {
+      console.log(`Stage: ${result.stageCategory}`);
+      console.log(`Execution mode: ${result.executionMode}`);
+      console.log(`Selected flavors: ${result.selectedFlavors.join(', ')}`);
+      console.log('');
+      console.log('Decisions:');
+      for (const decision of result.decisions) {
+        console.log(`  ${decision.decisionType}: ${decision.selection} (confidence: ${(decision.confidence * 100).toFixed(0)}%)`);
+      }
+      console.log('');
+      console.log(`Stage artifact: ${result.stageArtifact.name}`);
+      if (opts.dryRun) {
+        console.log('');
+        console.log('(dry-run — no artifacts persisted)');
+      }
+    }
+  } else {
+    // Multi-stage pipeline
+    const result = await runner.runPipeline(categories, { bet, dryRun: opts.dryRun });
+
+    if (isJson) {
+      console.log(JSON.stringify(result, null, 2));
+    } else {
+      console.log(`Pipeline: ${categories.join(' -> ')}`);
+      console.log(`Stages completed: ${result.stageResults.length}`);
+      console.log(`Overall quality: ${result.pipelineReflection.overallQuality}`);
+      console.log('');
+      for (const stageResult of result.stageResults) {
+        console.log(`  ${stageResult.stageCategory}:`);
+        console.log(`    Flavors: ${stageResult.selectedFlavors.join(', ')}`);
+        console.log(`    Mode: ${stageResult.executionMode}`);
+        console.log(`    Artifact: ${stageResult.stageArtifact.name}`);
+      }
+      if (result.pipelineReflection.learnings.length > 0) {
+        console.log('');
+        console.log('Learnings:');
+        for (const learning of result.pipelineReflection.learnings) {
+          console.log(`  - ${learning}`);
+        }
+      }
+      if (opts.dryRun) {
+        console.log('');
+        console.log('(dry-run — no artifacts persisted)');
+      }
+    }
+  }
+
+  // Save kata if requested
+  if (opts.saveKata && !opts.dryRun) {
+    saveSavedKata(ctx.kataDir, opts.saveKata, categories);
+    if (!isJson) console.log(`\nKata "${opts.saveKata}" saved.`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Runner builder + helpers
+// ---------------------------------------------------------------------------
+
 function buildRunner(kataDir: string): KiaiRunner {
   const configPath = kataDirPath(kataDir, 'config');
   const config = JsonStore.exists(configPath)
@@ -246,10 +301,6 @@ function buildRunner(kataDir: string): KiaiRunner {
   });
 }
 
-/**
- * Parse a --bet JSON string into a Record or return undefined.
- * Returns `false` if parsing failed (caller should exit).
- */
 function parseBetOption(betJson: string | undefined): Record<string, unknown> | undefined | false {
   if (!betJson) return undefined;
   try {
@@ -265,9 +316,80 @@ function parseBetOption(betJson: string | undefined): Record<string, unknown> | 
   }
 }
 
-/**
- * Commander collect helper for repeatable --pin options.
- */
 function collect(value: string, previous: string[]): string[] {
   return previous.concat([value]);
+}
+
+// ---------------------------------------------------------------------------
+// Saved kata helpers
+// ---------------------------------------------------------------------------
+
+function katasDir(kataDir: string): string {
+  return join(kataDir, KATA_DIRS.katas);
+}
+
+function listSavedKatas(kataDir: string): Array<{ name: string; stages: StageCategory[]; description?: string }> {
+  const dir = katasDir(kataDir);
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .filter((f) => f.endsWith('.json'))
+    .map((f) => {
+      try {
+        const raw = JSON.parse(readFileSync(join(dir, f), 'utf-8'));
+        return SavedKataSchema.parse(raw);
+      } catch (e) {
+        if (e instanceof SyntaxError || (e instanceof Error && e.constructor.name === 'ZodError')) {
+          console.error(`Warning: skipping invalid kata file "${f}": ${e.message}`);
+          return null;
+        }
+        throw e;
+      }
+    })
+    .filter((k): k is NonNullable<typeof k> => k !== null);
+}
+
+function loadSavedKata(kataDir: string, name: string): { stages: StageCategory[] } {
+  const filePath = join(katasDir(kataDir), `${name}.json`);
+  if (!existsSync(filePath)) {
+    throw new Error(`Kata "${name}" not found. Use --list-katas to see available katas.`);
+  }
+  let raw: unknown;
+  try {
+    raw = JSON.parse(readFileSync(filePath, 'utf-8'));
+  } catch (e) {
+    throw new Error(
+      `Kata "${name}" has invalid JSON: ${e instanceof Error ? e.message : String(e)}`,
+      { cause: e },
+    );
+  }
+  try {
+    return SavedKataSchema.parse(raw);
+  } catch (e) {
+    throw new Error(
+      `Kata "${name}" has invalid structure. Ensure it has "name" (string) and "stages" (array of categories).`,
+      { cause: e },
+    );
+  }
+}
+
+function saveSavedKata(kataDir: string, name: string, stages: StageCategory[]): void {
+  const dir = katasDir(kataDir);
+  mkdirSync(dir, { recursive: true });
+  const kata = SavedKataSchema.parse({ name, stages });
+  writeFileSync(join(dir, `${name}.json`), JSON.stringify(kata, null, 2), 'utf-8');
+}
+
+function deleteSavedKata(kataDir: string, name: string): void {
+  const filePath = join(katasDir(kataDir), `${name}.json`);
+  if (!existsSync(filePath)) {
+    throw new Error(`Kata "${name}" not found. Use --list-katas to see available katas.`);
+  }
+  try {
+    unlinkSync(filePath);
+  } catch (e) {
+    throw new Error(
+      `Could not delete kata "${name}": ${e instanceof Error ? e.message : String(e)}`,
+      { cause: e },
+    );
+  }
 }

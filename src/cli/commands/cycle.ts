@@ -17,8 +17,8 @@ import {
 export function registerCycleCommands(parent: Command): void {
   const cycle = parent
     .command('cycle')
-    .alias('enbu')
-    .description('Manage cycles — time-boxed work periods with budgets (alias: enbu)');
+    .alias('keiko')
+    .description('Manage cycles — time-boxed work periods with budgets (alias: keiko)');
 
   // kata cycle new — interactive wizard
   cycle

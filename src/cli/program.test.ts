@@ -12,11 +12,14 @@ describe('createProgram', () => {
     const commandNames = program.commands.map((c) => c.name());
     expect(commandNames).toContain('init');
     expect(commandNames).toContain('stage');
-    expect(commandNames).toContain('pipeline');
+    expect(commandNames).toContain('step');
+    expect(commandNames).toContain('flavor');
     expect(commandNames).toContain('cycle');
     expect(commandNames).toContain('knowledge');
     expect(commandNames).toContain('cooldown');
     expect(commandNames).toContain('execute');
+    expect(commandNames).toContain('status');
+    expect(commandNames).toContain('stats');
   });
 
   it('stage has list and inspect subcommands', () => {
@@ -27,13 +30,27 @@ describe('createProgram', () => {
     expect(subcommands).toContain('inspect');
   });
 
-  it('pipeline has start, status, and prep subcommands', () => {
+  it('step has list, inspect, create, edit, delete, and rename subcommands', () => {
     const program = createProgram();
-    const pipeline = program.commands.find((c) => c.name() === 'pipeline');
-    const subcommands = pipeline!.commands.map((c) => c.name());
-    expect(subcommands).toContain('start');
-    expect(subcommands).toContain('status');
-    expect(subcommands).toContain('prep');
+    const step = program.commands.find((c) => c.name() === 'step');
+    const subcommands = step!.commands.map((c) => c.name());
+    expect(subcommands).toContain('list');
+    expect(subcommands).toContain('inspect');
+    expect(subcommands).toContain('create');
+    expect(subcommands).toContain('edit');
+    expect(subcommands).toContain('delete');
+    expect(subcommands).toContain('rename');
+  });
+
+  it('flavor has list, inspect, create, delete, and validate subcommands', () => {
+    const program = createProgram();
+    const flavor = program.commands.find((c) => c.name() === 'flavor');
+    const subcommands = flavor!.commands.map((c) => c.name());
+    expect(subcommands).toContain('list');
+    expect(subcommands).toContain('inspect');
+    expect(subcommands).toContain('create');
+    expect(subcommands).toContain('delete');
+    expect(subcommands).toContain('validate');
   });
 
   it('cycle has new, status, and focus subcommands', () => {
@@ -53,6 +70,14 @@ describe('createProgram', () => {
     expect(subcommands).toContain('stats');
   });
 
+  it('execute has status and stats subcommands', () => {
+    const program = createProgram();
+    const execute = program.commands.find((c) => c.name() === 'execute');
+    const subcommands = execute!.commands.map((c) => c.name());
+    expect(subcommands).toContain('status');
+    expect(subcommands).toContain('stats');
+  });
+
   it('has global --json, --verbose, and --cwd options', () => {
     const program = createProgram();
     const optionNames = program.options.map((o) => o.long);
@@ -68,22 +93,28 @@ describe('createProgram', () => {
       expect(init!.alias()).toBe('rei');
     });
 
-    it('stage has alias "form"', () => {
+    it('stage has alias "gyo"', () => {
       const program = createProgram();
       const stage = program.commands.find((c) => c.name() === 'stage');
-      expect(stage!.alias()).toBe('form');
+      expect(stage!.alias()).toBe('gyo');
     });
 
-    it('pipeline has alias "flow"', () => {
+    it('step has alias "waza"', () => {
       const program = createProgram();
-      const pipeline = program.commands.find((c) => c.name() === 'pipeline');
-      expect(pipeline!.alias()).toBe('flow');
+      const step = program.commands.find((c) => c.name() === 'step');
+      expect(step!.alias()).toBe('waza');
     });
 
-    it('cycle has alias "enbu"', () => {
+    it('flavor has alias "ryu"', () => {
+      const program = createProgram();
+      const flavor = program.commands.find((c) => c.name() === 'flavor');
+      expect(flavor!.alias()).toBe('ryu');
+    });
+
+    it('cycle has alias "keiko"', () => {
       const program = createProgram();
       const cycle = program.commands.find((c) => c.name() === 'cycle');
-      expect(cycle!.alias()).toBe('enbu');
+      expect(cycle!.alias()).toBe('keiko');
     });
 
     it('cooldown has alias "ma"', () => {
