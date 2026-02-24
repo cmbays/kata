@@ -8,7 +8,7 @@ import { StageCategorySchema } from './stage.js';
 export const BoostRuleSchema = z.object({
   /** Substring to match against available artifact names. */
   artifactPattern: z.string().min(1),
-  /** Score boost to apply when the pattern matches (additive, clamped to [0, 1]). */
+  /** Score boost to apply when the pattern matches (additive, must be in [0, 1]). */
   magnitude: z.number().min(0).max(1),
 });
 

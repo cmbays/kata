@@ -166,8 +166,8 @@ export function registerLearningReviewCommand(knowledge: Command): void {
           for (const suggestion of pendingSuggestions) {
             try {
               console.log(formatRuleSuggestion(suggestion));
-              console.log('  [Auto-accepted]\n');
               ruleRegistry.acceptSuggestion(suggestion.id);
+              console.log('  [Auto-accepted]\n');
               rulesAccepted++;
             } catch (err) {
               console.error(`  Failed to accept rule suggestion: ${err instanceof Error ? err.message : String(err)}\n`);

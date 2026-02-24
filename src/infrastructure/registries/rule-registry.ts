@@ -162,6 +162,11 @@ export class RuleRegistry implements IStageRuleRegistry {
     if (!suggestion) {
       throw new SuggestionNotFoundError(id);
     }
+    if (suggestion.status !== 'pending') {
+      throw new KataError(
+        `Suggestion "${id}" has already been ${suggestion.status}. Only pending suggestions can be accepted or rejected.`,
+      );
+    }
     return suggestion;
   }
 

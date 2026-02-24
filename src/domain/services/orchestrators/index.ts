@@ -1,7 +1,7 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { StageCategory, OrchestratorConfig } from '@domain/types/stage.js';
+import { StageCategorySchema, type StageCategory, type OrchestratorConfig } from '@domain/types/stage.js';
 import { StageVocabularySchema, type StageVocabulary } from '@domain/types/vocabulary.js';
 import type { IStageOrchestrator } from '@domain/ports/stage-orchestrator.js';
 import { OrchestratorError } from '@shared/lib/errors.js';
@@ -28,10 +28,14 @@ function resolveVocabularyPath(category: StageCategory, customDir?: string): str
     if (existsSync(customPath)) return customPath;
   }
 
-  // Fall back to builtin vocabularies shipped with the package
-  // Go up 4 levels: orchestrators → services → domain → src → project root
+  // Fall back to builtin vocabularies shipped with the package.
+  // __dirname may point to src/ (dev) or dist/ (compiled), so check both.
   const builtinPath = join(__dirname, '..', '..', '..', '..', 'stages', 'vocabularies', `${category}.json`);
   if (existsSync(builtinPath)) return builtinPath;
+
+  // When running from dist/, the stages/ dir is at the project root (one level above dist/)
+  const distFallback = join(__dirname, '..', '..', '..', '..', '..', 'stages', 'vocabularies', `${category}.json`);
+  if (existsSync(distFallback)) return distFallback;
 
   return undefined;
 }
@@ -80,8 +84,8 @@ export function clearVocabularyCache(): void {
 // Factory
 // ---------------------------------------------------------------------------
 
-/** Valid stage categories for the factory. */
-const VALID_CATEGORIES = new Set<StageCategory>(['research', 'plan', 'build', 'review']);
+/** Valid stage categories for the factory — derived from the schema. */
+const VALID_CATEGORIES = new Set<StageCategory>(StageCategorySchema.options);
 
 /**
  * Create a Stage Orchestrator for the given stage category.

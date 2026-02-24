@@ -42,60 +42,10 @@ export function registerExecuteCommands(program: Command): void {
       }
       const stageCategory: StageCategory = parseResult.data;
 
-      // Load config
-      const configPath = kataDirPath(ctx.kataDir, 'config');
-      const config = JsonStore.exists(configPath)
-        ? JsonStore.read(configPath, KataConfigSchema)
-        : undefined;
+      const runner = buildRunner(ctx.kataDir);
 
-      // Initialize registries and services
-      const stagesDir = kataDirPath(ctx.kataDir, 'stages');
-      const flavorsDir = kataDirPath(ctx.kataDir, 'flavors');
-      const stepRegistry = new StepRegistry(stagesDir);
-      const flavorRegistry = new FlavorRegistry(flavorsDir);
-      const decisionRegistry = new DecisionRegistry(
-        kataDirPath(ctx.kataDir, 'history'),
-      );
-
-      // Create executor
-      const executor = new StepFlavorExecutor({
-        stepRegistry,
-        adapterResolver: AdapterResolver,
-        config: config ?? KataConfigSchema.parse({
-          methodology: 'shape-up',
-          execution: { adapter: 'manual', config: {} },
-          customStagePaths: [],
-          project: {},
-        }),
-      });
-
-      // Create analytics and runner
-      const analytics = new UsageAnalytics(ctx.kataDir);
-      const runner = new KiaiRunner({
-        flavorRegistry,
-        decisionRegistry,
-        executor,
-        kataDir: ctx.kataDir,
-        analytics,
-      });
-
-      // Parse bet option
-      let bet: Record<string, unknown> | undefined;
-      if (localOpts.bet) {
-        try {
-          const parsed = JSON.parse(localOpts.bet);
-          if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-            console.error('Error: --bet must be a JSON object (e.g., \'{"title":"Add search"}\')');
-            process.exitCode = 1;
-            return;
-          }
-          bet = parsed as Record<string, unknown>;
-        } catch {
-          console.error('Error: --bet must be valid JSON');
-          process.exitCode = 1;
-          return;
-        }
-      }
+      const bet = parseBetOption(localOpts.bet);
+      if (bet === false) { process.exitCode = 1; return; }
 
       // Run
       const result = await runner.runStage(stageCategory, {
@@ -170,58 +120,10 @@ export function registerExecuteCommands(program: Command): void {
         categories.push(parseResult.data);
       }
 
-      // Load config
-      const configPath = kataDirPath(ctx.kataDir, 'config');
-      const config = JsonStore.exists(configPath)
-        ? JsonStore.read(configPath, KataConfigSchema)
-        : undefined;
+      const runner = buildRunner(ctx.kataDir);
 
-      // Initialize registries and services
-      const stagesDir = kataDirPath(ctx.kataDir, 'stages');
-      const flavorsDir = kataDirPath(ctx.kataDir, 'flavors');
-      const stepRegistry = new StepRegistry(stagesDir);
-      const flavorRegistry = new FlavorRegistry(flavorsDir);
-      const decisionRegistry = new DecisionRegistry(
-        kataDirPath(ctx.kataDir, 'history'),
-      );
-
-      const executor = new StepFlavorExecutor({
-        stepRegistry,
-        adapterResolver: AdapterResolver,
-        config: config ?? KataConfigSchema.parse({
-          methodology: 'shape-up',
-          execution: { adapter: 'manual', config: {} },
-          customStagePaths: [],
-          project: {},
-        }),
-      });
-
-      const analytics = new UsageAnalytics(ctx.kataDir);
-      const runner = new KiaiRunner({
-        flavorRegistry,
-        decisionRegistry,
-        executor,
-        kataDir: ctx.kataDir,
-        analytics,
-      });
-
-      // Parse bet option
-      let bet: Record<string, unknown> | undefined;
-      if (localOpts.bet) {
-        try {
-          const parsed = JSON.parse(localOpts.bet);
-          if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-            console.error('Error: --bet must be a JSON object');
-            process.exitCode = 1;
-            return;
-          }
-          bet = parsed as Record<string, unknown>;
-        } catch {
-          console.error('Error: --bet must be valid JSON');
-          process.exitCode = 1;
-          return;
-        }
-      }
+      const bet = parseBetOption(localOpts.bet);
+      if (bet === false) { process.exitCode = 1; return; }
 
       const result = await runner.runPipeline(categories, { bet, dryRun: localOpts.dryRun });
 
@@ -238,10 +140,12 @@ export function registerExecuteCommands(program: Command): void {
           console.log(`    Mode: ${stageResult.executionMode}`);
           console.log(`    Artifact: ${stageResult.stageArtifact.name}`);
         }
-        console.log('');
-        console.log('Learnings:');
-        for (const learning of result.pipelineReflection.learnings) {
-          console.log(`  - ${learning}`);
+        if (result.pipelineReflection.learnings.length > 0) {
+          console.log('');
+          console.log('Learnings:');
+          for (const learning of result.pipelineReflection.learnings) {
+            console.log(`  - ${learning}`);
+          }
         }
         if (localOpts.dryRun) {
           console.log('');
@@ -301,6 +205,64 @@ export function registerExecuteCommands(program: Command): void {
         }
       }
     }));
+}
+
+// ---------------------------------------------------------------------------
+// Shared helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a KiaiRunner with standard config, registries, and analytics.
+ * Shared by `run`, `pipeline`, and any future execute subcommands.
+ */
+function buildRunner(kataDir: string): KiaiRunner {
+  const configPath = kataDirPath(kataDir, 'config');
+  const config = JsonStore.exists(configPath)
+    ? JsonStore.read(configPath, KataConfigSchema)
+    : undefined;
+
+  const stepRegistry = new StepRegistry(kataDirPath(kataDir, 'stages'));
+  const flavorRegistry = new FlavorRegistry(kataDirPath(kataDir, 'flavors'));
+  const decisionRegistry = new DecisionRegistry(kataDirPath(kataDir, 'history'));
+
+  const executor = new StepFlavorExecutor({
+    stepRegistry,
+    adapterResolver: AdapterResolver,
+    config: config ?? KataConfigSchema.parse({
+      methodology: 'shape-up',
+      execution: { adapter: 'manual', config: {} },
+      customStagePaths: [],
+      project: {},
+    }),
+  });
+
+  const analytics = new UsageAnalytics(kataDir);
+  return new KiaiRunner({
+    flavorRegistry,
+    decisionRegistry,
+    executor,
+    kataDir,
+    analytics,
+  });
+}
+
+/**
+ * Parse a --bet JSON string into a Record or return undefined.
+ * Returns `false` if parsing failed (caller should exit).
+ */
+function parseBetOption(betJson: string | undefined): Record<string, unknown> | undefined | false {
+  if (!betJson) return undefined;
+  try {
+    const parsed = JSON.parse(betJson);
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      console.error('Error: --bet must be a JSON object (e.g., \'{"title":"Add search"}\')');
+      return false;
+    }
+    return parsed as Record<string, unknown>;
+  } catch {
+    console.error('Error: --bet must be valid JSON');
+    return false;
+  }
 }
 
 /**
