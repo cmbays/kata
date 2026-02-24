@@ -8,7 +8,7 @@ import type {
   OrchestratorContext,
   FlavorExecutionResult,
 } from '@domain/ports/stage-orchestrator.js';
-import { OrchestratorError } from '@shared/lib/errors.js';
+import { FlavorNotFoundError, OrchestratorError } from '@shared/lib/errors.js';
 import {
   BaseStageOrchestrator,
   type StageOrchestratorDeps,
@@ -65,7 +65,7 @@ function makeFlavorRegistry(flavors: Flavor[]): IFlavorRegistry {
     register: vi.fn(),
     get: vi.fn((stageCategory, name) => {
       const found = flavors.find((f) => f.stageCategory === stageCategory && f.name === name);
-      if (!found) throw new Error(`Flavor not found: ${stageCategory}/${name}`);
+      if (!found) throw new FlavorNotFoundError(stageCategory, name);
       return found;
     }),
     list: vi.fn((stageCategory) =>
@@ -526,6 +526,91 @@ describe('BaseStageOrchestrator', () => {
       for (const [input] of recordCalls) {
         expect(input.stageCategory).toBe('build');
       }
+    });
+  });
+
+  describe('run() — error handling', () => {
+    it('re-throws non-FlavorNotFoundError from registry as OrchestratorError', async () => {
+      const registry = makeFlavorRegistry([]);
+      vi.mocked(registry.get).mockImplementationOnce(() => {
+        throw new Error('Disk I/O failure: ENOENT');
+      });
+      const deps = makeDeps({ flavorRegistry: registry });
+      const orch = makeOrchestrator(deps);
+      const stage = makeStage({ availableFlavors: ['typescript-feature'] });
+      await expect(orch.run(stage, makeContext())).rejects.toThrow(OrchestratorError);
+    });
+
+    it('re-throws non-FlavorNotFoundError from pinned flavor registry as OrchestratorError', async () => {
+      const flavors = [makeFlavor('typescript-feature')];
+      const registry = makeFlavorRegistry(flavors);
+      vi.mocked(registry.get).mockImplementation((cat, name) => {
+        if (name === 'pinned-broken') throw new Error('Disk I/O failure');
+        const found = flavors.find((f) => f.stageCategory === cat && f.name === name);
+        if (!found) throw new FlavorNotFoundError(cat, name);
+        return found;
+      });
+      const deps = makeDeps({ flavorRegistry: registry });
+      const orch = makeOrchestrator(deps);
+      const stage = makeStage({
+        availableFlavors: ['typescript-feature'],
+        pinnedFlavors: ['pinned-broken'],
+      });
+      await expect(orch.run(stage, makeContext())).rejects.toThrow(OrchestratorError);
+    });
+
+    it('collects all parallel failures and reports them together', async () => {
+      const flavors = [makeFlavor('typescript-feature'), makeFlavor('pinned-extra')];
+      const executor: IFlavorExecutor = {
+        execute: vi.fn(() => Promise.reject(new Error('executor failure'))),
+      };
+      const deps = makeDeps({ flavors, executor });
+      const orch = makeOrchestrator(deps);
+      const stage = makeStage({
+        availableFlavors: ['typescript-feature'],
+        pinnedFlavors: ['pinned-extra'],
+      });
+      await expect(orch.run(stage, makeContext())).rejects.toThrow(OrchestratorError);
+    });
+
+    it('accepts 0 as a valid synthesis artifact value', async () => {
+      const executor: IFlavorExecutor = {
+        execute: vi.fn(() =>
+          Promise.resolve({
+            flavorName: 'typescript-feature',
+            artifacts: {},
+            synthesisArtifact: { name: 'typescript-feature-output', value: 0 },
+          }),
+        ),
+      };
+      const deps = makeDeps({ executor });
+      const orch = makeOrchestrator(deps);
+      await expect(orch.run(makeStage(), makeContext())).resolves.toBeDefined();
+    });
+
+    it('accepts false as a valid synthesis artifact value', async () => {
+      const executor: IFlavorExecutor = {
+        execute: vi.fn(() =>
+          Promise.resolve({
+            flavorName: 'typescript-feature',
+            artifacts: {},
+            synthesisArtifact: { name: 'typescript-feature-output', value: false },
+          }),
+        ),
+      };
+      const deps = makeDeps({ executor });
+      const orch = makeOrchestrator(deps);
+      await expect(orch.run(makeStage(), makeContext())).resolves.toBeDefined();
+    });
+
+    it('wraps decisionRegistry.record() failures as OrchestratorError', async () => {
+      const decisionRegistry = makeDecisionRegistry();
+      vi.mocked(decisionRegistry.record).mockImplementation(() => {
+        throw new Error('registry write failure');
+      });
+      const deps = makeDeps({ decisionRegistry });
+      const orch = makeOrchestrator(deps);
+      await expect(orch.run(makeStage(), makeContext())).rejects.toThrow(OrchestratorError);
     });
   });
 

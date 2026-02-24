@@ -11,7 +11,7 @@ import type {
   OrchestratorResult,
   FlavorExecutionResult,
 } from '@domain/ports/stage-orchestrator.js';
-import { OrchestratorError } from '@shared/lib/errors.js';
+import { FlavorNotFoundError, OrchestratorError } from '@shared/lib/errors.js';
 import { logger } from '@shared/lib/logger.js';
 
 export interface StageOrchestratorDeps {
@@ -136,9 +136,15 @@ export abstract class BaseStageOrchestrator implements IStageOrchestrator {
       try {
         pinnedFlavors.push(this.deps.flavorRegistry.get(this.stageCategory, name));
       } catch (err) {
+        if (!(err instanceof FlavorNotFoundError)) {
+          throw new OrchestratorError(
+            `Stage "${this.stageCategory}" failed to resolve pinned flavor "${name}": ` +
+              `${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
         logger.warn(
           `Orchestrator: pinned flavor "${this.stageCategory}/${name}" not found in registry — skipping.`,
-          { name, error: err instanceof Error ? err.message : String(err) },
+          { name, error: err.message },
         );
       }
     }
@@ -160,14 +166,24 @@ export abstract class BaseStageOrchestrator implements IStageOrchestrator {
       try {
         candidates.push(this.deps.flavorRegistry.get(this.stageCategory, name));
       } catch (err) {
+        if (!(err instanceof FlavorNotFoundError)) {
+          throw new OrchestratorError(
+            `Stage "${this.stageCategory}" failed to resolve flavor "${name}": ` +
+              `${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
         logger.warn(
           `Orchestrator: flavor "${this.stageCategory}/${name}" not found in registry — skipping.`,
-          { name, error: err instanceof Error ? err.message : String(err) },
+          { name, error: err.message },
         );
       }
     }
 
     if (candidates.length === 0 && pinnedFlavors.length === 0) {
+      logger.error(`Orchestrator: stage "${this.stageCategory}" has no resolvable flavors.`, {
+        stageCategory: this.stageCategory,
+        candidateNames,
+      });
       throw new OrchestratorError(
         `Stage "${this.stageCategory}" has no resolvable flavors. ` +
           `Ensure all flavors listed in availableFlavors are registered in FlavorRegistry.`,
@@ -216,26 +232,34 @@ export abstract class BaseStageOrchestrator implements IStageOrchestrator {
       .map(({ flavor, score }) => `${flavor.name}(${score.toFixed(2)})`)
       .join(', ');
 
-    const flavorSelectionDecision = this.deps.decisionRegistry.record({
-      stageCategory: this.stageCategory,
-      decisionType: 'flavor-selection',
-      context: {
-        availableArtifacts: context.availableArtifacts,
-        bet: context.bet,
-        learningCount: context.learnings?.length ?? 0,
-        candidateCount: candidates.length,
-        pinnedFlavors: [...pinned],
-        excludedFlavors: [...excluded],
-      },
-      options,
-      selection,
-      reasoning:
-        `Scored candidates: [${scoreSummary || 'none (all pinned)'}]. ` +
-        `Pinned: [${[...pinned].join(', ') || 'none'}]. ` +
-        `Selected: "${selection}" as primary, with ${pinnedFlavors.length} pinned flavor(s).`,
-      confidence,
-      decidedAt: new Date().toISOString(),
-    });
+    let flavorSelectionDecision: Decision;
+    try {
+      flavorSelectionDecision = this.deps.decisionRegistry.record({
+        stageCategory: this.stageCategory,
+        decisionType: 'flavor-selection',
+        context: {
+          availableArtifacts: context.availableArtifacts,
+          bet: context.bet,
+          learningCount: context.learnings?.length ?? 0,
+          candidateCount: candidates.length,
+          pinnedFlavors: [...pinned],
+          excludedFlavors: [...excluded],
+        },
+        options,
+        selection,
+        reasoning:
+          `Scored candidates: [${scoreSummary || 'none (all pinned)'}]. ` +
+          `Pinned: [${[...pinned].join(', ') || 'none'}]. ` +
+          `Selected: "${selection}" as primary, with ${pinnedFlavors.length} pinned flavor(s).`,
+        confidence,
+        decidedAt: new Date().toISOString(),
+      });
+    } catch (err) {
+      throw new OrchestratorError(
+        `Stage "${this.stageCategory}" failed to record flavor-selection decision: ` +
+          `${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
 
     return { selectedFlavors: selected, flavorSelectionDecision };
   }
@@ -265,21 +289,29 @@ export abstract class BaseStageOrchestrator implements IStageOrchestrator {
           ? `${flavors.length} flavors fit within maxParallelFlavors=${maxParallel}; parallelizing for efficiency.`
           : `${flavors.length} flavors exceeds maxParallelFlavors=${maxParallel}; running sequentially to respect resource limits.`;
 
-    const executionModeDecision = this.deps.decisionRegistry.record({
-      stageCategory: this.stageCategory,
-      decisionType: 'execution-mode',
-      context: {
-        flavorCount: flavors.length,
-        maxParallelFlavors: maxParallel,
-        selectedFlavors: flavors.map((f) => f.name),
-      },
-      options: ['sequential', 'parallel'],
-      selection: executionMode,
-      reasoning,
-      // Execution mode is a deterministic rule — confidence is always high
-      confidence: 0.95,
-      decidedAt: new Date().toISOString(),
-    });
+    let executionModeDecision: Decision;
+    try {
+      executionModeDecision = this.deps.decisionRegistry.record({
+        stageCategory: this.stageCategory,
+        decisionType: 'execution-mode',
+        context: {
+          flavorCount: flavors.length,
+          maxParallelFlavors: maxParallel,
+          selectedFlavors: flavors.map((f) => f.name),
+        },
+        options: ['sequential', 'parallel'],
+        selection: executionMode,
+        reasoning,
+        // Execution mode is a deterministic rule — confidence is always high
+        confidence: 0.95,
+        decidedAt: new Date().toISOString(),
+      });
+    } catch (err) {
+      throw new OrchestratorError(
+        `Stage "${this.stageCategory}" failed to record execution-mode decision: ` +
+          `${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
 
     return { executionMode, executionModeDecision };
   }
@@ -297,7 +329,20 @@ export abstract class BaseStageOrchestrator implements IStageOrchestrator {
     context: OrchestratorContext,
   ): Promise<FlavorExecutionResult[]> {
     if (executionMode === 'parallel') {
-      return Promise.all(flavors.map((flavor) => this.deps.executor.execute(flavor, context)));
+      // Use allSettled so all flavors run even if some fail — collect all failures before throwing.
+      const settled = await Promise.allSettled(
+        flavors.map((flavor) => this.deps.executor.execute(flavor, context)),
+      );
+      const failures = settled.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+      if (failures.length > 0) {
+        const messages = failures
+          .map((r) => (r.reason instanceof Error ? r.reason.message : String(r.reason)))
+          .join('; ');
+        throw new OrchestratorError(
+          `Stage "${this.stageCategory}" parallel execution failed (${failures.length}/${flavors.length} flavors): ${messages}`,
+        );
+      }
+      return settled.map((r) => (r as PromiseFulfilledResult<FlavorExecutionResult>).value);
     }
 
     const results: FlavorExecutionResult[] = [];
@@ -320,7 +365,8 @@ export abstract class BaseStageOrchestrator implements IStageOrchestrator {
     flavorResults: FlavorExecutionResult[],
     context: OrchestratorContext,
   ): { stageArtifact: ArtifactValue; synthesisDecision: Decision } {
-    // Guard: all synthesis artifacts must be present
+    // Guard: all synthesis artifacts must be present.
+    // Intentionally uses strict null/undefined checks — 0, false, and "" are valid artifact values.
     const missing = flavorResults.filter(
       (r) => r.synthesisArtifact.value === null || r.synthesisArtifact.value === undefined,
     );
@@ -359,19 +405,27 @@ export abstract class BaseStageOrchestrator implements IStageOrchestrator {
     // Use alternatives directly as options (approach is already guaranteed to be in alternatives)
     const options = strategy.alternatives;
 
-    const synthesisDecision = this.deps.decisionRegistry.record({
-      stageCategory: this.stageCategory,
-      decisionType: 'synthesis-approach',
-      context: {
-        flavorCount: flavorResults.length,
-        flavorNames: flavorResults.map((r) => r.flavorName),
-      },
-      options,
-      selection: strategy.approach,
-      reasoning: strategy.reasoning,
-      confidence: 0.9,
-      decidedAt: new Date().toISOString(),
-    });
+    let synthesisDecision: Decision;
+    try {
+      synthesisDecision = this.deps.decisionRegistry.record({
+        stageCategory: this.stageCategory,
+        decisionType: 'synthesis-approach',
+        context: {
+          flavorCount: flavorResults.length,
+          flavorNames: flavorResults.map((r) => r.flavorName),
+        },
+        options,
+        selection: strategy.approach,
+        reasoning: strategy.reasoning,
+        confidence: 0.9,
+        decidedAt: new Date().toISOString(),
+      });
+    } catch (err) {
+      throw new OrchestratorError(
+        `Stage "${this.stageCategory}" failed to record synthesis-approach decision: ` +
+          `${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
 
     return { stageArtifact, synthesisDecision };
   }
