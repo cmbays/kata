@@ -117,9 +117,12 @@ export function registerDecisionCommands(parent: Command): void {
         const stageState = readStageState(runsDir, runId, stage);
         stageState.decisions.push(id);
         writeStageState(runsDir, runId, stageState);
-      } catch {
+      } catch (err) {
         // Stage state file may not exist yet (e.g. run just started); that's ok
-        logger.warn(`Could not update stage state decisions for run "${runId}", stage "${stage}"`);
+        logger.warn(
+          `Could not update stage state decisions for run "${runId}", stage "${stage}": ` +
+          `${err instanceof Error ? err.message : String(err)}`,
+        );
       }
 
       if (ctx.globalOpts.json) {

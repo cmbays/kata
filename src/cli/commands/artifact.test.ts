@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { Command } from 'commander';
 import { registerArtifactCommands } from './artifact.js';
-import { createRunTree } from '@infra/persistence/run-store.js';
+import { createRunTree, runPaths } from '@infra/persistence/run-store.js';
 import { JsonlStore } from '@infra/persistence/jsonl-store.js';
 import { ArtifactIndexEntrySchema } from '@domain/types/run-state.js';
 import type { Run } from '@domain/types/run-state.js';
@@ -216,6 +216,55 @@ describe('registerArtifactCommands — artifact record', () => {
     ]);
 
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('not found'));
+  });
+
+  it('errors when --step is omitted for --type artifact', async () => {
+    const run = makeRun();
+    createRunTree(runsDir, run);
+
+    const srcFile = join(baseDir, 'output.md');
+    writeFileSync(srcFile, '# Output', 'utf-8');
+
+    const program = createProgram();
+    await program.parseAsync([
+      'node', 'test', '--cwd', baseDir,
+      'artifact', 'record', run.id,
+      '--stage', 'research',
+      '--flavor', 'tech',
+      // No --step
+      '--file', srcFile,
+      '--summary', 'Test',
+      // --type defaults to 'artifact'
+    ]);
+
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('--step is required'));
+  });
+
+  it('also appends to the flavor-level artifact-index.jsonl', async () => {
+    const run = makeRun();
+    createRunTree(runsDir, run);
+
+    const srcFile = join(baseDir, 'context.md');
+    writeFileSync(srcFile, '# Context', 'utf-8');
+
+    const program = createProgram();
+    await program.parseAsync([
+      'node', 'test', '--cwd', baseDir,
+      'artifact', 'record', run.id,
+      '--stage', 'research',
+      '--flavor', 'technical-research',
+      '--step', 'gather-context',
+      '--file', srcFile,
+      '--summary', 'Context gathering output',
+    ]);
+
+    const paths = runPaths(runsDir, run.id);
+    const flavorIndexPath = paths.flavorArtifactIndexJsonl('research', 'technical-research');
+    expect(existsSync(flavorIndexPath)).toBe(true);
+    const entries = JsonlStore.readAll(flavorIndexPath, ArtifactIndexEntrySchema);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].fileName).toBe('context.md');
+    expect(entries[0].step).toBe('gather-context');
   });
 
   it('throws on invalid --type value', async () => {

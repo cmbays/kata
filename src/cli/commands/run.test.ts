@@ -193,6 +193,28 @@ describe('registerRunCommands — run status', () => {
     expect(researchStage.hasSynthesis).toBe(true);
   });
 
+  it('hasSynthesis is true when stageState.synthesisArtifact field is set', async () => {
+    const run = makeRun({ stageSequence: ['research'] });
+    createRunTree(runsDir, run);
+
+    writeStageState(runsDir, run.id, {
+      category: 'research',
+      status: 'completed',
+      selectedFlavors: [],
+      gaps: [],
+      decisions: [],
+      synthesisArtifact: 'stages/research/synthesis.md',
+    });
+
+    const program = createProgram();
+    await program.parseAsync(['node', 'test', '--json', '--cwd', baseDir, 'run', 'status', run.id]);
+
+    const output = consoleSpy.mock.calls[0]?.[0] as string;
+    const parsed = JSON.parse(output);
+    const researchStage = parsed.stages.find((s: { category: string }) => s.category === 'research');
+    expect(researchStage.hasSynthesis).toBe(true);
+  });
+
   it('errors on unknown run ID', async () => {
     const program = createProgram();
     await program.parseAsync(['node', 'test', '--cwd', baseDir, 'run', 'status', randomUUID()]);

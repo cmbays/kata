@@ -43,6 +43,11 @@ export function registerArtifactCommands(parent: Command): void {
         throw new Error(`Invalid --type "${artifactType}". Must be "artifact" or "synthesis".`);
       }
 
+      // --step is required for artifact type; omitted only for synthesis
+      if (artifactType === 'artifact' && !localOpts.step) {
+        throw new Error('--step is required when --type is "artifact". Omit --step only for --type synthesis.');
+      }
+
       // Resolve and validate source file
       const sourcePath = isAbsolute(localOpts.file as string)
         ? localOpts.file as string
@@ -83,6 +88,11 @@ export function registerArtifactCommands(parent: Command): void {
       copyFileSync(sourcePath, destPath);
 
       // Store path relative to run directory root (matches synthesisArtifact convention)
+      if (!destPath.startsWith(paths.runDir + '/')) {
+        throw new Error(
+          `Internal error: destination path "${destPath}" is not within run directory "${paths.runDir}"`,
+        );
+      }
       const relFilePath = destPath.substring(paths.runDir.length + 1);
 
       // Build the index entry
@@ -111,14 +121,17 @@ export function registerArtifactCommands(parent: Command): void {
       // Update flavor state.json step artifacts if applicable
       if (artifactType === 'artifact' && existsSync(flavorStateFile)) {
         const flavorState = readFlavorState(runsDir, runId, stage, localOpts.flavor as string);
-        const stepName = (localOpts.step as string | undefined) ?? null;
-        const stepIndex = stepName !== null ? flavorState.steps.findIndex((s) => s.type === stepName) : -1;
+        const stepName = localOpts.step as string; // non-null validated above
+        const stepIndex = flavorState.steps.findIndex((s) => s.type === stepName);
 
-        const stepRecord = stepIndex !== -1 ? flavorState.steps[stepIndex] : undefined;
-        if (stepRecord) {
-          stepRecord.artifacts.push(relFilePath);
-          writeFlavorState(runsDir, runId, stage, flavorState);
+        if (stepIndex === -1) {
+          const known = flavorState.steps.map((s) => s.type).join(', ') || '(none)';
+          throw new Error(
+            `Step "${stepName}" not found in flavor "${localOpts.flavor as string}" state. Known steps: ${known}`,
+          );
         }
+        flavorState.steps[stepIndex]!.artifacts.push(relFilePath);
+        writeFlavorState(runsDir, runId, stage, flavorState);
       }
 
       if (ctx.globalOpts.json) {
@@ -128,7 +141,7 @@ export function registerArtifactCommands(parent: Command): void {
         console.log(`Recorded ${label}: ${fileName}`);
         console.log(`  Stage:  ${stage}`);
         console.log(`  Flavor: ${localOpts.flavor as string}`);
-        if (artifactType === 'artifact') {
+        if (artifactType === 'artifact' && localOpts.step) {
           console.log(`  Step:   ${localOpts.step as string}`);
         }
         console.log(`  Dest:   ${destPath}`);
