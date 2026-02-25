@@ -113,23 +113,23 @@ After completing a step's work and recording its artifact, `kata step next` will
 # After completing the 'shaping' step and recording its artifact:
 FLAVOR_STATE=".kata/runs/$RUN_ID/stages/plan/flavors/shaping/state.json"
 mkdir -p "$(dirname $FLAVOR_STATE)"
-cat > "$FLAVOR_STATE" << 'EOF'
-{
-  "name": "shaping",
-  "stageCategory": "plan",
-  "status": "completed",
-  "steps": [
-    {
-      "type": "shaping",
-      "status": "completed",
-      "artifacts": [],
-      "startedAt": "<ISO timestamp>",
-      "completedAt": "<ISO timestamp>"
-    }
-  ],
-  "currentStep": null
-}
-EOF
+NOW=$(node -e "process.stdout.write(new Date().toISOString())")
+node -e "
+const fs = require('fs');
+fs.writeFileSync('$FLAVOR_STATE', JSON.stringify({
+  name: 'shaping',
+  stageCategory: 'plan',
+  status: 'completed',
+  steps: [{
+    type: 'shaping',
+    status: 'completed',
+    artifacts: [],
+    startedAt: '$NOW',
+    completedAt: '$NOW'
+  }],
+  currentStep: null
+}, null, 2));
+"
 ```
 
 After writing this file, `kata step next` will advance to the next step type in `selectedFlavors`.
@@ -165,6 +165,10 @@ After writing this file, `kata step next` will advance to the next step type in 
 # 14. Write stage synthesis to .kata/runs/$RUN_ID/stages/plan/synthesis.md (direct file write)
 # 15. Update stage state: status=completed, synthesisArtifact=stages/plan/synthesis.md
 # 16. Update run.json: currentStage=build (direct file write)
+# 17. [If human gate required] Set pendingGate on build state.json — see "Plan→Build boundary gate" below
+# 18. kata step next → returns gate (status: "waiting") — surface to user and pause
+# 19. [User runs: kata approve human-approved-plan-review]
+# 20. kata step next → proceeds to build stage
 ```
 
 ### Plan→Build boundary gate (human approval)
@@ -196,6 +200,25 @@ kata approve human-approved-plan-review
 ### Build stage — `typescript-feature` flavor (2 steps: implementation-ts → test-execution)
 
 Same pattern: read `.kata/flavors/build.typescript-feature.json`, extract step types `["implementation-ts", "test-execution"]`, write to `selectedFlavors`, advance through steps with FlavorState writes.
+
+```
+# 1–12. (same flavor execution pattern as plan stage)
+# 13. kata step next → "All flavors in this stage are complete"
+# 14. Write build synthesis to .kata/runs/$RUN_ID/stages/build/synthesis.md
+# 15. Update build state: status=completed, synthesisArtifact=stages/build/synthesis.md
+# 16. build is the LAST stage — mark run complete (not: advance currentStage)
+```
+
+```bash
+# Mark the run complete (last stage — no next stage to advance to):
+node -e "
+const fs = require('fs');
+const run = JSON.parse(fs.readFileSync('.kata/runs/$RUN_ID/run.json', 'utf8'));
+run.status = 'completed';
+run.completedAt = new Date().toISOString();
+fs.writeFileSync('.kata/runs/$RUN_ID/run.json', JSON.stringify(run, null, 2));
+"
+```
 
 ---
 

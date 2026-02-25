@@ -92,13 +92,14 @@ Returns full run state: all stages, flavors, steps, decisions, and artifacts.
 | Record artifacts | `kata artifact record` — always use CLI for writes |
 | Record decisions | `kata decision record` — always use CLI for writes |
 | Approve gates | `kata approve` — always use CLI |
-| Advance steps | `kata step next` — use CLI |
+| Get next step | `kata step next` — returns what to work on next |
+| **Advance** step state | Write `FlavorState` JSON directly — no CLI exists yet (see section 7) |
 | **Read** run state | Read `.kata/runs/<run-id>/run.json` directly |
 | **Read** stage state | Read `.kata/runs/<run-id>/stages/<category>/state.json` directly |
 | **Read** artifact files | Browse `.kata/runs/<run-id>/stages/<category>/flavors/<name>/artifacts/` directly |
 | **Read** prior syntheses | Read `.kata/runs/<run-id>/stages/<category>/synthesis.md` or use `priorStageSyntheses` from `kata step next --json` |
 
-**Rule**: Use CLI for all write operations. Read state files directly for browsing context.
+**Rule**: Use CLI for all write operations. Read state files directly for browsing context. See section 7 for operations that currently require direct file writes.
 
 ---
 
@@ -152,6 +153,7 @@ Use `--yolo` for decisions where pausing would be more disruptive than the risk 
 | `templates/decision-format.md` | Example decision record invocations |
 | `templates/artifact-format.md` | Example artifact record invocations |
 | `templates/synthesis-format.md` | Example synthesis artifact structure |
+| `classification.md` | *(Wave D placeholder — not yet active. Use `--gyo` for manual stage selection until Wave D ships.)* |
 
 ---
 

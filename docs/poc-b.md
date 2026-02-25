@@ -152,6 +152,8 @@ These are 4 deliberate write operations. An agent with the updated skill files c
 
 ## Final Run Status (`kata run status --json`)
 
+> Decision objects are shown in abbreviated form below (omitting `context`, `options`, and `decidedAt` fields for readability). Full fields are present in actual CLI output.
+
 ```json
 {
   "run": {
