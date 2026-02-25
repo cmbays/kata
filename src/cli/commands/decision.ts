@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { Command } from 'commander';
 import { withCommandContext, kataDirPath } from '@cli/utils.js';
 import { JsonlStore } from '@infra/persistence/jsonl-store.js';
+import { JsonStore } from '@infra/persistence/json-store.js';
 import { readRun, readStageState, writeStageState, runPaths } from '@infra/persistence/run-store.js';
 import {
   DecisionEntrySchema,
@@ -10,7 +11,10 @@ import {
 import { StageCategorySchema } from '@domain/types/stage.js';
 import type { StageCategory } from '@domain/types/stage.js';
 import { DecisionTypeSchema } from '@domain/types/decision.js';
+import { KataConfigSchema } from '@domain/types/config.js';
 import { logger } from '@shared/lib/logger.js';
+import { join } from 'node:path';
+import { existsSync } from 'node:fs';
 
 export function registerDecisionCommands(parent: Command): void {
   const decision = parent
@@ -30,6 +34,7 @@ export function registerDecisionCommands(parent: Command): void {
     .requiredOption('--selected <option>', 'The option that was chosen')
     .requiredOption('--confidence <number>', 'Confidence in the selection [0-1]', parseFloat)
     .requiredOption('--reasoning <text>', 'Orchestrator\'s reasoning for the selection')
+    .option('--yolo', 'Bypass the confidence gate even if confidence is below threshold')
     .action(withCommandContext(async (ctx, runId: string) => {
       const localOpts = ctx.cmd.opts();
       const runsDir = kataDirPath(ctx.kataDir, 'runs');
@@ -95,6 +100,21 @@ export function registerDecisionCommands(parent: Command): void {
       const id = randomUUID();
       const now = new Date().toISOString();
 
+      // Load confidence threshold from config (default 0.7)
+      const configPath = join(ctx.kataDir, 'config.json');
+      let confidenceThreshold = 0.7;
+      if (existsSync(configPath)) {
+        try {
+          const config = JsonStore.read(configPath, KataConfigSchema);
+          confidenceThreshold = config.execution.confidenceThreshold;
+        } catch {
+          // Use default on config read failure
+        }
+      }
+
+      const isLowConfidence = confidence < confidenceThreshold;
+      const yolo = !!(localOpts.yolo as boolean | undefined);
+
       const entry = {
         id,
         stageCategory: stage,
@@ -107,26 +127,45 @@ export function registerDecisionCommands(parent: Command): void {
         reasoning: localOpts.reasoning as string,
         confidence,
         decidedAt: now,
+        ...(isLowConfidence ? { lowConfidence: true } : {}),
       };
 
       // Append to run-level decisions.jsonl
       JsonlStore.append(paths.decisionsJsonl, entry, DecisionEntrySchema);
 
-      // Update stage state decisions array
+      // Update stage state decisions array + confidence gate.
+      // Read failure is non-fatal (stage may not be initialised yet); write failure is fatal.
+      let lowConfidenceGateCreated = false;
+      let stageState;
       try {
-        const stageState = readStageState(runsDir, runId, stage);
+        stageState = readStageState(runsDir, runId, stage);
+      } catch {
+        // Stage state file doesn't exist yet — skip gate/decision tracking
+        stageState = null;
+      }
+
+      if (stageState !== null) {
         stageState.decisions.push(id);
+
+        if (isLowConfidence && !yolo && !stageState.pendingGate) {
+          const gateId = `confidence-${id.slice(0, 8)}`;
+          stageState.pendingGate = {
+            gateId,
+            gateType: 'confidence-gate',
+            requiredBy: (localOpts.flavor as string | undefined) ?? 'stage',
+          };
+          lowConfidenceGateCreated = true;
+        }
+
         writeStageState(runsDir, runId, stageState);
-      } catch (err) {
-        // Stage state file may not exist yet (e.g. run just started); that's ok
-        logger.warn(
-          `Could not update stage state decisions for run "${runId}", stage "${stage}": ` +
-          `${err instanceof Error ? err.message : String(err)}`,
-        );
       }
 
       if (ctx.globalOpts.json) {
-        console.log(JSON.stringify(entry, null, 2));
+        console.log(JSON.stringify({
+          ...entry,
+          ...(lowConfidenceGateCreated ? { lowConfidenceGateCreated: true } : {}),
+          ...(isLowConfidence && yolo ? { lowConfidenceYolo: true } : {}),
+        }, null, 2));
       } else {
         console.log(`Decision recorded: ${decisionType}`);
         console.log(`  ID:         ${id}`);
@@ -135,6 +174,11 @@ export function registerDecisionCommands(parent: Command): void {
         if (entry.step) console.log(`  Step:       ${entry.step}`);
         console.log(`  Selected:   ${selected}`);
         console.log(`  Confidence: ${confidence}`);
+        if (lowConfidenceGateCreated) {
+          console.log(`  ⚠ Low confidence gate created (threshold: ${confidenceThreshold}). Use "kata approve" to unblock.`);
+        } else if (isLowConfidence && yolo) {
+          console.log(`  ⚠ Low confidence bypassed with --yolo.`);
+        }
       }
     }));
 

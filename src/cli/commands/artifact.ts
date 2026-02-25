@@ -120,7 +120,8 @@ export function registerArtifactCommands(parent: Command): void {
 
       // Update flavor state.json step artifacts if applicable
       if (artifactType === 'artifact' && existsSync(flavorStateFile)) {
-        const flavorState = readFlavorState(runsDir, runId, stage, localOpts.flavor as string);
+        // existsSync guard ensures the file exists, so non-null assertion is safe
+        const flavorState = readFlavorState(runsDir, runId, stage, localOpts.flavor as string)!;
         const stepName = localOpts.step as string; // non-null validated above
         const stepIndex = flavorState.steps.findIndex((s) => s.type === stepName);
 

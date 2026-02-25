@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { mkdirSync, rmSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { Command } from 'commander';
 import { CycleManager } from '@domain/services/cycle-manager.js';
@@ -17,11 +17,15 @@ describe('registerCycleCommands', () => {
   const baseDir = join(tmpdir(), `kata-cycle-cmd-test-${Date.now()}`);
   const kataDir = join(baseDir, '.kata');
   const cyclesDir = join(kataDir, 'cycles');
+  const runsDir = join(kataDir, 'runs');
+  const katasDir = join(kataDir, 'katas');
   let consoleSpy: ReturnType<typeof vi.spyOn>;
   let errorSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     mkdirSync(cyclesDir, { recursive: true });
+    mkdirSync(runsDir, { recursive: true });
+    mkdirSync(katasDir, { recursive: true });
     consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
   });
@@ -110,6 +114,256 @@ describe('registerCycleCommands', () => {
       await program.parseAsync(['node', 'test', '--cwd', baseDir, 'cycle', 'status', 'nonexistent-id']);
 
       expect(errorSpy).toHaveBeenCalled();
+    });
+  });
+
+  describe('cycle add-bet', () => {
+    it('adds a bet with --kata flag', async () => {
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 50000 }, 'Add-Bet Test');
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--json', '--cwd', baseDir,
+        'cycle', 'add-bet', cycle.id, 'Implement auth',
+        '--kata', 'full-feature',
+        '--appetite', '30',
+      ]);
+
+      const updated = manager.get(cycle.id);
+      expect(updated.bets).toHaveLength(1);
+      expect(updated.bets[0]!.description).toBe('Implement auth');
+      expect(updated.bets[0]!.kata).toEqual({ type: 'named', pattern: 'full-feature' });
+    });
+
+    it('adds a bet with --gyo flag', async () => {
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 50000 });
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir,
+        'cycle', 'add-bet', cycle.id, 'Research spike',
+        '--gyo', 'research,plan',
+      ]);
+
+      const updated = manager.get(cycle.id);
+      expect(updated.bets[0]!.kata).toEqual({ type: 'ad-hoc', stages: ['research', 'plan'] });
+    });
+
+    it('adds a bet without kata assignment', async () => {
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 50000 });
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir,
+        'cycle', 'add-bet', cycle.id, 'No kata bet',
+      ]);
+
+      const updated = manager.get(cycle.id);
+      expect(updated.bets[0]!.kata).toBeUndefined();
+    });
+
+    it('errors when --kata and --gyo are both given', async () => {
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 50000 });
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir,
+        'cycle', 'add-bet', cycle.id, 'Bad bet',
+        '--kata', 'full-feature',
+        '--gyo', 'research',
+      ]);
+
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('mutually exclusive'));
+    });
+  });
+
+  describe('cycle update-bet', () => {
+    it('updates kata assignment on an existing bet', async () => {
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 50000 });
+      const updated = manager.addBet(cycle.id, {
+        description: 'Auth bet', appetite: 20, outcome: 'pending', issueRefs: [],
+      });
+      const betId = updated.bets[0]!.id;
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir,
+        'cycle', 'update-bet', betId,
+        '--kata', 'full-feature',
+      ]);
+
+      const final = manager.get(cycle.id);
+      expect(final.bets[0]!.kata).toEqual({ type: 'named', pattern: 'full-feature' });
+    });
+
+    it('errors when bet is not found', async () => {
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir,
+        'cycle', 'update-bet', crypto.randomUUID(),
+        '--kata', 'full-feature',
+      ]);
+
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('not found'));
+    });
+
+    it('errors when neither --kata nor --gyo given', async () => {
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 50000 });
+      const updated = manager.addBet(cycle.id, {
+        description: 'Bet', appetite: 20, outcome: 'pending', issueRefs: [],
+      });
+      const betId = updated.bets[0]!.id;
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir,
+        'cycle', 'update-bet', betId,
+      ]);
+
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('--kata or --gyo'));
+    });
+  });
+
+  describe('cycle start', () => {
+    it('starts a cycle with named kata and creates run trees', async () => {
+      // Write a saved kata file
+      writeFileSync(
+        join(katasDir, 'full-feature.json'),
+        JSON.stringify({ name: 'full-feature', stages: ['research', 'build'] }),
+      );
+
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 50000 });
+      const withBet = manager.addBet(cycle.id, {
+        description: 'Auth feature', appetite: 30, outcome: 'pending', issueRefs: [],
+      });
+      manager.updateBet(cycle.id, withBet.bets[0]!.id, { kata: { type: 'named', pattern: 'full-feature' } });
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--json', '--cwd', baseDir,
+        'cycle', 'start', cycle.id,
+      ]);
+
+      const output = JSON.parse(consoleSpy.mock.calls[0]![0] as string);
+      expect(output.status).toBe('active');
+      expect(output.runs).toHaveLength(1);
+      expect(output.runs[0].stageSequence).toEqual(['research', 'build']);
+
+      // Cycle should be active
+      expect(manager.get(cycle.id).state).toBe('active');
+    });
+
+    it('starts a cycle with ad-hoc kata', async () => {
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 50000 });
+      const withBet = manager.addBet(cycle.id, {
+        description: 'Quick fix', appetite: 20, outcome: 'pending', issueRefs: [],
+      });
+      manager.updateBet(cycle.id, withBet.bets[0]!.id, {
+        kata: { type: 'ad-hoc', stages: ['build', 'review'] },
+      });
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--json', '--cwd', baseDir,
+        'cycle', 'start', cycle.id,
+      ]);
+
+      const output = JSON.parse(consoleSpy.mock.calls[0]![0] as string);
+      expect(output.runs[0].stageSequence).toEqual(['build', 'review']);
+    });
+
+    it('errors when bets lack kata assignment', async () => {
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 50000 });
+      manager.addBet(cycle.id, {
+        description: 'Unassigned bet', appetite: 20, outcome: 'pending', issueRefs: [],
+      });
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir,
+        'cycle', 'start', cycle.id,
+      ]);
+
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('no kata assignment'));
+    });
+
+    it('errors when named kata file is not found', async () => {
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 50000 });
+      const withBet = manager.addBet(cycle.id, {
+        description: 'Auth bet', appetite: 20, outcome: 'pending', issueRefs: [],
+      });
+      manager.updateBet(cycle.id, withBet.bets[0]!.id, { kata: { type: 'named', pattern: 'nonexistent-kata' } });
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir,
+        'cycle', 'start', cycle.id,
+      ]);
+
+      expect(errorSpy).toHaveBeenCalled();
+    });
+
+    it('does not transition cycle to active when kata file is missing (pre-flight)', async () => {
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 50000 });
+      const withBet = manager.addBet(cycle.id, {
+        description: 'Auth bet', appetite: 20, outcome: 'pending', issueRefs: [],
+      });
+      manager.updateBet(cycle.id, withBet.bets[0]!.id, { kata: { type: 'named', pattern: 'missing-kata' } });
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir,
+        'cycle', 'start', cycle.id,
+      ]);
+
+      expect(errorSpy).toHaveBeenCalled();
+      // Cycle should still be in planning state — no state mutation occurred
+      expect(manager.get(cycle.id).state).toBe('planning');
+    });
+
+    it('starts a cycle with multiple bets creating one run per bet', async () => {
+      writeFileSync(
+        join(katasDir, 'full-feature.json'),
+        JSON.stringify({ name: 'full-feature', stages: ['research', 'build'] }),
+      );
+
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 100000 });
+
+      const withBet1 = manager.addBet(cycle.id, {
+        description: 'Auth feature', appetite: 30, outcome: 'pending', issueRefs: [],
+      });
+      manager.updateBet(cycle.id, withBet1.bets[0]!.id, { kata: { type: 'named', pattern: 'full-feature' } });
+
+      const withBet2 = manager.addBet(cycle.id, {
+        description: 'Dashboard', appetite: 40, outcome: 'pending', issueRefs: [],
+      });
+      manager.updateBet(cycle.id, withBet2.bets[1]!.id, {
+        kata: { type: 'ad-hoc', stages: ['plan', 'build'] },
+      });
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--json', '--cwd', baseDir,
+        'cycle', 'start', cycle.id,
+      ]);
+
+      const output = JSON.parse(consoleSpy.mock.calls[0]![0] as string);
+      expect(output.status).toBe('active');
+      expect(output.runs).toHaveLength(2);
+      expect(output.runs[0].stageSequence).toEqual(['research', 'build']);
+      expect(output.runs[1].stageSequence).toEqual(['plan', 'build']);
     });
   });
 

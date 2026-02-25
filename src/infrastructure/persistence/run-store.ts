@@ -65,7 +65,21 @@ export function runPaths(runsDir: string, runId: string) {
 
 /**
  * Create the full directory tree for a new run.
- * Creates run directory + per-stage directories + placeholder state files.
+ *
+ * **What is created:**
+ * - `<runsDir>/<run.id>/` — run root directory
+ * - `<runsDir>/<run.id>/run.json` — serialized Run object
+ * - `<runsDir>/<run.id>/stages/<category>/` — one directory per stageSequence entry
+ * - `<runsDir>/<run.id>/stages/<category>/state.json` — initial StageState (status: pending)
+ *
+ * **What is NOT created:**
+ * - `decisions.jsonl`, `decision-outcomes.jsonl`, `artifact-index.jsonl` — written on first append
+ * - `stages/<category>/flavors/` — created by `writeFlavorState` when a flavor is selected
+ * - `stages/<category>/synthesis.md` — written by the synthesis phase
+ *
+ * This function is **idempotent when called with a unique run.id** — re-calling
+ * it with the same run will overwrite `run.json` and each `state.json` with the
+ * same values, producing no observable difference.
  */
 export function createRunTree(runsDir: string, run: Run): void {
   const paths = runPaths(runsDir, run.id);
@@ -86,6 +100,7 @@ export function createRunTree(runsDir: string, run: Run): void {
       selectedFlavors: [],
       gaps: [],
       decisions: [],
+      approvedGates: [],
     };
     JsonStore.write(paths.stateJson(category), stageState, StageStateSchema);
   }
@@ -124,11 +139,11 @@ export function readFlavorState(
   runId: string,
   category: StageCategory,
   flavorName: string,
-): FlavorState {
-  return JsonStore.read(
-    runPaths(runsDir, runId).flavorStateJson(category, flavorName),
-    FlavorStateSchema,
-  );
+  { allowMissing }: { allowMissing?: boolean } = {},
+): FlavorState | undefined {
+  const path = runPaths(runsDir, runId).flavorStateJson(category, flavorName);
+  if (allowMissing && !JsonStore.exists(path)) return undefined;
+  return JsonStore.read(path, FlavorStateSchema);
 }
 
 export function writeFlavorState(

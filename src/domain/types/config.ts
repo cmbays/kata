@@ -15,7 +15,13 @@ export const KataConfigSchema = z.object({
   execution: z.object({
     adapter: ExecutionAdapterType.default('manual'),
     config: z.record(z.string(), z.unknown()).default({}),
-  }).default(() => ({ adapter: 'manual' as const, config: {} })),
+    /**
+     * Minimum confidence score [0, 1] before a decision triggers a gate.
+     * Decisions below this threshold require human approval (or --yolo to skip).
+     * Defaults to 0.7.
+     */
+    confidenceThreshold: z.number().min(0).max(1).default(0.7),
+  }).default(() => ({ adapter: 'manual' as const, config: {}, confidenceThreshold: 0.7 })),
   /** Custom stage paths to load */
   customStagePaths: z.array(z.string()).default([]),
   /** Project metadata */

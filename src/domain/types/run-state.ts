@@ -89,6 +89,25 @@ export const PendingGateSchema = z.object({
 export type PendingGate = z.infer<typeof PendingGateSchema>;
 
 /**
+ * A gate that has been approved (moved from pending to resolved).
+ * Appended to `StageState.approvedGates` by `kata approve`.
+ */
+export const ApprovedGateSchema = z.object({
+  /** Short unique identifier matching the originating PendingGate.gateId. */
+  gateId: z.string().min(1),
+  /** Gate type descriptor (e.g. "human-approved", "confidence-gate"). */
+  gateType: z.string().min(1),
+  /** What was blocked by this gate (flavor name, step name, or "stage"). */
+  requiredBy: z.string().min(1),
+  /** ISO 8601 timestamp when the gate was approved. */
+  approvedAt: z.string().datetime(),
+  /** Who (or what) approved the gate. */
+  approver: z.enum(['human', 'agent']),
+});
+
+export type ApprovedGate = z.infer<typeof ApprovedGateSchema>;
+
+/**
  * Per-stage state stored at .kata/runs/<run-id>/stages/<category>/state.json.
  */
 export const StageStateSchema = z.object({
@@ -111,6 +130,11 @@ export const StageStateSchema = z.object({
    * Set when a gate triggers; cleared by `kata approve`.
    */
   pendingGate: PendingGateSchema.optional(),
+  /**
+   * Gates that have been resolved (approved) for this stage.
+   * Populated by `kata approve`; preserves the approval history.
+   */
+  approvedGates: z.array(ApprovedGateSchema).default([]),
   /** ISO 8601 timestamp when this stage started. */
   startedAt: z.string().datetime().optional(),
   /** ISO 8601 timestamp when this stage finished. */
@@ -188,6 +212,12 @@ export const DecisionEntrySchema = z.object({
   confidence: z.number().min(0).max(1),
   /** ISO 8601 timestamp when the decision was made. */
   decidedAt: z.string().datetime(),
+  /**
+   * True when confidence was below the configured threshold and the user
+   * bypassed the resulting gate with --yolo. Appended at record time so the
+   * decision log is fully self-describing.
+   */
+  lowConfidence: z.boolean().optional(),
 });
 
 export type DecisionEntry = z.infer<typeof DecisionEntrySchema>;

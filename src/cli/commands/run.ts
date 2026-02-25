@@ -14,7 +14,6 @@ import {
   DecisionOutcomeEntrySchema,
   type Gap,
   type StageState,
-  type FlavorState,
   type Run,
   type DecisionEntry,
   type DecisionOutcomeEntry,
@@ -86,6 +85,7 @@ function aggregateRunStatus(runsDir: string, runId: string): RunStatus {
         selectedFlavors: [],
         gaps: [],
         decisions: [],
+        approvedGates: [],
       };
     }
 
@@ -100,12 +100,7 @@ function aggregateRunStatus(runsDir: string, runId: string): RunStatus {
     // Collect flavor summaries
     const flavors: FlavorSummary[] = [];
     for (const flavorName of stageState.selectedFlavors) {
-      let flavorState: FlavorState | undefined;
-      try {
-        flavorState = readFlavorState(runsDir, runId, category, flavorName);
-      } catch {
-        // Flavor state not initialized yet
-      }
+      const flavorState = readFlavorState(runsDir, runId, category, flavorName, { allowMissing: true });
 
       const flavorArtifacts = stageArtifacts.filter((a) => a.flavor === flavorName);
 

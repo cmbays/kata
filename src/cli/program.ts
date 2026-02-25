@@ -11,6 +11,7 @@ import { registerStatusCommands } from './commands/status.js';
 import { registerArtifactCommands } from './commands/artifact.js';
 import { registerDecisionCommands } from './commands/decision.js';
 import { registerRunCommands } from './commands/run.js';
+import { registerApproveCommand } from './commands/approve.js';
 
 const VERSION = '0.1.0';
 
@@ -45,6 +46,7 @@ export function createProgram(): Command {
   registerArtifactCommands(program);
   registerDecisionCommands(program);
   registerRunCommands(program);
+  registerApproveCommand(program);
 
   return program;
 }
