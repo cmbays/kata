@@ -20,16 +20,16 @@
           state.json           # Stage state
           synthesis.md         # Stage-level synthesis (written DIRECTLY by bet teammate — no CLI)
           flavors/
-            <flavor-name>/
-              state.json                   # Flavor state
-              synthesis.md                 # Flavor synthesis artifact
+            <step-type>/       # NOTE: currently keyed by step type, not flavor name
+              state.json                   # FlavorState — must be written manually to advance steps
               artifact-index.jsonl         # Flavor-scoped artifact index
               artifacts/
                 <filename>               # Actual artifact files
+              synthesis.md               # Flavor synthesis artifact
   stages/
     <step-type>.json           # Step definitions (user-defined + builtins)
   flavors/
-    <flavor-name>.json         # Flavor definitions
+    <stage>.<flavor-name>.json # Flavor definitions — dot-notation: plan.api-design.json
   prompts/
     <step-type>.md             # Step prompt templates
   cycles/
@@ -39,6 +39,25 @@
   skill/
     skill.md                   # This skill package
 ```
+
+**Important**: Flavor files use `<stage>.<flavor-name>.json` naming (dot-notation). Examples:
+- `plan.api-design.json` — api-design flavor for the plan stage
+- `build.typescript-feature.json` — typescript-feature flavor for the build stage
+- `research.codebase-exploration.json` — codebase-exploration flavor for research
+
+Each flavor file lists step types:
+```json
+{
+  "name": "api-design",
+  "stageCategory": "plan",
+  "steps": [
+    { "stepName": "shape", "stepType": "shaping" },
+    { "stepName": "plan",  "stepType": "impl-planning" }
+  ]
+}
+```
+
+The `stepType` values match filenames in `.kata/stages/` and are what goes in `selectedFlavors`.
 
 ---
 
@@ -130,29 +149,30 @@ Location: `.kata/runs/<run-id>/stages/<category>/state.json`
 
 ## `stages/<category>/flavors/<name>/state.json` — Flavor State
 
-Location: `.kata/runs/<run-id>/stages/<category>/flavors/<name>/state.json`
+Location: `.kata/runs/<run-id>/stages/<category>/flavors/<step-type>/state.json`
+
+> **Note**: Flavor directories are keyed by **step type** (not flavor name) because `kata step next`
+> resolves steps by looking up step types in `selectedFlavors`. When you write `selectedFlavors: ["shaping", "impl-planning"]`,
+> the flavor directories will be named `shaping/` and `impl-planning/` — not `api-design/`.
+
+**You must write this file manually** to mark a step as completed and allow `kata step next` to advance.
+The `kata artifact record` command does NOT create this file or mark steps complete.
 
 ```json
 {
-  "name": "rust-compilation",
-  "stageCategory": "build",
-  "status": "running",
+  "name": "shaping",
+  "stageCategory": "plan",
+  "status": "completed",
   "steps": [
     {
-      "type": "prepare",
+      "type": "shaping",
       "status": "completed",
-      "artifacts": ["stages/build/flavors/rust-compilation/artifacts/Cargo.lock"],
+      "artifacts": ["stages/plan/flavors/shaping/artifacts/jwt-shape.md"],
       "startedAt": "2026-02-25T10:25:00Z",
       "completedAt": "2026-02-25T10:28:00Z"
-    },
-    {
-      "type": "compile",
-      "status": "running",
-      "artifacts": [],
-      "startedAt": "2026-02-25T10:30:00Z"
     }
   ],
-  "currentStep": 1
+  "currentStep": null
 }
 ```
 
@@ -219,5 +239,10 @@ Browse them directly — no CLI needed for reads.
 | Browse artifact content | Read file at `<runDir>/<artifact.filePath>` directly |
 | List decisions for a stage | Read `decisions.jsonl`, filter by `stageCategory` |
 | Get next step | `kata step next <run-id> --json` — has step context and prompt |
-| Record anything | Always use CLI: `kata artifact record`, `kata decision record` |
+| Record artifacts or decisions | Always use CLI: `kata artifact record`, `kata decision record` |
 | Approve a gate | Always use CLI: `kata approve <gate-id>` |
+| **Mark a step as completed** | **Write `FlavorState` JSON directly** (no CLI exists — see orchestration.md) |
+| **Set selectedFlavors** | **Write directly to `stages/<category>/state.json`** (no CLI exists) |
+| **Advance to next stage** | **Update `run.json` currentStage + stage state.json status** (no CLI exists) |
+| **Set a human-approval gate** | **Write pendingGate to stage `state.json`** (no CLI exists) |
+| Browse available flavors | Read `.kata/flavors/<stage>.<name>.json` files directly |
