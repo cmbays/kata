@@ -227,19 +227,22 @@ export type ArtifactIndexType = z.infer<typeof ArtifactIndexTypeSchema>;
 
 /**
  * An entry appended to artifact-index.jsonl (run-level and flavor-level).
+ *
+ * Cross-field invariant: `flavor` must be non-null when `type` is `'artifact'`.
+ * Stage-level synthesis entries (`type === 'synthesis'`) may have `flavor: null`.
  */
 export const ArtifactIndexEntrySchema = z.object({
   /** UUID generated at record time. */
   id: z.string().uuid(),
   /** Stage the artifact was produced in. */
   stageCategory: StageCategorySchema,
-  /** Flavor that produced the artifact. */
-  flavor: z.string().min(1),
+  /** Flavor that produced the artifact. Null for stage-level synthesis artifacts. */
+  flavor: z.string().min(1).nullable(),
   /** Step that produced the artifact (nullable for synthesis artifacts). */
   step: z.string().nullable(),
   /** Filename of the artifact (basename only). */
   fileName: z.string().min(1),
-  /** Absolute path to the artifact on disk. */
+  /** Path to the artifact, relative to the run directory root. */
   filePath: z.string().min(1),
   /** Short human-readable summary of the artifact's content. */
   summary: z.string().min(1),
@@ -247,6 +250,14 @@ export const ArtifactIndexEntrySchema = z.object({
   type: ArtifactIndexTypeSchema,
   /** ISO 8601 timestamp when the artifact was recorded. */
   recordedAt: z.string().datetime(),
+}).superRefine((val, ctx) => {
+  if (val.type === 'artifact' && val.flavor === null) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['flavor'],
+      message: 'flavor must be non-null for type "artifact"',
+    });
+  }
 });
 
 export type ArtifactIndexEntry = z.infer<typeof ArtifactIndexEntrySchema>;

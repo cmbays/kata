@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { Command } from 'commander';
 import { registerArtifactCommands } from './artifact.js';
-import { createRunTree } from '@infra/persistence/run-store.js';
+import { createRunTree, runPaths } from '@infra/persistence/run-store.js';
 import { JsonlStore } from '@infra/persistence/jsonl-store.js';
 import { ArtifactIndexEntrySchema } from '@domain/types/run-state.js';
 import type { Run } from '@domain/types/run-state.js';
@@ -87,8 +87,9 @@ describe('registerArtifactCommands — artifact record', () => {
     expect(entries[0].type).toBe('artifact');
     expect(entries[0].summary).toBe('Context gathering output');
 
-    // Verify file was copied
-    expect(existsSync(entries[0].filePath)).toBe(true);
+    // filePath is relative to run dir; verify the file exists at the absolute path
+    const absoluteFilePath = join(runsDir, run.id, entries[0].filePath);
+    expect(existsSync(absoluteFilePath)).toBe(true);
   });
 
   it('records a synthesis artifact at flavor root', async () => {
@@ -118,6 +119,39 @@ describe('registerArtifactCommands — artifact record', () => {
     expect(entries[0].step).toBeNull(); // synthesis has no step
     // Synthesis goes to synthesis.md at flavor root
     expect(entries[0].filePath).toContain('synthesis.md');
+  });
+
+  it('records synthesis without --step and always stores fileName as synthesis.md', async () => {
+    const run = makeRun();
+    createRunTree(runsDir, run);
+
+    // Source file has a different name to confirm renaming happens
+    const srcFile = join(baseDir, 'research-report.md');
+    writeFileSync(srcFile, '# Research Report', 'utf-8');
+
+    const program = createProgram();
+    await program.parseAsync([
+      'node', 'test', '--cwd', baseDir,
+      'artifact', 'record', run.id,
+      '--stage', 'research',
+      '--flavor', 'technical-research',
+      // No --step provided — should be fine for synthesis type
+      '--file', srcFile,
+      '--summary', 'Research synthesis output',
+      '--type', 'synthesis',
+    ]);
+
+    const entries = JsonlStore.readAll(
+      join(runsDir, run.id, 'artifact-index.jsonl'),
+      ArtifactIndexEntrySchema,
+    );
+    expect(entries).toHaveLength(1);
+    expect(entries[0].type).toBe('synthesis');
+    expect(entries[0].step).toBeNull();
+    expect(entries[0].fileName).toBe('synthesis.md');
+    expect(entries[0].filePath).toContain('synthesis.md');
+    // filePath is relative (does not start with /)
+    expect(entries[0].filePath.startsWith('/')).toBe(false);
   });
 
   it('outputs JSON with --json flag', async () => {
@@ -182,6 +216,55 @@ describe('registerArtifactCommands — artifact record', () => {
     ]);
 
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('not found'));
+  });
+
+  it('errors when --step is omitted for --type artifact', async () => {
+    const run = makeRun();
+    createRunTree(runsDir, run);
+
+    const srcFile = join(baseDir, 'output.md');
+    writeFileSync(srcFile, '# Output', 'utf-8');
+
+    const program = createProgram();
+    await program.parseAsync([
+      'node', 'test', '--cwd', baseDir,
+      'artifact', 'record', run.id,
+      '--stage', 'research',
+      '--flavor', 'tech',
+      // No --step
+      '--file', srcFile,
+      '--summary', 'Test',
+      // --type defaults to 'artifact'
+    ]);
+
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('--step is required'));
+  });
+
+  it('also appends to the flavor-level artifact-index.jsonl', async () => {
+    const run = makeRun();
+    createRunTree(runsDir, run);
+
+    const srcFile = join(baseDir, 'context.md');
+    writeFileSync(srcFile, '# Context', 'utf-8');
+
+    const program = createProgram();
+    await program.parseAsync([
+      'node', 'test', '--cwd', baseDir,
+      'artifact', 'record', run.id,
+      '--stage', 'research',
+      '--flavor', 'technical-research',
+      '--step', 'gather-context',
+      '--file', srcFile,
+      '--summary', 'Context gathering output',
+    ]);
+
+    const paths = runPaths(runsDir, run.id);
+    const flavorIndexPath = paths.flavorArtifactIndexJsonl('research', 'technical-research');
+    expect(existsSync(flavorIndexPath)).toBe(true);
+    const entries = JsonlStore.readAll(flavorIndexPath, ArtifactIndexEntrySchema);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].fileName).toBe('context.md');
+    expect(entries[0].step).toBe('gather-context');
   });
 
   it('throws on invalid --type value', async () => {

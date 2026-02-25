@@ -72,8 +72,13 @@ export function registerDecisionCommands(parent: Command): void {
         throw new Error(`--options must be a valid JSON array of strings: ${e instanceof Error ? e.message : String(e)}`, { cause: e });
       }
 
-      if (options.length === 0) {
-        throw new Error('--options must not be empty');
+      // Cross-validate --selected against --options when options are provided
+      // Empty options is valid for gap-assessment decisions
+      const selected = localOpts.selected as string;
+      if (options.length > 0 && !options.includes(selected)) {
+        throw new Error(
+          `--selected "${selected}" is not in --options. Available: ${options.join(', ')}`,
+        );
       }
 
       // Validate decision type (warn on unknown, do not reject)
@@ -98,7 +103,7 @@ export function registerDecisionCommands(parent: Command): void {
         decisionType,
         context,
         options,
-        selection: localOpts.selected as string,
+        selection: selected,
         reasoning: localOpts.reasoning as string,
         confidence,
         decidedAt: now,
@@ -112,9 +117,12 @@ export function registerDecisionCommands(parent: Command): void {
         const stageState = readStageState(runsDir, runId, stage);
         stageState.decisions.push(id);
         writeStageState(runsDir, runId, stageState);
-      } catch {
+      } catch (err) {
         // Stage state file may not exist yet (e.g. run just started); that's ok
-        logger.warn(`Could not update stage state decisions for run "${runId}", stage "${stage}"`);
+        logger.warn(
+          `Could not update stage state decisions for run "${runId}", stage "${stage}": ` +
+          `${err instanceof Error ? err.message : String(err)}`,
+        );
       }
 
       if (ctx.globalOpts.json) {
@@ -125,7 +133,7 @@ export function registerDecisionCommands(parent: Command): void {
         console.log(`  Stage:      ${stage}`);
         if (entry.flavor) console.log(`  Flavor:     ${entry.flavor}`);
         if (entry.step) console.log(`  Step:       ${entry.step}`);
-        console.log(`  Selected:   ${localOpts.selected as string}`);
+        console.log(`  Selected:   ${selected}`);
         console.log(`  Confidence: ${confidence}`);
       }
     }));

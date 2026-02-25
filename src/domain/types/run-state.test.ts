@@ -228,7 +228,7 @@ describe('ArtifactIndexEntrySchema', () => {
     flavor: 'tdd',
     step: 'write-tests',
     fileName: 'tests.md',
-    filePath: '/abs/path/tests.md',
+    filePath: 'stages/build/flavors/tdd/artifacts/tests.md',
     summary: 'Unit tests for auth module',
     type: 'artifact',
     recordedAt: VALID_TS,
@@ -242,6 +242,20 @@ describe('ArtifactIndexEntrySchema', () => {
   it('parses synthesis type with null step', () => {
     const result = ArtifactIndexEntrySchema.safeParse({ ...valid, step: null, type: 'synthesis' });
     expect(result.success).toBe(true);
+  });
+
+  it('accepts null flavor for synthesis type (stage-level)', () => {
+    const result = ArtifactIndexEntrySchema.safeParse({ ...valid, flavor: null, type: 'synthesis', step: null });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects null flavor for artifact type (cross-field invariant)', () => {
+    const result = ArtifactIndexEntrySchema.safeParse({ ...valid, flavor: null });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const flavorError = result.error.issues.find((i) => i.path.includes('flavor'));
+      expect(flavorError?.message).toContain('non-null');
+    }
   });
 
   it('rejects invalid type', () => {

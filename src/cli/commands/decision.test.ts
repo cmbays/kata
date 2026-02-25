@@ -203,6 +203,51 @@ describe('registerDecisionCommands — decision record', () => {
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('confidence'));
   });
 
+  it('allows empty --options for gap-assessment decisions', async () => {
+    const run = makeRun();
+    createRunTree(runsDir, run);
+
+    const program = createProgram();
+    await program.parseAsync([
+      'node', 'test', '--json', '--cwd', baseDir,
+      'decision', 'record', run.id,
+      '--stage', 'research',
+      '--type', 'gap-assessment',
+      '--context', '{"phase":"analysis"}',
+      '--options', '[]',
+      '--selected', 'gap-identified',
+      '--confidence', '0.6',
+      '--reasoning', 'Identified a gap in security coverage',
+    ]);
+
+    expect(errorSpy).not.toHaveBeenCalled();
+    const decisionsPath = join(runsDir, run.id, 'decisions.jsonl');
+    const entries = JsonlStore.readAll(decisionsPath, DecisionEntrySchema);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].options).toEqual([]);
+    expect(entries[0].selection).toBe('gap-identified');
+  });
+
+  it('errors when --selected is not in --options', async () => {
+    const run = makeRun();
+    createRunTree(runsDir, run);
+
+    const program = createProgram();
+    await program.parseAsync([
+      'node', 'test', '--cwd', baseDir,
+      'decision', 'record', run.id,
+      '--stage', 'research',
+      '--type', 'flavor-selection',
+      '--context', '{}',
+      '--options', '["technical-research","codebase-analysis"]',
+      '--selected', 'unknown-flavor',
+      '--confidence', '0.8',
+      '--reasoning', 'Test',
+    ]);
+
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('"unknown-flavor"'));
+  });
+
   it('errors on invalid context JSON', async () => {
     const run = makeRun();
     createRunTree(runsDir, run);
