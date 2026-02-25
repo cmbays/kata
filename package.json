@@ -19,7 +19,8 @@
   "files": [
     "dist",
     "stages",
-    "templates"
+    "templates",
+    "skill"
   ],
   "scripts": {
     "build": "tsup",

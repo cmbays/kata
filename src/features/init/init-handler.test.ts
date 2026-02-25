@@ -253,4 +253,61 @@ describe('handleInit', () => {
 
     expect(result.aoConfigPath).toBeUndefined();
   });
+
+  describe('skill package', () => {
+    const expectedFiles = [
+      'skill.md',
+      'cli-reference.md',
+      'file-structure.md',
+      'orchestration.md',
+      'context-flow.md',
+      join('templates', 'decision-format.md'),
+      join('templates', 'synthesis-format.md'),
+      join('templates', 'artifact-format.md'),
+    ];
+
+    it('copies skill.md to .kata/skill/', async () => {
+      await handleInit({ cwd: baseDir, skipPrompts: true });
+
+      const skillMd = join(baseDir, '.kata', 'skill', 'skill.md');
+      expect(existsSync(skillMd)).toBe(true);
+      expect(readFileSync(skillMd, 'utf-8').length).toBeGreaterThan(0);
+    });
+
+    it('copies cli-reference.md to .kata/skill/', async () => {
+      await handleInit({ cwd: baseDir, skipPrompts: true });
+
+      const cliRef = join(baseDir, '.kata', 'skill', 'cli-reference.md');
+      expect(existsSync(cliRef)).toBe(true);
+      expect(readFileSync(cliRef, 'utf-8').length).toBeGreaterThan(0);
+    });
+
+    it('copies templates/decision-format.md to .kata/skill/', async () => {
+      await handleInit({ cwd: baseDir, skipPrompts: true });
+
+      const tmpl = join(baseDir, '.kata', 'skill', 'templates', 'decision-format.md');
+      expect(existsSync(tmpl)).toBe(true);
+      expect(readFileSync(tmpl, 'utf-8').length).toBeGreaterThan(0);
+    });
+
+    it('copies all 7 expected skill files', async () => {
+      await handleInit({ cwd: baseDir, skipPrompts: true });
+
+      for (const relPath of expectedFiles) {
+        const fullPath = join(baseDir, '.kata', 'skill', relPath);
+        expect(existsSync(fullPath), `Expected skill file missing: ${relPath}`).toBe(true);
+        expect(readFileSync(fullPath, 'utf-8').length, `Skill file is empty: ${relPath}`).toBeGreaterThan(0);
+      }
+    });
+
+    it('is idempotent — re-running init overwrites skill files without error', async () => {
+      await handleInit({ cwd: baseDir, skipPrompts: true });
+      // Second run should not throw and files should still be present
+      await handleInit({ cwd: baseDir, skipPrompts: true });
+
+      for (const relPath of expectedFiles) {
+        expect(existsSync(join(baseDir, '.kata', 'skill', relPath))).toBe(true);
+      }
+    });
+  });
 });
