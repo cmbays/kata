@@ -152,3 +152,22 @@ Use `--yolo` for decisions where pausing would be more disruptive than the risk 
 | `templates/decision-format.md` | Example decision record invocations |
 | `templates/artifact-format.md` | Example artifact record invocations |
 | `templates/synthesis-format.md` | Example synthesis artifact structure |
+
+---
+
+## 7. Known CLI Limitations (v1 Wave B)
+
+The following operations require **direct file writes** because CLI commands don't exist yet. See `orchestration.md` for exact JSON shapes.
+
+| Operation | Workaround |
+|-----------|-----------|
+| Mark a step as completed | Write `FlavorState` JSON to `.kata/runs/<id>/stages/<cat>/flavors/<step-type>/state.json` |
+| Set `selectedFlavors` for a stage | Write directly to `.kata/runs/<id>/stages/<cat>/state.json` |
+| Advance to next stage | Update `currentStage` in `.kata/runs/<id>/run.json` |
+| Mark a stage as completed | Update `status` in stage `state.json` |
+| Set a human-approval gate | Write `pendingGate` to stage `state.json` |
+| Mark run completed | Set `status: "completed"` and `completedAt` in `run.json` |
+
+**Flavor name ≠ step types**: Flavor composition files (`.kata/flavors/plan.api-design.json`) define multi-step sequences. You record decisions using the **flavor name**, but you write **step types** to `selectedFlavors`. Read the flavor JSON to extract step types (`steps[].stepType`).
+
+These gaps are tracked as issues and will be resolved in Wave C (orchestration engine).
