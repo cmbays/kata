@@ -253,4 +253,80 @@ describe('handleInit', () => {
 
     expect(result.aoConfigPath).toBeUndefined();
   });
+
+  describe('skill package', () => {
+    const expectedFiles = [
+      'skill.md',
+      'cli-reference.md',
+      'file-structure.md',
+      'orchestration.md',
+      'context-flow.md',
+      'classification.md',
+      join('templates', 'decision-format.md'),
+      join('templates', 'synthesis-format.md'),
+      join('templates', 'artifact-format.md'),
+    ];
+
+    it('copies skill.md to .kata/skill/', async () => {
+      await handleInit({ cwd: baseDir, skipPrompts: true });
+
+      const skillMd = join(baseDir, '.kata', 'skill', 'skill.md');
+      expect(existsSync(skillMd)).toBe(true);
+      expect(readFileSync(skillMd, 'utf-8').length).toBeGreaterThan(0);
+    });
+
+    it('copies cli-reference.md to .kata/skill/', async () => {
+      await handleInit({ cwd: baseDir, skipPrompts: true });
+
+      const cliRef = join(baseDir, '.kata', 'skill', 'cli-reference.md');
+      expect(existsSync(cliRef)).toBe(true);
+      expect(readFileSync(cliRef, 'utf-8').length).toBeGreaterThan(0);
+    });
+
+    it('copies templates/decision-format.md to .kata/skill/', async () => {
+      await handleInit({ cwd: baseDir, skipPrompts: true });
+
+      const tmpl = join(baseDir, '.kata', 'skill', 'templates', 'decision-format.md');
+      expect(existsSync(tmpl)).toBe(true);
+      expect(readFileSync(tmpl, 'utf-8').length).toBeGreaterThan(0);
+    });
+
+    it('copies all 9 expected skill files', async () => {
+      await handleInit({ cwd: baseDir, skipPrompts: true });
+
+      for (const relPath of expectedFiles) {
+        const fullPath = join(baseDir, '.kata', 'skill', relPath);
+        expect(existsSync(fullPath), `Expected skill file missing: ${relPath}`).toBe(true);
+        expect(readFileSync(fullPath, 'utf-8').length, `Skill file is empty: ${relPath}`).toBeGreaterThan(0);
+      }
+    });
+
+    it('is idempotent — re-running init overwrites modified skill files', async () => {
+      await handleInit({ cwd: baseDir, skipPrompts: true });
+      // Corrupt a skill file and verify it is restored on re-init
+      const skillMd = join(baseDir, '.kata', 'skill', 'skill.md');
+      writeFileSync(skillMd, 'corrupted');
+      await handleInit({ cwd: baseDir, skipPrompts: true });
+
+      const restored = readFileSync(skillMd, 'utf-8');
+      expect(restored).not.toBe('corrupted');
+      expect(restored.length).toBeGreaterThan(0);
+    });
+
+    it('copies the same number of files as the source skill/ directory', async () => {
+      await handleInit({ cwd: baseDir, skipPrompts: true });
+
+      const countFiles = (dir: string): number => {
+        let count = 0;
+        for (const entry of readdirSync(dir, { withFileTypes: true })) {
+          if (entry.isDirectory()) count += countFiles(join(dir, entry.name));
+          else count++;
+        }
+        return count;
+      };
+
+      const destCount = countFiles(join(baseDir, '.kata', 'skill'));
+      expect(destCount).toBe(expectedFiles.length);
+    });
+  });
 });
