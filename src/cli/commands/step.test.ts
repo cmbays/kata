@@ -1,8 +1,11 @@
 import { join } from 'node:path';
 import { mkdirSync, rmSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { randomUUID } from 'node:crypto';
 import { Command } from 'commander';
 import { registerStepCommands } from './step.js';
+import { createRunTree, writeStageState, readStageState } from '@infra/persistence/run-store.js';
+import type { Run } from '@domain/types/run-state.js';
 
 // Mock @inquirer/prompts to avoid interactive prompts in tests.
 // Individual tests override these as needed.
@@ -562,6 +565,155 @@ describe('registerStepCommands', () => {
 
       const raw = JSON.parse(readFileSync(join(stagesDir, 'blueprint.json'), 'utf-8'));
       expect(raw.promptTemplate).toBe('../prompts/blueprint.md');
+    });
+  });
+
+  // ---- step next ----
+
+  describe('step next', () => {
+    const runsDir = join(kataDir, 'runs');
+
+    function makeRun(overrides: Partial<Run> = {}): Run {
+      return {
+        id: randomUUID(),
+        cycleId: randomUUID(),
+        betId: randomUUID(),
+        betPrompt: 'Implement auth',
+        stageSequence: ['research', 'plan'],
+        currentStage: null,
+        status: 'running',
+        startedAt: '2026-01-01T00:00:00.000Z',
+        ...overrides,
+      };
+    }
+
+    beforeEach(() => {
+      mkdirSync(runsDir, { recursive: true });
+    });
+
+    it('returns complete status for a completed run', async () => {
+      const run = makeRun({ status: 'completed' });
+      createRunTree(runsDir, run);
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--json', '--cwd', baseDir, 'step', 'next', run.id]);
+
+      const output = JSON.parse(consoleSpy.mock.calls[0]![0] as string);
+      expect(output.status).toBe('complete');
+    });
+
+    it('returns failed status for a failed run', async () => {
+      const run = makeRun({ status: 'failed', completedAt: '2026-01-02T00:00:00.000Z' });
+      createRunTree(runsDir, run);
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--json', '--cwd', baseDir, 'step', 'next', run.id]);
+
+      const output = JSON.parse(consoleSpy.mock.calls[0]![0] as string);
+      expect(output.status).toBe('failed');
+    });
+
+    it('returns waiting status when no flavors selected', async () => {
+      const run = makeRun();
+      createRunTree(runsDir, run);
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--json', '--cwd', baseDir, 'step', 'next', run.id]);
+
+      const output = JSON.parse(consoleSpy.mock.calls[0]![0] as string);
+      expect(output.status).toBe('waiting');
+      expect(output.message).toContain('No flavors selected');
+    });
+
+    it('returns waiting with gate info when pendingGate exists', async () => {
+      const run = makeRun();
+      createRunTree(runsDir, run);
+
+      const stageState = readStageState(runsDir, run.id, 'research');
+      stageState.pendingGate = {
+        gateId: 'gate-001',
+        gateType: 'human-approved',
+        requiredBy: 'stage',
+      };
+      writeStageState(runsDir, run.id, stageState);
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--json', '--cwd', baseDir, 'step', 'next', run.id]);
+
+      const output = JSON.parse(consoleSpy.mock.calls[0]![0] as string);
+      expect(output.status).toBe('waiting');
+      expect(output.gate.gateId).toBe('gate-001');
+    });
+
+    it('errors when run is not found', async () => {
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir, 'step', 'next', randomUUID(),
+      ]);
+
+      expect(errorSpy).toHaveBeenCalled();
+    });
+
+    it('returns step info when flavor is selected and step exists', async () => {
+      const run = makeRun();
+      createRunTree(runsDir, run);
+
+      const stageState = readStageState(runsDir, run.id, 'research');
+      stageState.selectedFlavors = ['research'];
+      stageState.status = 'running';
+      writeStageState(runsDir, run.id, stageState);
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--json', '--cwd', baseDir, 'step', 'next', run.id]);
+
+      const output = JSON.parse(consoleSpy.mock.calls[0]![0] as string);
+      expect(output.runId).toBe(run.id);
+      expect(output.stage).toBe('research');
+      expect(output.flavor).toBe('research');
+      expect(output.step).toBeDefined();
+      expect(output.betPrompt).toBe('Implement auth');
+    });
+
+    it('uses currentStage from run when set (not defaulting to first stage)', async () => {
+      const run = makeRun({ currentStage: 'plan' });
+      createRunTree(runsDir, run);
+
+      // Set up flavors on the 'plan' stage (not 'research')
+      const planState = readStageState(runsDir, run.id, 'plan');
+      planState.selectedFlavors = ['research'];
+      planState.status = 'running';
+      writeStageState(runsDir, run.id, planState);
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--json', '--cwd', baseDir, 'step', 'next', run.id]);
+
+      const output = JSON.parse(consoleSpy.mock.calls[0]![0] as string);
+      expect(output.stage).toBe('plan');
+    });
+
+    it('includes priorStageSyntheses for completed previous stages', async () => {
+      // Run with research completed and plan as current stage
+      const run = makeRun({ currentStage: 'plan' });
+      createRunTree(runsDir, run);
+
+      // Mark research as completed
+      const researchState = readStageState(runsDir, run.id, 'research');
+      researchState.status = 'completed';
+      writeStageState(runsDir, run.id, researchState);
+
+      // Set up plan stage with a flavor
+      const planState = readStageState(runsDir, run.id, 'plan');
+      planState.selectedFlavors = ['research'];
+      planState.status = 'running';
+      writeStageState(runsDir, run.id, planState);
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--json', '--cwd', baseDir, 'step', 'next', run.id]);
+
+      const output = JSON.parse(consoleSpy.mock.calls[0]![0] as string);
+      expect(output.stage).toBe('plan');
+      expect(output.priorStageSyntheses).toHaveLength(1);
+      expect(output.priorStageSyntheses[0].stage).toBe('research');
     });
   });
 });

@@ -1,10 +1,10 @@
 import { join } from 'node:path';
-import { mkdirSync, rmSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { Command } from 'commander';
 import { registerDecisionCommands } from './decision.js';
-import { createRunTree } from '@infra/persistence/run-store.js';
+import { createRunTree, readStageState } from '@infra/persistence/run-store.js';
 import { JsonlStore } from '@infra/persistence/jsonl-store.js';
 import { DecisionEntrySchema, DecisionOutcomeEntrySchema } from '@domain/types/run-state.js';
 import type { Run } from '@domain/types/run-state.js';
@@ -266,6 +266,202 @@ describe('registerDecisionCommands — decision record', () => {
     ]);
 
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('context'));
+  });
+
+  it('creates a confidence gate when confidence is below default threshold (0.7)', async () => {
+    const run = makeRun();
+    createRunTree(runsDir, run);
+
+    const program = createProgram();
+    await program.parseAsync([
+      'node', 'test', '--json', '--cwd', baseDir,
+      'decision', 'record', run.id,
+      '--stage', 'research',
+      '--type', 'flavor-selection',
+      '--context', '{}',
+      '--options', '["a","b"]',
+      '--selected', 'a',
+      '--confidence', '0.5',
+      '--reasoning', 'Low confidence',
+    ]);
+
+    const output = JSON.parse(consoleSpy.mock.calls[0]![0] as string);
+    expect(output.lowConfidenceGateCreated).toBe(true);
+
+    // Verify gate written to stage state
+    const stageState = readStageState(runsDir, run.id, 'research');
+    expect(stageState.pendingGate).toBeDefined();
+    expect(stageState.pendingGate!.gateType).toBe('confidence-gate');
+  });
+
+  it('bypasses confidence gate with --yolo and sets lowConfidence on entry', async () => {
+    const run = makeRun();
+    createRunTree(runsDir, run);
+
+    const program = createProgram();
+    await program.parseAsync([
+      'node', 'test', '--json', '--cwd', baseDir,
+      'decision', 'record', run.id,
+      '--stage', 'research',
+      '--type', 'flavor-selection',
+      '--context', '{}',
+      '--options', '["a"]',
+      '--selected', 'a',
+      '--confidence', '0.4',
+      '--reasoning', 'Low but yolo',
+      '--yolo',
+    ]);
+
+    const output = JSON.parse(consoleSpy.mock.calls[0]![0] as string);
+    expect(output.lowConfidenceYolo).toBe(true);
+    expect(output.lowConfidence).toBe(true);
+    expect(output.lowConfidenceGateCreated).toBeUndefined();
+
+    // No pending gate should be created
+    const stageState = readStageState(runsDir, run.id, 'research');
+    expect(stageState.pendingGate).toBeUndefined();
+  });
+
+  it('does not create confidence gate when confidence meets threshold', async () => {
+    const run = makeRun();
+    createRunTree(runsDir, run);
+
+    const program = createProgram();
+    await program.parseAsync([
+      'node', 'test', '--json', '--cwd', baseDir,
+      'decision', 'record', run.id,
+      '--stage', 'research',
+      '--type', 'flavor-selection',
+      '--context', '{}',
+      '--options', '["a"]',
+      '--selected', 'a',
+      '--confidence', '0.8',
+      '--reasoning', 'Confident',
+    ]);
+
+    const output = JSON.parse(consoleSpy.mock.calls[0]![0] as string);
+    expect(output.lowConfidenceGateCreated).toBeUndefined();
+
+    const stageState = readStageState(runsDir, run.id, 'research');
+    expect(stageState.pendingGate).toBeUndefined();
+  });
+
+  it('respects custom confidence threshold from config.json', async () => {
+    const run = makeRun();
+    createRunTree(runsDir, run);
+
+    // Write config with high threshold (0.9) — 0.8 confidence should trigger gate
+    writeFileSync(join(kataDir, 'config.json'), JSON.stringify({
+      methodology: 'shape-up',
+      execution: { adapter: 'manual', config: {}, confidenceThreshold: 0.9 },
+      customStagePaths: [],
+      project: {},
+    }));
+
+    const program = createProgram();
+    await program.parseAsync([
+      'node', 'test', '--json', '--cwd', baseDir,
+      'decision', 'record', run.id,
+      '--stage', 'research',
+      '--type', 'flavor-selection',
+      '--context', '{}',
+      '--options', '["a"]',
+      '--selected', 'a',
+      '--confidence', '0.8',
+      '--reasoning', 'Below custom threshold',
+    ]);
+
+    const output = JSON.parse(consoleSpy.mock.calls[0]![0] as string);
+    expect(output.lowConfidenceGateCreated).toBe(true);
+  });
+
+  it('does not create a gate at exactly the threshold boundary (< not <=)', async () => {
+    const run = makeRun();
+    createRunTree(runsDir, run);
+
+    const program = createProgram();
+    await program.parseAsync([
+      'node', 'test', '--json', '--cwd', baseDir,
+      'decision', 'record', run.id,
+      '--stage', 'research',
+      '--type', 'flavor-selection',
+      '--context', '{}',
+      '--options', '["a"]',
+      '--selected', 'a',
+      '--confidence', '0.7', // exactly at default threshold
+      '--reasoning', 'On the boundary',
+    ]);
+
+    const output = JSON.parse(consoleSpy.mock.calls[0]![0] as string);
+    expect(output.lowConfidenceGateCreated).toBeUndefined();
+    expect(output.lowConfidence).toBeUndefined();
+
+    const stageState = readStageState(runsDir, run.id, 'research');
+    expect(stageState.pendingGate).toBeUndefined();
+  });
+
+  it('sets lowConfidence on entry even without --yolo when gate is created', async () => {
+    const run = makeRun();
+    createRunTree(runsDir, run);
+
+    const program = createProgram();
+    await program.parseAsync([
+      'node', 'test', '--json', '--cwd', baseDir,
+      'decision', 'record', run.id,
+      '--stage', 'research',
+      '--type', 'flavor-selection',
+      '--context', '{}',
+      '--options', '["a"]',
+      '--selected', 'a',
+      '--confidence', '0.5',
+      '--reasoning', 'Low confidence triggers gate',
+    ]);
+
+    const decisionsPath = join(runsDir, run.id, 'decisions.jsonl');
+    const entries = JsonlStore.readAll(decisionsPath, DecisionEntrySchema);
+    expect(entries[0]!.lowConfidence).toBe(true);
+  });
+
+  it('does not create a second gate when pendingGate already exists', async () => {
+    const run = makeRun();
+    createRunTree(runsDir, run);
+
+    // First low-confidence decision creates a gate
+    const program1 = createProgram();
+    await program1.parseAsync([
+      'node', 'test', '--json', '--cwd', baseDir,
+      'decision', 'record', run.id,
+      '--stage', 'research',
+      '--type', 'flavor-selection',
+      '--context', '{}',
+      '--options', '["a"]',
+      '--selected', 'a',
+      '--confidence', '0.3',
+      '--reasoning', 'First low confidence',
+    ]);
+    consoleSpy.mockClear();
+
+    // Second low-confidence decision should NOT overwrite the existing gate
+    const program2 = createProgram();
+    await program2.parseAsync([
+      'node', 'test', '--json', '--cwd', baseDir,
+      'decision', 'record', run.id,
+      '--stage', 'research',
+      '--type', 'capability-analysis',
+      '--context', '{}',
+      '--options', '["b"]',
+      '--selected', 'b',
+      '--confidence', '0.4',
+      '--reasoning', 'Second low confidence',
+    ]);
+
+    const output = JSON.parse(consoleSpy.mock.calls[0]![0] as string);
+    expect(output.lowConfidenceGateCreated).toBeUndefined(); // guard: no second gate
+
+    // Only one gate should exist
+    const stageState = readStageState(runsDir, run.id, 'research');
+    expect(stageState.pendingGate).toBeDefined();
+    expect(stageState.approvedGates).toHaveLength(0);
   });
 });
 

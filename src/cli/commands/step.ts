@@ -18,6 +18,14 @@ import {
   promptGateConditions,
   editFieldLoop,
 } from './shared-wizards.js';
+import {
+  readRun,
+  readStageState,
+  readFlavorState,
+  runPaths,
+} from '@infra/persistence/run-store.js';
+import { JsonlStore } from '@infra/persistence/jsonl-store.js';
+import { ArtifactIndexEntrySchema } from '@domain/types/run-state.js';
 
 // ---- Register commands ----
 
@@ -26,6 +34,207 @@ export function registerStepCommands(parent: Command): void {
     .command('step')
     .alias('waza')
     .description('Manage steps — atomic methodology units with gates and artifacts (alias: waza)');
+
+  // ---- next <run-id> ----
+  step
+    .command('next <run-id>')
+    .description('Query the next step to execute for a run')
+    .action(withCommandContext(async (ctx, runId: string) => {
+      const runsDir = kataDirPath(ctx.kataDir, 'runs');
+      const stagesDir = kataDirPath(ctx.kataDir, 'stages');
+
+      const run = readRun(runsDir, runId);
+
+      // Completed / failed runs
+      if (run.status === 'completed') {
+        const result = { status: 'complete' as const };
+        if (ctx.globalOpts.json) {
+          console.log(JSON.stringify(result, null, 2));
+        } else {
+          console.log('Run is complete.');
+        }
+        return;
+      }
+
+      if (run.status === 'failed') {
+        const result = { status: 'failed' as const, message: run.completedAt ?? 'Run failed' };
+        if (ctx.globalOpts.json) {
+          console.log(JSON.stringify(result, null, 2));
+        } else {
+          console.log(`Run failed${run.completedAt ? ` at ${run.completedAt}` : ''}.`);
+        }
+        return;
+      }
+
+      const currentStage = run.currentStage ?? run.stageSequence[0];
+      if (!currentStage) {
+        const result = { status: 'complete' as const, message: 'No stages in run' };
+        if (ctx.globalOpts.json) {
+          console.log(JSON.stringify(result, null, 2));
+        } else {
+          console.log('No stages in run.');
+        }
+        return;
+      }
+
+      // Read stage state — createRunTree always writes state.json so this should always succeed.
+      const stageState = readStageState(runsDir, runId, currentStage);
+
+      // Blocked by a gate?
+      if (stageState.pendingGate) {
+        const result = {
+          status: 'waiting' as const,
+          gate: stageState.pendingGate,
+          message: `Gate "${stageState.pendingGate.gateId}" requires approval (${stageState.pendingGate.gateType}). Run "kata approve" to unblock.`,
+        };
+        if (ctx.globalOpts.json) {
+          console.log(JSON.stringify(result, null, 2));
+        } else {
+          console.log(`Waiting — gate: ${stageState.pendingGate.gateId} (${stageState.pendingGate.gateType})`);
+          console.log(`  Run "kata approve ${stageState.pendingGate.gateId}" to unblock.`);
+        }
+        return;
+      }
+
+      // No flavors selected yet
+      if (stageState.selectedFlavors.length === 0) {
+        const result = {
+          status: 'waiting' as const,
+          message: 'No flavors selected yet. Orchestrator needs to select flavors for this stage.',
+        };
+        if (ctx.globalOpts.json) {
+          console.log(JSON.stringify(result, null, 2));
+        } else {
+          console.log('Waiting — no flavors selected yet for this stage.');
+        }
+        return;
+      }
+
+      // Find the active flavor (first not completed/skipped)
+      const paths = runPaths(runsDir, runId);
+      let activeFlavor: string | undefined;
+      for (const flavorName of stageState.selectedFlavors) {
+        const flavorState = readFlavorState(runsDir, runId, currentStage, flavorName, { allowMissing: true });
+        const status = flavorState?.status ?? 'pending';
+        if (status !== 'completed' && status !== 'skipped') {
+          activeFlavor = flavorName;
+          break;
+        }
+      }
+
+      if (!activeFlavor) {
+        const result = { status: 'complete' as const, message: 'All flavors in this stage are complete' };
+        if (ctx.globalOpts.json) {
+          console.log(JSON.stringify(result, null, 2));
+        } else {
+          console.log('All flavors complete for this stage.');
+        }
+        return;
+      }
+
+      const flavorState = readFlavorState(runsDir, runId, currentStage, activeFlavor, { allowMissing: true });
+
+      // Find the next pending/running step
+      let nextStepType: string | undefined;
+      const stepRuns = flavorState?.steps ?? [];
+      const pendingStepRun = stepRuns.find((s) => s.status === 'pending' || s.status === 'running');
+      if (pendingStepRun) {
+        nextStepType = pendingStepRun.type;
+      } else if (stepRuns.length === 0) {
+        // No step records yet — get first step from registry
+        const registry = new StepRegistry(stagesDir);
+        const steps = registry.list({ type: activeFlavor });
+        nextStepType = steps[0]?.type;
+      }
+
+      if (!nextStepType) {
+        const result = { status: 'complete' as const, message: 'All steps in active flavor are complete' };
+        if (ctx.globalOpts.json) {
+          console.log(JSON.stringify(result, null, 2));
+        } else {
+          console.log('All steps complete for the active flavor.');
+        }
+        return;
+      }
+
+      // Resolve full step definition
+      const registry = new StepRegistry(stagesDir);
+      let stepDef: Step | undefined;
+      try {
+        stepDef = registry.get(nextStepType);
+      } catch {
+        // Step definition not found — return minimal info
+      }
+
+      // Resolve prompt
+      let prompt = stepDef?.description ?? '';
+      if (stepDef?.promptTemplate) {
+        const promptPath = resolve(ctx.kataDir, stepDef.promptTemplate);
+        if (existsSync(promptPath)) {
+          const raw = readFileSync(promptPath, 'utf-8');
+          prompt = raw.replace(/\{\{\s*betPrompt\s*\}\}/g, run.betPrompt);
+        }
+      }
+
+      // Prior artifacts for this flavor
+      const priorArtifacts = JsonlStore.readAll(
+        paths.flavorArtifactIndexJsonl(currentStage, activeFlavor),
+        ArtifactIndexEntrySchema,
+      );
+
+      // Prior stage syntheses
+      const priorStageSyntheses: Array<{ stage: string; filePath: string }> = [];
+      for (const prevStage of run.stageSequence) {
+        if (prevStage === currentStage) break;
+        let prevStageState;
+        try {
+          prevStageState = readStageState(runsDir, runId, prevStage);
+        } catch {
+          continue;
+        }
+        if (prevStageState.status === 'completed') {
+          priorStageSyntheses.push({
+            stage: prevStage,
+            filePath: paths.stageSynthesis(prevStage),
+          });
+        }
+      }
+
+      const result = {
+        runId,
+        stage: currentStage,
+        flavor: activeFlavor,
+        step: nextStepType,
+        prompt,
+        resources: stepDef?.resources ?? {},
+        gates: {
+          entry: stepDef?.entryGate ? [stepDef.entryGate] : [],
+          exit: stepDef?.exitGate ? [stepDef.exitGate] : [],
+        },
+        priorArtifacts,
+        betPrompt: run.betPrompt,
+        priorStageSyntheses,
+      };
+
+      if (ctx.globalOpts.json) {
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        console.log(`Next step: ${nextStepType}`);
+        console.log(`  Run:    ${runId}`);
+        console.log(`  Stage:  ${currentStage}`);
+        console.log(`  Flavor: ${activeFlavor}`);
+        if (prompt) {
+          const preview = prompt.length > 200 ? `${prompt.slice(0, 200)}...` : prompt;
+          console.log(`  Prompt: ${preview}`);
+        }
+        if (result.gates.entry.length > 0) {
+          console.log(`  Entry gate: ${result.gates.entry.map((g) => g.conditions.map((c) => c.type).join(', ')).join('; ')}`);
+        }
+        if (result.gates.exit.length > 0) {
+          console.log(`  Exit gate: ${result.gates.exit.map((g) => g.conditions.map((c) => c.type).join(', ')).join('; ')}`);
+        }
+      }
+    }));
 
   // ---- list ----
   step

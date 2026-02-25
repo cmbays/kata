@@ -3,7 +3,7 @@ import type { IPersistence } from '@domain/ports/persistence.js';
 import { CycleSchema } from '@domain/types/cycle.js';
 import type { Cycle, Budget, BudgetStatus, BudgetAlertLevel } from '@domain/types/cycle.js';
 import { BetSchema, BetOutcome } from '@domain/types/bet.js';
-import type { Bet } from '@domain/types/bet.js';
+import type { Bet, KataAssignment } from '@domain/types/bet.js';
 import type { CycleState } from '@domain/types/cycle.js';
 import { CycleNotFoundError } from '@shared/lib/errors.js';
 import { validateAppetite } from '@domain/rules/budget-rules.js';
@@ -110,6 +110,60 @@ export class CycleManager {
     cycle.updatedAt = new Date().toISOString();
     this.save(cycle);
     return cycle;
+  }
+
+  /**
+   * Update the kata assignment for an existing bet.
+   * Throws if the bet is not found in the cycle.
+   */
+  updateBet(cycleId: string, betId: string, updates: { kata: KataAssignment }): Cycle {
+    const cycle = this.get(cycleId);
+    const bet = cycle.bets.find((b) => b.id === betId);
+    if (!bet) {
+      throw new Error(`Bet "${betId}" not found in cycle "${cycleId}"`);
+    }
+    bet.kata = updates.kata;
+    cycle.updatedAt = new Date().toISOString();
+    this.save(cycle);
+    return cycle;
+  }
+
+  /**
+   * Scan all cycles to find the cycle containing a given bet ID.
+   * Returns null if no cycle contains the bet.
+   */
+  findBetCycle(betId: string): { cycle: Cycle; bet: Bet } | null {
+    for (const cycle of this.list()) {
+      const bet = cycle.bets.find((b) => b.id === betId);
+      if (bet) return { cycle, bet };
+    }
+    return null;
+  }
+
+  /**
+   * Validate that all bets have kata assignments and transition the cycle to active.
+   * Returns the list of bet descriptions that are missing kata assignments.
+   * Callers should check `betsWithoutKata` before proceeding with run creation.
+   */
+  startCycle(cycleId: string): { cycle: Cycle; betsWithoutKata: string[] } {
+    const cycle = this.get(cycleId);
+
+    if (cycle.state === 'active' || cycle.state === 'cooldown' || cycle.state === 'complete') {
+      throw new Error(
+        `Cannot start cycle "${cycleId}": already in state "${cycle.state}". Only planning cycles can be started.`,
+      );
+    }
+
+    const betsWithoutKata = cycle.bets
+      .filter((b) => !b.kata)
+      .map((b) => b.description);
+
+    if (betsWithoutKata.length > 0) {
+      return { cycle, betsWithoutKata };
+    }
+
+    const updated = this.updateState(cycleId, 'active');
+    return { cycle: updated, betsWithoutKata: [] };
   }
 
   /**

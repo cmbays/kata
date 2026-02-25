@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import type { Command } from 'commander';
 import { CycleManager } from '@domain/services/cycle-manager.js';
 import { KnowledgeStore } from '@infra/knowledge/knowledge-store.js';
@@ -10,6 +11,10 @@ import {
   formatCooldownSessionResult,
   formatBetOutcomePrompt,
 } from '@cli/formatters/cycle-formatter.js';
+import { SavedKataSchema } from '@domain/types/saved-kata.js';
+import type { KataAssignment } from '@domain/types/bet.js';
+import { createRunTree, runPaths } from '@infra/persistence/run-store.js';
+import type { Run } from '@domain/types/run-state.js';
 
 /**
  * Register the `kata cycle` and `kata cooldown` subcommands.
@@ -155,10 +160,198 @@ export function registerCycleCommands(parent: Command): void {
       }
     }));
 
+  // kata cycle add-bet <cycle-id> <description>
+  cycle
+    .command('add-bet <cycle-id> <description>')
+    .description('Add a bet to a cycle with an optional kata assignment')
+    .option('--kata <name>', 'Named kata pattern (e.g. "full-feature")')
+    .option('--gyo <stages>', 'Ad-hoc stage list (comma-separated, e.g. "research,build")')
+    .option('-a, --appetite <pct>', 'Appetite percentage (default: 20)', parseInt)
+    .action(withCommandContext(async (ctx, cycleId: string, description: string) => {
+      const localOpts = ctx.cmd.opts();
+      const manager = new CycleManager(kataDirPath(ctx.kataDir, 'cycles'), JsonStore);
+
+      if (localOpts.kata && localOpts.gyo) {
+        throw new Error('--kata and --gyo are mutually exclusive');
+      }
+
+      let kata: KataAssignment | undefined;
+      if (localOpts.kata) {
+        kata = { type: 'named', pattern: localOpts.kata as string };
+      } else if (localOpts.gyo) {
+        const stages = (localOpts.gyo as string).split(',').map((s) => s.trim()).filter(Boolean);
+        if (stages.length === 0) {
+          throw new Error('--gyo requires at least one stage');
+        }
+        kata = { type: 'ad-hoc', stages: stages as ['research' | 'plan' | 'build' | 'review', ...('research' | 'plan' | 'build' | 'review')[]] };
+      }
+
+      const appetite: number = localOpts.appetite ?? 20;
+
+      const cycle = manager.addBet(cycleId, {
+        description,
+        appetite,
+        outcome: 'pending',
+        issueRefs: [],
+        ...(kata ? { kata } : {}),
+      });
+
+      const status = manager.getBudgetStatus(cycleId);
+
+      if (ctx.globalOpts.json) {
+        console.log(formatCycleStatusJson(status, cycle));
+      } else {
+        console.log('Bet added!');
+        console.log('');
+        console.log(formatCycleStatus(status, cycle));
+      }
+    }));
+
+  // kata cycle update-bet <bet-id>
+  cycle
+    .command('update-bet <bet-id>')
+    .description('Update the kata assignment for an existing bet')
+    .option('--kata <name>', 'Named kata pattern (e.g. "full-feature")')
+    .option('--gyo <stages>', 'Ad-hoc stage list (comma-separated, e.g. "research,build")')
+    .action(withCommandContext(async (ctx, betId: string) => {
+      const localOpts = ctx.cmd.opts();
+      const manager = new CycleManager(kataDirPath(ctx.kataDir, 'cycles'), JsonStore);
+
+      if (localOpts.kata && localOpts.gyo) {
+        throw new Error('--kata and --gyo are mutually exclusive');
+      }
+
+      let kata: KataAssignment;
+      if (localOpts.kata) {
+        kata = { type: 'named', pattern: localOpts.kata as string };
+      } else if (localOpts.gyo) {
+        const stages = (localOpts.gyo as string).split(',').map((s) => s.trim()).filter(Boolean);
+        if (stages.length === 0) {
+          throw new Error('--gyo requires at least one stage');
+        }
+        kata = { type: 'ad-hoc', stages: stages as ['research' | 'plan' | 'build' | 'review', ...('research' | 'plan' | 'build' | 'review')[]] };
+      } else {
+        throw new Error('Either --kata or --gyo is required');
+      }
+
+      const found = manager.findBetCycle(betId);
+      if (!found) {
+        throw new Error(`Bet "${betId}" not found in any cycle`);
+      }
+
+      const cycle = manager.updateBet(found.cycle.id, betId, { kata });
+      const status = manager.getBudgetStatus(found.cycle.id);
+
+      if (ctx.globalOpts.json) {
+        console.log(formatCycleStatusJson(status, cycle));
+      } else {
+        console.log('Bet updated!');
+        console.log('');
+        console.log(formatCycleStatus(status, cycle));
+      }
+    }));
+
+  // kata cycle start <cycle-id>
+  cycle
+    .command('start <cycle-id>')
+    .description('Start a cycle — validates kata assignments and creates run trees for each bet')
+    .action(withCommandContext(async (ctx, cycleId: string) => {
+      const manager = new CycleManager(kataDirPath(ctx.kataDir, 'cycles'), JsonStore);
+      const runsDir = kataDirPath(ctx.kataDir, 'runs');
+      const katasDir = kataDirPath(ctx.kataDir, 'katas');
+
+      // Pre-flight: read cycle and resolve all kata stages before any state mutations.
+      // This ensures that missing kata files are detected before the cycle transitions to 'active'.
+      const draftCycle = manager.get(cycleId);
+
+      if (draftCycle.state === 'active' || draftCycle.state === 'cooldown' || draftCycle.state === 'complete') {
+        throw new Error(
+          `Cannot start cycle "${cycleId}": already in state "${draftCycle.state}". Only planning cycles can be started.`,
+        );
+      }
+
+      const betsWithoutKata = draftCycle.bets
+        .filter((b) => !b.kata)
+        .map((b) => b.description);
+
+      if (betsWithoutKata.length > 0) {
+        const list = betsWithoutKata.map((d) => `  - "${d}"`).join('\n');
+        throw new Error(
+          `Cannot start cycle: the following bets have no kata assignment.\n${list}\n\nUse "kata cycle update-bet <bet-id> --kata <pattern>" to assign a kata.`,
+        );
+      }
+
+      // Pre-flight: load all named kata files so missing patterns fail before any mutations.
+      const stageSequences = new Map<string, Array<'research' | 'plan' | 'build' | 'review'>>();
+      for (const bet of draftCycle.bets) {
+        const kata = bet.kata!;
+        if (kata.type === 'named') {
+          const kataPath = join(katasDir, `${kata.pattern}.json`);
+          const savedKata = JsonStore.read(kataPath, SavedKataSchema);
+          stageSequences.set(bet.id, savedKata.stages as Array<'research' | 'plan' | 'build' | 'review'>);
+        } else {
+          stageSequences.set(bet.id, kata.stages as Array<'research' | 'plan' | 'build' | 'review'>);
+        }
+      }
+
+      // All validation passed — now transition cycle state and create run trees.
+      const { cycle } = manager.startCycle(cycleId);
+
+      const runs: Array<{
+        runId: string;
+        betId: string;
+        betPrompt: string;
+        kataPattern: string;
+        stageSequence: string[];
+        runDir: string;
+      }> = [];
+
+      for (const bet of cycle.bets) {
+        const kata = bet.kata!;
+        const stageSequence = stageSequences.get(bet.id)!;
+
+        const runId = crypto.randomUUID();
+        const run: Run = {
+          id: runId,
+          cycleId,
+          betId: bet.id,
+          betPrompt: bet.description,
+          kataPattern: kata.type === 'named' ? kata.pattern : undefined,
+          stageSequence,
+          currentStage: null,
+          status: 'pending',
+          startedAt: new Date().toISOString(),
+        };
+
+        createRunTree(runsDir, run);
+
+        runs.push({
+          runId,
+          betId: bet.id,
+          betPrompt: bet.description,
+          kataPattern: kata.type === 'named' ? kata.pattern : kata.stages.join(','),
+          stageSequence,
+          runDir: runPaths(runsDir, runId).runDir,
+        });
+      }
+
+      if (ctx.globalOpts.json) {
+        console.log(JSON.stringify({ cycleId, status: 'active', runs }, null, 2));
+      } else {
+        console.log(`Cycle started! ${runs.length} run(s) created.`);
+        for (const r of runs) {
+          console.log(`\n  Run:      ${r.runId}`);
+          console.log(`  Bet:      ${r.betPrompt}`);
+          console.log(`  Pattern:  ${r.kataPattern}`);
+          console.log(`  Sequence: ${r.stageSequence.join(' → ')}`);
+        }
+      }
+    }));
+
   // kata cycle focus <cycle-id> — add a bet interactively
   cycle
     .command('focus')
-    .description('Add a focus (bet) to a cycle')
+    .description('Add a focus (bet) to a cycle (use add-bet for new workflows)')
     .argument('<cycle-id>', 'Cycle ID')
     .option('-d, --description <desc>', 'Bet description')
     .option('-a, --appetite <pct>', 'Appetite percentage', parseInt)

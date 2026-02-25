@@ -391,6 +391,127 @@ describe('CycleManager.updateBetOutcomes', () => {
   });
 });
 
+describe('CycleManager.updateBet', () => {
+  it('sets kata assignment on a bet', () => {
+    const cycle = manager.create(makeBudget());
+    const updated = manager.addBet(cycle.id, makeBetInput());
+    const betId = updated.bets[0]!.id;
+
+    const result = manager.updateBet(cycle.id, betId, {
+      kata: { type: 'named', pattern: 'full-feature' },
+    });
+
+    expect(result.bets[0]!.kata).toEqual({ type: 'named', pattern: 'full-feature' });
+  });
+
+  it('persists the kata assignment to disk', () => {
+    const cycle = manager.create(makeBudget());
+    const updated = manager.addBet(cycle.id, makeBetInput());
+    const betId = updated.bets[0]!.id;
+
+    manager.updateBet(cycle.id, betId, { kata: { type: 'ad-hoc', stages: ['research', 'build'] } });
+
+    const retrieved = manager.get(cycle.id);
+    expect(retrieved.bets[0]!.kata).toEqual({ type: 'ad-hoc', stages: ['research', 'build'] });
+  });
+
+  it('throws when bet is not found in cycle', () => {
+    const cycle = manager.create(makeBudget());
+    expect(() =>
+      manager.updateBet(cycle.id, crypto.randomUUID(), { kata: { type: 'named', pattern: 'x' } }),
+    ).toThrow('not found in cycle');
+  });
+
+  it('throws CycleNotFoundError for nonexistent cycle', () => {
+    expect(() =>
+      manager.updateBet(crypto.randomUUID(), crypto.randomUUID(), { kata: { type: 'named', pattern: 'x' } }),
+    ).toThrow(CycleNotFoundError);
+  });
+});
+
+describe('CycleManager.findBetCycle', () => {
+  it('returns cycle and bet when found', () => {
+    const cycle = manager.create(makeBudget());
+    const updated = manager.addBet(cycle.id, makeBetInput({ description: 'Find me' }));
+    const betId = updated.bets[0]!.id;
+
+    const result = manager.findBetCycle(betId);
+    expect(result).not.toBeNull();
+    expect(result!.cycle.id).toBe(cycle.id);
+    expect(result!.bet.description).toBe('Find me');
+  });
+
+  it('returns null when bet is not in any cycle', () => {
+    manager.create(makeBudget());
+    const result = manager.findBetCycle(crypto.randomUUID());
+    expect(result).toBeNull();
+  });
+
+  it('finds bet across multiple cycles', () => {
+    const c1 = manager.create(makeBudget());
+    manager.addBet(c1.id, makeBetInput({ description: 'Bet A', appetite: 20 }));
+    const c2 = manager.create(makeBudget());
+    const updated = manager.addBet(c2.id, makeBetInput({ description: 'Bet B', appetite: 20 }));
+    const betId = updated.bets[0]!.id;
+
+    const result = manager.findBetCycle(betId);
+    expect(result!.cycle.id).toBe(c2.id);
+    expect(result!.bet.description).toBe('Bet B');
+  });
+});
+
+describe('CycleManager.startCycle', () => {
+  it('transitions cycle to active when all bets have kata', () => {
+    const cycle = manager.create(makeBudget());
+    const withBet = manager.addBet(cycle.id, makeBetInput());
+    const betId = withBet.bets[0]!.id;
+    manager.updateBet(cycle.id, betId, { kata: { type: 'named', pattern: 'full-feature' } });
+
+    const result = manager.startCycle(cycle.id);
+    expect(result.betsWithoutKata).toHaveLength(0);
+    expect(result.cycle.state).toBe('active');
+  });
+
+  it('returns unassigned bets without transitioning when bets lack kata', () => {
+    const cycle = manager.create(makeBudget());
+    manager.addBet(cycle.id, makeBetInput({ description: 'Missing kata bet', appetite: 20 }));
+
+    const result = manager.startCycle(cycle.id);
+    expect(result.betsWithoutKata).toEqual(['Missing kata bet']);
+    // State should remain planning
+    expect(manager.get(cycle.id).state).toBe('planning');
+  });
+
+  it('throws if cycle is already active', () => {
+    const cycle = manager.create(makeBudget());
+    manager.updateState(cycle.id, 'active');
+    expect(() => manager.startCycle(cycle.id)).toThrow('already in state');
+  });
+
+  it('throws if cycle is in cooldown state', () => {
+    const cycle = manager.create(makeBudget());
+    manager.updateState(cycle.id, 'cooldown');
+    expect(() => manager.startCycle(cycle.id)).toThrow('already in state');
+  });
+
+  it('throws if cycle is complete', () => {
+    const cycle = manager.create(makeBudget());
+    manager.updateState(cycle.id, 'complete');
+    expect(() => manager.startCycle(cycle.id)).toThrow('already in state');
+  });
+
+  it('allows starting a cycle with no bets', () => {
+    const cycle = manager.create(makeBudget());
+    const result = manager.startCycle(cycle.id);
+    expect(result.betsWithoutKata).toHaveLength(0);
+    expect(result.cycle.state).toBe('active');
+  });
+
+  it('throws CycleNotFoundError for nonexistent cycle', () => {
+    expect(() => manager.startCycle(crypto.randomUUID())).toThrow(CycleNotFoundError);
+  });
+});
+
 describe('CycleManager.generateCooldown', () => {
   it('generates cooldown report for a cycle with no bets', () => {
     const cycle = manager.create(makeBudget(), 'Empty Cycle');
