@@ -60,7 +60,7 @@ kata step next 7c9e-... --json
 # → { status: "waiting", message: "No flavors selected yet..." }
 ```
 
-The orchestrator (bet teammate) selects flavors. Record the selection decision:
+The `"No flavors selected yet"` response means the orchestrator (you, the bet teammate) must now choose which flavors to run for this stage. Inspect available flavors (`eza .kata/flavors/` or read flavor JSON files), then record your selection decision:
 
 ```
 kata decision record 7c9e-... \
@@ -142,6 +142,28 @@ The bet teammate **messages the user**:
 > "The build stage is complete and ready for human review. Please run `kata approve human-approved-exit-build` when you've reviewed the build artifacts and are ready to proceed to review."
 
 The bet teammate then **pauses** — it does not call `kata step next` again until it receives a message that the gate has been approved.
+
+---
+
+## Handling "No Flavors Selected"
+
+When `kata step next --json` returns `{ "status": "waiting", "message": "No flavors selected yet..." }`:
+
+1. Read available flavors: browse `.kata/flavors/*.json` to see what's available
+2. Choose which flavors fit the bet and stage (consider the betPrompt, available skills, and stage goal)
+3. Record your decision:
+   ```bash
+   kata decision record "$RUN_ID" \
+     --stage <category> \
+     --type flavor-selection \
+     --context '{"availableFlavors":["<a>","<b>"],"betKeywords":["..."]}' \
+     --options '["<a>","<b>"]' \
+     --selected <chosen-flavor> \
+     --confidence 0.85 \
+     --reasoning "..."
+   ```
+4. Update the stage state with selected flavors (write directly to `stages/<category>/state.json`, setting `selectedFlavors`)
+5. Call `kata step next --json` again — it will now return the first step
 
 ---
 

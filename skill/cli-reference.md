@@ -5,6 +5,88 @@
 
 ---
 
+## `kata cycle add-bet <cycle-id> <description>`
+
+Add a bet to a cycle in `planning` state, with an optional kata assignment.
+
+**Required**: `<cycle-id>`, `<description>` — cycle UUID and bet description text
+
+**Optional flags**:
+- `--kata <name>` — named kata pattern (e.g. `full-feature`); mutually exclusive with `--gyo`
+- `--gyo <stages>` — ad-hoc stage list, comma-separated (e.g. `research,build`); mutually exclusive with `--kata`
+- `-a, --appetite <pct>` — appetite percentage of cycle budget (default: 20)
+
+**Example**:
+```bash
+kata cycle add-bet "$CYCLE_ID" "Implement OAuth2 login flow" \
+  --kata full-feature \
+  --appetite 30
+```
+
+**`--json` output**:
+```json
+{
+  "status": {
+    "cycleId": "550e8400-e29b-41d4-a716-446655440000",
+    "budget": { "tokenBudget": 200000 },
+    "tokensUsed": 0,
+    "utilizationPercent": 0,
+    "perBet": [
+      {
+        "betId": "a87ff679-a2f3-401c-85e3-d89b5428c1de",
+        "description": "Implement OAuth2 login flow",
+        "appetite": 30,
+        "budgetAllocation": 60000,
+        "tokensUsed": 0,
+        "utilizationPercent": 0
+      }
+    ]
+  },
+  "cycle": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "name": "Sprint 1",
+    "budget": { "tokenBudget": 200000 },
+    "bets": [
+      {
+        "id": "a87ff679-a2f3-401c-85e3-d89b5428c1de",
+        "description": "Implement OAuth2 login flow",
+        "appetite": 30,
+        "outcome": "pending",
+        "issueRefs": [],
+        "kata": { "type": "named", "pattern": "full-feature" }
+      }
+    ],
+    "pipelineMappings": [],
+    "state": "planning",
+    "cooldownReserve": 10,
+    "createdAt": "2026-02-25T09:00:00Z",
+    "updatedAt": "2026-02-25T09:10:00Z"
+  }
+}
+```
+
+---
+
+## `kata cycle update-bet <bet-id>`
+
+Update the kata assignment for an existing bet (before the cycle starts).
+
+**Required**: `<bet-id>` — UUID of a bet in any `planning` cycle
+
+**Required flags** (one of):
+- `--kata <name>` — named kata pattern
+- `--gyo <stages>` — ad-hoc stage list, comma-separated
+
+**Example**:
+```bash
+kata cycle update-bet "$BET_ID" --kata full-feature
+kata cycle update-bet "$BET_ID" --gyo "research,build"
+```
+
+**`--json` output**: Same shape as `kata cycle add-bet --json` (full `{ status, cycle }` object).
+
+---
+
 ## `kata cycle start <cycle-id>`
 
 Start a planning cycle. Validates that all bets have kata assignments, then creates a run tree for each bet.
@@ -126,7 +208,8 @@ Get the next step to execute for a run. Call this to know what to work on next.
   "prompt": "Compile the Rust project and ensure all tests pass...",
   "resources": {
     "tools": ["Bash", "Read", "Write"],
-    "agentHints": ["use cargo build --release"]
+    "agents": [],
+    "skills": []
   },
   "gates": {
     "entry": [
@@ -238,7 +321,7 @@ Record an orchestration decision for observability and self-improvement.
 
 **Required flags**:
 - `--stage <category>` — stage where the decision was made
-- `--type <decision-type>` — known types: `flavor-selection`, `execution-mode`, `capability-analysis`, `gap-assessment`, `synthesis-approach`, `skip-justification`; unknown types are accepted with a warning
+- `--type <decision-type>` — known types: `flavor-selection`, `execution-mode`, `synthesis-approach`, `retry`, `confidence-gate`, `capability-analysis`, `gap-assessment`; unknown types are accepted with a warning
 - `--context <json>` — JSON object with contextual snapshot at decision time
 - `--options <json>` — JSON array of strings (the options considered)
 - `--selected <option>` — the chosen option (must be in `--options` unless options is `[]`)
@@ -269,7 +352,6 @@ kata decision record "$RUN_ID" \
   "id": "3b07e7d4-ab84-4b94-8e5c-0a9f0e46cc12",
   "stageCategory": "research",
   "flavor": "web-standards",
-  "step": null,
   "decisionType": "flavor-selection",
   "context": { "availableFlavors": ["web-standards", "internal-docs"], "betKeywords": ["oauth", "login"] },
   "options": ["web-standards", "internal-docs"],
@@ -357,7 +439,6 @@ kata decision update "$RUN_ID" "$DECISION_ID" \
   "decisionId": "3b07e7d4-ab84-4b94-8e5c-0a9f0e46cc12",
   "outcome": "good",
   "notes": "web-standards research uncovered the critical token expiry constraint",
-  "userOverrides": null,
   "updatedAt": "2026-02-25T14:00:00Z"
 }
 ```

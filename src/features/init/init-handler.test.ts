@@ -261,6 +261,7 @@ describe('handleInit', () => {
       'file-structure.md',
       'orchestration.md',
       'context-flow.md',
+      'classification.md',
       join('templates', 'decision-format.md'),
       join('templates', 'synthesis-format.md'),
       join('templates', 'artifact-format.md'),
@@ -290,7 +291,7 @@ describe('handleInit', () => {
       expect(readFileSync(tmpl, 'utf-8').length).toBeGreaterThan(0);
     });
 
-    it('copies all 7 expected skill files', async () => {
+    it('copies all 9 expected skill files', async () => {
       await handleInit({ cwd: baseDir, skipPrompts: true });
 
       for (const relPath of expectedFiles) {

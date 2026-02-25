@@ -35,9 +35,10 @@ This returns a list of run IDs. Each run ID corresponds to one bet. Use `--json`
 kata step next <run-id> --json
 ```
 
-Returns either:
+Returns one of four shapes:
 - A step context payload (the step you should execute next)
 - `{ "status": "waiting", "gate": { ... } }` if a gate is blocking
+- `{ "status": "waiting", "message": "No flavors selected yet..." }` if the orchestrator hasn't selected flavors for the current stage
 - `{ "status": "complete" }` if the run is done
 
 ### Do the work

@@ -1,18 +1,32 @@
 # Synthesis Format — Stage Synthesis Structure
 
 > A synthesis artifact summarizes a completed stage and provides a handoff to the next stage.
-> Write it as `synthesis.md` and record it with `kata artifact record --type synthesis`.
+>
+> There are two levels of synthesis:
+> - **Flavor synthesis** — written by a flavor sub-agent after completing a flavor's steps. Recorded via `kata artifact record --type synthesis --flavor <name>`. Stored at `stages/<cat>/flavors/<name>/synthesis.md`.
+> - **Stage synthesis** — written by the bet teammate after all flavors complete. Written **directly to the filesystem** (no CLI command needed). Stored at `stages/<cat>/synthesis.md`. Reference this path from `kata step next --json`'s `priorStageSyntheses` field.
 
 ---
 
 ## When to Write a Synthesis
 
-After all flavors in a stage have completed, the **bet teammate** (not a flavor sub-agent) writes the stage synthesis. It:
+### Flavor synthesis (flavor sub-agent)
+
+After completing a flavor's steps, the **flavor sub-agent** writes a flavor synthesis:
+
+1. Summarizes findings from the flavor's steps and artifacts
+2. Records it via CLI: `kata artifact record --type synthesis --flavor <name>`
+
+### Stage synthesis (bet teammate)
+
+After all flavors in a stage have completed, the **bet teammate** writes the stage synthesis:
 
 1. Reads artifacts from all completed flavors
-2. Reads flavor-level synthesis files if present
+2. Reads flavor-level synthesis files (`stages/<cat>/flavors/<name>/synthesis.md`)
 3. Combines key findings into a single coherent document
-4. Records it as a synthesis artifact
+4. **Writes it directly to the filesystem** at: `<runDir>/stages/<category>/synthesis.md`
+
+No CLI command exists for writing stage synthesis — use the Write tool directly.
 
 ---
 
@@ -134,13 +148,15 @@ Research confirmed that the project uses Passport.js with a local strategy and e
 
 ## Recording the Synthesis
 
+### Flavor synthesis (via CLI)
+
 ```bash
 # Write the synthesis to a temp file first
 cat > /tmp/research-synthesis.md << 'EOF'
 [synthesis content]
 EOF
 
-# Record it
+# Record it — stored at stages/research/flavors/web-standards/synthesis.md
 kata artifact record "$RUN_ID" \
   --stage research \
   --flavor web-standards \
@@ -149,4 +165,18 @@ kata artifact record "$RUN_ID" \
   --type synthesis
 ```
 
-The `--type synthesis` flag ensures the file is stored as `synthesis.md` in the flavor directory and indexed as a synthesis artifact. The `priorStageSyntheses` field in subsequent `kata step next --json` calls will include a path to this file.
+The `--type synthesis` flag stores the file as `synthesis.md` in the flavor directory.
+
+### Stage synthesis (direct write)
+
+The bet teammate writes the stage synthesis directly. Get the run directory from `kata cycle start --json` output:
+
+```bash
+# RUN_DIR is the runDir from kata cycle start --json
+SYNTHESIS_PATH="$RUN_DIR/stages/research/synthesis.md"
+
+# Write the stage synthesis file using your Write tool
+# Path: $SYNTHESIS_PATH
+```
+
+Use your Write tool to write the synthesis content to `$RUN_DIR/stages/<category>/synthesis.md`. The `priorStageSyntheses` field in subsequent `kata step next --json` calls will include a reference to this path for downstream stages.

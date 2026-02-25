@@ -18,7 +18,7 @@
       stages/
         <category>/            # research | plan | build | review
           state.json           # Stage state
-          synthesis.md         # Stage-level synthesis (written by bet teammate)
+          synthesis.md         # Stage-level synthesis (written DIRECTLY by bet teammate — no CLI)
           flavors/
             <flavor-name>/
               state.json                   # Flavor state
@@ -116,7 +116,7 @@ Location: `.kata/runs/<run-id>/stages/<category>/state.json`
 | `executionMode` | enum? | `parallel` \| `sequential`; set by orchestrator |
 | `selectedFlavors` | string[] | Flavors chosen for this stage; empty until orchestrator selects |
 | `gaps` | Gap[] | Gap analysis findings; may be empty |
-| `synthesisArtifact` | string? | Relative path to synthesis.md once written |
+| `synthesisArtifact` | string? | Relative path to synthesis.md once written directly by bet teammate |
 | `decisions` | UUID[] | Decision IDs recorded in this stage |
 | `pendingGate` | PendingGate? | Present when a gate is blocking; cleared by `kata approve` |
 | `approvedGates` | ApprovedGate[] | History of approved gates |
@@ -214,7 +214,8 @@ Browse them directly — no CLI needed for reads.
 |----------|----------|
 | Check if a gate is pending | Read `stages/<category>/state.json`, check `pendingGate` field |
 | See which flavors are selected | Read `stages/<category>/state.json`, check `selectedFlavors` |
-| Read a prior synthesis | Read `stages/<category>/synthesis.md` directly |
+| Read a prior stage synthesis | Read `stages/<category>/synthesis.md` directly |
+| Write stage synthesis | Write directly to `<runDir>/stages/<category>/synthesis.md` — no CLI |
 | Browse artifact content | Read file at `<runDir>/<artifact.filePath>` directly |
 | List decisions for a stage | Read `decisions.jsonl`, filter by `stageCategory` |
 | Get next step | `kata step next <run-id> --json` — has step context and prompt |

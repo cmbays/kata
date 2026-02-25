@@ -115,8 +115,9 @@ async function promptOptions(): Promise<{ methodology: string; adapter: string }
  * 3. Write .kata/config.json
  * 4. Load built-in stages into .kata/stages/
  * 5. Copy built-in prompt templates into .kata/prompts/
- * 6. Load pipeline templates into .kata/templates/
- * 7. Return summary
+ * 6. Copy bundled skill package into .kata/skill/
+ * 7. Load pipeline templates into .kata/templates/
+ * 8. Return summary
  */
 export async function handleInit(options: InitOptions): Promise<InitResult> {
   const { cwd, skipPrompts = false } = options;
