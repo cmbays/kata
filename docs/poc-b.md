@@ -225,6 +225,6 @@ These are 4 deliberate write operations. An agent with the updated skill files c
 - [x] Both stages completed (`plan`, `build`)
 - [x] Artifact index has 4 entries (2 per stage)
 - [x] Decision log has 2 decisions (one per stage)
-- [x] Gate `human-approved-plan-review` approved (in `build.approvedGates`)
+- [x] Gate `human-approved-plan-review` approved (confirmed in `.kata/runs/.../stages/build/state.json`'s `approvedGates` array — not surfaced in `kata run status --json` output)
 - [x] Both syntheses exist on disk (`stages/plan/synthesis.md`, `stages/build/synthesis.md`)
 - [x] `hasSynthesis: true` for both stages
