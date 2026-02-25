@@ -169,7 +169,7 @@ export function registerStepCommands(parent: Command): void {
       // Resolve prompt
       let prompt = stepDef?.description ?? '';
       if (stepDef?.promptTemplate) {
-        const promptPath = resolve(ctx.kataDir, stepDef.promptTemplate);
+        const promptPath = resolve(stagesDir, stepDef.promptTemplate);
         if (existsSync(promptPath)) {
           const raw = readFileSync(promptPath, 'utf-8');
           prompt = raw.replace(/\{\{\s*betPrompt\s*\}\}/g, run.betPrompt);

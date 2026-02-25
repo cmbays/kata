@@ -715,5 +715,40 @@ describe('registerStepCommands', () => {
       expect(output.priorStageSyntheses).toHaveLength(1);
       expect(output.priorStageSyntheses[0].stage).toBe('research');
     });
+
+    it('loads prompt from .kata/prompts/ when step has a promptTemplate', async () => {
+      const run = makeRun();
+      createRunTree(runsDir, run);
+
+      // Write a step definition with a promptTemplate using the relative convention
+      const stepDef = {
+        type: 'research',
+        description: 'Fallback description',
+        artifacts: [],
+        learningHooks: [],
+        config: {},
+        promptTemplate: '../prompts/research.md',
+      };
+      writeFileSync(join(stagesDir, 'research.json'), JSON.stringify(stepDef, null, 2));
+
+      // Write the prompt file at .kata/prompts/research.md
+      const promptsDir = join(kataDir, 'prompts');
+      mkdirSync(promptsDir, { recursive: true });
+      writeFileSync(join(promptsDir, 'research.md'), '# Research prompt for {{betPrompt}}', 'utf-8');
+
+      const stageState = readStageState(runsDir, run.id, 'research');
+      stageState.selectedFlavors = ['research'];
+      stageState.status = 'running';
+      writeStageState(runsDir, run.id, stageState);
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--json', '--cwd', baseDir, 'step', 'next', run.id]);
+
+      const output = JSON.parse(consoleSpy.mock.calls[0]![0] as string);
+      // Prompt should be the file content with betPrompt interpolated, not the fallback description
+      expect(output.prompt).toContain('Research prompt for');
+      expect(output.prompt).toContain(run.betPrompt);
+      expect(output.prompt).not.toBe('Fallback description');
+    });
   });
 });
