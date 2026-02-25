@@ -1,8 +1,30 @@
 import { join } from 'node:path';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { randomUUID } from 'node:crypto';
 import { Command } from 'commander';
 import { registerStageCommands } from './stage.js';
+import {
+  createRunTree,
+  readRun,
+  readStageState,
+  writeStageState,
+} from '@infra/persistence/run-store.js';
+import type { Run } from '@domain/types/run-state.js';
+
+function makeRun(overrides: Partial<Run> = {}): Run {
+  return {
+    id: randomUUID(),
+    cycleId: randomUUID(),
+    betId: randomUUID(),
+    betPrompt: 'Implement feature',
+    stageSequence: ['plan', 'build'],
+    currentStage: 'plan',
+    status: 'running',
+    startedAt: '2026-01-01T00:00:00.000Z',
+    ...overrides,
+  };
+}
 
 describe('registerStageCommands (category-level)', () => {
   const baseDir = join(tmpdir(), `kata-stage-cat-test-${Date.now()}`);
@@ -23,6 +45,7 @@ describe('registerStageCommands (category-level)', () => {
     mkdirSync(flavorsDir, { recursive: true });
     mkdirSync(join(kataDir, 'rules'), { recursive: true });
     mkdirSync(join(kataDir, 'history'), { recursive: true });
+    mkdirSync(join(kataDir, 'runs'), { recursive: true });
     writeFileSync(
       join(flavorsDir, 'build.typescript-tdd.json'),
       JSON.stringify(sampleFlavor, null, 2),
@@ -136,6 +159,188 @@ describe('registerStageCommands (category-level)', () => {
       const output = consoleSpy.mock.calls[0]?.[0] as string;
       expect(output).toContain('Rules:');
       expect(output).toContain('Decisions:');
+    });
+  });
+
+  // ---- stage complete ----
+
+  describe('stage complete', () => {
+    const runsDir = join(kataDir, 'runs');
+
+    it('marks stage completed and advances to next stage', async () => {
+      const run = makeRun();
+      createRunTree(runsDir, run);
+
+      const stageState = readStageState(runsDir, run.id, 'plan');
+      stageState.status = 'running';
+      writeStageState(runsDir, run.id, stageState);
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--json', '--cwd', baseDir,
+        'stage', 'complete', run.id, '--stage', 'plan',
+      ]);
+
+      const output = JSON.parse(consoleSpy.mock.calls[0]![0] as string);
+      expect(output.stage).toBe('plan');
+      expect(output.status).toBe('completed');
+      expect(output.nextStage).toBe('build');
+
+      const updatedState = readStageState(runsDir, run.id, 'plan');
+      expect(updatedState.status).toBe('completed');
+
+      const updatedRun = readRun(runsDir, run.id);
+      expect(updatedRun.currentStage).toBe('build');
+      expect(updatedRun.status).toBe('running');
+    });
+
+    it('marks run complete when completing last stage', async () => {
+      const run = makeRun({ stageSequence: ['plan', 'build'], currentStage: 'build' });
+      createRunTree(runsDir, run);
+
+      const stageState = readStageState(runsDir, run.id, 'build');
+      stageState.status = 'running';
+      writeStageState(runsDir, run.id, stageState);
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--json', '--cwd', baseDir,
+        'stage', 'complete', run.id, '--stage', 'build',
+      ]);
+
+      const output = JSON.parse(consoleSpy.mock.calls[0]![0] as string);
+      expect(output.nextStage).toBeNull();
+
+      const updatedRun = readRun(runsDir, run.id);
+      expect(updatedRun.status).toBe('completed');
+      expect(updatedRun.completedAt).toBeDefined();
+    });
+
+    it('copies synthesis file when --synthesis provided', async () => {
+      const run = makeRun();
+      createRunTree(runsDir, run);
+
+      const stageState = readStageState(runsDir, run.id, 'plan');
+      stageState.status = 'running';
+      writeStageState(runsDir, run.id, stageState);
+
+      // Write a temp synthesis file
+      const synthFile = join(tmpdir(), `synthesis-${randomUUID()}.md`);
+      writeFileSync(synthFile, '# Plan synthesis\n\nContent here.', 'utf-8');
+
+      try {
+        const program = createProgram();
+        await program.parseAsync([
+          'node', 'test', '--json', '--cwd', baseDir,
+          'stage', 'complete', run.id,
+          '--stage', 'plan', '--synthesis', synthFile,
+        ]);
+
+        const destPath = join(runsDir, run.id, 'stages', 'plan', 'synthesis.md');
+        expect(existsSync(destPath)).toBe(true);
+        expect(readFileSync(destPath, 'utf-8')).toContain('Plan synthesis');
+
+        const updatedState = readStageState(runsDir, run.id, 'plan');
+        expect(updatedState.synthesisArtifact).toBe('stages/plan/synthesis.md');
+      } finally {
+        rmSync(synthFile, { force: true });
+      }
+    });
+
+    it('prints non-JSON completion message', async () => {
+      const run = makeRun();
+      createRunTree(runsDir, run);
+
+      const stageState = readStageState(runsDir, run.id, 'plan');
+      stageState.status = 'running';
+      writeStageState(runsDir, run.id, stageState);
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir,
+        'stage', 'complete', run.id, '--stage', 'plan',
+      ]);
+
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Next stage: build'));
+    });
+
+    it('errors on invalid stage category', async () => {
+      const run = makeRun();
+      createRunTree(runsDir, run);
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir,
+        'stage', 'complete', run.id, '--stage', 'invalid',
+      ]);
+
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Invalid stage category'));
+    });
+
+    it('errors when run does not exist', async () => {
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir,
+        'stage', 'complete', randomUUID(), '--stage', 'plan',
+      ]);
+
+      expect(errorSpy).toHaveBeenCalled();
+    });
+
+    it('errors when stage is not in the run stageSequence', async () => {
+      const run = makeRun({ stageSequence: ['plan', 'build'], currentStage: 'plan' });
+      createRunTree(runsDir, run);
+
+      const program = createProgram();
+      // 'research' is a valid category but not in this run's sequence
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir,
+        'stage', 'complete', run.id, '--stage', 'research',
+      ]);
+
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('not in the sequence'));
+      // Run state must NOT be mutated
+      const updatedRun = readRun(runsDir, run.id);
+      expect(updatedRun.currentStage).toBe('plan');
+      expect(updatedRun.status).toBe('running');
+    });
+
+    it('errors when synthesis source file does not exist', async () => {
+      const run = makeRun();
+      createRunTree(runsDir, run);
+
+      const stageState = readStageState(runsDir, run.id, 'plan');
+      stageState.status = 'running';
+      writeStageState(runsDir, run.id, stageState);
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir,
+        'stage', 'complete', run.id,
+        '--stage', 'plan', '--synthesis', '/nonexistent/synthesis.md',
+      ]);
+
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('not found'));
+      // Stage must NOT be marked completed
+      const updatedState = readStageState(runsDir, run.id, 'plan');
+      expect(updatedState.status).toBe('running');
+    });
+
+    it('prints run-complete message in non-JSON mode when completing last stage', async () => {
+      const run = makeRun({ stageSequence: ['plan', 'build'], currentStage: 'build' });
+      createRunTree(runsDir, run);
+
+      const stageState = readStageState(runsDir, run.id, 'build');
+      stageState.status = 'running';
+      writeStageState(runsDir, run.id, stageState);
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir,
+        'stage', 'complete', run.id, '--stage', 'build',
+      ]);
+
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('is now complete'));
     });
   });
 });

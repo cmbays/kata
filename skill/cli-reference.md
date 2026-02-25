@@ -443,3 +443,108 @@ kata decision update "$RUN_ID" "$DECISION_ID" \
   "updatedAt": "2026-02-25T14:00:00Z"
 }
 ```
+
+---
+
+## `kata step complete <run-id>`
+
+Mark a step as completed within a flavor, advancing run state. Idempotent — re-running for an already-completed step is a no-op.
+
+**Required flags**:
+- `--stage <category>` — stage category (`research`, `plan`, `build`, `review`)
+- `--flavor <name>` — flavor directory name (matches an entry in `selectedFlavors`)
+- `--step <type>` — step type to mark as completed
+
+**Example**:
+```bash
+kata step complete "$RUN_ID" \
+  --stage plan --flavor shaping --step shaping --json
+```
+
+**`--json` output**:
+```json
+{
+  "stage": "plan",
+  "flavor": "shaping",
+  "step": "shaping",
+  "status": "completed"
+}
+```
+
+The flavor's overall `status` is automatically set to `completed` when all steps in it are done, or stays `running` if sibling steps remain pending.
+
+---
+
+## `kata stage complete <run-id>`
+
+Mark a stage as completed, optionally copy a synthesis file, and advance the run to the next stage. When called on the last stage, the run itself is marked `completed`.
+
+**Required flags**:
+- `--stage <category>` — stage category to complete (`research`, `plan`, `build`, `review`)
+
+**Optional flags**:
+- `--synthesis <file-path>` — path to synthesis file to copy into `.kata/runs/<id>/stages/<cat>/synthesis.md`
+
+**Example**:
+```bash
+kata stage complete "$RUN_ID" \
+  --stage plan --synthesis /tmp/plan-synthesis.md --json
+```
+
+**`--json` output** (mid-run):
+```json
+{
+  "stage": "plan",
+  "status": "completed",
+  "nextStage": "build"
+}
+```
+
+**`--json` output** (last stage):
+```json
+{
+  "stage": "build",
+  "status": "completed",
+  "nextStage": null
+}
+```
+
+**Errors**:
+- Stage not part of this run's `stageSequence` → error; run state is not mutated
+- Synthesis source file not found → error; stage is NOT marked completed
+
+---
+
+## `kata gate set <run-id>`
+
+Set a pending gate on a running stage, blocking `kata step next` from advancing until the gate is approved with `kata approve <gate-id>`.
+
+**Required flags**:
+- `--stage <category>` — stage category to gate (`research`, `plan`, `build`, `review`)
+- `--gate-id <id>` — gate identifier passed to `kata approve` (e.g., `human-approved-plan-review`)
+
+**Optional flags**:
+- `--type <gate-type>` — gate type descriptor (default: `human-approved`)
+
+**Example**:
+```bash
+kata gate set "$RUN_ID" \
+  --stage build --gate-id human-approved-plan-review --json
+```
+
+**`--json` output**:
+```json
+{
+  "gateId": "human-approved-plan-review",
+  "gateType": "human-approved",
+  "stage": "build",
+  "runId": "cc851338-..."
+}
+```
+
+**Errors**:
+- Stage not in this run's `stageSequence` → error
+- Stage not initialized → error
+- Stage not `running` → error (must be running before a gate can be set)
+- Pending gate already set → error; run `kata approve <existing-gate-id>` first
+- Gate ID already in `approvedGates` → warns but allows (sets the gate again)

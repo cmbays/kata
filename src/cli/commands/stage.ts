@@ -1,9 +1,18 @@
+import { copyFileSync, existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 import type { Command } from 'commander';
 import { StageCategorySchema, type StageCategory } from '@domain/types/stage.js';
 import { FlavorRegistry } from '@infra/registries/flavor-registry.js';
 import { RuleRegistry } from '@infra/registries/rule-registry.js';
 import { DecisionRegistry } from '@infra/registries/decision-registry.js';
 import { withCommandContext, kataDirPath } from '@cli/utils.js';
+import {
+  readRun,
+  writeRun,
+  readStageState,
+  writeStageState,
+  runPaths,
+} from '@infra/persistence/run-store.js';
 import {
   formatStageCategoryTable,
   formatStageCategoryDetail,
@@ -42,6 +51,84 @@ export function registerStageCommands(parent: Command): void {
         console.log(formatStageCategoryJson(entries));
       } else {
         console.log(formatStageCategoryTable(entries));
+      }
+    }));
+
+  // ---- complete <run-id> ----
+  stage
+    .command('complete <run-id>')
+    .description('Mark a stage as completed, copy synthesis, and advance the run')
+    .requiredOption('--stage <category>', 'Stage category to complete (research, plan, build, review)')
+    .option('--synthesis <file-path>', 'Path to the synthesis file to copy into the run directory')
+    .action(withCommandContext(async (ctx, runId: string) => {
+      const localOpts = ctx.cmd.opts();
+      const runsDir = kataDirPath(ctx.kataDir, 'runs');
+
+      const stageResult = StageCategorySchema.safeParse(localOpts.stage);
+      if (!stageResult.success) {
+        throw new Error(`Invalid stage category: "${localOpts.stage}". Valid: ${StageCategorySchema.options.join(', ')}`);
+      }
+      const stageCategory = stageResult.data;
+
+      const run = readRun(runsDir, runId);
+
+      // Validate stage is part of this run's sequence before any mutation
+      const currentIdx = run.stageSequence.indexOf(stageCategory);
+      if (currentIdx === -1) {
+        throw new Error(
+          `Stage "${stageCategory}" is not in the sequence for run "${runId}". Sequence: ${run.stageSequence.join(', ')}.`
+        );
+      }
+
+      const stageState = readStageState(runsDir, runId, stageCategory);
+      const paths = runPaths(runsDir, runId);
+      const now = new Date().toISOString();
+
+      // Copy synthesis file if provided
+      let synthesisArtifact: string | undefined;
+      if (localOpts.synthesis) {
+        const srcPath = resolve(localOpts.synthesis as string);
+        if (!existsSync(srcPath)) {
+          throw new Error(
+            `Synthesis file not found: "${srcPath}". Stage "${stageCategory}" was NOT marked as completed.`
+          );
+        }
+        const destPath = paths.stageSynthesis(stageCategory);
+        try {
+          copyFileSync(srcPath, destPath);
+        } catch (err) {
+          throw new Error(
+            `Failed to copy synthesis file to run directory: ${err instanceof Error ? err.message : String(err)}. Stage "${stageCategory}" was NOT marked as completed.`,
+            { cause: err }
+          );
+        }
+        synthesisArtifact = `stages/${stageCategory}/synthesis.md`;
+      }
+
+      // Update stage state
+      stageState.status = 'completed';
+      stageState.completedAt = now;
+      if (synthesisArtifact) stageState.synthesisArtifact = synthesisArtifact;
+      writeStageState(runsDir, runId, stageState);
+
+      // Advance run: next stage or complete
+      const nextStage = run.stageSequence[currentIdx + 1] ?? null;
+
+      if (nextStage) {
+        run.currentStage = nextStage;
+      } else {
+        run.status = 'completed';
+        run.completedAt = now;
+      }
+      writeRun(runsDir, run);
+
+      const result = { stage: stageCategory, status: 'completed' as const, nextStage };
+      if (ctx.globalOpts.json) {
+        console.log(JSON.stringify(result, null, 2));
+      } else if (nextStage) {
+        console.log(`Stage "${stageCategory}" completed. Next stage: ${nextStage}`);
+      } else {
+        console.log(`Stage "${stageCategory}" completed. Run ${runId.slice(0, 8)} is now complete.`);
       }
     }));
 

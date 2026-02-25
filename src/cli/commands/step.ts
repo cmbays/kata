@@ -22,10 +22,12 @@ import {
   readRun,
   readStageState,
   readFlavorState,
+  writeFlavorState,
   runPaths,
 } from '@infra/persistence/run-store.js';
 import { JsonlStore } from '@infra/persistence/jsonl-store.js';
-import { ArtifactIndexEntrySchema } from '@domain/types/run-state.js';
+import { ArtifactIndexEntrySchema, type FlavorState } from '@domain/types/run-state.js';
+import { StageCategorySchema } from '@domain/types/stage.js';
 
 // ---- Register commands ----
 
@@ -437,6 +439,83 @@ export function registerStepCommands(parent: Command): void {
 
       const { deleted } = deleteStep({ stagesDir, type, flavor });
       console.log(`Step "${stepLabel(deleted.type, deleted.flavor)}" deleted.`);
+    }));
+
+  // ---- complete <run-id> ----
+  step
+    .command('complete <run-id>')
+    .description('Mark a step as completed within a flavor, advancing run state')
+    .requiredOption('--stage <category>', 'Stage category (research, plan, build, review)')
+    .requiredOption('--flavor <name>', 'Flavor name (directory under stages/<cat>/flavors/)')
+    .requiredOption('--step <type>', 'Step type to mark as completed')
+    .action(withCommandContext(async (ctx, runId: string) => {
+      const localOpts = ctx.cmd.opts();
+      const runsDir = kataDirPath(ctx.kataDir, 'runs');
+
+      const stageResult = StageCategorySchema.safeParse(localOpts.stage);
+      if (!stageResult.success) {
+        throw new Error(`Invalid stage category: "${localOpts.stage}". Valid: ${StageCategorySchema.options.join(', ')}`);
+      }
+      const stage = stageResult.data;
+      const flavorName = localOpts.flavor as string;
+      const stepType = localOpts.step as string;
+
+      // Verify run exists
+      readRun(runsDir, runId);
+
+      // Read existing flavor state or create a minimal one
+      const existing = readFlavorState(runsDir, runId, stage, flavorName, { allowMissing: true });
+
+      const now = new Date().toISOString();
+      let steps = existing?.steps ?? [];
+
+      const stepIdx = steps.findIndex((s) => s.type === stepType);
+      if (stepIdx >= 0) {
+        if (steps[stepIdx]!.status === 'completed') {
+          // Idempotent: already completed — emit and return without re-writing state
+          const result = { stage, flavor: flavorName, step: stepType, status: 'completed' as const };
+          if (ctx.globalOpts.json) {
+            console.log(JSON.stringify(result, null, 2));
+          } else {
+            console.warn(`Warning: step "${stepType}" in flavor "${flavorName}" is already completed. No changes made.`);
+          }
+          return;
+        }
+        steps = steps.map((s) =>
+          s.type === stepType
+            ? { ...s, status: 'completed' as const, completedAt: now }
+            : s
+        );
+      } else {
+        steps = [...steps, {
+          type: stepType,
+          status: 'completed' as const,
+          artifacts: [],
+          startedAt: now,
+          completedAt: now,
+        }];
+      }
+
+      // Flavor is complete only when no steps remain pending or running
+      const hasPending = steps.some((s) => s.status === 'pending' || s.status === 'running');
+      const flavorStatus = hasPending ? 'running' : 'completed';
+
+      const flavorState: FlavorState = {
+        name: flavorName,
+        stageCategory: stage,
+        status: flavorStatus,
+        steps,
+        currentStep: null,
+      };
+
+      writeFlavorState(runsDir, runId, stage, flavorState);
+
+      const result = { stage, flavor: flavorName, step: stepType, status: 'completed' as const };
+      if (ctx.globalOpts.json) {
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        console.log(`Step "${stepType}" in flavor "${flavorName}" (stage: ${stage}) marked as completed.`);
+      }
     }));
 
   // ---- rename <type> <new-type> ----
