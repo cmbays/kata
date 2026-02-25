@@ -4,7 +4,13 @@ import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { Command } from 'commander';
 import { registerStepCommands } from './step.js';
-import { createRunTree, writeStageState, readStageState } from '@infra/persistence/run-store.js';
+import {
+  createRunTree,
+  writeStageState,
+  readStageState,
+  readFlavorState,
+  writeFlavorState,
+} from '@infra/persistence/run-store.js';
 import type { Run } from '@domain/types/run-state.js';
 
 // Mock @inquirer/prompts to avoid interactive prompts in tests.
@@ -749,6 +755,181 @@ describe('registerStepCommands', () => {
       expect(output.prompt).toContain('Research prompt for');
       expect(output.prompt).toContain(run.betPrompt);
       expect(output.prompt).not.toBe('Fallback description');
+    });
+  });
+
+  // ---- step complete ----
+
+  describe('step complete', () => {
+    let runsDir: string;
+
+    function makeRun(overrides: Partial<Run> = {}): Run {
+      return {
+        id: randomUUID(),
+        cycleId: randomUUID(),
+        betId: randomUUID(),
+        betPrompt: 'Do work',
+        stageSequence: ['plan', 'build'],
+        currentStage: 'plan',
+        status: 'running',
+        startedAt: '2026-01-01T00:00:00.000Z',
+        ...overrides,
+      };
+    }
+
+    beforeEach(() => {
+      runsDir = join(kataDir, 'runs');
+      mkdirSync(runsDir, { recursive: true });
+    });
+
+    it('marks a new step as completed and writes FlavorState', async () => {
+      const run = makeRun();
+      createRunTree(runsDir, run);
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--json', '--cwd', baseDir,
+        'step', 'complete', run.id,
+        '--stage', 'plan', '--flavor', 'shaping', '--step', 'shaping',
+      ]);
+
+      const output = JSON.parse(consoleSpy.mock.calls[0]![0] as string);
+      expect(output.stage).toBe('plan');
+      expect(output.flavor).toBe('shaping');
+      expect(output.step).toBe('shaping');
+      expect(output.status).toBe('completed');
+
+      const flavorState = readFlavorState(runsDir, run.id, 'plan', 'shaping');
+      expect(flavorState?.status).toBe('completed');
+      expect(flavorState?.steps[0]?.type).toBe('shaping');
+      expect(flavorState?.steps[0]?.status).toBe('completed');
+    });
+
+    it('marks step completed in non-JSON mode', async () => {
+      const run = makeRun();
+      createRunTree(runsDir, run);
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir,
+        'step', 'complete', run.id,
+        '--stage', 'plan', '--flavor', 'shaping', '--step', 'shaping',
+      ]);
+
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('marked as completed')
+      );
+    });
+
+    it('is idempotent when step already completed (non-JSON warns, does not re-write)', async () => {
+      const run = makeRun();
+      createRunTree(runsDir, run);
+
+      // Write an already-completed flavor state
+      writeFlavorState(runsDir, run.id, 'plan', {
+        name: 'shaping',
+        stageCategory: 'plan',
+        status: 'completed',
+        steps: [{ type: 'shaping', status: 'completed', artifacts: [], startedAt: '2026-01-01T00:00:00.000Z', completedAt: '2026-01-01T00:00:00.000Z' }],
+        currentStep: null,
+      });
+
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir,
+        'step', 'complete', run.id,
+        '--stage', 'plan', '--flavor', 'shaping', '--step', 'shaping',
+      ]);
+
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('already completed'));
+      warnSpy.mockRestore();
+
+      // State unchanged — no extra writes happened
+      const flavorState = readFlavorState(runsDir, run.id, 'plan', 'shaping');
+      expect(flavorState?.status).toBe('completed');
+      expect(consoleSpy).not.toHaveBeenCalled();
+    });
+
+    it('returns completed JSON without warning when step already completed in --json mode', async () => {
+      const run = makeRun();
+      createRunTree(runsDir, run);
+
+      writeFlavorState(runsDir, run.id, 'plan', {
+        name: 'shaping',
+        stageCategory: 'plan',
+        status: 'completed',
+        steps: [{ type: 'shaping', status: 'completed', artifacts: [], startedAt: '2026-01-01T00:00:00.000Z', completedAt: '2026-01-01T00:00:00.000Z' }],
+        currentStep: null,
+      });
+
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--json', '--cwd', baseDir,
+        'step', 'complete', run.id,
+        '--stage', 'plan', '--flavor', 'shaping', '--step', 'shaping',
+      ]);
+
+      // JSON output with completed status, no warnings
+      const output = JSON.parse(consoleSpy.mock.calls[0]![0] as string);
+      expect(output.status).toBe('completed');
+      expect(warnSpy).not.toHaveBeenCalled();
+      warnSpy.mockRestore();
+    });
+
+    it('errors when run does not exist', async () => {
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir,
+        'step', 'complete', randomUUID(),
+        '--stage', 'plan', '--flavor', 'shaping', '--step', 'shaping',
+      ]);
+
+      expect(errorSpy).toHaveBeenCalled();
+    });
+
+    it('keeps flavor status running when other steps remain pending', async () => {
+      const run = makeRun();
+      createRunTree(runsDir, run);
+
+      // Pre-populate two steps: one pending, one we'll complete
+      writeFlavorState(runsDir, run.id, 'plan', {
+        name: 'api-design',
+        stageCategory: 'plan',
+        status: 'running',
+        steps: [
+          { type: 'shaping', status: 'pending', artifacts: [] },
+          { type: 'impl-planning', status: 'pending', artifacts: [] },
+        ],
+        currentStep: 0,
+      });
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--json', '--cwd', baseDir,
+        'step', 'complete', run.id,
+        '--stage', 'plan', '--flavor', 'api-design', '--step', 'shaping',
+      ]);
+
+      const flavorState = readFlavorState(runsDir, run.id, 'plan', 'api-design');
+      expect(flavorState?.status).toBe('running');
+      expect(flavorState?.steps.find((s) => s.type === 'shaping')?.status).toBe('completed');
+      expect(flavorState?.steps.find((s) => s.type === 'impl-planning')?.status).toBe('pending');
+    });
+
+    it('errors on invalid stage category', async () => {
+      const run = makeRun();
+      createRunTree(runsDir, run);
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir,
+        'step', 'complete', run.id,
+        '--stage', 'invalid', '--flavor', 'shaping', '--step', 'shaping',
+      ]);
+
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Invalid stage category'));
     });
   });
 });

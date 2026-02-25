@@ -92,8 +92,10 @@ Returns full run state: all stages, flavors, steps, decisions, and artifacts.
 | Record artifacts | `kata artifact record` — always use CLI for writes |
 | Record decisions | `kata decision record` — always use CLI for writes |
 | Approve gates | `kata approve` — always use CLI |
+| Set a gate | `kata gate set` — always use CLI |
 | Get next step | `kata step next` — returns what to work on next |
-| **Advance** step state | Write `FlavorState` JSON directly — no CLI exists yet (see section 7) |
+| Mark step complete | `kata step complete` — always use CLI |
+| Mark stage complete + advance | `kata stage complete` — always use CLI |
 | **Read** run state | Read `.kata/runs/<run-id>/run.json` directly |
 | **Read** stage state | Read `.kata/runs/<run-id>/stages/<category>/state.json` directly |
 | **Read** artifact files | Browse `.kata/runs/<run-id>/stages/<category>/flavors/<name>/artifacts/` directly |
@@ -157,19 +159,21 @@ Use `--yolo` for decisions where pausing would be more disruptive than the risk 
 
 ---
 
-## 7. Known CLI Limitations (v1 Wave B)
+## 7. Known CLI Limitations (v1 Wave C)
 
-The following operations require **direct file writes** because CLI commands don't exist yet. See `orchestration.md` for exact JSON shapes.
+The following operations require **direct file writes** because CLI commands don't exist yet.
 
 | Operation | Workaround |
 |-----------|-----------|
-| Mark a step as completed | Write `FlavorState` JSON to `.kata/runs/<id>/stages/<cat>/flavors/<step-type>/state.json` |
 | Set `selectedFlavors` for a stage | Write directly to `.kata/runs/<id>/stages/<cat>/state.json` |
-| Advance to next stage | Update `currentStage` in `.kata/runs/<id>/run.json` |
-| Mark a stage as completed | Update `status` in stage `state.json` |
-| Set a human-approval gate | Write `pendingGate` to stage `state.json` |
 | Mark run completed | Set `status: "completed"` and `completedAt` in `run.json` |
 
-**Flavor name ≠ step types**: Flavor composition files (`.kata/flavors/plan.api-design.json`) define multi-step sequences. You record decisions using the **flavor name**, but you write **step types** to `selectedFlavors`. Read the flavor JSON to extract step types (`steps[].stepType`).
+The following operations now have CLI commands (Wave C):
 
-These gaps are tracked as issues and will be resolved in Wave C (orchestration engine).
+| Operation | CLI command |
+|-----------|------------|
+| Mark a step as completed | `kata step complete <run-id> --stage <cat> --flavor <name> --step <type>` |
+| Mark a stage as completed + advance run | `kata stage complete <run-id> --stage <cat> [--synthesis <file>]` |
+| Set a human-approval gate | `kata gate set <run-id> --stage <cat> --gate-id <id> [--type <type>]` |
+
+**Flavor name ≠ step types**: Flavor composition files (`.kata/flavors/plan.api-design.json`) define multi-step sequences. You record decisions using the **flavor name**, but you write **step types** to `selectedFlavors`. Read the flavor JSON to extract step types (`steps[].stepType`).
