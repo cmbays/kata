@@ -233,13 +233,13 @@ export const ArtifactIndexEntrySchema = z.object({
   id: z.string().uuid(),
   /** Stage the artifact was produced in. */
   stageCategory: StageCategorySchema,
-  /** Flavor that produced the artifact. */
-  flavor: z.string().min(1),
+  /** Flavor that produced the artifact. Null for stage-level synthesis artifacts. */
+  flavor: z.string().min(1).nullable(),
   /** Step that produced the artifact (nullable for synthesis artifacts). */
   step: z.string().nullable(),
   /** Filename of the artifact (basename only). */
   fileName: z.string().min(1),
-  /** Absolute path to the artifact on disk. */
+  /** Path to the artifact, relative to the run directory root. */
   filePath: z.string().min(1),
   /** Short human-readable summary of the artifact's content. */
   summary: z.string().min(1),

@@ -87,8 +87,9 @@ describe('registerArtifactCommands — artifact record', () => {
     expect(entries[0].type).toBe('artifact');
     expect(entries[0].summary).toBe('Context gathering output');
 
-    // Verify file was copied
-    expect(existsSync(entries[0].filePath)).toBe(true);
+    // filePath is relative to run dir; verify the file exists at the absolute path
+    const absoluteFilePath = join(runsDir, run.id, entries[0].filePath);
+    expect(existsSync(absoluteFilePath)).toBe(true);
   });
 
   it('records a synthesis artifact at flavor root', async () => {
@@ -118,6 +119,39 @@ describe('registerArtifactCommands — artifact record', () => {
     expect(entries[0].step).toBeNull(); // synthesis has no step
     // Synthesis goes to synthesis.md at flavor root
     expect(entries[0].filePath).toContain('synthesis.md');
+  });
+
+  it('records synthesis without --step and always stores fileName as synthesis.md', async () => {
+    const run = makeRun();
+    createRunTree(runsDir, run);
+
+    // Source file has a different name to confirm renaming happens
+    const srcFile = join(baseDir, 'research-report.md');
+    writeFileSync(srcFile, '# Research Report', 'utf-8');
+
+    const program = createProgram();
+    await program.parseAsync([
+      'node', 'test', '--cwd', baseDir,
+      'artifact', 'record', run.id,
+      '--stage', 'research',
+      '--flavor', 'technical-research',
+      // No --step provided — should be fine for synthesis type
+      '--file', srcFile,
+      '--summary', 'Research synthesis output',
+      '--type', 'synthesis',
+    ]);
+
+    const entries = JsonlStore.readAll(
+      join(runsDir, run.id, 'artifact-index.jsonl'),
+      ArtifactIndexEntrySchema,
+    );
+    expect(entries).toHaveLength(1);
+    expect(entries[0].type).toBe('synthesis');
+    expect(entries[0].step).toBeNull();
+    expect(entries[0].fileName).toBe('synthesis.md');
+    expect(entries[0].filePath).toContain('synthesis.md');
+    // filePath is relative (does not start with /)
+    expect(entries[0].filePath.startsWith('/')).toBe(false);
   });
 
   it('outputs JSON with --json flag', async () => {

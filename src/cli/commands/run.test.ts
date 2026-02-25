@@ -1,11 +1,11 @@
 import { join } from 'node:path';
-import { mkdirSync, rmSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { Command } from 'commander';
 import { registerRunCommands } from './run.js';
 import { registerDecisionCommands } from './decision.js';
-import { createRunTree, writeStageState } from '@infra/persistence/run-store.js';
+import { createRunTree, writeStageState, runPaths } from '@infra/persistence/run-store.js';
 import type { Run } from '@domain/types/run-state.js';
 
 function tempBase(): string {
@@ -149,6 +149,48 @@ describe('registerRunCommands — run status', () => {
     const researchStage = parsed.stages.find((s: { category: string }) => s.category === 'research');
     expect(researchStage.decisionCount).toBe(1);
     expect(researchStage.avgConfidence).toBeCloseTo(0.85);
+  });
+
+  it('human output renders gap lines with severity', async () => {
+    const run = makeRun({ stageSequence: ['research'] });
+    createRunTree(runsDir, run);
+
+    writeStageState(runsDir, run.id, {
+      category: 'research',
+      status: 'running',
+      selectedFlavors: [],
+      gaps: [
+        { description: 'Missing security review', severity: 'high' },
+        { description: 'Incomplete coverage', severity: 'low' },
+      ],
+      decisions: [],
+    });
+
+    const program = createProgram();
+    await program.parseAsync(['node', 'test', '--cwd', baseDir, 'run', 'status', run.id]);
+
+    const output = consoleSpy.mock.calls[0]?.[0] as string;
+    expect(output).toContain('⚠ gap [high]: Missing security review');
+    expect(output).toContain('⚠ gap [low]: Incomplete coverage');
+  });
+
+  it('hasSynthesis is true when stage synthesis.md file exists', async () => {
+    const run = makeRun({ stageSequence: ['research'] });
+    createRunTree(runsDir, run);
+
+    // Write synthesis.md at the stage level
+    const paths = runPaths(runsDir, run.id);
+    const synthesisPath = paths.stageSynthesis('research');
+    mkdirSync(join(runsDir, run.id, 'stages', 'research'), { recursive: true });
+    writeFileSync(synthesisPath, '# Research Synthesis', 'utf-8');
+
+    const program = createProgram();
+    await program.parseAsync(['node', 'test', '--json', '--cwd', baseDir, 'run', 'status', run.id]);
+
+    const output = consoleSpy.mock.calls[0]?.[0] as string;
+    const parsed = JSON.parse(output);
+    const researchStage = parsed.stages.find((s: { category: string }) => s.category === 'research');
+    expect(researchStage.hasSynthesis).toBe(true);
   });
 
   it('errors on unknown run ID', async () => {

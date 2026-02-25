@@ -1,13 +1,18 @@
 import { join } from 'node:path';
 import { mkdirSync } from 'node:fs';
 import { JsonStore } from './json-store.js';
+import { JsonlStore } from './jsonl-store.js';
 import {
   RunSchema,
   StageStateSchema,
   FlavorStateSchema,
+  DecisionEntrySchema,
+  ArtifactIndexEntrySchema,
   type Run,
   type StageState,
   type FlavorState,
+  type DecisionEntry,
+  type ArtifactIndexEntry,
 } from '@domain/types/run-state.js';
 import type { StageCategory } from '@domain/types/stage.js';
 
@@ -139,4 +144,18 @@ export function writeFlavorState(
     state,
     FlavorStateSchema,
   );
+}
+
+// ---------------------------------------------------------------------------
+// Convenience append helpers
+// ---------------------------------------------------------------------------
+
+/** Append a decision entry to the run's decisions.jsonl. */
+export function appendDecision(runsDir: string, runId: string, entry: DecisionEntry): void {
+  JsonlStore.append(runPaths(runsDir, runId).decisionsJsonl, entry, DecisionEntrySchema);
+}
+
+/** Append an artifact index entry to the run's artifact-index.jsonl. */
+export function appendArtifact(runsDir: string, runId: string, entry: ArtifactIndexEntry): void {
+  JsonlStore.append(runPaths(runsDir, runId).artifactIndexJsonl, entry, ArtifactIndexEntrySchema);
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
@@ -11,10 +11,18 @@ import {
   writeStageState,
   readFlavorState,
   writeFlavorState,
+  appendDecision,
+  appendArtifact,
   runPaths,
 } from './run-store.js';
+import {
+  DecisionEntrySchema,
+  ArtifactIndexEntrySchema,
+  type DecisionEntry,
+  type ArtifactIndexEntry,
+} from '@domain/types/run-state.js';
+import { JsonlStore } from './jsonl-store.js';
 import type { Run } from '@domain/types/run-state.js';
-import { existsSync } from 'node:fs';
 
 const VALID_UUID = () => randomUUID();
 const VALID_TS = '2026-01-01T00:00:00.000Z';
@@ -150,5 +158,115 @@ describe('readFlavorState / writeFlavorState', () => {
     expect(loaded.name).toBe('technical-research');
     expect(loaded.steps).toHaveLength(1);
     expect(loaded.steps[0].artifacts).toEqual(['ctx.md']);
+  });
+});
+
+describe('appendDecision', () => {
+  it('appends a decision entry to decisions.jsonl', () => {
+    const runsDir = tempRunsDir();
+    const run = makeRun();
+    createRunTree(runsDir, run);
+
+    const entry: DecisionEntry = {
+      id: VALID_UUID(),
+      stageCategory: 'research',
+      flavor: 'technical-research',
+      step: 'gather-context',
+      decisionType: 'flavor-selection',
+      context: { bet: 'auth' },
+      options: ['a', 'b'],
+      selection: 'a',
+      reasoning: 'Best match',
+      confidence: 0.85,
+      decidedAt: VALID_TS,
+    };
+
+    appendDecision(runsDir, run.id, entry);
+
+    const paths = runPaths(runsDir, run.id);
+    const entries = JsonlStore.readAll(paths.decisionsJsonl, DecisionEntrySchema);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].id).toBe(entry.id);
+    expect(entries[0].selection).toBe('a');
+  });
+
+  it('appends multiple entries without overwriting', () => {
+    const runsDir = tempRunsDir();
+    const run = makeRun();
+    createRunTree(runsDir, run);
+
+    const base: DecisionEntry = {
+      id: VALID_UUID(),
+      stageCategory: 'research',
+      flavor: null,
+      step: null,
+      decisionType: 'gap-assessment',
+      context: {},
+      options: [],
+      selection: 'gap-found',
+      reasoning: 'Gap detected',
+      confidence: 0.7,
+      decidedAt: VALID_TS,
+    };
+
+    appendDecision(runsDir, run.id, base);
+    appendDecision(runsDir, run.id, { ...base, id: VALID_UUID() });
+
+    const paths = runPaths(runsDir, run.id);
+    const entries = JsonlStore.readAll(paths.decisionsJsonl, DecisionEntrySchema);
+    expect(entries).toHaveLength(2);
+  });
+});
+
+describe('appendArtifact', () => {
+  it('appends an artifact entry to artifact-index.jsonl', () => {
+    const runsDir = tempRunsDir();
+    const run = makeRun();
+    createRunTree(runsDir, run);
+
+    const entry: ArtifactIndexEntry = {
+      id: VALID_UUID(),
+      stageCategory: 'build',
+      flavor: 'tdd',
+      step: 'write-tests',
+      fileName: 'tests.md',
+      filePath: 'stages/build/flavors/tdd/artifacts/tests.md',
+      summary: 'Unit tests for auth module',
+      type: 'artifact',
+      recordedAt: VALID_TS,
+    };
+
+    appendArtifact(runsDir, run.id, entry);
+
+    const paths = runPaths(runsDir, run.id);
+    const entries = JsonlStore.readAll(paths.artifactIndexJsonl, ArtifactIndexEntrySchema);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].id).toBe(entry.id);
+    expect(entries[0].fileName).toBe('tests.md');
+  });
+
+  it('accepts null flavor for stage-level synthesis', () => {
+    const runsDir = tempRunsDir();
+    const run = makeRun();
+    createRunTree(runsDir, run);
+
+    const entry: ArtifactIndexEntry = {
+      id: VALID_UUID(),
+      stageCategory: 'research',
+      flavor: null,
+      step: null,
+      fileName: 'synthesis.md',
+      filePath: 'stages/research/synthesis.md',
+      summary: 'Stage-level research synthesis',
+      type: 'synthesis',
+      recordedAt: VALID_TS,
+    };
+
+    appendArtifact(runsDir, run.id, entry);
+
+    const paths = runPaths(runsDir, run.id);
+    const entries = JsonlStore.readAll(paths.artifactIndexJsonl, ArtifactIndexEntrySchema);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].flavor).toBeNull();
   });
 });

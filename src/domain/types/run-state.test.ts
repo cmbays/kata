@@ -244,6 +244,11 @@ describe('ArtifactIndexEntrySchema', () => {
     expect(result.success).toBe(true);
   });
 
+  it('accepts null flavor (stage-level synthesis artifacts)', () => {
+    const result = ArtifactIndexEntrySchema.safeParse({ ...valid, flavor: null });
+    expect(result.success).toBe(true);
+  });
+
   it('rejects invalid type', () => {
     const result = ArtifactIndexEntrySchema.safeParse({ ...valid, type: 'report' });
     expect(result.success).toBe(false);
