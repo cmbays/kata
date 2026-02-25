@@ -1,6 +1,6 @@
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { existsSync, readdirSync, copyFileSync, mkdirSync } from 'node:fs';
+import { existsSync, readdirSync, copyFileSync, cpSync } from 'node:fs';
 import { KataConfigSchema, type KataConfig } from '@domain/types/config.js';
 import { StepRegistry } from '@infra/registries/step-registry.js';
 import { FlavorRegistry } from '@infra/registries/flavor-registry.js';
@@ -32,23 +32,6 @@ export interface InitResult {
   aoConfigPath?: string;
 }
 
-/**
- * Recursively copy a directory (srcDir → destDir), creating subdirectories as needed.
- * Files in destDir are overwritten if they already exist (idempotent re-init).
- */
-function copyDirRecursive(srcDir: string, destDir: string): void {
-  mkdirSync(destDir, { recursive: true });
-  const entries = readdirSync(srcDir, { withFileTypes: true });
-  for (const entry of entries) {
-    const srcPath = join(srcDir, entry.name);
-    const destPath = join(destDir, entry.name);
-    if (entry.isDirectory()) {
-      copyDirRecursive(srcPath, destPath);
-    } else {
-      copyFileSync(srcPath, destPath);
-    }
-  }
-}
 
 /**
  * Resolve the package root directory, where stages/ and templates/ live.
@@ -263,7 +246,7 @@ export async function handleInit(options: InitOptions): Promise<InitResult> {
   const skillDestDir = join(kataDir, KATA_DIRS.skill);
   if (existsSync(skillSrcDir)) {
     try {
-      copyDirRecursive(skillSrcDir, skillDestDir);
+      cpSync(skillSrcDir, skillDestDir, { recursive: true });
     } catch (err) {
       logger.warn(`Could not copy skill package: ${err instanceof Error ? err.message : String(err)}`);
     }

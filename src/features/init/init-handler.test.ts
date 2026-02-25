@@ -301,14 +301,32 @@ describe('handleInit', () => {
       }
     });
 
-    it('is idempotent — re-running init overwrites skill files without error', async () => {
+    it('is idempotent — re-running init overwrites modified skill files', async () => {
       await handleInit({ cwd: baseDir, skipPrompts: true });
-      // Second run should not throw and files should still be present
+      // Corrupt a skill file and verify it is restored on re-init
+      const skillMd = join(baseDir, '.kata', 'skill', 'skill.md');
+      writeFileSync(skillMd, 'corrupted');
       await handleInit({ cwd: baseDir, skipPrompts: true });
 
-      for (const relPath of expectedFiles) {
-        expect(existsSync(join(baseDir, '.kata', 'skill', relPath))).toBe(true);
-      }
+      const restored = readFileSync(skillMd, 'utf-8');
+      expect(restored).not.toBe('corrupted');
+      expect(restored.length).toBeGreaterThan(0);
+    });
+
+    it('copies the same number of files as the source skill/ directory', async () => {
+      await handleInit({ cwd: baseDir, skipPrompts: true });
+
+      const countFiles = (dir: string): number => {
+        let count = 0;
+        for (const entry of readdirSync(dir, { withFileTypes: true })) {
+          if (entry.isDirectory()) count += countFiles(join(dir, entry.name));
+          else count++;
+        }
+        return count;
+      };
+
+      const destCount = countFiles(join(baseDir, '.kata', 'skill'));
+      expect(destCount).toBe(expectedFiles.length);
     });
   });
 });

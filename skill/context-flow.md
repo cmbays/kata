@@ -76,7 +76,8 @@ The `kata step next --json` output is the **primary context injection mechanism*
   "prompt": "Full prompt text with {{betPrompt}} interpolated...",
   "resources": {
     "tools": ["Bash", "Read", "Write"],
-    "agentHints": ["use cargo build --release"]
+    "agents": [],
+    "skills": []
   },
   "gates": {
     "entry": [...],
@@ -109,7 +110,7 @@ Step: <step>
 <prompt (from kata step next --json)>
 
 ## Resources available
-<resources.tools and resources.agentHints from kata step next --json>
+<resources.tools, resources.agents, and resources.skills from kata step next --json>
 
 ## Entry gates to check before starting
 <gates.entry from kata step next --json>
