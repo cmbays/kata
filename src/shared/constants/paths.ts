@@ -4,6 +4,7 @@ export const KATA_DIRS = {
   flavors: 'flavors',
   pipelines: 'pipelines',
   cycles: 'cycles',
+  runs: 'runs',
   history: 'history',
   knowledge: 'knowledge',
   templates: 'templates',

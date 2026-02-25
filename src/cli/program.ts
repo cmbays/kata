@@ -8,6 +8,9 @@ import { registerCycleCommands } from './commands/cycle.js';
 import { registerKnowledgeCommands } from './commands/knowledge.js';
 import { registerExecuteCommands } from './commands/execute.js';
 import { registerStatusCommands } from './commands/status.js';
+import { registerArtifactCommands } from './commands/artifact.js';
+import { registerDecisionCommands } from './commands/decision.js';
+import { registerRunCommands } from './commands/run.js';
 
 const VERSION = '0.1.0';
 
@@ -39,6 +42,9 @@ export function createProgram(): Command {
   registerKnowledgeCommands(program);
   registerExecuteCommands(program);
   registerStatusCommands(program);
+  registerArtifactCommands(program);
+  registerDecisionCommands(program);
+  registerRunCommands(program);
 
   return program;
 }
