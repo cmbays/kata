@@ -1,7 +1,8 @@
 # Kata CLI Reference — Agent-Facing Commands
 
 > All commands support `--json` for machine-readable output.
-> Global flag `--json` must precede the subcommand: `kata --json run status <id>`.
+> `--json` is a global flag — append it anywhere in the command: `kata run status <id> --json`
+> The program does not use positional option parsing, so placement does not matter.
 
 ---
 
@@ -20,7 +21,7 @@ Add a bet to a cycle in `planning` state, with an optional kata assignment.
 ```bash
 kata cycle add-bet "$CYCLE_ID" "Implement OAuth2 login flow" \
   --kata full-feature \
-  --appetite 30
+  --appetite 30 --json
 ```
 
 **`--json` output**:
@@ -79,8 +80,8 @@ Update the kata assignment for an existing bet (before the cycle starts).
 
 **Example**:
 ```bash
-kata cycle update-bet "$BET_ID" --kata full-feature
-kata cycle update-bet "$BET_ID" --gyo "research,build"
+kata cycle update-bet "$BET_ID" --kata full-feature --json
+kata cycle update-bet "$BET_ID" --gyo "research,build" --json
 ```
 
 **`--json` output**: Same shape as `kata cycle add-bet --json` (full `{ status, cycle }` object).
@@ -295,7 +296,7 @@ kata artifact record "$RUN_ID" \
   --flavor rust-compilation \
   --step compile \
   --file /tmp/build-report.md \
-  --summary "Cargo build output: 0 errors, 2 warnings"
+  --summary "Cargo build output: 0 errors, 2 warnings" --json
 ```
 
 **`--json` output**:
@@ -343,7 +344,7 @@ kata decision record "$RUN_ID" \
   --options '["web-standards","internal-docs"]' \
   --selected web-standards \
   --confidence 0.9 \
-  --reasoning "Bet mentions OAuth2 specifically; web-standards covers the RFC"
+  --reasoning "Bet mentions OAuth2 specifically; web-standards covers the RFC" --json
 ```
 
 **`--json` output**:
@@ -393,8 +394,8 @@ Approve a pending gate.
 
 **Example**:
 ```bash
-kata approve confidence-3b07e7d4
-kata approve --run "$RUN_ID"    # approve all pending in a run
+kata approve confidence-3b07e7d4 --json
+kata approve --run "$RUN_ID" --json    # approve all pending in a run
 ```
 
 **`--json` output** (array of approved gates):
@@ -430,7 +431,7 @@ Record a post-facto outcome for a decision (used during cooldown or after observ
 ```bash
 kata decision update "$RUN_ID" "$DECISION_ID" \
   --outcome good \
-  --notes "web-standards research uncovered the critical token expiry constraint"
+  --notes "web-standards research uncovered the critical token expiry constraint" --json
 ```
 
 **`--json` output**:
