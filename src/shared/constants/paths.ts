@@ -13,6 +13,7 @@ export const KATA_DIRS = {
   artifacts: 'artifacts',
   rules: 'rules',
   skill: 'skill',
+  vocabularies: 'vocabularies',
   config: 'config.json',
   builtin: 'builtin',
   katas: 'katas',

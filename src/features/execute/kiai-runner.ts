@@ -3,6 +3,7 @@ import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync } from 
 import type { StageCategory, Stage } from '@domain/types/stage.js';
 import type { IFlavorRegistry } from '@domain/ports/flavor-registry.js';
 import type { IDecisionRegistry } from '@domain/ports/decision-registry.js';
+import type { IStageRuleRegistry } from '@domain/ports/rule-registry.js';
 import type {
   IFlavorExecutor,
   OrchestratorContext,
@@ -21,6 +22,8 @@ export interface KiaiRunnerDeps {
   executor: IFlavorExecutor;
   kataDir: string;
   analytics?: UsageAnalytics;
+  /** Optional rule registry passed to the stage orchestrator for rule-driven selection. */
+  ruleRegistry?: IStageRuleRegistry;
 }
 
 export interface KiaiRunOptions {
@@ -80,15 +83,18 @@ export class KiaiRunner {
       pinnedFlavors: options.pin,
     };
 
-    // Create orchestrator
+    // Create orchestrator — pass custom vocabulary dir so seeded keywords are picked up
+    const customVocabularyDir = join(this.deps.kataDir, KATA_DIRS.vocabularies);
     const orchestrator = createStageOrchestrator(
       stageCategory,
       {
         flavorRegistry: this.deps.flavorRegistry,
         decisionRegistry: this.deps.decisionRegistry,
         executor: this.deps.executor,
+        ruleRegistry: this.deps.ruleRegistry,
       },
       stage.orchestrator,
+      customVocabularyDir,
     );
 
     // For dry-run, we still run the orchestrator (which includes selection)
@@ -136,6 +142,7 @@ export class KiaiRunner {
       flavorRegistry: this.deps.flavorRegistry,
       decisionRegistry: this.deps.decisionRegistry,
       executor: this.deps.executor,
+      ruleRegistry: this.deps.ruleRegistry,
     });
 
     const result = await metaOrchestrator.runPipeline(categories, options.bet);

@@ -2,6 +2,7 @@ import type { BudgetStatus, Cycle } from '@domain/types/cycle.js';
 import type { CooldownReport, CooldownBetReport } from '@domain/services/cycle-manager.js';
 import type { CycleProposal } from '@features/cycle-management/proposal-generator.js';
 import type { CooldownSessionResult } from '@features/cycle-management/cooldown-session.js';
+import type { RunSummary } from '@features/cycle-management/types.js';
 import {
   formatCycleStatus,
   formatCooldownReport,
@@ -311,6 +312,116 @@ describe('formatCooldownSessionResult', () => {
   it('shows no-proposals message when empty', () => {
     const result = formatCooldownSessionResult(makeSessionResult());
     expect(result).toContain('No proposals generated for the next cycle.');
+  });
+
+  it('shows run summaries section when present', () => {
+    const runSummaries: RunSummary[] = [
+      {
+        betId: 'aaaaaaaa-0000-0000-0000-000000000001',
+        runId: 'rrrrrrrr-0000-0000-0000-000000000001',
+        stagesCompleted: 3,
+        gapCount: 2,
+        gapsBySeverity: { high: 1, medium: 1, low: 0 },
+        avgConfidence: 0.75,
+        artifactPaths: [],
+        stageDetails: [],
+        yoloDecisionCount: 0,
+      },
+    ];
+    const result = formatCooldownSessionResult(makeSessionResult({ runSummaries }));
+    expect(result).toContain('--- Run Summaries ---');
+    expect(result).toContain('3 stage(s) completed');
+    expect(result).toContain('2 gap(s) [H:1 M:1 L:0]');
+    expect(result).toContain('avg confidence 75%');
+  });
+
+  it('shows null confidence as no decisions recorded', () => {
+    const runSummaries: RunSummary[] = [
+      {
+        betId: 'aaaaaaaa-0000-0000-0000-000000000002',
+        runId: 'rrrrrrrr-0000-0000-0000-000000000002',
+        stagesCompleted: 1,
+        gapCount: 0,
+        gapsBySeverity: { high: 0, medium: 0, low: 0 },
+        avgConfidence: null,
+        artifactPaths: [],
+        stageDetails: [],
+        yoloDecisionCount: 0,
+      },
+    ];
+    const result = formatCooldownSessionResult(makeSessionResult({ runSummaries }));
+    expect(result).toContain('no decisions recorded');
+    expect(result).toContain('no gaps');
+  });
+
+  it('omits run summaries section when not provided', () => {
+    const result = formatCooldownSessionResult(makeSessionResult());
+    expect(result).not.toContain('--- Run Summaries ---');
+  });
+
+  it('shows Rule Suggestions section with counts when suggestionReview is provided', () => {
+    const review = { accepted: 2, rejected: 1, deferred: 0 };
+    const result = formatCooldownSessionResult(makeSessionResult(), review);
+    expect(result).toContain('--- Rule Suggestions ---');
+    expect(result).toContain('Accepted: 2, Rejected: 1, Deferred: 0');
+  });
+
+  it('shows pending count when ruleSuggestions present but no review taken', () => {
+    const ruleSuggestions = [
+      {
+        id: '00000000-0000-4000-8000-000000000001',
+        suggestedRule: { category: 'build' as const, name: 'Boost TS', condition: 'always', effect: 'boost' as const, magnitude: 0.3, confidence: 0.8, source: 'auto-detected' as const, evidence: [] },
+        triggerDecisionIds: [],
+        observationCount: 3,
+        reasoning: 'test',
+        status: 'pending' as const,
+        createdAt: new Date().toISOString(),
+      },
+    ];
+    const result = formatCooldownSessionResult(makeSessionResult({ ruleSuggestions }));
+    expect(result).toContain('--- Rule Suggestions ---');
+    expect(result).toContain('1 pending suggestion(s) (run interactively to review)');
+  });
+
+  it('omits Rule Suggestions section when no suggestions and no review', () => {
+    const result = formatCooldownSessionResult(makeSessionResult());
+    expect(result).not.toContain('--- Rule Suggestions ---');
+  });
+
+  it('shows --yolo decision count in run summary line when yoloDecisionCount > 0', () => {
+    const runSummaries: RunSummary[] = [
+      {
+        betId: 'aaaaaaaa-0000-0000-0000-000000000003',
+        runId: 'rrrrrrrr-0000-0000-0000-000000000003',
+        stagesCompleted: 2,
+        gapCount: 0,
+        gapsBySeverity: { high: 0, medium: 0, low: 0 },
+        avgConfidence: 0.72,
+        artifactPaths: [],
+        stageDetails: [],
+        yoloDecisionCount: 1,
+      },
+    ];
+    const result = formatCooldownSessionResult(makeSessionResult({ runSummaries }));
+    expect(result).toContain('(1 --yolo decision(s))');
+  });
+
+  it('does not show --yolo suffix when yoloDecisionCount is 0', () => {
+    const runSummaries: RunSummary[] = [
+      {
+        betId: 'aaaaaaaa-0000-0000-0000-000000000004',
+        runId: 'rrrrrrrr-0000-0000-0000-000000000004',
+        stagesCompleted: 1,
+        gapCount: 0,
+        gapsBySeverity: { high: 0, medium: 0, low: 0 },
+        avgConfidence: 0.85,
+        artifactPaths: [],
+        stageDetails: [],
+        yoloDecisionCount: 0,
+      },
+    ];
+    const result = formatCooldownSessionResult(makeSessionResult({ runSummaries }));
+    expect(result).not.toContain('--yolo');
   });
 });
 

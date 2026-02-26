@@ -5,6 +5,9 @@ import { CycleManager } from '@domain/services/cycle-manager.js';
 import { KnowledgeStore } from '@infra/knowledge/knowledge-store.js';
 import { ExecutionHistoryEntrySchema } from '@domain/types/history.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
+import { RuleRegistry } from '@infra/registries/rule-registry.js';
+import { createRunTree, writeStageState } from '@infra/persistence/run-store.js';
+import type { Run, StageState } from '@domain/types/run-state.js';
 // JsonStore satisfies IPersistence structurally — passed as persistence adapter in deps
 import {
   CooldownSession,
@@ -434,6 +437,307 @@ describe('CooldownSession', () => {
       const enriched = session.enrichReportWithTokens(baseReport, cycle.id);
 
       expect(enriched.utilizationPercent).toBe(0);
+    });
+  });
+
+  describe('run with runsDir (loadRunSummaries)', () => {
+    const runsDir = join(baseDir, 'runs');
+
+    function makeRun(cycleId: string, betId: string): Run {
+      return {
+        id: crypto.randomUUID(),
+        cycleId,
+        betId,
+        betPrompt: 'Test bet',
+        stageSequence: ['build'],
+        currentStage: null,
+        status: 'completed',
+        startedAt: new Date().toISOString(),
+      };
+    }
+
+    function makeStageState(category: 'build', overrides: Partial<StageState> = {}): StageState {
+      return {
+        category,
+        status: 'completed',
+        selectedFlavors: [],
+        gaps: [],
+        decisions: [],
+        approvedGates: [],
+        ...overrides,
+      };
+    }
+
+    beforeEach(() => {
+      mkdirSync(runsDir, { recursive: true });
+    });
+
+    it('returns runSummaries when runsDir provided', async () => {
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      const withBet = cycleManager.addBet(cycle.id, { description: 'Bet A', appetite: 30, outcome: 'complete', issueRefs: [] });
+      const bet = withBet.bets[0]!;
+
+      const run = makeRun(cycle.id, bet.id);
+      createRunTree(runsDir, run);
+      writeStageState(runsDir, run.id, makeStageState('build', { status: 'completed' }));
+      cycleManager.setRunId(cycle.id, bet.id, run.id);
+
+      const sessionWithRuns = new CooldownSession({
+        cycleManager, knowledgeStore, persistence: JsonStore, pipelineDir, historyDir, runsDir,
+      });
+      const result = await sessionWithRuns.run(cycle.id);
+
+      expect(result.runSummaries).toBeDefined();
+      expect(result.runSummaries).toHaveLength(1);
+      expect(result.runSummaries![0]!.betId).toBe(bet.id);
+      expect(result.runSummaries![0]!.runId).toBe(run.id);
+      expect(result.runSummaries![0]!.stagesCompleted).toBe(1);
+    });
+
+    it('skips bets without runId silently', async () => {
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      cycleManager.addBet(cycle.id, { description: 'Bet no runId', appetite: 30, outcome: 'complete', issueRefs: [] });
+
+      const sessionWithRuns = new CooldownSession({
+        cycleManager, knowledgeStore, persistence: JsonStore, pipelineDir, historyDir, runsDir,
+      });
+      const result = await sessionWithRuns.run(cycle.id);
+
+      expect(result.runSummaries).toBeDefined();
+      expect(result.runSummaries).toHaveLength(0);
+    });
+
+    it('returns null avgConfidence when no decisions recorded', async () => {
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      const withBet = cycleManager.addBet(cycle.id, { description: 'Bet B', appetite: 30, outcome: 'complete', issueRefs: [] });
+      const bet = withBet.bets[0]!;
+
+      const run = makeRun(cycle.id, bet.id);
+      createRunTree(runsDir, run);
+      writeStageState(runsDir, run.id, makeStageState('build'));
+      cycleManager.setRunId(cycle.id, bet.id, run.id);
+
+      const sessionWithRuns = new CooldownSession({
+        cycleManager, knowledgeStore, persistence: JsonStore, pipelineDir, historyDir, runsDir,
+      });
+      const result = await sessionWithRuns.run(cycle.id);
+
+      expect(result.runSummaries![0]!.avgConfidence).toBeNull();
+    });
+
+    it('computes gapsBySeverity from stage state', async () => {
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      const withBet = cycleManager.addBet(cycle.id, { description: 'Bet C', appetite: 30, outcome: 'complete', issueRefs: [] });
+      const bet = withBet.bets[0]!;
+
+      const run = makeRun(cycle.id, bet.id);
+      createRunTree(runsDir, run);
+      writeStageState(runsDir, run.id, makeStageState('build', {
+        gaps: [
+          { description: 'High gap', severity: 'high' },
+          { description: 'Med gap', severity: 'medium' },
+          { description: 'Low gap', severity: 'low' },
+        ],
+      }));
+      cycleManager.setRunId(cycle.id, bet.id, run.id);
+
+      const sessionWithRuns = new CooldownSession({
+        cycleManager, knowledgeStore, persistence: JsonStore, pipelineDir, historyDir, runsDir,
+      });
+      const result = await sessionWithRuns.run(cycle.id);
+
+      const summary = result.runSummaries![0]!;
+      expect(summary.gapCount).toBe(3);
+      expect(summary.gapsBySeverity).toEqual({ low: 1, medium: 1, high: 1 });
+    });
+
+    it('runSummaries is undefined when runsDir not provided (backward compat)', async () => {
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      const result = await session.run(cycle.id);
+      expect(result.runSummaries).toBeUndefined();
+    });
+
+    it('populates stageDetails from stageState.selectedFlavors and gaps', async () => {
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      const withBet = cycleManager.addBet(cycle.id, { description: 'Bet SD', appetite: 30, outcome: 'complete', issueRefs: [] });
+      const bet = withBet.bets[0]!;
+
+      const run = makeRun(cycle.id, bet.id);
+      createRunTree(runsDir, run);
+      writeStageState(runsDir, run.id, makeStageState('build', {
+        selectedFlavors: ['tdd', 'review'],
+        gaps: [{ description: 'Missing integration tests', severity: 'medium' }],
+      }));
+      cycleManager.setRunId(cycle.id, bet.id, run.id);
+
+      const sessionWithRuns = new CooldownSession({
+        cycleManager, knowledgeStore, persistence: JsonStore, pipelineDir, historyDir, runsDir,
+      });
+      const result = await sessionWithRuns.run(cycle.id);
+
+      const summary = result.runSummaries![0]!;
+      expect(summary.stageDetails).toHaveLength(1);
+      expect(summary.stageDetails[0]!.category).toBe('build');
+      expect(summary.stageDetails[0]!.selectedFlavors).toEqual(['tdd', 'review']);
+      expect(summary.stageDetails[0]!.gaps).toEqual([{ description: 'Missing integration tests', severity: 'medium' }]);
+    });
+
+    it('counts yoloDecisionCount from lowConfidence === true decisions', async () => {
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      const withBet = cycleManager.addBet(cycle.id, { description: 'Bet Yolo', appetite: 30, outcome: 'complete', issueRefs: [] });
+      const bet = withBet.bets[0]!;
+
+      const run = makeRun(cycle.id, bet.id);
+      createRunTree(runsDir, run);
+      writeStageState(runsDir, run.id, makeStageState('build'));
+      cycleManager.setRunId(cycle.id, bet.id, run.id);
+
+      // Write decisions.jsonl with 2 normal + 2 yolo entries
+      const { JsonlStore } = await import('@infra/persistence/jsonl-store.js');
+      const { DecisionEntrySchema } = await import('@domain/types/run-state.js');
+      const { runPaths } = await import('@infra/persistence/run-store.js');
+      const paths = runPaths(runsDir, run.id);
+      const makeDecision = (lowConfidence?: boolean) => ({
+        id: crypto.randomUUID(),
+        stageCategory: 'build' as const,
+        flavor: null,
+        step: null,
+        decisionType: 'flavor-selection',
+        context: {},
+        options: ['a', 'b'],
+        selection: 'a',
+        reasoning: 'test',
+        confidence: lowConfidence ? 0.3 : 0.9,
+        decidedAt: new Date().toISOString(),
+        ...(lowConfidence ? { lowConfidence: true } : {}),
+      });
+      JsonlStore.append(paths.decisionsJsonl, makeDecision(), DecisionEntrySchema);
+      JsonlStore.append(paths.decisionsJsonl, makeDecision(true), DecisionEntrySchema);
+      JsonlStore.append(paths.decisionsJsonl, makeDecision(true), DecisionEntrySchema);
+      JsonlStore.append(paths.decisionsJsonl, makeDecision(), DecisionEntrySchema);
+
+      const sessionWithRuns = new CooldownSession({
+        cycleManager, knowledgeStore, persistence: JsonStore, pipelineDir, historyDir, runsDir,
+      });
+      const result = await sessionWithRuns.run(cycle.id);
+
+      expect(result.runSummaries![0]!.yoloDecisionCount).toBe(2);
+    });
+
+    it('sets yoloDecisionCount to 0 when no decisions recorded', async () => {
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      const withBet = cycleManager.addBet(cycle.id, { description: 'Bet No Yolo', appetite: 30, outcome: 'complete', issueRefs: [] });
+      const bet = withBet.bets[0]!;
+
+      const run = makeRun(cycle.id, bet.id);
+      createRunTree(runsDir, run);
+      writeStageState(runsDir, run.id, makeStageState('build'));
+      cycleManager.setRunId(cycle.id, bet.id, run.id);
+
+      const sessionWithRuns = new CooldownSession({
+        cycleManager, knowledgeStore, persistence: JsonStore, pipelineDir, historyDir, runsDir,
+      });
+      const result = await sessionWithRuns.run(cycle.id);
+
+      expect(result.runSummaries![0]!.yoloDecisionCount).toBe(0);
+    });
+  });
+
+  describe('run with ruleRegistry (ruleSuggestions)', () => {
+    const rulesDir = join(baseDir, 'rules');
+
+    function makeSuggestionInput() {
+      return {
+        suggestedRule: {
+          category: 'build' as const,
+          name: 'Boost TypeScript flavor',
+          condition: 'When tests exist',
+          effect: 'boost' as const,
+          magnitude: 0.3,
+          confidence: 0.8,
+          source: 'auto-detected' as const,
+          evidence: ['decision-abc'],
+        },
+        triggerDecisionIds: ['00000000-0000-4000-8000-000000000001'],
+        observationCount: 3,
+        reasoning: 'Observed 3 times in build stages',
+      };
+    }
+
+    beforeEach(() => {
+      mkdirSync(rulesDir, { recursive: true });
+    });
+
+    it('includes pending suggestions in result when ruleRegistry provided', async () => {
+      const ruleRegistry = new RuleRegistry(rulesDir);
+      const suggestion = ruleRegistry.suggestRule(makeSuggestionInput());
+
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      const sessionWithRegistry = new CooldownSession({
+        cycleManager,
+        knowledgeStore,
+        persistence: JsonStore,
+        pipelineDir,
+        historyDir,
+        ruleRegistry,
+      });
+
+      const result = await sessionWithRegistry.run(cycle.id);
+
+      expect(result.ruleSuggestions).toBeDefined();
+      expect(result.ruleSuggestions).toHaveLength(1);
+      expect(result.ruleSuggestions![0]!.id).toBe(suggestion.id);
+      expect(result.ruleSuggestions![0]!.status).toBe('pending');
+    });
+
+    it('returns empty array when no pending suggestions', async () => {
+      const ruleRegistry = new RuleRegistry(rulesDir);
+
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      const sessionWithRegistry = new CooldownSession({
+        cycleManager,
+        knowledgeStore,
+        persistence: JsonStore,
+        pipelineDir,
+        historyDir,
+        ruleRegistry,
+      });
+
+      const result = await sessionWithRegistry.run(cycle.id);
+
+      expect(result.ruleSuggestions).toBeDefined();
+      expect(result.ruleSuggestions).toHaveLength(0);
+    });
+
+    it('ruleSuggestions is undefined when ruleRegistry not provided (backward compat)', async () => {
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      const result = await session.run(cycle.id);
+      expect(result.ruleSuggestions).toBeUndefined();
+    });
+
+    it('only includes pending suggestions, not accepted or rejected', async () => {
+      const ruleRegistry = new RuleRegistry(rulesDir);
+      const pending = ruleRegistry.suggestRule(makeSuggestionInput());
+      const toAccept = ruleRegistry.suggestRule(makeSuggestionInput());
+      const toReject = ruleRegistry.suggestRule(makeSuggestionInput());
+
+      ruleRegistry.acceptSuggestion(toAccept.id);
+      ruleRegistry.rejectSuggestion(toReject.id, 'Not needed');
+
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      const sessionWithRegistry = new CooldownSession({
+        cycleManager,
+        knowledgeStore,
+        persistence: JsonStore,
+        pipelineDir,
+        historyDir,
+        ruleRegistry,
+      });
+
+      const result = await sessionWithRegistry.run(cycle.id);
+
+      expect(result.ruleSuggestions).toHaveLength(1);
+      expect(result.ruleSuggestions![0]!.id).toBe(pending.id);
     });
   });
 });

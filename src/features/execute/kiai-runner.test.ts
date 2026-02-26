@@ -195,6 +195,62 @@ describe('KiaiRunner', () => {
       const files = readdirSync(join(baseDir, 'artifacts')).filter((f) => f.endsWith('.json'));
       expect(files).toHaveLength(0);
     });
+
+    it('accepts optional ruleRegistry without crashing', async () => {
+      const mockRuleRegistry = {
+        loadRules: vi.fn(() => []),
+        addRule: vi.fn(),
+        removeRule: vi.fn(),
+        suggestRule: vi.fn(() => ({
+          id: '00000000-0000-4000-8000-000000000001',
+          suggestedRule: { category: 'build', name: 'test', condition: 'always', effect: 'boost', magnitude: 0.3, confidence: 0.7, source: 'auto-detected', evidence: [] },
+          triggerDecisionIds: [],
+          observationCount: 1,
+          reasoning: 'test',
+          status: 'pending',
+          createdAt: new Date().toISOString(),
+        })),
+        getPendingSuggestions: vi.fn(() => []),
+        acceptSuggestion: vi.fn(),
+        rejectSuggestion: vi.fn(),
+      };
+
+      const deps = makeDeps({ kataDir: baseDir, ruleRegistry: mockRuleRegistry });
+      const runner = new KiaiRunner(deps);
+      const result = await runner.runStage('build');
+
+      expect(result.stageCategory).toBe('build');
+    });
+
+    it('runPipeline passes ruleRegistry to MetaOrchestrator', async () => {
+      const flavors = [
+        makeFlavor('standard-build', 'build'),
+        makeFlavor('code-quality', 'review'),
+      ];
+      const mockRuleRegistry = {
+        loadRules: vi.fn(() => []),
+        addRule: vi.fn(),
+        removeRule: vi.fn(),
+        suggestRule: vi.fn(),
+        getPendingSuggestions: vi.fn(() => []),
+        acceptSuggestion: vi.fn(),
+        rejectSuggestion: vi.fn(),
+      };
+
+      const deps: KiaiRunnerDeps = {
+        flavorRegistry: makeFlavorRegistry(flavors),
+        decisionRegistry: makeDecisionRegistry(),
+        executor: makeExecutor(),
+        kataDir: baseDir,
+        ruleRegistry: mockRuleRegistry,
+      };
+      const runner = new KiaiRunner(deps);
+      const result = await runner.runPipeline(['build']);
+
+      expect(result.stageResults).toHaveLength(1);
+      // loadRules is called by the orchestrator when ruleRegistry is wired in
+      expect(mockRuleRegistry.loadRules).toHaveBeenCalledWith('build');
+    });
   });
 
   describe('runStage() — different categories', () => {

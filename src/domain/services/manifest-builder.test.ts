@@ -2,7 +2,8 @@ import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
-import type { Step } from '@domain/types/step.js';
+import type { Step, StepResources } from '@domain/types/step.js';
+import type { Flavor } from '@domain/types/flavor.js';
 import type { ExecutionContext } from '@domain/types/manifest.js';
 import type { Learning } from '@domain/types/learning.js';
 import { RefResolver, RefResolutionError } from '@infra/config/ref-resolver.js';
@@ -337,6 +338,88 @@ describe('ManifestBuilder', () => {
     });
   });
 
+  describe('aggregateFlavorResources', () => {
+    function makeFlavor(overrides: Partial<Flavor> = {}): Flavor {
+      return {
+        name: 'default-build',
+        stageCategory: 'build',
+        steps: [{ stepName: 'main', stepType: 'build' }],
+        synthesisArtifact: 'build-output',
+        ...overrides,
+      };
+    }
+
+    function makeResources(
+      tools: Array<{ name: string; purpose: string }> = [],
+    ): StepResources {
+      return { tools, agents: [], skills: [] };
+    }
+
+    it('returns step resources when flavor has no resources', () => {
+      const flavor = makeFlavor({ steps: [{ stepName: 'step1', stepType: 'build' }] });
+      const stepDefs = [makeStage({ type: 'build', resources: makeResources([{ name: 'tsc', purpose: 'type check' }]) })];
+      const result = ManifestBuilder.aggregateFlavorResources(flavor, stepDefs);
+      expect(result.tools).toHaveLength(1);
+      expect(result.tools[0]?.name).toBe('tsc');
+    });
+
+    it('appends flavor-level additions after step resources', () => {
+      const flavor = makeFlavor({
+        steps: [{ stepName: 'step1', stepType: 'build' }],
+        resources: makeResources([{ name: 'vitest', purpose: 'testing' }]),
+      });
+      const stepDefs = [makeStage({ type: 'build', resources: makeResources([{ name: 'tsc', purpose: 'type check' }]) })];
+      const result = ManifestBuilder.aggregateFlavorResources(flavor, stepDefs);
+      expect(result.tools).toHaveLength(2);
+      expect(result.tools.map((t) => t.name)).toEqual(['tsc', 'vitest']);
+    });
+
+    it('deduplicates by name — step definition wins on conflict', () => {
+      const flavor = makeFlavor({
+        steps: [{ stepName: 'step1', stepType: 'build' }],
+        resources: makeResources([{ name: 'tsc', purpose: 'flavor-purpose' }]),
+      });
+      const stepDefs = [makeStage({ type: 'build', resources: makeResources([{ name: 'tsc', purpose: 'step-purpose' }]) })];
+      const result = ManifestBuilder.aggregateFlavorResources(flavor, stepDefs);
+      expect(result.tools).toHaveLength(1);
+      expect(result.tools[0]?.purpose).toBe('step-purpose');
+    });
+
+    it('skips FlavorStepRef with no matching stepDef — no throw', () => {
+      const flavor = makeFlavor({ steps: [{ stepName: 'step1', stepType: 'nonexistent' }] });
+      expect(() => ManifestBuilder.aggregateFlavorResources(flavor, [])).not.toThrow();
+      const result = ManifestBuilder.aggregateFlavorResources(flavor, []);
+      expect(result.tools).toHaveLength(0);
+      expect(result.agents).toHaveLength(0);
+      expect(result.skills).toHaveLength(0);
+    });
+
+    it('returns empty resources when step has no resources and flavor has none', () => {
+      const flavor = makeFlavor({ steps: [{ stepName: 'step1', stepType: 'build' }] });
+      const stepDefs = [makeStage({ type: 'build', resources: undefined })];
+      const result = ManifestBuilder.aggregateFlavorResources(flavor, stepDefs);
+      expect(result.tools).toHaveLength(0);
+      expect(result.agents).toHaveLength(0);
+      expect(result.skills).toHaveLength(0);
+    });
+
+    it('aggregates resources across multiple steps in order', () => {
+      const flavor = makeFlavor({
+        steps: [
+          { stepName: 'step1', stepType: 'research' },
+          { stepName: 'step2', stepType: 'build' },
+        ],
+      });
+      const stepDefs = [
+        makeStage({ type: 'research', resources: makeResources([{ name: 'read', purpose: 'read files' }]) }),
+        makeStage({ type: 'build', resources: makeResources([{ name: 'tsc', purpose: 'type check' }]) }),
+      ];
+      const result = ManifestBuilder.aggregateFlavorResources(flavor, stepDefs);
+      expect(result.tools).toHaveLength(2);
+      expect(result.tools.map((t) => t.name)).toEqual(['read', 'tsc']);
+    });
+  });
+
   describe('build with resources', () => {
     it('should inject ## Suggested Resources into prompt when resources present', () => {
       const stage = makeStage({
@@ -376,6 +459,58 @@ describe('ManifestBuilder', () => {
 
     it('should have undefined resources on manifest when stage has no resources', () => {
       const manifest = ManifestBuilder.build(makeStage(), makeContext());
+      expect(manifest.resources).toBeUndefined();
+    });
+  });
+
+  describe('build with flavorResources', () => {
+    it('merges step and flavor resources — step wins on name conflict', () => {
+      const stage = makeStage({
+        resources: {
+          tools: [{ name: 'tsc', purpose: 'step-purpose' }],
+          agents: [],
+          skills: [],
+        },
+      });
+      const flavorResources: StepResources = {
+        tools: [{ name: 'tsc', purpose: 'flavor-purpose' }, { name: 'vitest', purpose: 'testing' }],
+        agents: [],
+        skills: [],
+      };
+      const manifest = ManifestBuilder.build(stage, makeContext(), undefined, flavorResources);
+      expect(manifest.resources?.tools).toHaveLength(2);
+      expect(manifest.resources?.tools[0]?.purpose).toBe('step-purpose');
+      expect(manifest.resources?.tools[1]?.name).toBe('vitest');
+    });
+
+    it('uses only flavorResources when step has no resources', () => {
+      const stage = makeStage({ resources: undefined });
+      const flavorResources: StepResources = {
+        tools: [{ name: 'vitest', purpose: 'testing' }],
+        agents: [],
+        skills: [],
+      };
+      const manifest = ManifestBuilder.build(stage, makeContext(), undefined, flavorResources);
+      expect(manifest.prompt).toContain('## Suggested Resources');
+      expect(manifest.prompt).toContain('vitest');
+    });
+
+    it('serializes merged resources once — no double-print', () => {
+      const stage = makeStage({
+        resources: { tools: [{ name: 'tsc', purpose: 'check' }], agents: [], skills: [] },
+      });
+      const flavorResources: StepResources = {
+        tools: [{ name: 'vitest', purpose: 'testing' }],
+        agents: [],
+        skills: [],
+      };
+      const manifest = ManifestBuilder.build(stage, makeContext(), undefined, flavorResources);
+      const count = (manifest.prompt.match(/## Suggested Resources/g) ?? []).length;
+      expect(count).toBe(1);
+    });
+
+    it('has undefined resources when both step and flavor have no resources', () => {
+      const manifest = ManifestBuilder.build(makeStage({ resources: undefined }), makeContext(), undefined, undefined);
       expect(manifest.resources).toBeUndefined();
     });
   });

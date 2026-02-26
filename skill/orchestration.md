@@ -207,6 +207,40 @@ Then **pauses** — does not call `kata step next` again until approval confirma
 
 ---
 
+## Resources in `kata step next` Output
+
+`kata step next --json` includes a `resources` field containing the merged union of:
+
+1. **Step-level resources** — tools, agents, and skills declared on the step definition
+2. **Flavor-level resources** — additional tools, agents, and skills declared on the flavor itself (available across all steps in that flavor)
+
+Step definitions **win** on name conflicts — if both the step and the flavor declare a resource with the same name, the step's version is used.
+
+```json
+{
+  "status": "ready",
+  "runId": "...",
+  "stage": "build",
+  "flavor": "typescript-feature",
+  "step": "implementation-ts",
+  "prompt": "...",
+  "resources": {
+    "tools": [
+      { "name": "tsc", "purpose": "Type checking", "command": "npx tsc --noEmit" },
+      { "name": "vitest", "purpose": "Run tests", "command": "npm test" }
+    ],
+    "agents": [
+      { "name": "everything-claude-code:build-error-resolver", "when": "when build fails" }
+    ],
+    "skills": []
+  }
+}
+```
+
+The executing agent (flavor sub-agent) should consult `resources` to discover available tools, agents, and skills for the current work. If the flavor is not registered, `resources` falls back to the step's own resources.
+
+---
+
 ## Orchestration Intelligence
 
 The `BaseStageOrchestrator` runs a 6-phase loop per stage. Three phases are now active and shape flavor selection automatically — agents don't drive these directly, but the outputs are visible in `OrchestratorResult` and `kata decision list`.
@@ -281,6 +315,121 @@ kata stage complete "$RUN_ID" --stage build --synthesis /tmp/build-synthesis.md
 ```
 
 `kata stage complete --json` returns `{ stage, status, nextStage }` where `nextStage` is `null` when the run is complete.
+
+---
+
+## Agent-Driven Setup: Scan → Batch Apply
+
+After `kata init`, an agent can quickly bootstrap a project-specific methodology configuration in a single pass using the scan and batch-create commands.
+
+### Step 1: Collect project data
+
+```bash
+kata init --scan basic --cwd /path/to/project
+```
+
+This outputs structured JSON (no files modified) with:
+- `projectType` — node / rust / go / python / unknown
+- `packageName` — from package.json
+- `devTooling` — detected test frameworks, linters, bundlers, etc.
+- `claudeAssets` — existing `.claude/skills`, agents, mcp configs
+- `ci` — GitHub Actions workflows and other CI files
+- `manifests` — which manifest files are present
+
+For richer data (git history, framework gaps):
+
+```bash
+kata init --scan full --cwd /path/to/project
+```
+
+### Step 2: Create steps in batch
+
+Based on the scan output, create project-specific steps in a single call:
+
+```bash
+cat > /tmp/steps.json << 'EOF'
+[
+  { "type": "cargo-build", "description": "Compile with cargo", "flavor": "rust" },
+  { "type": "cargo-test",  "description": "Run cargo test suite", "flavor": "rust" }
+]
+EOF
+
+kata step create --from-json /tmp/steps.json --cwd /path/to/project
+# → Created 2 steps: cargo-build:rust, cargo-test:rust
+```
+
+Or pipe from another command:
+```bash
+echo '[{"type":"validate-schema","description":"JSON schema validation"}]' | \
+  kata step create --from-json - --cwd /path/to/project
+```
+
+### Step 3: Create flavors in batch
+
+```bash
+cat > /tmp/flavors.json << 'EOF'
+[
+  {
+    "name": "rust-tdd",
+    "stageCategory": "build",
+    "steps": [
+      { "stepName": "build", "stepType": "cargo-build:rust" },
+      { "stepName": "test",  "stepType": "cargo-test:rust" }
+    ],
+    "synthesisArtifact": "build-output"
+  }
+]
+EOF
+
+kata flavor create --from-json /tmp/flavors.json --cwd /path/to/project
+# → Created 1 flavor: rust-tdd (build)
+```
+
+### Step 4: Seed stage vocabulary
+
+Vocabulary keywords boost orchestrator scoring for relevant flavors. Seed project-specific keywords in bulk:
+
+```bash
+kata stage vocab seed --from-json - --cwd /path/to/project << 'EOF'
+{
+  "research": ["crate", "tokio", "async-std", "serde"],
+  "build":    ["cargo", "rust", "clippy", "rustfmt"],
+  "review":   ["cargo-audit", "security", "unsafe"]
+}
+EOF
+```
+
+Or seed a single category:
+```bash
+kata stage vocab seed build cargo wasm clippy --cwd /path/to/project
+```
+
+Keywords persist to `.kata/vocabularies/{category}.json` and are automatically picked up by the stage orchestrator on the next run.
+
+### Full example: Node.js project setup
+
+```bash
+# 1. Initialize
+kata init --skip-prompts --cwd ./my-app
+
+# 2. Scan to understand the project
+SCAN=$(kata init --scan basic --cwd ./my-app)
+
+# 3. Agent interprets SCAN output and determines:
+#    - devTooling.testFramework: ["vitest"]
+#    - devTooling.bundler: ["tsup"]
+#    - devTooling.typeChecker: ["typescript"]
+
+# 4. Create project-specific steps
+kata step create --from-json /tmp/node-steps.json --cwd ./my-app
+
+# 5. Create flavors
+kata flavor create --from-json /tmp/node-flavors.json --cwd ./my-app
+
+# 6. Seed vocabulary
+kata stage vocab seed build typescript vitest tsup --cwd ./my-app
+kata stage vocab seed review eslint prettier security --cwd ./my-app
+```
 
 ---
 

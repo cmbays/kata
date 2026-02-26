@@ -6,6 +6,8 @@ import type { IPersistence } from '@domain/ports/persistence.js';
 import type { Pipeline } from '@domain/types/pipeline.js';
 import { PipelineSchema } from '@domain/types/pipeline.js';
 import { logger } from '@shared/lib/logger.js';
+import type { RunSummary } from './types.js';
+import { analyzeFlavorFrequency, analyzeRecurringGaps } from './cross-run-analyzer.js';
 
 /**
  * A proposal for the next development cycle, derived from analysis
@@ -17,7 +19,7 @@ export interface CycleProposal {
   rationale: string;
   suggestedAppetite: number; // 1-100
   priority: 'high' | 'medium' | 'low';
-  source: 'unfinished' | 'unblocked' | 'learning' | 'dependency';
+  source: 'unfinished' | 'unblocked' | 'learning' | 'dependency' | 'run-gap' | 'low-confidence' | 'cross-gap' | 'unused-flavor';
   relatedBetIds?: string[];
   relatedLearningIds?: string[];
 }
@@ -42,21 +44,148 @@ export class ProposalGenerator {
   /**
    * Generate prioritized proposals for the next cycle.
    *
-   * 1. Unfinished work (partial/abandoned bets) -> carry forward
-   * 2. Learning-driven (high-confidence learnings that suggest new work)
-   * 3. Dependency-based (completed bets that unblock new work)
+   * 1. Unfinished work (partial/abandoned bets) → carry forward
+   * 2. Dependency-based (completed bets that unblock new work)
+   * 3. Cross-run patterns (recurring gaps, under-used flavors) — only when ≥2 summaries
+   * 4. Run-gap proposals (high/medium severity gaps from run data)
+   * 5. Learning-driven (high-confidence learnings that suggest new work)
+   * 6. Low-confidence proposals (avgConfidence < 0.6 or --yolo decisions)
    *
-   * Priority order: unfinished > dependency > learning
+   * Priority order: unfinished > dependency > cross-gap > run-gap > unused-flavor > learning > low-confidence (see sourceOrder in prioritize()).
+   *
+   * @param cycleId - ID of the cycle to analyze
+   * @param runSummaries - Optional run summaries from .kata/runs/ for richer proposals
    */
-  generate(cycleId: string): CycleProposal[] {
+  generate(cycleId: string, runSummaries?: RunSummary[]): CycleProposal[] {
     const cycle = this.deps.cycleManager.get(cycleId);
 
     const unfinished = this.analyzeUnfinishedWork(cycle);
     const learningProposals = this.analyzeLearnings(cycleId);
     const dependencyProposals = this.analyzeDependencies(cycle);
+    const runProposals = runSummaries ? this.analyzeRunData(runSummaries) : [];
+    const crossRunProposals = runSummaries && runSummaries.length >= 2
+      ? this.analyzeCrossRunPatterns(runSummaries)
+      : [];
 
-    const all = [...unfinished, ...dependencyProposals, ...learningProposals];
+    const all = [...unfinished, ...dependencyProposals, ...crossRunProposals, ...learningProposals, ...runProposals];
     return this.prioritize(all);
+  }
+
+  /**
+   * Produce proposals from run execution data.
+   *
+   * Rules (applied per RunSummary):
+   * - gapsBySeverity.high > 0 → high-priority 'run-gap' proposal
+   * - other gapCount > 0 (low/medium gaps only) → medium-priority 'run-gap' proposal
+   * - avgConfidence !== null && avgConfidence < 0.6 → low-priority 'low-confidence' proposal
+   *   (null means no decisions recorded; skip to avoid false alarms)
+   */
+  analyzeRunData(summaries: RunSummary[]): CycleProposal[] {
+    const proposals: CycleProposal[] = [];
+
+    for (const summary of summaries) {
+      if (summary.gapsBySeverity.high > 0) {
+        proposals.push({
+          id: crypto.randomUUID(),
+          description: `Address coverage gaps: ${summary.gapsBySeverity.high} high-severity gap(s) in run ${summary.runId.slice(0, 8)}`,
+          rationale: `Run for bet "${summary.betId}" had ${summary.gapsBySeverity.high} high-severity orchestration gap(s) (${summary.gapsBySeverity.medium} medium, ${summary.gapsBySeverity.low} low). High-severity gaps indicate missing flavor coverage.`,
+          suggestedAppetite: 20,
+          priority: 'high',
+          source: 'run-gap',
+          relatedBetIds: [summary.betId],
+        });
+      } else if (summary.gapCount > 0) {
+        proposals.push({
+          id: crypto.randomUUID(),
+          description: `Review flavor coverage: ${summary.gapCount} gap(s) in run ${summary.runId.slice(0, 8)}`,
+          rationale: `Run for bet "${summary.betId}" had ${summary.gapCount} orchestration gap(s) (${summary.gapsBySeverity.medium} medium, ${summary.gapsBySeverity.low} low). Consider adding flavors to improve coverage.`,
+          suggestedAppetite: 10,
+          priority: 'medium',
+          source: 'run-gap',
+          relatedBetIds: [summary.betId],
+        });
+      }
+
+      if (summary.avgConfidence !== null && summary.avgConfidence < 0.6) {
+        proposals.push({
+          id: crypto.randomUUID(),
+          description: `Improve decision confidence: avg ${(summary.avgConfidence * 100).toFixed(0)}% in run ${summary.runId.slice(0, 8)}`,
+          rationale: `Run for bet "${summary.betId}" had low average decision confidence (${(summary.avgConfidence * 100).toFixed(0)}%). Adding rules or vocabulary may help the orchestrator make higher-confidence selections.`,
+          suggestedAppetite: 10,
+          priority: 'low',
+          source: 'low-confidence',
+          relatedBetIds: [summary.betId],
+        });
+      }
+    }
+
+    // Yolo surfacing: emit a single proposal when any runs had --yolo decisions
+    const totalYolo = summaries.reduce((sum, s) => sum + s.yoloDecisionCount, 0);
+    if (totalYolo > 0) {
+      const involvedBetIds = summaries
+        .filter((s) => s.yoloDecisionCount > 0)
+        .map((s) => s.betId);
+      proposals.push({
+        id: crypto.randomUUID(),
+        description: `Review ${totalYolo} --yolo decision(s) that bypassed confidence gates`,
+        rationale: `${totalYolo} decision(s) bypassed confidence gates with --yolo across ${involvedBetIds.length} bet(s) (${involvedBetIds.map((id) => id.slice(0, 8)).join(', ')}). Reviewing these may reveal areas where better rules or vocabulary would help.`,
+        suggestedAppetite: 10,
+        priority: 'medium',
+        source: 'low-confidence',
+        relatedBetIds: involvedBetIds,
+      });
+    }
+
+    return proposals;
+  }
+
+  /**
+   * Produce proposals from cross-run pattern analysis.
+   * Requires at least 2 run summaries to be meaningful.
+   *
+   * - Recurring gaps (same description in 2+ bets) → high-priority 'cross-gap' proposals
+   * - Under-used flavors (appear in only 1 run) → low-priority 'unused-flavor' proposals (max 3)
+   */
+  analyzeCrossRunPatterns(summaries: RunSummary[]): CycleProposal[] {
+    const proposals: CycleProposal[] = [];
+
+    // Recurring gaps
+    const recurringGaps = analyzeRecurringGaps(summaries);
+    for (const gap of recurringGaps) {
+      const relatedBetIds = summaries
+        .filter((s) => s.stageDetails.some((stage) => stage.gaps.some((g) => g.description === gap.description)))
+        .map((s) => s.betId);
+      proposals.push({
+        id: crypto.randomUUID(),
+        description: `Address recurring gap: ${gap.description}`,
+        rationale: `This gap appeared in ${gap.betCount} bet(s) across multiple runs, suggesting a systematic coverage issue.`,
+        suggestedAppetite: 15,
+        priority: 'high',
+        source: 'cross-gap',
+        relatedBetIds,
+      });
+    }
+
+    // Under-used flavors (appear in exactly 1 run out of 2+ — potentially valuable but under-adopted)
+    // Sort alphabetically for deterministic output regardless of Map insertion order.
+    const flavorFreq = analyzeFlavorFrequency(summaries);
+    const sortedFlavors = Array.from(flavorFreq.entries()).sort(([a], [b]) => a.localeCompare(b));
+    let unusedFlavorCount = 0;
+    for (const [flavorName, count] of sortedFlavors) {
+      if (summaries.length >= 2 && count === 1 && unusedFlavorCount < 3) {
+        proposals.push({
+          id: crypto.randomUUID(),
+          description: `Consider using unused flavor: ${flavorName}`,
+          rationale: `Flavor "${flavorName}" was used in only 1 of ${summaries.length} runs. Consider whether it should be applied more broadly.`,
+          suggestedAppetite: 5,
+          priority: 'low',
+          source: 'unused-flavor',
+        });
+        unusedFlavorCount++;
+      }
+    }
+
+    return proposals;
   }
 
   /**
@@ -196,7 +325,16 @@ export class ProposalGenerator {
    */
   prioritize(proposals: CycleProposal[]): CycleProposal[] {
     const priorityOrder: Record<string, number> = { high: 0, medium: 1, low: 2 };
-    const sourceOrder: Record<string, number> = { unfinished: 0, dependency: 1, unblocked: 2, learning: 3 };
+    const sourceOrder: Record<string, number> = {
+      unfinished: 0,
+      dependency: 1,
+      'cross-gap': 1.5,
+      'run-gap': 2,
+      unblocked: 3,
+      'unused-flavor': 3.5,
+      learning: 4,
+      'low-confidence': 5,
+    };
 
     // Deduplicate by description similarity (exact match after trimming)
     const seen = new Set<string>();

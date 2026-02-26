@@ -3,7 +3,9 @@ import type { Command } from 'commander';
 import { CycleManager } from '@domain/services/cycle-manager.js';
 import { KnowledgeStore } from '@infra/knowledge/knowledge-store.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
+import { RuleRegistry } from '@infra/registries/rule-registry.js';
 import { CooldownSession, type BetOutcomeRecord } from '@features/cycle-management/cooldown-session.js';
+import type { SuggestionReviewRecord } from '@features/cycle-management/types.js';
 import { withCommandContext, kataDirPath } from '@cli/utils.js';
 import {
   formatCycleStatus,
@@ -324,6 +326,7 @@ export function registerCycleCommands(parent: Command): void {
         };
 
         createRunTree(runsDir, run);
+        manager.setRunId(cycleId, bet.id, runId);
 
         runs.push({
           runId,
@@ -399,11 +402,13 @@ export function registerCycleCommands(parent: Command): void {
     .description('Run cooldown reflection on a completed cycle (alias: ma)')
     .argument('<cycle-id>', 'Cycle ID')
     .option('--skip-prompts', 'Skip interactive prompts')
+    .option('--auto-accept-suggestions', 'Accept all pending rule suggestions without prompts')
     .action(withCommandContext(async (ctx, cycleId: string) => {
       const localOpts = ctx.cmd.opts();
       const cyclesDir = kataDirPath(ctx.kataDir, 'cycles');
       const manager = new CycleManager(cyclesDir, JsonStore);
       const knowledgeStore = new KnowledgeStore(kataDirPath(ctx.kataDir, 'knowledge'));
+      const ruleRegistry = new RuleRegistry(kataDirPath(ctx.kataDir, 'rules'));
 
       const session = new CooldownSession({
         cycleManager: manager,
@@ -411,6 +416,8 @@ export function registerCycleCommands(parent: Command): void {
         persistence: JsonStore,
         pipelineDir: kataDirPath(ctx.kataDir, 'pipelines'),
         historyDir: kataDirPath(ctx.kataDir, 'history'),
+        runsDir: kataDirPath(ctx.kataDir, 'runs'),
+        ruleRegistry,
       });
 
       const betOutcomes: BetOutcomeRecord[] = [];
@@ -454,15 +461,81 @@ export function registerCycleCommands(parent: Command): void {
 
       const result = await session.run(cycleId, betOutcomes);
 
+      // Rule suggestion review — after session.run() so suggestions are loaded
+      const suggestionReviewRecords: SuggestionReviewRecord[] = [];
+      const suggestions = result.ruleSuggestions ?? [];
+
+      if (suggestions.length > 0) {
+        if (localOpts.autoAcceptSuggestions) {
+          // Headless: accept all suggestions without prompts
+          for (const suggestion of suggestions) {
+            ruleRegistry.acceptSuggestion(suggestion.id);
+            suggestionReviewRecords.push({ id: suggestion.id, decision: 'accepted' });
+          }
+          if (!ctx.globalOpts.json) {
+            console.log(`Auto-accepted ${suggestions.length} rule suggestion(s).`);
+          }
+        } else if (!localOpts.skipPrompts) {
+          const { select, input } = await import('@inquirer/prompts');
+
+          console.log('');
+          console.log('--- Rule Suggestions ---');
+          console.log('Review pending rule suggestions:');
+          console.log('');
+
+          for (const suggestion of suggestions) {
+            const { suggestedRule, observationCount } = suggestion;
+            console.log(
+              `  [${suggestedRule.effect}] flavor "${suggestedRule.name}" — ${suggestedRule.condition} (${observationCount} observation${observationCount === 1 ? '' : 's'})`,
+            );
+
+            const decision = await select({
+              message: 'Decision:',
+              choices: [
+                { name: 'Accept', value: 'accepted' as const },
+                { name: 'Reject', value: 'rejected' as const },
+                { name: 'Defer', value: 'deferred' as const },
+              ],
+            });
+
+            if (decision === 'accepted') {
+              ruleRegistry.acceptSuggestion(suggestion.id);
+              suggestionReviewRecords.push({ id: suggestion.id, decision: 'accepted' });
+            } else if (decision === 'rejected') {
+              const reason = await input({
+                message: 'Rejection reason (optional):',
+                default: '',
+              }) || 'No reason provided';
+              ruleRegistry.rejectSuggestion(suggestion.id, reason);
+              suggestionReviewRecords.push({ id: suggestion.id, decision: 'rejected', rejectionReason: reason });
+            } else {
+              suggestionReviewRecords.push({ id: suggestion.id, decision: 'deferred' });
+            }
+          }
+        }
+      }
+
+      // Only surface a review summary when some action was taken (accept/reject/defer recorded).
+      // If --skip-prompts suppressed the loop with suggestions present, leave it undefined so
+      // the formatter shows "N pending suggestion(s) (run interactively to review)" instead.
+      const suggestionReview = suggestionReviewRecords.length > 0 ? {
+        accepted: suggestionReviewRecords.filter((r) => r.decision === 'accepted').length,
+        rejected: suggestionReviewRecords.filter((r) => r.decision === 'rejected').length,
+        deferred: suggestionReviewRecords.filter((r) => r.decision === 'deferred').length,
+      } : undefined;
+
       if (ctx.globalOpts.json) {
         console.log(JSON.stringify({
           report: result.report,
           betOutcomes: result.betOutcomes,
           proposals: result.proposals,
           learningsCaptured: result.learningsCaptured,
+          runSummaries: result.runSummaries,
+          ruleSuggestions: result.ruleSuggestions,
+          suggestionReview,
         }, null, 2));
       } else {
-        console.log(formatCooldownSessionResult(result));
+        console.log(formatCooldownSessionResult(result, suggestionReview));
       }
     }));
 }

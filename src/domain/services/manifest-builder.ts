@@ -4,6 +4,7 @@ import {
   type ExecutionContext,
 } from '@domain/types/manifest.js';
 import type { Step, StepResources } from '@domain/types/step.js';
+import type { Flavor } from '@domain/types/flavor.js';
 import type { Gate } from '@domain/types/gate.js';
 import type { Learning } from '@domain/types/learning.js';
 import type { IRefResolver } from '@domain/ports/ref-resolver.js';
@@ -21,12 +22,15 @@ export const ManifestBuilder = {
    * @param stage - The stage definition to build a manifest for
    * @param context - Execution context (pipeline ID, stage index, metadata)
    * @param learnings - Optional learnings to inject as additional context
+   * @param flavorResources - Optional flavor-level resources merged with step's own;
+   *   step wins on name conflicts. Use `aggregateFlavorResources()` to compute this.
    * @returns A fully composed ExecutionManifest
    */
   build(
     stage: Step,
     context: ExecutionContext,
     learnings?: Learning[],
+    flavorResources?: StepResources,
   ): ExecutionManifest {
     // Start with the prompt template or a default
     let prompt = stage.promptTemplate ?? `Execute the "${stage.type}" stage.`;
@@ -41,9 +45,27 @@ export const ManifestBuilder = {
       prompt = `${prompt}\n\n${learningsText}`;
     }
 
-    // Inject resources into the prompt if present
-    if (stage.resources) {
-      const resourcesText = ManifestBuilder.serializeResources(stage.resources);
+    // Merge step resources + flavor resources and inject once (step wins on name conflicts)
+    let effectiveResources: StepResources | undefined;
+    if (stage.resources ?? flavorResources) {
+      const base = stage.resources ?? { tools: [], agents: [], skills: [] };
+      const additions = flavorResources ?? { tools: [], agents: [], skills: [] };
+      const dedup = <T extends { name: string }>(arr: T[]): T[] => {
+        const seen = new Set<string>();
+        return arr.filter((item) => {
+          if (seen.has(item.name)) return false;
+          seen.add(item.name);
+          return true;
+        });
+      };
+      effectiveResources = {
+        tools: dedup([...base.tools, ...additions.tools]),
+        agents: dedup([...base.agents, ...additions.agents]),
+        skills: dedup([...base.skills, ...additions.skills]),
+      };
+    }
+    if (effectiveResources) {
+      const resourcesText = ManifestBuilder.serializeResources(effectiveResources);
       if (resourcesText) {
         prompt = `${prompt}\n\n${resourcesText}`;
       }
@@ -61,10 +83,53 @@ export const ManifestBuilder = {
       exitGate: gates.exitGate,
       artifacts: stage.artifacts,
       learnings: learnings ?? [],
-      resources: stage.resources,
+      resources: effectiveResources,
     });
 
     return manifest;
+  },
+
+  /**
+   * Aggregate all resources visible to a step executing within a given flavor.
+   *
+   * Collects resources from each step in the flavor's ordered step list (skipping any
+   * FlavorStepRef whose stepType has no matching stepDef — no throw), then appends
+   * flavor-level additions. Deduplicates each array by `.name` — first occurrence wins
+   * (step definitions win over flavor additions).
+   *
+   * @param flavor - The flavor whose resources to aggregate
+   * @param stepDefs - Resolved step definitions to look up by stepType
+   * @returns Merged, deduplicated StepResources
+   */
+  aggregateFlavorResources(flavor: Flavor, stepDefs: Step[]): StepResources {
+    const tools: StepResources['tools'] = [];
+    const agents: StepResources['agents'] = [];
+    const skills: StepResources['skills'] = [];
+
+    for (const ref of flavor.steps) {
+      const stepDef = stepDefs.find((s) => s.type === ref.stepType);
+      if (!stepDef?.resources) continue;
+      tools.push(...stepDef.resources.tools);
+      agents.push(...stepDef.resources.agents);
+      skills.push(...stepDef.resources.skills);
+    }
+
+    if (flavor.resources) {
+      tools.push(...flavor.resources.tools);
+      agents.push(...flavor.resources.agents);
+      skills.push(...flavor.resources.skills);
+    }
+
+    const dedup = <T extends { name: string }>(arr: T[]): T[] => {
+      const seen = new Set<string>();
+      return arr.filter((item) => {
+        if (seen.has(item.name)) return false;
+        seen.add(item.name);
+        return true;
+      });
+    };
+
+    return { tools: dedup(tools), agents: dedup(agents), skills: dedup(skills) };
   },
 
   /**

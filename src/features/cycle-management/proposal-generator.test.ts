@@ -6,6 +6,7 @@ import { KnowledgeStore } from '@infra/knowledge/knowledge-store.js';
 import { PipelineSchema } from '@domain/types/pipeline.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
 import { ProposalGenerator, type ProposalGeneratorDeps, type CycleProposal } from './proposal-generator.js';
+import type { RunSummary } from './types.js';
 
 describe('ProposalGenerator', () => {
   const baseDir = join(tmpdir(), `kata-proposal-test-${Date.now()}`);
@@ -16,6 +17,21 @@ describe('ProposalGenerator', () => {
   let cycleManager: CycleManager;
   let knowledgeStore: KnowledgeStore;
   let generator: ProposalGenerator;
+
+  function makeSummary(overrides: Partial<RunSummary> = {}): RunSummary {
+    return {
+      betId: crypto.randomUUID(),
+      runId: crypto.randomUUID(),
+      stagesCompleted: 1,
+      gapCount: 0,
+      gapsBySeverity: { low: 0, medium: 0, high: 0 },
+      avgConfidence: null,
+      artifactPaths: [],
+      stageDetails: [],
+      yoloDecisionCount: 0,
+      ...overrides,
+    };
+  }
 
   beforeEach(() => {
     mkdirSync(cyclesDir, { recursive: true });
@@ -472,6 +488,245 @@ describe('ProposalGenerator', () => {
     it('returns empty array for empty input', () => {
       const sorted = generator.prioritize([]);
       expect(sorted).toEqual([]);
+    });
+
+    it("sorts 'run-gap' between dependency and unblocked (sourceOrder 2)", () => {
+      const proposals: CycleProposal[] = [
+        { id: '1', description: 'Unfinished', rationale: '', suggestedAppetite: 20, priority: 'medium', source: 'unfinished' },
+        { id: '2', description: 'Run gap', rationale: '', suggestedAppetite: 20, priority: 'medium', source: 'run-gap' },
+        { id: '3', description: 'Learning', rationale: '', suggestedAppetite: 10, priority: 'medium', source: 'learning' },
+      ];
+      const sorted = generator.prioritize(proposals);
+      expect(sorted.map((p) => p.source)).toEqual(['unfinished', 'run-gap', 'learning']);
+    });
+
+    it("sorts 'low-confidence' last (sourceOrder 5)", () => {
+      const proposals: CycleProposal[] = [
+        { id: '1', description: 'Learning', rationale: '', suggestedAppetite: 10, priority: 'low', source: 'learning' },
+        { id: '2', description: 'Low confidence', rationale: '', suggestedAppetite: 10, priority: 'low', source: 'low-confidence' },
+      ];
+      const sorted = generator.prioritize(proposals);
+      expect(sorted[0]!.source).toBe('learning');
+      expect(sorted[1]!.source).toBe('low-confidence');
+    });
+  });
+
+  describe('analyzeRunData', () => {
+    it('returns high-priority run-gap proposal when high-severity gaps present', () => {
+      const summary = makeSummary({ gapsBySeverity: { low: 0, medium: 0, high: 2 }, gapCount: 2 });
+      const proposals = generator.analyzeRunData([summary]);
+      expect(proposals.some((p) => p.source === 'run-gap' && p.priority === 'high')).toBe(true);
+    });
+
+    it('returns medium-priority run-gap proposal for low/medium gaps (no high)', () => {
+      const summary = makeSummary({ gapsBySeverity: { low: 1, medium: 1, high: 0 }, gapCount: 2 });
+      const proposals = generator.analyzeRunData([summary]);
+      expect(proposals.some((p) => p.source === 'run-gap' && p.priority === 'medium')).toBe(true);
+      expect(proposals.every((p) => p.priority !== 'high')).toBe(true);
+    });
+
+    it('returns no gap proposal when gapCount is 0', () => {
+      const summary = makeSummary({ gapCount: 0, gapsBySeverity: { low: 0, medium: 0, high: 0 } });
+      const proposals = generator.analyzeRunData([summary]);
+      expect(proposals.filter((p) => p.source === 'run-gap')).toHaveLength(0);
+    });
+
+    it('skips low-confidence proposal when avgConfidence is null', () => {
+      const summary = makeSummary({ avgConfidence: null });
+      const proposals = generator.analyzeRunData([summary]);
+      expect(proposals.filter((p) => p.source === 'low-confidence')).toHaveLength(0);
+    });
+
+    it('skips low-confidence proposal when avgConfidence === 0.6 (boundary — not strictly less)', () => {
+      const summary = makeSummary({ avgConfidence: 0.6 });
+      const proposals = generator.analyzeRunData([summary]);
+      expect(proposals.filter((p) => p.source === 'low-confidence')).toHaveLength(0);
+    });
+
+    it('fires low-confidence proposal when avgConfidence === 0.59 (below threshold)', () => {
+      const summary = makeSummary({ avgConfidence: 0.59 });
+      const proposals = generator.analyzeRunData([summary]);
+      expect(proposals.filter((p) => p.source === 'low-confidence')).toHaveLength(1);
+      expect(proposals.find((p) => p.source === 'low-confidence')!.priority).toBe('low');
+    });
+
+    it('returns empty array for empty summaries', () => {
+      expect(generator.analyzeRunData([])).toEqual([]);
+    });
+
+    it('includes betId in relatedBetIds', () => {
+      const betId = crypto.randomUUID();
+      const summary = makeSummary({ betId, gapsBySeverity: { low: 0, medium: 0, high: 1 }, gapCount: 1 });
+      const proposals = generator.analyzeRunData([summary]);
+      expect(proposals[0]!.relatedBetIds).toContain(betId);
+    });
+  });
+
+  describe('generate with runSummaries', () => {
+    it('includes run-gap proposals when summaries provided', () => {
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      const runId = crypto.randomUUID();
+      const betId = crypto.randomUUID();
+      const summaries: RunSummary[] = [{
+        betId,
+        runId,
+        stagesCompleted: 1,
+        gapCount: 2,
+        gapsBySeverity: { low: 0, medium: 0, high: 2 },
+        avgConfidence: null,
+        artifactPaths: [],
+        stageDetails: [],
+        yoloDecisionCount: 0,
+      }];
+
+      const proposals = generator.generate(cycle.id, summaries);
+      expect(proposals.some((p) => p.source === 'run-gap')).toBe(true);
+    });
+
+    it('omits run proposals when summaries not provided', () => {
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      const proposals = generator.generate(cycle.id);
+      expect(proposals.every((p) => p.source !== 'run-gap' && p.source !== 'low-confidence')).toBe(true);
+    });
+
+    it('includes cross-run proposals when 2+ summaries provided', () => {
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      const summaries: RunSummary[] = [
+        makeSummary({
+          stageDetails: [{ category: 'build', selectedFlavors: [], gaps: [{ description: 'Recurring gap', severity: 'high' }] }],
+        }),
+        makeSummary({
+          stageDetails: [{ category: 'build', selectedFlavors: [], gaps: [{ description: 'Recurring gap', severity: 'high' }] }],
+        }),
+      ];
+
+      const proposals = generator.generate(cycle.id, summaries);
+      expect(proposals.some((p) => p.source === 'cross-gap')).toBe(true);
+    });
+
+    it('omits cross-run proposals when fewer than 2 summaries provided', () => {
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      const summaries: RunSummary[] = [
+        makeSummary({
+          stageDetails: [{ category: 'build', selectedFlavors: [], gaps: [{ description: 'Only once', severity: 'high' }] }],
+        }),
+      ];
+
+      const proposals = generator.generate(cycle.id, summaries);
+      expect(proposals.every((p) => p.source !== 'cross-gap')).toBe(true);
+    });
+  });
+
+  describe('analyzeCrossRunPatterns', () => {
+    it('returns empty array for empty input', () => {
+      expect(generator.analyzeCrossRunPatterns([])).toEqual([]);
+    });
+
+    it('returns empty array for single summary', () => {
+      const summaries = [
+        makeSummary({ stageDetails: [{ category: 'build', selectedFlavors: ['tdd'], gaps: [] }] }),
+      ];
+      expect(generator.analyzeCrossRunPatterns(summaries)).toEqual([]);
+    });
+
+    it('emits cross-gap proposals for gaps appearing in 2+ bets', () => {
+      const summaries = [
+        makeSummary({ stageDetails: [{ category: 'build', selectedFlavors: [], gaps: [{ description: 'Missing integration tests', severity: 'high' }] }] }),
+        makeSummary({ stageDetails: [{ category: 'build', selectedFlavors: [], gaps: [{ description: 'Missing integration tests', severity: 'high' }] }] }),
+      ];
+      const proposals = generator.analyzeCrossRunPatterns(summaries);
+      const crossGap = proposals.find((p) => p.source === 'cross-gap');
+      expect(crossGap).toBeDefined();
+      expect(crossGap!.description).toContain('Missing integration tests');
+      expect(crossGap!.priority).toBe('high');
+      expect(crossGap!.relatedBetIds).toHaveLength(2);
+    });
+
+    it('does not emit cross-gap for gaps appearing in only 1 bet', () => {
+      const summaries = [
+        makeSummary({ stageDetails: [{ category: 'build', selectedFlavors: [], gaps: [{ description: 'Unique gap', severity: 'medium' }] }] }),
+        makeSummary({ stageDetails: [{ category: 'build', selectedFlavors: [], gaps: [] }] }),
+      ];
+      const proposals = generator.analyzeCrossRunPatterns(summaries);
+      expect(proposals.filter((p) => p.source === 'cross-gap')).toHaveLength(0);
+    });
+
+    it('emits unused-flavor proposals for flavors used in only 1 run', () => {
+      const summaries = [
+        makeSummary({ stageDetails: [{ category: 'build', selectedFlavors: ['tdd'], gaps: [] }] }),
+        makeSummary({ stageDetails: [{ category: 'build', selectedFlavors: [], gaps: [] }] }),
+      ];
+      const proposals = generator.analyzeCrossRunPatterns(summaries);
+      const unusedFlavor = proposals.find((p) => p.source === 'unused-flavor');
+      expect(unusedFlavor).toBeDefined();
+      expect(unusedFlavor!.description).toContain('tdd');
+      expect(unusedFlavor!.priority).toBe('low');
+    });
+
+    it('does not emit unused-flavor for flavors used in 2+ runs', () => {
+      const summaries = [
+        makeSummary({ stageDetails: [{ category: 'build', selectedFlavors: ['tdd'], gaps: [] }] }),
+        makeSummary({ stageDetails: [{ category: 'build', selectedFlavors: ['tdd'], gaps: [] }] }),
+      ];
+      const proposals = generator.analyzeCrossRunPatterns(summaries);
+      expect(proposals.filter((p) => p.source === 'unused-flavor')).toHaveLength(0);
+    });
+
+    it('caps unused-flavor proposals at 3', () => {
+      // 5 flavors each used in only 1 run
+      const summaries = [
+        makeSummary({ stageDetails: [{ category: 'build', selectedFlavors: ['a', 'b', 'c', 'd', 'e'], gaps: [] }] }),
+        makeSummary({ stageDetails: [{ category: 'build', selectedFlavors: [], gaps: [] }] }),
+      ];
+      const proposals = generator.analyzeCrossRunPatterns(summaries);
+      expect(proposals.filter((p) => p.source === 'unused-flavor').length).toBeLessThanOrEqual(3);
+    });
+  });
+
+  describe('analyzeRunData — yolo surfacing', () => {
+    it('emits a low-confidence proposal when any run has yoloDecisionCount > 0', () => {
+      const summaries = [
+        makeSummary({ yoloDecisionCount: 2 }),
+        makeSummary({ yoloDecisionCount: 0 }),
+      ];
+      const proposals = generator.analyzeRunData(summaries);
+      const yoloProp = proposals.find((p) => p.description.includes('--yolo'));
+      expect(yoloProp).toBeDefined();
+      expect(yoloProp!.source).toBe('low-confidence');
+      expect(yoloProp!.priority).toBe('medium');
+      expect(yoloProp!.description).toContain('2');
+    });
+
+    it('sums yoloDecisionCount across all summaries', () => {
+      const summaries = [
+        makeSummary({ yoloDecisionCount: 3 }),
+        makeSummary({ yoloDecisionCount: 1 }),
+      ];
+      const proposals = generator.analyzeRunData(summaries);
+      const yoloProp = proposals.find((p) => p.description.includes('--yolo'));
+      expect(yoloProp!.description).toContain('4');
+    });
+
+    it('does not emit yolo proposal when all yoloDecisionCount are 0', () => {
+      const summaries = [
+        makeSummary({ yoloDecisionCount: 0 }),
+        makeSummary({ yoloDecisionCount: 0 }),
+      ];
+      const proposals = generator.analyzeRunData(summaries);
+      expect(proposals.filter((p) => p.description.includes('--yolo'))).toHaveLength(0);
+    });
+
+    it('includes only bets with yolo decisions in relatedBetIds', () => {
+      const betWithYolo = crypto.randomUUID();
+      const betWithoutYolo = crypto.randomUUID();
+      const summaries = [
+        makeSummary({ betId: betWithYolo, yoloDecisionCount: 1 }),
+        makeSummary({ betId: betWithoutYolo, yoloDecisionCount: 0 }),
+      ];
+      const proposals = generator.analyzeRunData(summaries);
+      const yoloProp = proposals.find((p) => p.description.includes('--yolo'));
+      expect(yoloProp!.relatedBetIds).toContain(betWithYolo);
+      expect(yoloProp!.relatedBetIds).not.toContain(betWithoutYolo);
     });
   });
 });

@@ -2,6 +2,7 @@ import type { BudgetStatus, Cycle } from '@domain/types/cycle.js';
 import type { CooldownReport, CooldownBetReport } from '@domain/services/cycle-manager.js';
 import type { CycleProposal } from '@features/cycle-management/proposal-generator.js';
 import type { CooldownSessionResult } from '@features/cycle-management/cooldown-session.js';
+import type { RunSummary } from '@features/cycle-management/types.js';
 
 /**
  * Format cycle budget status as a human-readable summary.
@@ -145,7 +146,10 @@ export function formatProposalsJson(proposals: CycleProposal[]): string {
 /**
  * Format a full cooldown session result.
  */
-export function formatCooldownSessionResult(result: CooldownSessionResult): string {
+export function formatCooldownSessionResult(
+  result: CooldownSessionResult,
+  suggestionReview?: { accepted: number; rejected: number; deferred: number },
+): string {
   const lines: string[] = [];
 
   // Use the existing cooldown report formatter
@@ -165,6 +169,26 @@ export function formatCooldownSessionResult(result: CooldownSessionResult): stri
   // Learnings captured
   if (result.learningsCaptured > 0) {
     lines.push(`Learnings captured: ${result.learningsCaptured}`);
+    lines.push('');
+  }
+
+  // Run summaries section
+  if (result.runSummaries && result.runSummaries.length > 0) {
+    lines.push('--- Run Summaries ---');
+    for (const s of result.runSummaries) {
+      lines.push(formatRunSummaryLine(s));
+    }
+    lines.push('');
+  }
+
+  // Rule suggestions review section
+  if (suggestionReview) {
+    lines.push('--- Rule Suggestions ---');
+    lines.push(`  Accepted: ${suggestionReview.accepted}, Rejected: ${suggestionReview.rejected}, Deferred: ${suggestionReview.deferred}`);
+    lines.push('');
+  } else if (result.ruleSuggestions && result.ruleSuggestions.length > 0) {
+    lines.push('--- Rule Suggestions ---');
+    lines.push(`  ${result.ruleSuggestions.length} pending suggestion(s) (run interactively to review)`);
     lines.push('');
   }
 
@@ -193,6 +217,17 @@ export function formatBetOutcomePrompt(bet: CooldownBetReport): string {
 }
 
 // ---- Helpers ----
+
+function formatRunSummaryLine(s: RunSummary): string {
+  const confidence = s.avgConfidence !== null
+    ? `avg confidence ${(s.avgConfidence * 100).toFixed(0)}%`
+    : 'no decisions recorded';
+  const gaps = s.gapCount > 0
+    ? `${s.gapCount} gap(s) [H:${s.gapsBySeverity.high} M:${s.gapsBySeverity.medium} L:${s.gapsBySeverity.low}]`
+    : 'no gaps';
+  const yolo = s.yoloDecisionCount > 0 ? ` (${s.yoloDecisionCount} --yolo decision(s))` : '';
+  return `  bet ${s.betId.slice(0, 8)}: ${s.stagesCompleted} stage(s) completed, ${gaps}, ${confidence}${yolo}`;
+}
 
 function outcomeIcon(outcome: string): string {
   switch (outcome) {

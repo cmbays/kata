@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { CycleManager } from './cycle-manager.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
-import { CycleNotFoundError } from '@shared/lib/errors.js';
+import { CycleNotFoundError, KataError } from '@shared/lib/errors.js';
 import type { Budget } from '@domain/types/cycle.js';
 import type { Bet } from '@domain/types/bet.js';
 
@@ -598,5 +598,46 @@ describe('CycleManager.generateCooldown', () => {
     expect(() => manager.generateCooldown(crypto.randomUUID())).toThrow(
       CycleNotFoundError,
     );
+  });
+});
+
+describe('CycleManager.setRunId', () => {
+  it('persists runId on the bet', () => {
+    const cycle = manager.create(makeBudget());
+    const withBet = manager.addBet(cycle.id, makeBetInput());
+    const betId = withBet.bets[0]!.id;
+    const runId = crypto.randomUUID();
+
+    manager.setRunId(cycle.id, betId, runId);
+
+    const reloaded = manager.get(cycle.id);
+    expect(reloaded.bets[0]!.runId).toBe(runId);
+  });
+
+  it('idempotent overwrite — second call with different runId overwrites, no throw', () => {
+    const cycle = manager.create(makeBudget());
+    const withBet = manager.addBet(cycle.id, makeBetInput());
+    const betId = withBet.bets[0]!.id;
+    const firstRunId = crypto.randomUUID();
+    const secondRunId = crypto.randomUUID();
+
+    manager.setRunId(cycle.id, betId, firstRunId);
+    expect(() => manager.setRunId(cycle.id, betId, secondRunId)).not.toThrow();
+
+    const reloaded = manager.get(cycle.id);
+    expect(reloaded.bets[0]!.runId).toBe(secondRunId);
+  });
+
+  it('throws CycleNotFoundError for unknown cycleId', () => {
+    expect(() =>
+      manager.setRunId(crypto.randomUUID(), crypto.randomUUID(), crypto.randomUUID()),
+    ).toThrow(CycleNotFoundError);
+  });
+
+  it('throws KataError for unknown betId', () => {
+    const cycle = manager.create(makeBudget());
+    expect(() =>
+      manager.setRunId(cycle.id, crypto.randomUUID(), crypto.randomUUID()),
+    ).toThrow(KataError);
   });
 });

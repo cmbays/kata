@@ -103,4 +103,58 @@ describe('registerInitCommand', () => {
     expect(parsed.config.methodology).toBe('custom');
     expect(parsed.config.execution.adapter).toBe('claude-cli');
   });
+
+  // ---- --scan mode ----
+
+  describe('--scan basic', () => {
+    function createScanProgram(): Command {
+      const program = new Command();
+      program.option('--json').option('--verbose').option('--cwd <path>');
+      program.exitOverride();
+      registerInitCommand(program);
+      return program;
+    }
+
+    it('outputs basic scan JSON without creating .kata/', async () => {
+      const program = createScanProgram();
+      await program.parseAsync(['node', 'test', 'init', '--scan', 'basic', '--cwd', baseDir]);
+
+      expect(existsSync(join(baseDir, '.kata'))).toBe(false);
+      const output = consoleSpy.mock.calls[0]?.[0] as string;
+      const parsed = JSON.parse(output);
+      expect(parsed.scanDepth).toBe('basic');
+      expect(parsed.projectType).toBeDefined();
+      expect(parsed.devTooling).toBeDefined();
+      expect(parsed.claudeAssets).toBeDefined();
+      expect(parsed.ci).toBeDefined();
+      expect(parsed.manifests).toBeDefined();
+    });
+
+    it('detects node project type from package.json', async () => {
+      writeFileSync(join(baseDir, 'package.json'), JSON.stringify({ name: 'scan-test-app' }));
+      const program = createScanProgram();
+      await program.parseAsync(['node', 'test', 'init', '--scan', 'basic', '--cwd', baseDir]);
+
+      const output = consoleSpy.mock.calls[0]?.[0] as string;
+      const parsed = JSON.parse(output);
+      expect(parsed.projectType).toBe('node');
+      expect(parsed.packageName).toBe('scan-test-app');
+    });
+
+    it('outputs full scan JSON with gitInsights and frameworkGaps', async () => {
+      const program = createScanProgram();
+      await program.parseAsync(['node', 'test', 'init', '--scan', 'full', '--cwd', baseDir]);
+
+      const output = consoleSpy.mock.calls[0]?.[0] as string;
+      const parsed = JSON.parse(output);
+      expect(parsed.scanDepth).toBe('full');
+      expect(Array.isArray(parsed.frameworkGaps)).toBe(true);
+    });
+
+    it('errors on invalid scan depth', async () => {
+      const program = createScanProgram();
+      await program.parseAsync(['node', 'test', 'init', '--scan', 'invalid', '--cwd', baseDir]);
+      expect(errorSpy).toHaveBeenCalled();
+    });
+  });
 });

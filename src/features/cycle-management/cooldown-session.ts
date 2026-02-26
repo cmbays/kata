@@ -1,11 +1,17 @@
 import type { CycleManager, CooldownReport } from '@domain/services/cycle-manager.js';
 import type { IKnowledgeStore } from '@domain/ports/knowledge-store.js';
 import type { IPersistence } from '@domain/ports/persistence.js';
+import type { IStageRuleRegistry } from '@domain/ports/rule-registry.js';
 import type { ExecutionHistoryEntry } from '@domain/types/history.js';
-import type { BudgetAlertLevel } from '@domain/types/cycle.js';
+import type { BudgetAlertLevel, Cycle } from '@domain/types/cycle.js';
+import type { RuleSuggestion } from '@domain/types/rule.js';
 import { ExecutionHistoryEntrySchema } from '@domain/types/history.js';
+import { DecisionEntrySchema, ArtifactIndexEntrySchema } from '@domain/types/run-state.js';
+import { readRun, readStageState, runPaths } from '@infra/persistence/run-store.js';
+import { JsonlStore } from '@infra/persistence/jsonl-store.js';
 import { logger } from '@shared/lib/logger.js';
 import { ProposalGenerator, type CycleProposal, type ProposalGeneratorDeps } from './proposal-generator.js';
+import type { RunSummary, StageDetail } from './types.js';
 
 /**
  * Dependencies injected into CooldownSession for testability.
@@ -18,6 +24,17 @@ export interface CooldownSessionDeps {
   historyDir: string;
   /** Optional — injected for testability; defaults to a standard ProposalGenerator. */
   proposalGenerator?: Pick<ProposalGenerator, 'generate'>;
+  /**
+   * Optional path to .kata/runs/ directory. When provided, CooldownSession loads
+   * run summaries (decisions, gaps, artifacts) and passes them to ProposalGenerator.
+   * Backward compatible — omitting this field leaves existing behavior unchanged.
+   */
+  runsDir?: string;
+  /**
+   * Optional rule registry for loading pending rule suggestions during cooldown.
+   * Backward compatible — omitting this field leaves existing behavior unchanged.
+   */
+  ruleRegistry?: IStageRuleRegistry;
 }
 
 /**
@@ -37,6 +54,10 @@ export interface CooldownSessionResult {
   betOutcomes: BetOutcomeRecord[];
   proposals: CycleProposal[];
   learningsCaptured: number;
+  /** Per-bet run summaries from .kata/runs/ data. Present when runsDir was provided. */
+  runSummaries?: RunSummary[];
+  /** Pending rule suggestions loaded during cooldown. Present when ruleRegistry was provided. */
+  ruleSuggestions?: RuleSuggestion[];
 }
 
 /**
@@ -72,10 +93,12 @@ export class CooldownSession {
    * 2. Record per-bet outcomes (data collection, not interactive -- CLI handles prompts)
    * 3. Generate the CooldownReport via CycleManager
    * 4. Enrich report with actual token usage from TokenTracker
-   * 5. Generate next-cycle proposals via ProposalGenerator
-   * 6. Capture any learnings from the cooldown analysis
-   * 7. Transition cycle state to 'complete'
-   * 8. Return the full session result
+   * 5. Load run summaries when runsDir provided
+   * 6. Generate next-cycle proposals via ProposalGenerator
+   * 7. Load pending rule suggestions when ruleRegistry provided
+   * 8. Capture any learnings from the cooldown analysis
+   * 9. Transition cycle state to 'complete'
+   * 10. Return the full session result
    */
   async run(cycleId: string, betOutcomes: BetOutcomeRecord[] = []): Promise<CooldownSessionResult> {
     // Save previous state for rollback on failure
@@ -96,13 +119,29 @@ export class CooldownSession {
       // 4. Enrich with actual token usage
       report = this.enrichReportWithTokens(report, cycleId);
 
-      // 5. Generate next-cycle proposals
-      const proposals = this.proposalGenerator.generate(cycleId);
+      // 5. Load run summaries when runsDir provided (enrich proposals)
+      const cycle = this.deps.cycleManager.get(cycleId);
+      const runSummaries = this.deps.runsDir
+        ? this.loadRunSummaries(cycle)
+        : undefined;
 
-      // 6. Capture cooldown learnings (non-critical — errors should not abort)
+      // 6. Generate next-cycle proposals (enriched with run data when available)
+      const proposals = this.proposalGenerator.generate(cycleId, runSummaries);
+
+      // 7. Load pending rule suggestions (non-critical — errors must not abort a completed cooldown)
+      let ruleSuggestions: RuleSuggestion[] | undefined;
+      if (this.deps.ruleRegistry) {
+        try {
+          ruleSuggestions = this.deps.ruleRegistry.getPendingSuggestions();
+        } catch (err) {
+          logger.warn(`Failed to load rule suggestions: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+
+      // 8. Capture cooldown learnings (non-critical — errors should not abort)
       const learningsCaptured = this.captureCooldownLearnings(report);
 
-      // 7. Transition to complete
+      // 9. Transition to complete
       this.deps.cycleManager.updateState(cycleId, 'complete');
 
       return {
@@ -110,6 +149,8 @@ export class CooldownSession {
         betOutcomes,
         proposals,
         learningsCaptured,
+        runSummaries,
+        ruleSuggestions,
       };
     } catch (error) {
       // Attempt to roll back to previous state so the user can retry
@@ -259,6 +300,69 @@ export class CooldownSession {
       logger.warn(`Failed to capture cooldown learning: ${error instanceof Error ? error.message : String(error)}`);
       return false;
     }
+  }
+
+  /**
+   * Load per-bet run summaries from .kata/runs/ state files.
+   * Bets without a runId are skipped silently.
+   * Missing run files or stage state files are skipped with a logger.warn.
+   */
+  private loadRunSummaries(cycle: Cycle): RunSummary[] {
+    const runsDir = this.deps.runsDir!;
+    const summaries: RunSummary[] = [];
+
+    for (const bet of cycle.bets) {
+      if (!bet.runId) continue;
+
+      const runId = bet.runId;
+      let run: ReturnType<typeof readRun>;
+      try {
+        run = readRun(runsDir, runId);
+      } catch {
+        logger.warn(`CooldownSession: run file not found for bet "${bet.id}" (runId: "${runId}") — skipping`);
+        continue;
+      }
+
+      let stagesCompleted = 0;
+      let gapCount = 0;
+      const gapsBySeverity = { low: 0, medium: 0, high: 0 };
+      const stageDetails: StageDetail[] = [];
+
+      for (const category of run.stageSequence) {
+        let stageState: ReturnType<typeof readStageState>;
+        try {
+          stageState = readStageState(runsDir, runId, category);
+        } catch {
+          logger.warn(`CooldownSession: missing stage state for run "${runId}" stage "${category}" — skipping`);
+          continue;
+        }
+        if (stageState.status === 'completed') stagesCompleted++;
+        for (const gap of stageState.gaps) {
+          gapCount++;
+          gapsBySeverity[gap.severity]++;
+        }
+        stageDetails.push({
+          category,
+          selectedFlavors: stageState.selectedFlavors,
+          gaps: stageState.gaps,
+        });
+      }
+
+      const paths = runPaths(runsDir, runId);
+
+      const decisions = JsonlStore.readAll(paths.decisionsJsonl, DecisionEntrySchema);
+      const avgConfidence = decisions.length > 0
+        ? decisions.reduce((sum, d) => sum + d.confidence, 0) / decisions.length
+        : null;
+      const yoloDecisionCount = decisions.filter((d) => d.lowConfidence === true).length;
+
+      const artifacts = JsonlStore.readAll(paths.artifactIndexJsonl, ArtifactIndexEntrySchema);
+      const artifactPaths = artifacts.map((a) => a.filePath);
+
+      summaries.push({ betId: bet.id, runId, stagesCompleted, gapCount, gapsBySeverity, avgConfidence, artifactPaths, stageDetails, yoloDecisionCount });
+    }
+
+    return summaries;
   }
 
   /**
