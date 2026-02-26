@@ -11,7 +11,7 @@ import { readRun, readStageState, runPaths } from '@infra/persistence/run-store.
 import { JsonlStore } from '@infra/persistence/jsonl-store.js';
 import { logger } from '@shared/lib/logger.js';
 import { ProposalGenerator, type CycleProposal, type ProposalGeneratorDeps } from './proposal-generator.js';
-import type { RunSummary } from './types.js';
+import type { RunSummary, StageDetail } from './types.js';
 
 /**
  * Dependencies injected into CooldownSession for testability.
@@ -326,6 +326,7 @@ export class CooldownSession {
       let stagesCompleted = 0;
       let gapCount = 0;
       const gapsBySeverity = { low: 0, medium: 0, high: 0 };
+      const stageDetails: StageDetail[] = [];
 
       for (const category of run.stageSequence) {
         let stageState: ReturnType<typeof readStageState>;
@@ -340,6 +341,11 @@ export class CooldownSession {
           gapCount++;
           gapsBySeverity[gap.severity]++;
         }
+        stageDetails.push({
+          category,
+          selectedFlavors: stageState.selectedFlavors,
+          gaps: stageState.gaps,
+        });
       }
 
       const paths = runPaths(runsDir, runId);
@@ -348,11 +354,12 @@ export class CooldownSession {
       const avgConfidence = decisions.length > 0
         ? decisions.reduce((sum, d) => sum + d.confidence, 0) / decisions.length
         : null;
+      const yoloDecisionCount = decisions.filter((d) => d.lowConfidence === true).length;
 
       const artifacts = JsonlStore.readAll(paths.artifactIndexJsonl, ArtifactIndexEntrySchema);
       const artifactPaths = artifacts.map((a) => a.filePath);
 
-      summaries.push({ betId: bet.id, runId, stagesCompleted, gapCount, gapsBySeverity, avgConfidence, artifactPaths });
+      summaries.push({ betId: bet.id, runId, stagesCompleted, gapCount, gapsBySeverity, avgConfidence, artifactPaths, stageDetails, yoloDecisionCount });
     }
 
     return summaries;

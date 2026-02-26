@@ -1,3 +1,14 @@
+import type { StageCategory } from '@domain/types/stage.js';
+
+/**
+ * Per-stage detail captured during a run for cross-run analysis.
+ */
+export interface StageDetail {
+  category: StageCategory;
+  selectedFlavors: string[];
+  gaps: Array<{ description: string; severity: 'low' | 'medium' | 'high' }>;
+}
+
 /**
  * Review record for a single rule suggestion during cooldown.
  */
@@ -29,4 +40,11 @@ export interface RunSummary {
   avgConfidence: number | null;
   /** Relative file paths of all artifacts produced in the run. */
   artifactPaths: string[];
+  /** Per-stage detail including selected flavors and gaps — used for cross-run analysis. */
+  stageDetails: StageDetail[];
+  /**
+   * Number of decisions that bypassed a confidence gate via --yolo in this run.
+   * Populated from DecisionEntry.lowConfidence === true.
+   */
+  yoloDecisionCount: number;
 }
