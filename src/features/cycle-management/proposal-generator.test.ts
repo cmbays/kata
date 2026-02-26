@@ -6,6 +6,7 @@ import { KnowledgeStore } from '@infra/knowledge/knowledge-store.js';
 import { PipelineSchema } from '@domain/types/pipeline.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
 import { ProposalGenerator, type ProposalGeneratorDeps, type CycleProposal } from './proposal-generator.js';
+import type { RunSummary } from './types.js';
 
 describe('ProposalGenerator', () => {
   const baseDir = join(tmpdir(), `kata-proposal-test-${Date.now()}`);
@@ -472,6 +473,116 @@ describe('ProposalGenerator', () => {
     it('returns empty array for empty input', () => {
       const sorted = generator.prioritize([]);
       expect(sorted).toEqual([]);
+    });
+
+    it("sorts 'run-gap' between dependency and unblocked (sourceOrder 2)", () => {
+      const proposals: CycleProposal[] = [
+        { id: '1', description: 'Unfinished', rationale: '', suggestedAppetite: 20, priority: 'medium', source: 'unfinished' },
+        { id: '2', description: 'Run gap', rationale: '', suggestedAppetite: 20, priority: 'medium', source: 'run-gap' },
+        { id: '3', description: 'Learning', rationale: '', suggestedAppetite: 10, priority: 'medium', source: 'learning' },
+      ];
+      const sorted = generator.prioritize(proposals);
+      expect(sorted.map((p) => p.source)).toEqual(['unfinished', 'run-gap', 'learning']);
+    });
+
+    it("sorts 'low-confidence' last (sourceOrder 5)", () => {
+      const proposals: CycleProposal[] = [
+        { id: '1', description: 'Learning', rationale: '', suggestedAppetite: 10, priority: 'low', source: 'learning' },
+        { id: '2', description: 'Low confidence', rationale: '', suggestedAppetite: 10, priority: 'low', source: 'low-confidence' },
+      ];
+      const sorted = generator.prioritize(proposals);
+      expect(sorted[0]!.source).toBe('learning');
+      expect(sorted[1]!.source).toBe('low-confidence');
+    });
+  });
+
+  describe('analyzeRunData', () => {
+    function makeSummary(overrides: Partial<RunSummary> = {}): RunSummary {
+      return {
+        betId: crypto.randomUUID(),
+        runId: crypto.randomUUID(),
+        stagesCompleted: 1,
+        gapCount: 0,
+        gapsBySeverity: { low: 0, medium: 0, high: 0 },
+        avgConfidence: null,
+        artifactPaths: [],
+        ...overrides,
+      };
+    }
+
+    it('returns high-priority run-gap proposal when high-severity gaps present', () => {
+      const summary = makeSummary({ gapsBySeverity: { low: 0, medium: 0, high: 2 }, gapCount: 2 });
+      const proposals = generator.analyzeRunData([summary]);
+      expect(proposals.some((p) => p.source === 'run-gap' && p.priority === 'high')).toBe(true);
+    });
+
+    it('returns medium-priority run-gap proposal for low/medium gaps (no high)', () => {
+      const summary = makeSummary({ gapsBySeverity: { low: 1, medium: 1, high: 0 }, gapCount: 2 });
+      const proposals = generator.analyzeRunData([summary]);
+      expect(proposals.some((p) => p.source === 'run-gap' && p.priority === 'medium')).toBe(true);
+      expect(proposals.every((p) => p.priority !== 'high')).toBe(true);
+    });
+
+    it('returns no gap proposal when gapCount is 0', () => {
+      const summary = makeSummary({ gapCount: 0, gapsBySeverity: { low: 0, medium: 0, high: 0 } });
+      const proposals = generator.analyzeRunData([summary]);
+      expect(proposals.filter((p) => p.source === 'run-gap')).toHaveLength(0);
+    });
+
+    it('skips low-confidence proposal when avgConfidence is null', () => {
+      const summary = makeSummary({ avgConfidence: null });
+      const proposals = generator.analyzeRunData([summary]);
+      expect(proposals.filter((p) => p.source === 'low-confidence')).toHaveLength(0);
+    });
+
+    it('skips low-confidence proposal when avgConfidence === 0.6 (boundary — not strictly less)', () => {
+      const summary = makeSummary({ avgConfidence: 0.6 });
+      const proposals = generator.analyzeRunData([summary]);
+      expect(proposals.filter((p) => p.source === 'low-confidence')).toHaveLength(0);
+    });
+
+    it('fires low-confidence proposal when avgConfidence === 0.59 (below threshold)', () => {
+      const summary = makeSummary({ avgConfidence: 0.59 });
+      const proposals = generator.analyzeRunData([summary]);
+      expect(proposals.filter((p) => p.source === 'low-confidence')).toHaveLength(1);
+      expect(proposals.find((p) => p.source === 'low-confidence')!.priority).toBe('low');
+    });
+
+    it('returns empty array for empty summaries', () => {
+      expect(generator.analyzeRunData([])).toEqual([]);
+    });
+
+    it('includes betId in relatedBetIds', () => {
+      const betId = crypto.randomUUID();
+      const summary = makeSummary({ betId, gapsBySeverity: { low: 0, medium: 0, high: 1 }, gapCount: 1 });
+      const proposals = generator.analyzeRunData([summary]);
+      expect(proposals[0]!.relatedBetIds).toContain(betId);
+    });
+  });
+
+  describe('generate with runSummaries', () => {
+    it('includes run-gap proposals when summaries provided', () => {
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      const runId = crypto.randomUUID();
+      const betId = crypto.randomUUID();
+      const summaries: RunSummary[] = [{
+        betId,
+        runId,
+        stagesCompleted: 1,
+        gapCount: 2,
+        gapsBySeverity: { low: 0, medium: 0, high: 2 },
+        avgConfidence: null,
+        artifactPaths: [],
+      }];
+
+      const proposals = generator.generate(cycle.id, summaries);
+      expect(proposals.some((p) => p.source === 'run-gap')).toBe(true);
+    });
+
+    it('omits run proposals when summaries not provided', () => {
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      const proposals = generator.generate(cycle.id);
+      expect(proposals.every((p) => p.source !== 'run-gap' && p.source !== 'low-confidence')).toBe(true);
     });
   });
 });

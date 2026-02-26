@@ -5,7 +5,7 @@ import type { Cycle, Budget, BudgetStatus, BudgetAlertLevel } from '@domain/type
 import { BetSchema, BetOutcome } from '@domain/types/bet.js';
 import type { Bet, KataAssignment } from '@domain/types/bet.js';
 import type { CycleState } from '@domain/types/cycle.js';
-import { CycleNotFoundError } from '@shared/lib/errors.js';
+import { CycleNotFoundError, KataError } from '@shared/lib/errors.js';
 import { validateAppetite } from '@domain/rules/budget-rules.js';
 import { calculateUtilization } from '@domain/rules/budget-rules.js';
 
@@ -107,6 +107,25 @@ export class CycleManager {
     }
 
     cycle.bets.push(newBet);
+    cycle.updatedAt = new Date().toISOString();
+    this.save(cycle);
+    return cycle;
+  }
+
+  /**
+   * Record the run UUID created for a bet during `kata cycle start`.
+   *
+   * Idempotent: overwrites any previously stored runId without error — safe to call
+   * again on retry. Throws CycleNotFoundError for unknown cycleId; throws KataError
+   * for unknown betId (the betId must exist in the cycle's bets array).
+   */
+  setRunId(cycleId: string, betId: string, runId: string): Cycle {
+    const cycle = this.get(cycleId);
+    const bet = cycle.bets.find((b) => b.id === betId);
+    if (!bet) {
+      throw new KataError(`Bet "${betId}" not found in cycle "${cycleId}"`);
+    }
+    bet.runId = runId;
     cycle.updatedAt = new Date().toISOString();
     this.save(cycle);
     return cycle;

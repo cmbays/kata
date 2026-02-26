@@ -2,6 +2,7 @@ import type { BudgetStatus, Cycle } from '@domain/types/cycle.js';
 import type { CooldownReport, CooldownBetReport } from '@domain/services/cycle-manager.js';
 import type { CycleProposal } from '@features/cycle-management/proposal-generator.js';
 import type { CooldownSessionResult } from '@features/cycle-management/cooldown-session.js';
+import type { RunSummary } from '@features/cycle-management/types.js';
 
 /**
  * Format cycle budget status as a human-readable summary.
@@ -168,6 +169,15 @@ export function formatCooldownSessionResult(result: CooldownSessionResult): stri
     lines.push('');
   }
 
+  // Run summaries section
+  if (result.runSummaries && result.runSummaries.length > 0) {
+    lines.push('--- Run Summaries ---');
+    for (const s of result.runSummaries) {
+      lines.push(formatRunSummaryLine(s));
+    }
+    lines.push('');
+  }
+
   // Proposals section
   if (result.proposals.length > 0) {
     lines.push(formatProposals(result.proposals));
@@ -193,6 +203,16 @@ export function formatBetOutcomePrompt(bet: CooldownBetReport): string {
 }
 
 // ---- Helpers ----
+
+function formatRunSummaryLine(s: RunSummary): string {
+  const confidence = s.avgConfidence !== null
+    ? `avg confidence ${(s.avgConfidence * 100).toFixed(0)}%`
+    : 'no decisions recorded';
+  const gaps = s.gapCount > 0
+    ? `${s.gapCount} gap(s) [H:${s.gapsBySeverity.high} M:${s.gapsBySeverity.medium} L:${s.gapsBySeverity.low}]`
+    : 'no gaps';
+  return `  bet ${s.betId.slice(0, 8)}: ${s.stagesCompleted} stage(s) completed, ${gaps}, ${confidence}`;
+}
 
 function outcomeIcon(outcome: string): string {
   switch (outcome) {

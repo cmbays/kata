@@ -9,7 +9,9 @@ import { createStep } from '@features/step-create/step-creator.js';
 import { editStep } from '@features/step-create/step-editor.js';
 import { deleteStep } from '@features/step-create/step-deleter.js';
 import type { Gate } from '@domain/types/gate.js';
-import type { Step } from '@domain/types/step.js';
+import type { Step, StepResources } from '@domain/types/step.js';
+import { FlavorRegistry } from '@infra/registries/flavor-registry.js';
+import { ManifestBuilder } from '@domain/services/manifest-builder.js';
 import {
   stepLabel,
   buildPromptContent,
@@ -168,6 +170,17 @@ export function registerStepCommands(parent: Command): void {
         // Step definition not found — return minimal info
       }
 
+      // Aggregate flavor-level resources — step definitions win on name conflicts
+      let mergedResources: StepResources | undefined = stepDef?.resources;
+      try {
+        const flavorsDir = kataDirPath(ctx.kataDir, 'flavors');
+        const flavorReg = new FlavorRegistry(flavorsDir);
+        const flavor = flavorReg.get(currentStage, activeFlavor);
+        mergedResources = ManifestBuilder.aggregateFlavorResources(flavor, registry.list());
+      } catch {
+        // Flavor not registered — keep step-only resources
+      }
+
       // Resolve prompt
       let prompt = stepDef?.description ?? '';
       if (stepDef?.promptTemplate) {
@@ -208,7 +221,7 @@ export function registerStepCommands(parent: Command): void {
         flavor: activeFlavor,
         step: nextStepType,
         prompt,
-        resources: stepDef?.resources ?? {},
+        resources: mergedResources ?? {},
         gates: {
           entry: stepDef?.entryGate ? [stepDef.entryGate] : [],
           exit: stepDef?.exitGate ? [stepDef.exitGate] : [],

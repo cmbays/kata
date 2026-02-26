@@ -30,6 +30,14 @@ export const BetSchema = z.object({
   outcomeNotes: z.string().optional(),
   /** Kata execution assignment for this bet. Required by `kata cycle start`. */
   kata: KataAssignmentSchema.optional(),
+  /**
+   * UUID of the run created for this bet by `kata cycle start`.
+   *
+   * Lifecycle: set once by `kata cycle start` after `createRunTree()`; forward link
+   * for O(1) run lookup. Idempotent writes: `CycleManager.setRunId()` overwrites
+   * without error if called again (e.g., on retry). Absent until the cycle is started.
+   */
+  runId: z.string().uuid().optional(),
 });
 
 export type Bet = z.infer<typeof BetSchema>;

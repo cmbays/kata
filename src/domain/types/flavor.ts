@@ -1,5 +1,6 @@
 import { z } from 'zod/v4';
 import { StageCategorySchema } from './stage.js';
+import { StepResourcesSchema } from './step.js';
 
 /**
  * A reference to a Step within a Flavor's ordered step list.
@@ -64,6 +65,13 @@ export const FlavorSchema = z.object({
    * Only humanApproval, confidenceThreshold, and timeout may be overridden.
    */
   overrides: z.record(z.string(), StepOverrideSchema).optional(),
+  /**
+   * Flavor-level resource additions — tools, agents, and skills available across
+   * all steps of this flavor, beyond what individual steps already declare.
+   * These are merged with step-level resources in ManifestBuilder (step wins on name conflicts).
+   * Gate conditions and artifact requirements remain non-overridable by design.
+   */
+  resources: StepResourcesSchema.optional(),
   /**
    * The artifact name this flavor produces for Stage synthesis.
    * Must be produced by one of the steps in this flavor.

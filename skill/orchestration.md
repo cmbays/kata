@@ -207,6 +207,40 @@ Then **pauses** — does not call `kata step next` again until approval confirma
 
 ---
 
+## Resources in `kata step next` Output
+
+`kata step next --json` includes a `resources` field containing the merged union of:
+
+1. **Step-level resources** — tools, agents, and skills declared on the step definition
+2. **Flavor-level resources** — additional tools, agents, and skills declared on the flavor itself (available across all steps in that flavor)
+
+Step definitions **win** on name conflicts — if both the step and the flavor declare a resource with the same name, the step's version is used.
+
+```json
+{
+  "status": "ready",
+  "runId": "...",
+  "stage": "build",
+  "flavor": "typescript-feature",
+  "step": "implementation-ts",
+  "prompt": "...",
+  "resources": {
+    "tools": [
+      { "name": "tsc", "purpose": "Type checking", "command": "npx tsc --noEmit" },
+      { "name": "vitest", "purpose": "Run tests", "command": "npm test" }
+    ],
+    "agents": [
+      { "name": "everything-claude-code:build-error-resolver", "when": "when build fails" }
+    ],
+    "skills": []
+  }
+}
+```
+
+The executing agent (flavor sub-agent) should consult `resources` to discover available tools, agents, and skills for the current work. If the flavor is not registered, `resources` falls back to the step's own resources.
+
+---
+
 ## Orchestration Intelligence
 
 The `BaseStageOrchestrator` runs a 6-phase loop per stage. Three phases are now active and shape flavor selection automatically — agents don't drive these directly, but the outputs are visible in `OrchestratorResult` and `kata decision list`.
