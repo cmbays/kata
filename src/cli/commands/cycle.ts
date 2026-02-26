@@ -324,6 +324,7 @@ export function registerCycleCommands(parent: Command): void {
         };
 
         createRunTree(runsDir, run);
+        manager.setRunId(cycleId, bet.id, runId);
 
         runs.push({
           runId,
@@ -411,6 +412,7 @@ export function registerCycleCommands(parent: Command): void {
         persistence: JsonStore,
         pipelineDir: kataDirPath(ctx.kataDir, 'pipelines'),
         historyDir: kataDirPath(ctx.kataDir, 'history'),
+        runsDir: kataDirPath(ctx.kataDir, 'runs'),
       });
 
       const betOutcomes: BetOutcomeRecord[] = [];
@@ -460,6 +462,7 @@ export function registerCycleCommands(parent: Command): void {
           betOutcomes: result.betOutcomes,
           proposals: result.proposals,
           learningsCaptured: result.learningsCaptured,
+          runSummaries: result.runSummaries,
         }, null, 2));
       } else {
         console.log(formatCooldownSessionResult(result));

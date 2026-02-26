@@ -5,6 +5,8 @@ import { CycleManager } from '@domain/services/cycle-manager.js';
 import { KnowledgeStore } from '@infra/knowledge/knowledge-store.js';
 import { ExecutionHistoryEntrySchema } from '@domain/types/history.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
+import { createRunTree, writeStageState } from '@infra/persistence/run-store.js';
+import type { Run, StageState } from '@domain/types/run-state.js';
 // JsonStore satisfies IPersistence structurally — passed as persistence adapter in deps
 import {
   CooldownSession,
@@ -434,6 +436,124 @@ describe('CooldownSession', () => {
       const enriched = session.enrichReportWithTokens(baseReport, cycle.id);
 
       expect(enriched.utilizationPercent).toBe(0);
+    });
+  });
+
+  describe('run with runsDir (loadRunSummaries)', () => {
+    const runsDir = join(baseDir, 'runs');
+
+    function makeRun(cycleId: string, betId: string): Run {
+      return {
+        id: crypto.randomUUID(),
+        cycleId,
+        betId,
+        betPrompt: 'Test bet',
+        stageSequence: ['build'],
+        currentStage: null,
+        status: 'completed',
+        startedAt: new Date().toISOString(),
+      };
+    }
+
+    function makeStageState(category: 'build', overrides: Partial<StageState> = {}): StageState {
+      return {
+        category,
+        status: 'completed',
+        selectedFlavors: [],
+        gaps: [],
+        decisions: [],
+        approvedGates: [],
+        ...overrides,
+      };
+    }
+
+    beforeEach(() => {
+      mkdirSync(runsDir, { recursive: true });
+    });
+
+    it('returns runSummaries when runsDir provided', async () => {
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      const withBet = cycleManager.addBet(cycle.id, { description: 'Bet A', appetite: 30, outcome: 'complete', issueRefs: [] });
+      const bet = withBet.bets[0]!;
+
+      const run = makeRun(cycle.id, bet.id);
+      createRunTree(runsDir, run);
+      writeStageState(runsDir, run.id, makeStageState('build', { status: 'completed' }));
+      cycleManager.setRunId(cycle.id, bet.id, run.id);
+
+      const sessionWithRuns = new CooldownSession({
+        cycleManager, knowledgeStore, persistence: JsonStore, pipelineDir, historyDir, runsDir,
+      });
+      const result = await sessionWithRuns.run(cycle.id);
+
+      expect(result.runSummaries).toBeDefined();
+      expect(result.runSummaries).toHaveLength(1);
+      expect(result.runSummaries![0]!.betId).toBe(bet.id);
+      expect(result.runSummaries![0]!.runId).toBe(run.id);
+      expect(result.runSummaries![0]!.stagesCompleted).toBe(1);
+    });
+
+    it('skips bets without runId silently', async () => {
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      cycleManager.addBet(cycle.id, { description: 'Bet no runId', appetite: 30, outcome: 'complete', issueRefs: [] });
+
+      const sessionWithRuns = new CooldownSession({
+        cycleManager, knowledgeStore, persistence: JsonStore, pipelineDir, historyDir, runsDir,
+      });
+      const result = await sessionWithRuns.run(cycle.id);
+
+      expect(result.runSummaries).toBeDefined();
+      expect(result.runSummaries).toHaveLength(0);
+    });
+
+    it('returns null avgConfidence when no decisions recorded', async () => {
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      const withBet = cycleManager.addBet(cycle.id, { description: 'Bet B', appetite: 30, outcome: 'complete', issueRefs: [] });
+      const bet = withBet.bets[0]!;
+
+      const run = makeRun(cycle.id, bet.id);
+      createRunTree(runsDir, run);
+      writeStageState(runsDir, run.id, makeStageState('build'));
+      cycleManager.setRunId(cycle.id, bet.id, run.id);
+
+      const sessionWithRuns = new CooldownSession({
+        cycleManager, knowledgeStore, persistence: JsonStore, pipelineDir, historyDir, runsDir,
+      });
+      const result = await sessionWithRuns.run(cycle.id);
+
+      expect(result.runSummaries![0]!.avgConfidence).toBeNull();
+    });
+
+    it('computes gapsBySeverity from stage state', async () => {
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      const withBet = cycleManager.addBet(cycle.id, { description: 'Bet C', appetite: 30, outcome: 'complete', issueRefs: [] });
+      const bet = withBet.bets[0]!;
+
+      const run = makeRun(cycle.id, bet.id);
+      createRunTree(runsDir, run);
+      writeStageState(runsDir, run.id, makeStageState('build', {
+        gaps: [
+          { description: 'High gap', severity: 'high' },
+          { description: 'Med gap', severity: 'medium' },
+          { description: 'Low gap', severity: 'low' },
+        ],
+      }));
+      cycleManager.setRunId(cycle.id, bet.id, run.id);
+
+      const sessionWithRuns = new CooldownSession({
+        cycleManager, knowledgeStore, persistence: JsonStore, pipelineDir, historyDir, runsDir,
+      });
+      const result = await sessionWithRuns.run(cycle.id);
+
+      const summary = result.runSummaries![0]!;
+      expect(summary.gapCount).toBe(3);
+      expect(summary.gapsBySeverity).toEqual({ low: 1, medium: 1, high: 1 });
+    });
+
+    it('runSummaries is undefined when runsDir not provided (backward compat)', async () => {
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      const result = await session.run(cycle.id);
+      expect(result.runSummaries).toBeUndefined();
     });
   });
 });

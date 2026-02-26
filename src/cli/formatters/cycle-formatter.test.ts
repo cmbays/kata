@@ -2,6 +2,7 @@ import type { BudgetStatus, Cycle } from '@domain/types/cycle.js';
 import type { CooldownReport, CooldownBetReport } from '@domain/services/cycle-manager.js';
 import type { CycleProposal } from '@features/cycle-management/proposal-generator.js';
 import type { CooldownSessionResult } from '@features/cycle-management/cooldown-session.js';
+import type { RunSummary } from '@features/cycle-management/types.js';
 import {
   formatCycleStatus,
   formatCooldownReport,
@@ -311,6 +312,47 @@ describe('formatCooldownSessionResult', () => {
   it('shows no-proposals message when empty', () => {
     const result = formatCooldownSessionResult(makeSessionResult());
     expect(result).toContain('No proposals generated for the next cycle.');
+  });
+
+  it('shows run summaries section when present', () => {
+    const runSummaries: RunSummary[] = [
+      {
+        betId: 'aaaaaaaa-0000-0000-0000-000000000001',
+        runId: 'rrrrrrrr-0000-0000-0000-000000000001',
+        stagesCompleted: 3,
+        gapCount: 2,
+        gapsBySeverity: { high: 1, medium: 1, low: 0 },
+        avgConfidence: 0.75,
+        artifactPaths: [],
+      },
+    ];
+    const result = formatCooldownSessionResult(makeSessionResult({ runSummaries }));
+    expect(result).toContain('--- Run Summaries ---');
+    expect(result).toContain('3 stage(s) completed');
+    expect(result).toContain('2 gap(s) [H:1 M:1 L:0]');
+    expect(result).toContain('avg confidence 75%');
+  });
+
+  it('shows null confidence as no decisions recorded', () => {
+    const runSummaries: RunSummary[] = [
+      {
+        betId: 'aaaaaaaa-0000-0000-0000-000000000002',
+        runId: 'rrrrrrrr-0000-0000-0000-000000000002',
+        stagesCompleted: 1,
+        gapCount: 0,
+        gapsBySeverity: { high: 0, medium: 0, low: 0 },
+        avgConfidence: null,
+        artifactPaths: [],
+      },
+    ];
+    const result = formatCooldownSessionResult(makeSessionResult({ runSummaries }));
+    expect(result).toContain('no decisions recorded');
+    expect(result).toContain('no gaps');
+  });
+
+  it('omits run summaries section when not provided', () => {
+    const result = formatCooldownSessionResult(makeSessionResult());
+    expect(result).not.toContain('--- Run Summaries ---');
   });
 });
 
