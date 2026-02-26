@@ -44,13 +44,14 @@ export class ProposalGenerator {
   /**
    * Generate prioritized proposals for the next cycle.
    *
-   * 1. Unfinished work (partial/abandoned bets) -> carry forward
-   * 2. Run-gap proposals (high/medium severity gaps from run data)
-   * 3. Learning-driven (high-confidence learnings that suggest new work)
-   * 4. Dependency-based (completed bets that unblock new work)
-   * 5. Low-confidence proposals (avgConfidence < 0.6, non-null)
+   * 1. Unfinished work (partial/abandoned bets) → carry forward
+   * 2. Dependency-based (completed bets that unblock new work)
+   * 3. Cross-run patterns (recurring gaps, under-used flavors) — only when ≥2 summaries
+   * 4. Run-gap proposals (high/medium severity gaps from run data)
+   * 5. Learning-driven (high-confidence learnings that suggest new work)
+   * 6. Low-confidence proposals (avgConfidence < 0.6 or --yolo decisions)
    *
-   * Priority order: unfinished > dependency > learning (see sourceOrder in prioritize()).
+   * Priority order: unfinished > dependency > cross-gap > run-gap > unused-flavor > learning > low-confidence (see sourceOrder in prioritize()).
    *
    * @param cycleId - ID of the cycle to analyze
    * @param runSummaries - Optional run summaries from .kata/runs/ for richer proposals
