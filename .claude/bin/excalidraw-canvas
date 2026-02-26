@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# Manage the Excalidraw canvas server (Docker)
+# Usage: excalidraw-canvas [start|stop|status]
+
+CONTAINER_NAME="excalidraw-canvas"
+HOST_PORT="${EXCALIDRAW_PORT:-3100}"
+IMAGE="ghcr.io/yctimlin/mcp_excalidraw-canvas:latest"
+
+case "${1:-start}" in
+  start)
+    if ! command -v docker &>/dev/null; then
+      echo "Error: Docker is not installed or not in PATH"
+      exit 1
+    fi
+
+    if docker ps -q -f name="^${CONTAINER_NAME}$" 2>/dev/null | grep -q .; then
+      echo "Canvas already running at http://localhost:${HOST_PORT}"
+      exit 0
+    fi
+
+    if docker ps -aq -f name="^${CONTAINER_NAME}$" 2>/dev/null | grep -q .; then
+      docker start "$CONTAINER_NAME" >/dev/null
+    else
+      docker run -d -p "${HOST_PORT}:3000" --name "$CONTAINER_NAME" "$IMAGE" >/dev/null
+    fi
+
+    echo "Excalidraw canvas ready at http://localhost:${HOST_PORT}"
+    ;;
+
+  stop)
+    docker stop "$CONTAINER_NAME" >/dev/null 2>&1
+    echo "Excalidraw canvas stopped"
+    ;;
+
+  status)
+    if docker ps -q -f name="^${CONTAINER_NAME}$" 2>/dev/null | grep -q .; then
+      echo "Running at http://localhost:${HOST_PORT}"
+    else
+      echo "Not running. Start with: excalidraw-canvas start"
+    fi
+    ;;
+
+  rm)
+    docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1
+    echo "Excalidraw canvas container removed"
+    ;;
+
+  *)
+    echo "Usage: excalidraw-canvas [start|stop|status|rm]"
+    echo ""
+    echo "  start   Start canvas server (default)"
+    echo "  stop    Stop canvas server"
+    echo "  status  Check if running"
+    echo "  rm      Remove container entirely"
+    echo ""
+    echo "Override port: EXCALIDRAW_PORT=4200 excalidraw-canvas start"
+    ;;
+esac
