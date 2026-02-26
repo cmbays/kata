@@ -26,6 +26,7 @@ describe('kata watch command', () => {
     const program = createProgram();
     const watchCmd = program.commands.find((c) => c.name() === 'watch');
     const desc = watchCmd?.description() ?? '';
-    expect(desc.toLowerCase()).toContain('watch');
+    expect(desc).toContain('real time');
+    expect(desc).toContain('TUI');
   });
 });

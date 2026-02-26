@@ -2,7 +2,7 @@ import React from 'react';
 import { render } from 'ink';
 import type { Command } from 'commander';
 import { withCommandContext, kataDirPath } from '@cli/utils.js';
-import WatchApp from '../tui/WatchApp.js';
+import WatchApp from '@cli/tui/WatchApp.js';
 
 export function registerWatchCommand(parent: Command): void {
   parent
