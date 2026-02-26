@@ -556,6 +556,91 @@ describe('CooldownSession', () => {
       const result = await session.run(cycle.id);
       expect(result.runSummaries).toBeUndefined();
     });
+
+    it('populates stageDetails from stageState.selectedFlavors and gaps', async () => {
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      const withBet = cycleManager.addBet(cycle.id, { description: 'Bet SD', appetite: 30, outcome: 'complete', issueRefs: [] });
+      const bet = withBet.bets[0]!;
+
+      const run = makeRun(cycle.id, bet.id);
+      createRunTree(runsDir, run);
+      writeStageState(runsDir, run.id, makeStageState('build', {
+        selectedFlavors: ['tdd', 'review'],
+        gaps: [{ description: 'Missing integration tests', severity: 'medium' }],
+      }));
+      cycleManager.setRunId(cycle.id, bet.id, run.id);
+
+      const sessionWithRuns = new CooldownSession({
+        cycleManager, knowledgeStore, persistence: JsonStore, pipelineDir, historyDir, runsDir,
+      });
+      const result = await sessionWithRuns.run(cycle.id);
+
+      const summary = result.runSummaries![0]!;
+      expect(summary.stageDetails).toHaveLength(1);
+      expect(summary.stageDetails[0]!.category).toBe('build');
+      expect(summary.stageDetails[0]!.selectedFlavors).toEqual(['tdd', 'review']);
+      expect(summary.stageDetails[0]!.gaps).toEqual([{ description: 'Missing integration tests', severity: 'medium' }]);
+    });
+
+    it('counts yoloDecisionCount from lowConfidence === true decisions', async () => {
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      const withBet = cycleManager.addBet(cycle.id, { description: 'Bet Yolo', appetite: 30, outcome: 'complete', issueRefs: [] });
+      const bet = withBet.bets[0]!;
+
+      const run = makeRun(cycle.id, bet.id);
+      createRunTree(runsDir, run);
+      writeStageState(runsDir, run.id, makeStageState('build'));
+      cycleManager.setRunId(cycle.id, bet.id, run.id);
+
+      // Write decisions.jsonl with 2 normal + 2 yolo entries
+      const { JsonlStore } = await import('@infra/persistence/jsonl-store.js');
+      const { DecisionEntrySchema } = await import('@domain/types/run-state.js');
+      const { runPaths } = await import('@infra/persistence/run-store.js');
+      const paths = runPaths(runsDir, run.id);
+      const makeDecision = (lowConfidence?: boolean) => ({
+        id: crypto.randomUUID(),
+        stageCategory: 'build' as const,
+        flavor: null,
+        step: null,
+        decisionType: 'flavor-selection',
+        context: {},
+        options: ['a', 'b'],
+        selection: 'a',
+        reasoning: 'test',
+        confidence: lowConfidence ? 0.3 : 0.9,
+        decidedAt: new Date().toISOString(),
+        ...(lowConfidence ? { lowConfidence: true } : {}),
+      });
+      JsonlStore.append(paths.decisionsJsonl, makeDecision(), DecisionEntrySchema);
+      JsonlStore.append(paths.decisionsJsonl, makeDecision(true), DecisionEntrySchema);
+      JsonlStore.append(paths.decisionsJsonl, makeDecision(true), DecisionEntrySchema);
+      JsonlStore.append(paths.decisionsJsonl, makeDecision(), DecisionEntrySchema);
+
+      const sessionWithRuns = new CooldownSession({
+        cycleManager, knowledgeStore, persistence: JsonStore, pipelineDir, historyDir, runsDir,
+      });
+      const result = await sessionWithRuns.run(cycle.id);
+
+      expect(result.runSummaries![0]!.yoloDecisionCount).toBe(2);
+    });
+
+    it('sets yoloDecisionCount to 0 when no decisions recorded', async () => {
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      const withBet = cycleManager.addBet(cycle.id, { description: 'Bet No Yolo', appetite: 30, outcome: 'complete', issueRefs: [] });
+      const bet = withBet.bets[0]!;
+
+      const run = makeRun(cycle.id, bet.id);
+      createRunTree(runsDir, run);
+      writeStageState(runsDir, run.id, makeStageState('build'));
+      cycleManager.setRunId(cycle.id, bet.id, run.id);
+
+      const sessionWithRuns = new CooldownSession({
+        cycleManager, knowledgeStore, persistence: JsonStore, pipelineDir, historyDir, runsDir,
+      });
+      const result = await sessionWithRuns.run(cycle.id);
+
+      expect(result.runSummaries![0]!.yoloDecisionCount).toBe(0);
+    });
   });
 
   describe('run with ruleRegistry (ruleSuggestions)', () => {

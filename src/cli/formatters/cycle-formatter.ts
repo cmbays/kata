@@ -225,7 +225,8 @@ function formatRunSummaryLine(s: RunSummary): string {
   const gaps = s.gapCount > 0
     ? `${s.gapCount} gap(s) [H:${s.gapsBySeverity.high} M:${s.gapsBySeverity.medium} L:${s.gapsBySeverity.low}]`
     : 'no gaps';
-  return `  bet ${s.betId.slice(0, 8)}: ${s.stagesCompleted} stage(s) completed, ${gaps}, ${confidence}`;
+  const yolo = s.yoloDecisionCount > 0 ? ` (${s.yoloDecisionCount} --yolo decision(s))` : '';
+  return `  bet ${s.betId.slice(0, 8)}: ${s.stagesCompleted} stage(s) completed, ${gaps}, ${confidence}${yolo}`;
 }
 
 function outcomeIcon(outcome: string): string {

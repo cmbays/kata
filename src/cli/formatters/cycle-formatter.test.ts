@@ -324,6 +324,8 @@ describe('formatCooldownSessionResult', () => {
         gapsBySeverity: { high: 1, medium: 1, low: 0 },
         avgConfidence: 0.75,
         artifactPaths: [],
+        stageDetails: [],
+        yoloDecisionCount: 0,
       },
     ];
     const result = formatCooldownSessionResult(makeSessionResult({ runSummaries }));
@@ -343,6 +345,8 @@ describe('formatCooldownSessionResult', () => {
         gapsBySeverity: { high: 0, medium: 0, low: 0 },
         avgConfidence: null,
         artifactPaths: [],
+        stageDetails: [],
+        yoloDecisionCount: 0,
       },
     ];
     const result = formatCooldownSessionResult(makeSessionResult({ runSummaries }));
@@ -382,6 +386,42 @@ describe('formatCooldownSessionResult', () => {
   it('omits Rule Suggestions section when no suggestions and no review', () => {
     const result = formatCooldownSessionResult(makeSessionResult());
     expect(result).not.toContain('--- Rule Suggestions ---');
+  });
+
+  it('shows --yolo decision count in run summary line when yoloDecisionCount > 0', () => {
+    const runSummaries: RunSummary[] = [
+      {
+        betId: 'aaaaaaaa-0000-0000-0000-000000000003',
+        runId: 'rrrrrrrr-0000-0000-0000-000000000003',
+        stagesCompleted: 2,
+        gapCount: 0,
+        gapsBySeverity: { high: 0, medium: 0, low: 0 },
+        avgConfidence: 0.72,
+        artifactPaths: [],
+        stageDetails: [],
+        yoloDecisionCount: 1,
+      },
+    ];
+    const result = formatCooldownSessionResult(makeSessionResult({ runSummaries }));
+    expect(result).toContain('(1 --yolo decision(s))');
+  });
+
+  it('does not show --yolo suffix when yoloDecisionCount is 0', () => {
+    const runSummaries: RunSummary[] = [
+      {
+        betId: 'aaaaaaaa-0000-0000-0000-000000000004',
+        runId: 'rrrrrrrr-0000-0000-0000-000000000004',
+        stagesCompleted: 1,
+        gapCount: 0,
+        gapsBySeverity: { high: 0, medium: 0, low: 0 },
+        avgConfidence: 0.85,
+        artifactPaths: [],
+        stageDetails: [],
+        yoloDecisionCount: 0,
+      },
+    ];
+    const result = formatCooldownSessionResult(makeSessionResult({ runSummaries }));
+    expect(result).not.toContain('--yolo');
   });
 });
 
