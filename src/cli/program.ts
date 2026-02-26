@@ -14,6 +14,7 @@ import { registerRunCommands } from './commands/run.js';
 import { registerApproveCommand } from './commands/approve.js';
 import { registerGateCommands } from './commands/gate.js';
 import { registerRuleCommands } from './commands/rules.js';
+import { registerWatchCommand } from './commands/watch.js';
 
 const VERSION = '0.1.0';
 
@@ -51,6 +52,7 @@ export function createProgram(): Command {
   registerApproveCommand(program);
   registerGateCommands(program);
   registerRuleCommands(program);
+  registerWatchCommand(program);
 
   return program;
 }
