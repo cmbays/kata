@@ -1,9 +1,12 @@
 import React from 'react';
-import { renderToString } from 'ink';
+import { renderToString, Text } from 'ink';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { WatchRun } from './run-reader.js';
+import { EventEmitter } from 'node:events';
 
 const mockExit = vi.fn();
+
+// Capture the onApprove callback passed to GlobalView so tests can invoke it directly
+let capturedOnApprove: ((gateId: string) => void) | undefined;
 
 vi.mock('ink', async (importOriginal) => {
   const actual = await importOriginal<typeof import('ink')>();
@@ -18,50 +21,36 @@ vi.mock('./use-run-watcher.js', () => ({
   useRunWatcher: vi.fn(() => ({ runs: [], refresh: vi.fn() })),
 }));
 
-vi.mock('node:child_process', () => ({
-  spawnSync: vi.fn(() => ({ status: 0 })),
+vi.mock('./GlobalView.js', () => ({
+  default: ({ onApprove }: { onApprove: (id: string) => void }) => {
+    capturedOnApprove = onApprove;
+    return React.createElement(Text, null, 'GlobalView');
+  },
 }));
+
+// spawn mock returns a controllable EventEmitter child process
+const makeChild = () => Object.assign(new EventEmitter(), { stdio: [null, null, null] });
+const mockSpawn = vi.fn(() => makeChild());
+
+vi.mock('node:child_process', () => ({ spawn: mockSpawn }));
 
 // Import AFTER mocks
 const { default: WatchApp } = await import('./WatchApp.js');
 const { useRunWatcher } = await import('./use-run-watcher.js');
 const mockUseRunWatcher = vi.mocked(useRunWatcher);
 
-const makeRun = (overrides: Partial<WatchRun> = {}): WatchRun => ({
-  runId: 'run-abc123-def456-ghi789',
-  betId: 'bet-xyz789',
-  betTitle: 'implement user auth',
-  cycleId: 'cycle-001',
-  status: 'running',
-  currentStage: 'plan',
-  stageProgress: 0.5,
-  pendingGateId: undefined,
-  avgConfidence: 0.87,
-  avatarState: { stage: 'plan' },
-  avatarColor: 'cyan',
-  stageSequence: ['research', 'plan'],
-  stageDetails: [],
-  ...overrides,
-});
 
 beforeEach(() => {
   vi.clearAllMocks();
+  capturedOnApprove = undefined;
   mockUseRunWatcher.mockReturnValue({ runs: [], refresh: vi.fn() });
+  mockSpawn.mockReturnValue(makeChild());
 });
 
-describe('WatchApp', () => {
-  it('renders without crashing when there are no runs', () => {
+describe('WatchApp rendering', () => {
+  it('renders GlobalView by default', () => {
     const output = renderToString(<WatchApp runsDir="/fake/runs" />);
-    expect(output).toContain('No active runs.');
-  });
-
-  it('renders run list when useRunWatcher returns runs', () => {
-    mockUseRunWatcher.mockReturnValue({
-      runs: [makeRun()],
-      refresh: vi.fn(),
-    });
-    const output = renderToString(<WatchApp runsDir="/fake/runs" />);
-    expect(output).toContain('implement user auth');
+    expect(output).toContain('GlobalView');
   });
 
   it('passes cycleId to useRunWatcher', () => {
@@ -73,9 +62,55 @@ describe('WatchApp', () => {
     renderToString(<WatchApp runsDir="/specific/path" />);
     expect(mockUseRunWatcher).toHaveBeenCalledWith('/specific/path', undefined);
   });
+});
 
-  it('renders KATA WATCH header from GlobalView', () => {
-    const output = renderToString(<WatchApp runsDir="/fake/runs" />);
-    expect(output).toContain('KATA WATCH');
+describe('WatchApp approveGate', () => {
+  it('spawns kata approve with the correct gateId', () => {
+    const child = makeChild();
+    mockSpawn.mockReturnValue(child);
+    renderToString(<WatchApp runsDir="/fake/runs" />);
+
+    capturedOnApprove?.('gate-abc-123');
+
+    expect(mockSpawn).toHaveBeenCalledWith('kata', ['approve', 'gate-abc-123'], { stdio: 'ignore' });
+  });
+
+  it('calls refresh after successful approval (exit code 0)', () => {
+    const child = makeChild();
+    mockSpawn.mockReturnValue(child);
+    const refresh = vi.fn();
+    mockUseRunWatcher.mockReturnValue({ runs: [], refresh });
+    renderToString(<WatchApp runsDir="/fake/runs" />);
+
+    capturedOnApprove?.('gate-success');
+    child.emit('close', 0);
+
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not call refresh when approval fails (non-zero exit)', () => {
+    const child = makeChild();
+    mockSpawn.mockReturnValue(child);
+    const refresh = vi.fn();
+    mockUseRunWatcher.mockReturnValue({ runs: [], refresh });
+    renderToString(<WatchApp runsDir="/fake/runs" />);
+
+    capturedOnApprove?.('gate-fail');
+    child.emit('close', 1);
+
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it('does not call refresh when spawn errors (e.g. kata not on PATH)', () => {
+    const child = makeChild();
+    mockSpawn.mockReturnValue(child);
+    const refresh = vi.fn();
+    mockUseRunWatcher.mockReturnValue({ runs: [], refresh });
+    renderToString(<WatchApp runsDir="/fake/runs" />);
+
+    capturedOnApprove?.('gate-enoent');
+    child.emit('error', new Error('ENOENT'));
+
+    expect(refresh).not.toHaveBeenCalled();
   });
 });

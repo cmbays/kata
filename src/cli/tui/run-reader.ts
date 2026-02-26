@@ -10,6 +10,7 @@ import {
 } from '@domain/types/run-state.js';
 import type { StageCategory } from '@domain/types/stage.js';
 import { getAvatar, getBetColor, type AvatarState } from './avatars.js';
+import { logger } from '@shared/lib/logger.js';
 
 export interface WatchStageDetail {
   category: StageCategory;
@@ -43,7 +44,10 @@ export function listActiveRuns(runsDir: string, cycleId?: string): WatchRun[] {
     runIds = readdirSync(runsDir, { withFileTypes: true })
       .filter((e) => e.isDirectory())
       .map((e) => e.name);
-  } catch {
+  } catch (err: unknown) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+      logger.warn('kata watch: could not read runs directory', { runsDir, error: String(err) });
+    }
     return [];
   }
 
@@ -53,7 +57,10 @@ export function listActiveRuns(runsDir: string, cycleId?: string): WatchRun[] {
     let run: Run;
     try {
       run = readRun(runsDir, runId);
-    } catch {
+    } catch (err: unknown) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+        logger.warn('kata watch: skipping run with unreadable run.json', { runId, error: String(err) });
+      }
       continue;
     }
 
@@ -62,8 +69,15 @@ export function listActiveRuns(runsDir: string, cycleId?: string): WatchRun[] {
 
     const paths = runPaths(runsDir, runId);
 
-    const decisions = JsonlStore.readAll(paths.decisionsJsonl, DecisionEntrySchema);
-    const artifacts = JsonlStore.readAll(paths.artifactIndexJsonl, ArtifactIndexEntrySchema);
+    let decisions;
+    let artifacts;
+    try {
+      decisions = JsonlStore.readAll(paths.decisionsJsonl, DecisionEntrySchema);
+      artifacts = JsonlStore.readAll(paths.artifactIndexJsonl, ArtifactIndexEntrySchema);
+    } catch (err: unknown) {
+      logger.warn('kata watch: skipping run with unreadable JSONL files', { runId, error: String(err) });
+      continue;
+    }
 
     let completedCount = 0;
     let pendingGateId: string | undefined;
@@ -73,7 +87,10 @@ export function listActiveRuns(runsDir: string, cycleId?: string): WatchRun[] {
       let stageState: StageState | undefined;
       try {
         stageState = readStageState(runsDir, runId, category);
-      } catch {
+      } catch (err: unknown) {
+        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+          logger.warn('kata watch: unreadable stage state treated as pending', { runId, category, error: String(err) });
+        }
         stageState = undefined;
       }
 

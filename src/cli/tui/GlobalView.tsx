@@ -42,7 +42,7 @@ export default function GlobalView({
       onSelectChange(Math.max(0, selectedIndex - 1));
       return;
     }
-    if (key.downArrow) {
+    if (key.downArrow && runs.length > 0) {
       onSelectChange(Math.min(runs.length - 1, selectedIndex + 1));
       return;
     }

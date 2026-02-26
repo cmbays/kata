@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { watch as fsWatch } from 'node:fs';
 import { listActiveRuns, type WatchRun } from './run-reader.js';
+import { logger } from '@shared/lib/logger.js';
 
 export const DEBOUNCE_MS = 500;
 
@@ -18,8 +19,12 @@ export function createRunWatcher(dir: string, onUpdate: () => void): () => void 
       clearTimeout(debounceTimer);
       debounceTimer = setTimeout(onUpdate, DEBOUNCE_MS);
     });
-  } catch {
-    // Directory doesn't exist yet — start without watching
+  } catch (err: unknown) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code !== 'ENOENT') {
+      logger.warn('kata watch: fs.watch failed, live refresh disabled', { dir, code: code ?? 'unknown' });
+    }
+    // ENOENT: directory doesn't exist yet — start without watching
   }
 
   return () => {

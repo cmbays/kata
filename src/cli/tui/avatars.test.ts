@@ -67,16 +67,16 @@ describe('getStageIcon', () => {
     expect(icon.length).toBeGreaterThan(0);
   });
 
-  it('uses KATA_NO_NERD_FONTS=1 env var as fallback when no opts provided', () => {
-    vi.stubEnv('KATA_NO_NERD_FONTS', '1');
+  it('defaults to ASCII when KATA_NERD_FONTS is unset', () => {
+    // env var not set → ASCII fallback (opt-in model)
     expect(getStageIcon('research')).toBe('[R]');
     expect(getStageIcon('plan')).toBe('[P]');
     expect(getStageIcon('build')).toBe('[B]');
     expect(getStageIcon('review')).toBe('[V]');
   });
 
-  it('uses nerd fonts when KATA_NO_NERD_FONTS is unset', () => {
-    vi.stubEnv('KATA_NO_NERD_FONTS', '');
+  it('uses nerd fonts when KATA_NERD_FONTS=1', () => {
+    vi.stubEnv('KATA_NERD_FONTS', '1');
     const icon = getStageIcon('research');
     expect(typeof icon).toBe('string');
     expect(icon).not.toBe('[R]');

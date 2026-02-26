@@ -45,7 +45,7 @@ export function getBetColor(betId: string): BetColor {
 }
 
 export function getStageIcon(stage: StageCategory, opts?: { nerdFonts?: boolean }): string {
-  const useNerd = opts?.nerdFonts ?? process.env['KATA_NO_NERD_FONTS'] !== '1';
+  const useNerd = opts?.nerdFonts ?? process.env['KATA_NERD_FONTS'] === '1';
   if (useNerd) {
     return NERD_FONT_ICONS[stage];
   }
