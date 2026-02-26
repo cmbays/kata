@@ -1,4 +1,13 @@
 /**
+ * Review record for a single rule suggestion during cooldown.
+ */
+export interface SuggestionReviewRecord {
+  id: string;
+  decision: 'accepted' | 'rejected' | 'deferred';
+  rejectionReason?: string;
+}
+
+/**
  * Summary of a single run's execution data for cooldown analysis.
  * Loaded from .kata/runs/<run-id>/ state files by CooldownSession.loadRunSummaries().
  * Shared between CooldownSession (which loads it) and ProposalGenerator (which consumes it).

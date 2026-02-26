@@ -146,7 +146,10 @@ export function formatProposalsJson(proposals: CycleProposal[]): string {
 /**
  * Format a full cooldown session result.
  */
-export function formatCooldownSessionResult(result: CooldownSessionResult): string {
+export function formatCooldownSessionResult(
+  result: CooldownSessionResult,
+  suggestionReview?: { accepted: number; rejected: number; deferred: number },
+): string {
   const lines: string[] = [];
 
   // Use the existing cooldown report formatter
@@ -175,6 +178,17 @@ export function formatCooldownSessionResult(result: CooldownSessionResult): stri
     for (const s of result.runSummaries) {
       lines.push(formatRunSummaryLine(s));
     }
+    lines.push('');
+  }
+
+  // Rule suggestions review section
+  if (suggestionReview) {
+    lines.push('--- Rule Suggestions ---');
+    lines.push(`  Accepted: ${suggestionReview.accepted}, Rejected: ${suggestionReview.rejected}, Deferred: ${suggestionReview.deferred}`);
+    lines.push('');
+  } else if (result.ruleSuggestions && result.ruleSuggestions.length > 0) {
+    lines.push('--- Rule Suggestions ---');
+    lines.push(`  ${result.ruleSuggestions.length} pending suggestion(s) (run interactively to review)`);
     lines.push('');
   }
 
