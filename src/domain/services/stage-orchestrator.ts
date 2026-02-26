@@ -2,7 +2,8 @@ import type { Stage, StageCategory, OrchestratorConfig } from '@domain/types/sta
 import type { StageVocabulary } from '@domain/types/vocabulary.js';
 import type { Flavor } from '@domain/types/flavor.js';
 import type { Decision } from '@domain/types/decision.js';
-import type { CapabilityProfile, MatchReport, ReflectionResult } from '@domain/types/orchestration.js';
+import type { CapabilityProfile, GapReport, MatchReport, ReflectionResult } from '@domain/types/orchestration.js';
+import type { StageRule } from '@domain/types/rule.js';
 import type { IFlavorRegistry } from '@domain/ports/flavor-registry.js';
 import type { IDecisionRegistry } from '@domain/ports/decision-registry.js';
 import type { IStageRuleRegistry } from '@domain/ports/rule-registry.js';
@@ -88,8 +89,25 @@ export function learningBoost(flavor: Flavor, context: OrchestratorContext): num
 }
 
 // ---------------------------------------------------------------------------
+// Rule condition matching
+// ---------------------------------------------------------------------------
+
+const STOP_WORDS = new Set([
+  'a', 'an', 'the', 'is', 'are', 'was', 'were', 'be', 'been', 'have', 'has',
+  'do', 'does', 'will', 'would', 'could', 'should', 'may', 'might', 'to',
+  'of', 'in', 'for', 'on', 'with', 'at', 'by', 'from', 'or', 'and', 'but',
+  'not', 'this', 'that', 'it', 'if', 'when', 'then', 'there', 'which', 'who',
+]);
+
+// ---------------------------------------------------------------------------
 // Internal types for match phase output
 // ---------------------------------------------------------------------------
+
+interface ClassifiedRules {
+  excluded: Set<string>;
+  required: Set<string>;
+  adjustments: Map<string, number>;
+}
 
 interface MatchPhaseResult {
   candidates: Flavor[];
@@ -128,15 +146,18 @@ export class BaseStageOrchestrator implements IStageOrchestrator {
   async run(stage: Stage, context: OrchestratorContext): Promise<OrchestratorResult> {
     const decisions: Decision[] = [];
 
+    // Load active rules once — shared by analyze (for profile) and match (for scoring/exclusion).
+    const activeRules: StageRule[] = this.deps.ruleRegistry?.loadRules(this.stageCategory) ?? [];
+
     // Phase 1: Analyze — build capability profile
-    const { capabilityProfile, analysisDecision } = this.analyze(stage, context);
+    const { capabilityProfile, analysisDecision } = this.analyze(stage, context, activeRules);
     decisions.push(analysisDecision);
 
     // Phase 2: Match — score all candidate flavors
-    const matchResult = this.match(stage, context);
+    const matchResult = this.match(stage, context, activeRules);
 
     // Phase 3: Plan — select flavors and decide execution mode
-    const { selectedFlavors, executionMode, selectionDecision, modeDecision } =
+    const { selectedFlavors, executionMode, selectionDecision, modeDecision, gaps } =
       this.planExecution(matchResult, context);
     decisions.push(selectionDecision, modeDecision);
 
@@ -163,6 +184,7 @@ export class BaseStageOrchestrator implements IStageOrchestrator {
       capabilityProfile,
       matchReports: matchResult.matchReports,
       reflection,
+      gaps,
     };
   }
 
@@ -177,13 +199,10 @@ export class BaseStageOrchestrator implements IStageOrchestrator {
   protected analyze(
     stage: Stage,
     context: OrchestratorContext,
+    rules: StageRule[] = [],
   ): { capabilityProfile: CapabilityProfile; analysisDecision: Decision } {
-    // Load active rules for this category (if registry is available)
-    const activeRuleIds: string[] = [];
-    if (this.deps.ruleRegistry) {
-      const rules = this.deps.ruleRegistry.loadRules(this.stageCategory);
-      activeRuleIds.push(...rules.map((r) => r.id));
-    }
+    // Build active rule ID list from pre-loaded rules (loaded once in run()).
+    const activeRuleIds = rules.map((r) => r.id);
 
     const capabilityProfile: CapabilityProfile = {
       betContext: context.bet,
@@ -235,7 +254,7 @@ export class BaseStageOrchestrator implements IStageOrchestrator {
    * detailed scoring breakdowns. Does not record a decision — scoring is
    * deterministic given the same vocabulary and context.
    */
-  protected match(stage: Stage, context: OrchestratorContext): MatchPhaseResult {
+  protected match(stage: Stage, context: OrchestratorContext, rules: StageRule[] = []): MatchPhaseResult {
     const excluded = new Set(stage.excludedFlavors ?? []);
     const pinned = new Set(stage.pinnedFlavors ?? []);
 
@@ -247,6 +266,21 @@ export class BaseStageOrchestrator implements IStageOrchestrator {
           { name, stageCategory: this.stageCategory },
         );
       }
+    }
+
+    // Apply rule effects to excluded/pinned sets and compute per-flavor score adjustments
+    const ruleAdjMap = new Map<string, number>();
+    const flavorsAffectedByRules: string[] = [];
+    if (rules.length > 0) {
+      const classified = this.classifyRuleEffects(rules, context);
+      for (const name of classified.excluded) excluded.add(name);
+      for (const name of classified.required) {
+        if (!excluded.has(name)) pinned.add(name);
+      }
+      for (const [name, adj] of classified.adjustments) {
+        ruleAdjMap.set(name, adj);
+      }
+      flavorsAffectedByRules.push(...classified.excluded, ...classified.required, ...classified.adjustments.keys());
     }
 
     // Filter out excluded flavors from the available set
@@ -317,17 +351,20 @@ export class BaseStageOrchestrator implements IStageOrchestrator {
       const base = this.scoreFlavorForContext(flavor, context);
       const kwHits = this.countKeywordHits(flavor, context, keywords);
       const lBoost = learningBoost(flavor, context);
-      const ruleAdj = this.computeRuleAdjustments(flavor);
+      const ruleAdj = ruleAdjMap.get(flavor.name) ?? 0;
+      const ruleFired = flavorsAffectedByRules.includes(flavor.name);
+      const score = Math.max(0, Math.min(1, base + lBoost + ruleAdj));
 
       return {
         flavorName: flavor.name,
-        score: base,
+        score,
         keywordHits: kwHits,
         ruleAdjustments: ruleAdj,
         learningBoost: lBoost,
         reasoning:
-          `Score ${base.toFixed(2)}: ${kwHits} keyword hit(s), ` +
-          `learning boost ${lBoost.toFixed(2)}, rule adj ${ruleAdj.toFixed(2)}.`,
+          `Score ${score.toFixed(2)}: ${kwHits} keyword hit(s), ` +
+          `learning boost ${lBoost.toFixed(2)}, rule adj ${ruleAdj.toFixed(2)}.` +
+          (ruleFired ? ` Rule fired for "${flavor.name}".` : ''),
       };
     });
 
@@ -362,8 +399,7 @@ export class BaseStageOrchestrator implements IStageOrchestrator {
       }
     }
 
-    const boost = learningBoost(flavor, context);
-    return Math.min(1, base + boostTotal + boost);
+    return Math.min(1, base + boostTotal);
   }
 
   /**
@@ -388,14 +424,52 @@ export class BaseStageOrchestrator implements IStageOrchestrator {
     return hits;
   }
 
-  /**
-   * Compute rule-based score adjustments for a flavor.
-   * Returns 0 if no rule registry is available.
-   */
-  private computeRuleAdjustments(_flavor: Flavor): number {
-    // Rule adjustments will be fully implemented when rules are integrated
-    // into scoring. For now, returns 0 (no adjustment).
-    return 0;
+  private evaluateRuleCondition(
+    rule: StageRule,
+    bText: string,
+    artifacts: readonly string[],
+    category: string,
+  ): boolean {
+    const words = rule.condition
+      .toLowerCase()
+      .split(/\s+/)
+      .filter((w) => w.length > 2 && !STOP_WORDS.has(w));
+
+    if (words.length === 0) return false;
+
+    const haystack = [bText, category, ...artifacts.map((a) => a.toLowerCase())].join(' ');
+    return words.some((w) => haystack.includes(w));
+  }
+
+  private classifyRuleEffects(
+    rules: StageRule[],
+    context: OrchestratorContext,
+  ): ClassifiedRules {
+    const excluded = new Set<string>();
+    const required = new Set<string>();
+    const adjustments = new Map<string, number>();
+    const bText = betText(context);
+
+    for (const rule of rules) {
+      if (!this.evaluateRuleCondition(rule, bText, context.availableArtifacts, this.stageCategory)) {
+        continue;
+      }
+      switch (rule.effect) {
+        case 'exclude':
+          excluded.add(rule.name);
+          break;
+        case 'require':
+          required.add(rule.name);
+          break;
+        case 'boost':
+          adjustments.set(rule.name, (adjustments.get(rule.name) ?? 0) + rule.magnitude * rule.confidence);
+          break;
+        case 'penalize':
+          adjustments.set(rule.name, (adjustments.get(rule.name) ?? 0) - rule.magnitude * rule.confidence);
+          break;
+      }
+    }
+    return { excluded, required, adjustments };
   }
 
   // ---------------------------------------------------------------------------
@@ -414,6 +488,7 @@ export class BaseStageOrchestrator implements IStageOrchestrator {
     executionMode: 'sequential' | 'parallel';
     selectionDecision: Decision;
     modeDecision: Decision;
+    gaps: GapReport[];
   } {
     const { candidates, pinnedFlavors, matchReports, pinned, excluded } = matchResult;
 
@@ -521,7 +596,91 @@ export class BaseStageOrchestrator implements IStageOrchestrator {
       );
     }
 
-    return { selectedFlavors: selected, executionMode, selectionDecision, modeDecision };
+    // Gap analysis: detect vocabulary coverage gaps after flavor selection
+    const allFlavors = [...candidates, ...pinnedFlavors];
+    const gaps = this.detectGaps(selected, allFlavors, context);
+
+    // Record gap-assessment decision (non-fatal — gap analysis is informational)
+    try {
+      this.deps.decisionRegistry.record({
+        stageCategory: this.stageCategory,
+        decisionType: 'gap-assessment',
+        context: {
+          gapCount: gaps.length,
+          gaps,
+          selectedFlavors: selected.map((f) => f.name),
+        },
+        options: ['gaps-found', 'no-gaps'],
+        selection: gaps.length > 0 ? 'gaps-found' : 'no-gaps',
+        reasoning:
+          gaps.length > 0
+            ? `Found ${gaps.length} coverage gap(s): ${gaps.map((g) => g.description).join('; ')}`
+            : 'No coverage gaps detected — selected flavors cover bet context keywords.',
+        confidence: 0.8,
+        decidedAt: new Date().toISOString(),
+      });
+    } catch (err) {
+      logger.warn(
+        `Orchestrator: failed to record gap-assessment decision: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
+    return { selectedFlavors: selected, executionMode, selectionDecision, modeDecision, gaps };
+  }
+
+  /**
+   * Detect vocabulary coverage gaps after flavor selection.
+   *
+   * Severity is assigned by keyword position in the vocabulary list.
+   * Keywords are assumed to be ordered by importance (most important first):
+   * the first third → 'high', the second third → 'medium', the last third → 'low'.
+   */
+  private detectGaps(
+    selectedFlavors: Flavor[],
+    allFlavors: Flavor[],
+    context: OrchestratorContext,
+  ): GapReport[] {
+    const keywords = this.vocabulary?.keywords ?? [];
+    if (keywords.length === 0) return [];
+
+    const bText = betText(context);
+    const selectedNames = new Set(selectedFlavors.map((f) => f.name));
+
+    // Build coverage set from selected flavor names + descriptions
+    const covered = new Set<string>();
+    for (const flavor of selectedFlavors) {
+      const text = [flavor.name, flavor.description ?? ''].join(' ').toLowerCase();
+      for (const word of text.split(/\s+/)) {
+        if (word.length > 2) covered.add(word);
+      }
+    }
+
+    const gaps: GapReport[] = [];
+    const total = keywords.length;
+
+    keywords.forEach((keyword, index) => {
+      const kwLower = keyword.toLowerCase();
+      if (!bText.includes(kwLower)) return; // not in bet context — not a gap
+      if (covered.has(kwLower)) return;     // covered by selected flavor — not a gap
+
+      const suggestedFlavors = allFlavors
+        .filter((f) => !selectedNames.has(f.name))
+        .filter((f) => [f.name, f.description ?? ''].join(' ').toLowerCase().includes(kwLower))
+        .map((f) => f.name);
+
+      const severity: 'high' | 'medium' | 'low' =
+        index < Math.ceil(total / 3) ? 'high'
+        : index < Math.ceil((2 * total) / 3) ? 'medium'
+        : 'low';
+
+      gaps.push({
+        description: `Bet context mentions "${keyword}" but no selected flavor covers it.`,
+        severity,
+        suggestedFlavors,
+      });
+    });
+
+    return gaps;
   }
 
   // ---------------------------------------------------------------------------
@@ -643,6 +802,64 @@ export class BaseStageOrchestrator implements IStageOrchestrator {
     return { stageArtifact, synthesisDecision };
   }
 
+  protected generateRuleSuggestions(
+    decisions: Decision[],
+    decisionOutcomes: ReflectionResult['decisionOutcomes'],
+  ): string[] {
+    if (!this.deps.ruleRegistry) return [];
+
+    const suggestionIds: string[] = [];
+
+    for (const decision of decisions) {
+      if (decision.decisionType !== 'flavor-selection') continue;
+
+      const outcomeEntry = decisionOutcomes.find((o) => o.decisionId === decision.id);
+      if (!outcomeEntry) continue;
+
+      const quality = outcomeEntry.outcome.artifactQuality;
+      if (quality !== 'good' && quality !== 'poor') continue;
+
+      const effect: 'boost' | 'penalize' = quality === 'good' ? 'boost' : 'penalize';
+      const flavorName = decision.selection;
+
+      // Build condition from bet context stored in the flavor-selection decision
+      const bet = decision.context['bet'] as Record<string, unknown> | undefined;
+      const betTitle = typeof bet?.['title'] === 'string' ? String(bet['title']) : '';
+      const betDesc = typeof bet?.['description'] === 'string' ? String(bet['description']) : '';
+      const conditionBase = `${betTitle} ${betDesc}`.trim().slice(0, 50);
+      const condition =
+        conditionBase.length > 0
+          ? `pattern from "${conditionBase}" context`
+          : `pattern from ${this.stageCategory} context`;
+
+      try {
+        const suggestion = this.deps.ruleRegistry.suggestRule({
+          suggestedRule: {
+            category: this.stageCategory,
+            name: flavorName,
+            condition,
+            effect,
+            magnitude: 0.3,
+            confidence: 0.6,
+            source: 'auto-detected',
+            evidence: [decision.id],
+          },
+          triggerDecisionIds: [decision.id],
+          observationCount: 1,
+          reasoning: `Flavor "${flavorName}" had ${quality} outcome during ${this.stageCategory} stage.`,
+        });
+        suggestionIds.push(suggestion.id);
+      } catch (err) {
+        logger.warn(
+          `Reflect: failed to generate rule suggestion for flavor "${flavorName}": ${err instanceof Error ? err.message : String(err)}`,
+          { flavorName, effect },
+        );
+      }
+    }
+
+    return suggestionIds;
+  }
+
   // ---------------------------------------------------------------------------
   // Phase 6: Reflect
   // ---------------------------------------------------------------------------
@@ -693,12 +910,8 @@ export class BaseStageOrchestrator implements IStageOrchestrator {
       );
     }
 
-    // Generate rule suggestions if rule registry is available
-    const ruleSuggestions: string[] = [];
-    if (this.deps.ruleRegistry && flavorResults.length > 1) {
-      // Future: analyze patterns across multiple runs to suggest meaningful rules.
-      // For now, rule suggestion generation is a no-op — the infrastructure is ready.
-    }
+    // Generate rule suggestions from decision outcomes
+    const ruleSuggestions = this.generateRuleSuggestions(decisions, decisionOutcomes);
 
     return {
       decisionOutcomes,
