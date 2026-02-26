@@ -1,13 +1,18 @@
+import { randomUUID } from 'node:crypto';
 import { describe, it, expect, vi } from 'vitest';
 import type { Stage } from '@domain/types/stage.js';
 import type { Flavor } from '@domain/types/flavor.js';
+import type { StageRule } from '@domain/types/rule.js';
 import type { IFlavorRegistry } from '@domain/ports/flavor-registry.js';
 import type { IDecisionRegistry } from '@domain/ports/decision-registry.js';
+import type { IStageRuleRegistry } from '@domain/ports/rule-registry.js';
 import type {
   IFlavorExecutor,
   OrchestratorContext,
   FlavorExecutionResult,
 } from '@domain/ports/stage-orchestrator.js';
+import type { Decision } from '@domain/types/decision.js';
+import type { ReflectionResult } from '@domain/types/orchestration.js';
 import { FlavorNotFoundError, OrchestratorError } from '@shared/lib/errors.js';
 import {
   BaseStageOrchestrator,
@@ -106,6 +111,23 @@ function makeExecutor(
   };
 }
 
+function makeRuleRegistry(rules: StageRule[] = []): IStageRuleRegistry {
+  return {
+    loadRules: vi.fn(() => rules),
+    addRule: vi.fn((input) => ({ ...input, id: randomUUID(), createdAt: new Date().toISOString() })),
+    removeRule: vi.fn(),
+    suggestRule: vi.fn((input) => ({
+      ...input,
+      id: randomUUID(),
+      status: 'pending' as const,
+      createdAt: new Date().toISOString(),
+    })),
+    getPendingSuggestions: vi.fn(() => []),
+    acceptSuggestion: vi.fn(),
+    rejectSuggestion: vi.fn(),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Concrete subclass for testing abstract methods
 // ---------------------------------------------------------------------------
@@ -123,6 +145,18 @@ class TestOrchestrator extends BaseStageOrchestrator {
       alternatives: ['merge-all', 'first-wins', 'cascade'] as [string, ...string[]],
       reasoning: `Merging ${results.length} flavor output(s).`,
     };
+  }
+
+  // Expose protected methods for direct testing
+  callReflect(decisions: Decision[], flavorResults: FlavorExecutionResult[]): ReflectionResult {
+    return this.reflect(decisions, flavorResults);
+  }
+
+  callGenerateRuleSuggestions(
+    decisions: Decision[],
+    decisionOutcomes: ReflectionResult['decisionOutcomes'],
+  ): string[] {
+    return this.generateRuleSuggestions(decisions, decisionOutcomes);
   }
 }
 
@@ -179,7 +213,7 @@ describe('BaseStageOrchestrator', () => {
       const deps = makeDeps();
       const orch = makeOrchestrator(deps);
       await orch.run(makeStage(), makeContext());
-      expect(deps.decisionRegistry.record).toHaveBeenCalledTimes(4);
+      expect(deps.decisionRegistry.record).toHaveBeenCalledTimes(5);
     });
 
     it('returns capabilityProfile from analyze phase', async () => {
@@ -795,5 +829,442 @@ describe('createStageOrchestrator factory', () => {
     const recordCalls = vi.mocked(deps.decisionRegistry.record).mock.calls;
     const selectionCall = recordCalls.find(([input]) => input.decisionType === 'flavor-selection')!;
     expect(selectionCall[0].confidence).toBeGreaterThan(0);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Rule wiring (#103)
+  // ---------------------------------------------------------------------------
+
+  describe("run() — rule wiring (#103)", () => {
+    // BaseStageOrchestrator with empty-keyword vocabulary → base score = 0.5 for all flavors.
+    function makeBaseOrch(deps: StageOrchestratorDeps): BaseStageOrchestrator {
+      return new BaseStageOrchestrator('build', deps, {
+        type: 'build',
+        confidenceThreshold: 0.7,
+        maxParallelFlavors: 5,
+      }, {
+        stageCategory: 'build',
+        keywords: [],
+        boostRules: [],
+        synthesisPreference: 'merge-all',
+        synthesisAlternatives: ['merge-all', 'first-wins', 'cascade'],
+        reasoningTemplate: 'Merging {count} flavor(s).',
+      });
+    }
+
+    function makeRule(
+      name: string,
+      condition: string,
+      effect: StageRule['effect'],
+      magnitude = 0.3,
+      confidence = 1.0,
+    ): StageRule {
+      return {
+        id: randomUUID(),
+        category: 'build',
+        name,
+        condition,
+        effect,
+        magnitude,
+        confidence,
+        source: 'manual',
+        evidence: [],
+        createdAt: new Date().toISOString(),
+      };
+    }
+
+    it('boost rule with condition word in bet title → ruleAdjustments > 0, score increased', async () => {
+      const rule = makeRule('typescript-feature', 'typescript context', 'boost', 0.3);
+      const deps = makeDeps({ ruleRegistry: makeRuleRegistry([rule]) });
+      const orch = makeBaseOrch(deps);
+      const result = await orch.run(
+        makeStage(),
+        makeContext({ bet: { title: 'typescript api work' } }),
+      );
+      const report = result.matchReports!.find((r) => r.flavorName === 'typescript-feature')!;
+      expect(report.ruleAdjustments).toBeCloseTo(0.3);
+      expect(report.score).toBeGreaterThan(0.5); // base 0.5 + 0.3 boost
+    });
+
+    it('penalize rule → score decreased, clamped at 0', async () => {
+      // magnitude=1.0 with confidence=1.0 → adj = -1.0; base 0.5 → clamped to 0
+      const rule = makeRule('typescript-feature', 'penalize this', 'penalize', 1.0);
+      const deps = makeDeps({ ruleRegistry: makeRuleRegistry([rule]) });
+      const orch = makeBaseOrch(deps);
+      const result = await orch.run(
+        makeStage(),
+        makeContext({ bet: { title: 'penalize this flavor' } }),
+      );
+      const report = result.matchReports!.find((r) => r.flavorName === 'typescript-feature')!;
+      expect(report.ruleAdjustments).toBeLessThan(0);
+      expect(report.score).toBeGreaterThanOrEqual(0);
+    });
+
+    it('multiple boost rules on same flavor → adjustments stack additively', async () => {
+      const rule1 = makeRule('typescript-feature', 'auth context', 'boost', 0.2);
+      const rule2 = makeRule('typescript-feature', 'auth feature', 'boost', 0.1);
+      const deps = makeDeps({ ruleRegistry: makeRuleRegistry([rule1, rule2]) });
+      const orch = makeBaseOrch(deps);
+      const result = await orch.run(
+        makeStage(),
+        makeContext({ bet: { title: 'auth implementation' } }),
+      );
+      const report = result.matchReports!.find((r) => r.flavorName === 'typescript-feature')!;
+      expect(report.ruleAdjustments).toBeCloseTo(0.3); // 0.2 + 0.1
+    });
+
+    it('exclude rule matching condition → flavor absent from selectedFlavors', async () => {
+      const rule = makeRule('typescript-feature', 'exclude typescript', 'exclude');
+      const deps = makeDeps({ ruleRegistry: makeRuleRegistry([rule]) });
+      const orch = makeBaseOrch(deps);
+      const result = await orch.run(
+        makeStage(),
+        makeContext({ bet: { title: 'exclude typescript work' } }),
+      );
+      expect(result.selectedFlavors).not.toContain('typescript-feature');
+    });
+
+    it('require rule matching condition → flavor present in selectedFlavors', async () => {
+      const rule = makeRule('bug-fix', 'hotfix needed', 'require');
+      const deps = makeDeps({ ruleRegistry: makeRuleRegistry([rule]) });
+      const orch = makeBaseOrch(deps);
+      const result = await orch.run(
+        makeStage(),
+        makeContext({ bet: { title: 'hotfix needed urgently' } }),
+      );
+      expect(result.selectedFlavors).toContain('bug-fix');
+    });
+
+    it('exclude wins over require when both match same flavor', async () => {
+      const excludeRule = makeRule('typescript-feature', 'conflicting', 'exclude');
+      const requireRule = makeRule('typescript-feature', 'conflicting', 'require');
+      const deps = makeDeps({ ruleRegistry: makeRuleRegistry([excludeRule, requireRule]) });
+      const orch = makeBaseOrch(deps);
+      const result = await orch.run(
+        makeStage(),
+        makeContext({ bet: { title: 'conflicting signals here' } }),
+      );
+      expect(result.selectedFlavors).not.toContain('typescript-feature');
+    });
+
+    it('condition word in stageCategory → rule fires', async () => {
+      // stageCategory = 'build', condition = 'build pipeline' → 'build' matches category
+      const rule = makeRule('typescript-feature', 'build pipeline', 'boost', 0.4);
+      const deps = makeDeps({ ruleRegistry: makeRuleRegistry([rule]) });
+      const orch = makeBaseOrch(deps);
+      const result = await orch.run(makeStage(), makeContext());
+      const report = result.matchReports!.find((r) => r.flavorName === 'typescript-feature')!;
+      expect(report.ruleAdjustments).toBeCloseTo(0.4);
+    });
+
+    it('condition word in artifact name → rule fires', async () => {
+      const rule = makeRule('typescript-feature', 'research-summary artifact', 'boost', 0.25);
+      const deps = makeDeps({ ruleRegistry: makeRuleRegistry([rule]) });
+      const orch = makeBaseOrch(deps);
+      const result = await orch.run(
+        makeStage(),
+        makeContext({ availableArtifacts: ['research-summary'] }),
+      );
+      const report = result.matchReports!.find((r) => r.flavorName === 'typescript-feature')!;
+      expect(report.ruleAdjustments).toBeCloseTo(0.25);
+    });
+
+    it('condition with only stop words → rule does not fire', async () => {
+      // 'is', 'the', 'for' are stop words; all words length ≤ 2 ('is') or in STOP_WORDS
+      const rule = makeRule('typescript-feature', 'is the for', 'boost', 0.5);
+      const deps = makeDeps({ ruleRegistry: makeRuleRegistry([rule]) });
+      const orch = makeBaseOrch(deps);
+      const result = await orch.run(
+        makeStage(),
+        makeContext({ bet: { title: 'some work here' } }),
+      );
+      const report = result.matchReports!.find((r) => r.flavorName === 'typescript-feature')!;
+      expect(report.ruleAdjustments).toBe(0);
+    });
+
+    it('no ruleRegistry → no crash and ruleAdjustments is 0 for all reports', async () => {
+      const deps = makeDeps(); // no ruleRegistry
+      const orch = makeBaseOrch(deps);
+      const result = await orch.run(makeStage(), makeContext());
+      expect(result.matchReports).toBeDefined();
+      for (const report of result.matchReports!) {
+        expect(report.ruleAdjustments).toBe(0);
+      }
+    });
+
+    it('fired rule name annotated in MatchReport reasoning', async () => {
+      const rule = makeRule('typescript-feature', 'annotate test', 'boost', 0.1);
+      const deps = makeDeps({ ruleRegistry: makeRuleRegistry([rule]) });
+      const orch = makeBaseOrch(deps);
+      const result = await orch.run(
+        makeStage(),
+        makeContext({ bet: { title: 'annotate test case' } }),
+      );
+      const report = result.matchReports!.find((r) => r.flavorName === 'typescript-feature')!;
+      expect(report.reasoning).toContain('Rule fired for "typescript-feature"');
+    });
+
+    it('mixed boost and penalize rules on same flavor → net ruleAdjustments = boost_mag - penalize_mag', async () => {
+      const boostRule = makeRule('typescript-feature', 'typescript context', 'boost', 0.3);
+      const penalizeRule = makeRule('typescript-feature', 'typescript feature', 'penalize', 0.1);
+      const deps = makeDeps({ ruleRegistry: makeRuleRegistry([boostRule, penalizeRule]) });
+      const orch = makeBaseOrch(deps);
+      const result = await orch.run(
+        makeStage(),
+        makeContext({ bet: { title: 'typescript context feature work' } }),
+      );
+      const report = result.matchReports!.find((r) => r.flavorName === 'typescript-feature')!;
+      // boost: +0.3 × 1.0 = +0.3; penalize: -0.1 × 1.0 = -0.1; net = +0.2
+      expect(report.ruleAdjustments).toBeCloseTo(0.2);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Gap analysis (#104)
+  // ---------------------------------------------------------------------------
+
+  describe("run() — gap analysis (#104)", () => {
+    function makeVocabOrch(deps: StageOrchestratorDeps, keywords: string[]): BaseStageOrchestrator {
+      return new BaseStageOrchestrator('build', deps, {
+        type: 'build',
+        confidenceThreshold: 0.7,
+        maxParallelFlavors: 5,
+      }, {
+        stageCategory: 'build',
+        keywords,
+        boostRules: [],
+        synthesisPreference: 'merge-all',
+        synthesisAlternatives: ['merge-all', 'first-wins', 'cascade'],
+        reasoningTemplate: 'Merging {count} flavor(s).',
+      });
+    }
+
+    it('no vocabulary → result.gaps is undefined or empty', async () => {
+      const deps = makeDeps();
+      const orch = makeOrchestrator(deps); // TestOrchestrator with no vocabulary
+      const result = await orch.run(makeStage(), makeContext());
+      expect(result.gaps ?? []).toHaveLength(0);
+    });
+
+    it('all vocab keywords covered by selected flavor description → empty gaps', async () => {
+      // Use a flavor with description containing keywords as separate words
+      const flavors = [
+        { ...makeFlavor('ts-impl'), description: 'typescript feature implementation' },
+        makeFlavor('bug-fix'),
+      ];
+      const deps = makeDeps({ flavors });
+      const orch = makeVocabOrch(deps, ['typescript', 'feature']);
+      const result = await orch.run(
+        makeStage({ availableFlavors: ['ts-impl', 'bug-fix'] }),
+        makeContext({ bet: { title: 'typescript feature work' } }),
+      );
+      expect(result.gaps).toHaveLength(0);
+    });
+
+    it('vocab keyword in bet context but not covered by selected flavor → 1 GapReport', async () => {
+      // 'authentication' is in bet title; neither 'typescript-feature' nor 'bug-fix' covers it
+      const deps = makeDeps();
+      const orch = makeVocabOrch(deps, ['authentication']);
+      const result = await orch.run(
+        makeStage(),
+        makeContext({ bet: { title: 'authentication system' } }),
+      );
+      expect(result.gaps).toHaveLength(1);
+      expect(result.gaps![0]!.description).toContain('authentication');
+    });
+
+    it('keyword severity: first-third → high, middle-third → medium, last-third → low', async () => {
+      // 3 keywords: ceil(3/3)=1, ceil(6/3)=2 → index 0=high, 1=medium, 2=low
+      const deps = makeDeps({ flavors: [makeFlavor('x-flavor')] });
+      const orch = makeVocabOrch(deps, ['aaa', 'bbb', 'ccc']);
+      const result = await orch.run(
+        makeStage({ availableFlavors: ['x-flavor'] }),
+        makeContext({ bet: { title: 'aaa bbb ccc' } }),
+      );
+      const bySeverity = Object.fromEntries(
+        result.gaps!.map((g) => [g.description.match(/"(.+?)"/)?.[1] ?? '', g.severity]),
+      );
+      expect(bySeverity['aaa']).toBe('high');
+      expect(bySeverity['bbb']).toBe('medium');
+      expect(bySeverity['ccc']).toBe('low');
+    });
+
+    it('unselected flavor name contains keyword → appears in gap.suggestedFlavors', async () => {
+      const flavors = [
+        makeFlavor('typescript-feature'),
+        makeFlavor('bug-fix'),
+        makeFlavor('authentication-handler'), // unselected; name contains 'authentication'
+      ];
+      const deps = makeDeps({ flavors });
+      const orch = makeVocabOrch(deps, ['authentication']);
+      const result = await orch.run(
+        makeStage({ availableFlavors: ['typescript-feature', 'bug-fix', 'authentication-handler'] }),
+        makeContext({ bet: { title: 'authentication system' } }),
+      );
+      const gap = result.gaps?.find((g) => g.description.includes('authentication'));
+      expect(gap?.suggestedFlavors).toContain('authentication-handler');
+    });
+
+    it('keyword in vocabulary but NOT in bet context → no gap created', async () => {
+      const deps = makeDeps();
+      const orch = makeVocabOrch(deps, ['authentication']);
+      const result = await orch.run(
+        makeStage(),
+        makeContext({ bet: { title: 'general feature work' } }),
+      );
+      expect(result.gaps).toHaveLength(0);
+    });
+
+    it('gap-assessment decision recorded via decisionRegistry.record()', async () => {
+      const deps = makeDeps();
+      const orch = makeVocabOrch(deps, ['authentication']);
+      await orch.run(
+        makeStage(),
+        makeContext({ bet: { title: 'authentication system' } }),
+      );
+      const recordCalls = vi.mocked(deps.decisionRegistry.record).mock.calls;
+      const gapCall = recordCalls.find(([input]) => input.decisionType === 'gap-assessment');
+      expect(gapCall).toBeDefined();
+    });
+
+    it('gap-assessment record() throws → non-fatal: run() still resolves with computed gaps', async () => {
+      const deps = makeDeps();
+      const orch = makeVocabOrch(deps, ['authentication']);
+      let callCount = 0;
+      vi.mocked(deps.decisionRegistry.record).mockImplementation((input) => {
+        if (input.decisionType === 'gap-assessment') throw new Error('persist failed');
+        return { ...input, id: `test-id-${++callCount}` };
+      });
+      const result = await orch.run(
+        makeStage(),
+        makeContext({ bet: { title: 'authentication system' } }),
+      );
+      expect(result).toBeDefined();
+      expect(result.gaps).toHaveLength(1); // gap still computed despite record failure
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Reflect suggestions (#49 MVP)
+  // ---------------------------------------------------------------------------
+
+  describe("run() — reflect suggestions (#49 MVP)", () => {
+    it('good outcome + ruleRegistry → ruleSuggestions has 1 UUID, suggestRule called with effect boost', async () => {
+      const ruleReg = makeRuleRegistry();
+      const deps = makeDeps({ ruleRegistry: ruleReg });
+      const orch = makeOrchestrator(deps);
+      const result = await orch.run(makeStage(), makeContext());
+      expect(result.reflection!.ruleSuggestions).toHaveLength(1);
+      expect(vi.mocked(ruleReg.suggestRule)).toHaveBeenCalledOnce();
+      const [[call]] = vi.mocked(ruleReg.suggestRule).mock.calls;
+      expect(call.suggestedRule.effect).toBe('boost');
+    });
+
+    it('no ruleRegistry → empty ruleSuggestions, no crash', async () => {
+      const deps = makeDeps(); // no ruleRegistry
+      const orch = makeOrchestrator(deps);
+      const result = await orch.run(makeStage(), makeContext());
+      expect(result.reflection!.ruleSuggestions).toHaveLength(0);
+    });
+
+    it('suggestedRule.condition includes bet title text', async () => {
+      const ruleReg = makeRuleRegistry();
+      const deps = makeDeps({ ruleRegistry: ruleReg });
+      const orch = makeOrchestrator(deps);
+      await orch.run(makeStage(), makeContext({ bet: { title: 'auth system redesign' } }));
+      const [[call]] = vi.mocked(ruleReg.suggestRule).mock.calls;
+      expect(call.suggestedRule.condition).toContain('auth system redesign');
+    });
+
+    it('reflection.ruleSuggestions[0] is the UUID returned by suggestRule()', async () => {
+      const fixedId = '00000000-0000-4000-8000-000000000099';
+      const ruleReg = makeRuleRegistry();
+      vi.mocked(ruleReg.suggestRule).mockImplementationOnce((input) => ({
+        ...input,
+        id: fixedId,
+        status: 'pending' as const,
+        createdAt: new Date().toISOString(),
+      }));
+      const deps = makeDeps({ ruleRegistry: ruleReg });
+      const orch = makeOrchestrator(deps);
+      const result = await orch.run(makeStage(), makeContext());
+      expect(result.reflection!.ruleSuggestions[0]).toBe(fixedId);
+    });
+
+    it('suggestRule() throws → non-fatal: empty suggestions, no crash', async () => {
+      const ruleReg = makeRuleRegistry();
+      vi.mocked(ruleReg.suggestRule).mockImplementation(() => {
+        throw new Error('persist failed');
+      });
+      const deps = makeDeps({ ruleRegistry: ruleReg });
+      const orch = makeOrchestrator(deps);
+      const result = await orch.run(makeStage(), makeContext());
+      expect(result.reflection!.ruleSuggestions).toHaveLength(0);
+    });
+
+    it("'poor' artifact quality → generateRuleSuggestions produces a 'penalize' suggestion", () => {
+      const ruleReg = makeRuleRegistry();
+      const deps = makeDeps({ ruleRegistry: ruleReg });
+      const orch = makeOrchestrator(deps);
+      const decision = {
+        id: 'test-decision-id',
+        stageCategory: 'build',
+        decisionType: 'flavor-selection',
+        context: { bet: { title: 'auth system' } },
+        options: ['typescript-feature'],
+        selection: 'typescript-feature',
+        reasoning: 'test',
+        confidence: 0.9,
+        decidedAt: new Date().toISOString(),
+      } as unknown as Decision;
+      const decisionOutcomes: ReflectionResult['decisionOutcomes'] = [
+        { decisionId: 'test-decision-id', outcome: { artifactQuality: 'poor', reworkRequired: true } },
+      ];
+      orch.callGenerateRuleSuggestions([decision], decisionOutcomes);
+      expect(vi.mocked(ruleReg.suggestRule)).toHaveBeenCalledOnce();
+      const [[call]] = vi.mocked(ruleReg.suggestRule).mock.calls;
+      expect(call.suggestedRule.effect).toBe('penalize');
+    });
+
+    it("'partial' overallQuality when a flavorResult synthesisArtifact.value is null", () => {
+      const deps = makeDeps();
+      const orch = makeOrchestrator(deps);
+      const decisions = [
+        {
+          id: 'test-id',
+          stageCategory: 'build',
+          decisionType: 'synthesis-approach',
+          context: {},
+          options: ['merge-all'],
+          selection: 'merge-all',
+          reasoning: 'test',
+          confidence: 0.9,
+          decidedAt: new Date().toISOString(),
+        } as unknown as Decision,
+      ];
+      const flavorResults: FlavorExecutionResult[] = [
+        {
+          flavorName: 'test-flavor',
+          artifacts: {},
+          synthesisArtifact: { name: 'test-output', value: null as unknown as NonNullable<unknown> },
+        },
+      ];
+      const reflection = orch.callReflect(decisions, flavorResults);
+      expect(reflection.overallQuality).toBe('partial');
+      expect(reflection.decisionOutcomes[0]?.outcome.reworkRequired).toBe(true);
+      expect(reflection.decisionOutcomes[0]?.outcome.gateResult).toBeUndefined();
+    });
+
+    it('updateOutcome() throws → non-fatal: reflect still returns result with empty decisionOutcomes', async () => {
+      const deps = makeDeps();
+      vi.mocked(deps.decisionRegistry.updateOutcome).mockImplementation(() => {
+        throw new Error('db write failed');
+      });
+      const orch = makeOrchestrator(deps);
+      const result = await orch.run(makeStage(), makeContext());
+      expect(result.reflection).toBeDefined();
+      expect(result.reflection!.decisionOutcomes).toHaveLength(0);
+      expect(result.reflection!.overallQuality).toBe('good');
+    });
   });
 });

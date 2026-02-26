@@ -1,7 +1,7 @@
 import type { Stage, StageCategory } from '@domain/types/stage.js';
 import type { Flavor } from '@domain/types/flavor.js';
 import type { Decision } from '@domain/types/decision.js';
-import type { CapabilityProfile, MatchReport, ReflectionResult } from '@domain/types/orchestration.js';
+import type { CapabilityProfile, GapReport, MatchReport, ReflectionResult } from '@domain/types/orchestration.js';
 
 /**
  * A named artifact value — used for both Flavor-level synthesis artifacts
@@ -85,6 +85,8 @@ export interface OrchestratorResult {
   readonly matchReports?: MatchReport[];
   /** Reflection results from the post-execution reflect phase. */
   readonly reflection?: ReflectionResult;
+  /** Vocabulary coverage gaps detected during the plan phase. */
+  readonly gaps?: GapReport[];
 }
 
 /**

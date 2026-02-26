@@ -207,6 +207,65 @@ Then **pauses** — does not call `kata step next` again until approval confirma
 
 ---
 
+## Orchestration Intelligence
+
+The `BaseStageOrchestrator` runs a 6-phase loop per stage. Three phases are now active and shape flavor selection automatically — agents don't drive these directly, but the outputs are visible in `OrchestratorResult` and `kata decision list`.
+
+### Phase 2 — Match: Rule Effects
+
+Before scoring flavors, the orchestrator loads rules from the `RuleRegistry` for the current stage category. Each rule has:
+
+- **`condition`** — a human-readable string (e.g. `"when bet contains auth keywords"`)
+- **`effect`** — `boost`, `penalize`, `require`, or `exclude`
+- **`name`** — the flavor it targets
+- **`magnitude` × `confidence`** — weighted strength of the effect
+
+Rules fire when significant words from their condition string appear in the bet title, description, tags, stageCategory, or available artifact names. Stop words (`the`, `is`, `for`, etc.) are filtered out.
+
+**Effect semantics:**
+
+| Effect | What happens |
+|--------|-------------|
+| `boost` | Score += magnitude × confidence (clamped to 1) |
+| `penalize` | Score -= magnitude × confidence (clamped to 0) |
+| `require` | Flavor is pinned (treated as selected regardless of score) |
+| `exclude` | Flavor is removed from candidates — **exclude wins over require** |
+
+When a rule fires, the MatchReport `reasoning` string is annotated with which rule matched and its effect. The `ruleAdjustments` field on MatchReport reflects the net adjustment applied.
+
+### Phase 3 — Plan: Gap Analysis
+
+After flavor selection, the orchestrator checks coverage. It:
+
+1. Builds a coverage set from each selected flavor's name and description words
+2. Checks each vocabulary keyword (from `StageVocabulary.keywords`) against the bet context
+3. Any keyword present in the bet but **not** covered by a selected flavor → `GapReport`
+
+Each `GapReport` contains:
+- `description` — which keyword is uncovered and why it's a gap
+- `severity` — `high` / `medium` / `low` based on keyword position in the vocabulary list
+- `suggestedFlavors` — unselected flavors whose name or description mentions the keyword
+
+Gaps are surfaced in `OrchestratorResult.gaps`. A `gap-assessment` decision is recorded in the registry (informational — gaps do not block execution). If no vocabulary is configured or all keywords are covered, `gaps` will be empty or absent.
+
+Agents can inspect gaps: if the orchestrator chose flavors that miss a critical bet keyword, a gap report explains it. The `suggestedFlavors` list shows what could have covered it.
+
+### Phase 6 — Reflect: Rule Suggestions
+
+After all flavors complete, the orchestrator analyzes `flavor-selection` decisions from the current stage. For decisions where artifact quality was recorded:
+
+| Quality | Suggestion |
+|---------|-----------|
+| `good` | Submit `boost` rule suggestion for that flavor |
+| `poor` | Submit `penalize` rule suggestion for that flavor |
+| `partial` or unset | No suggestion generated |
+
+The suggested rule uses the bet's title/description as the condition context and is submitted via `ruleRegistry.suggestRule()` with `confidence: 0.6`, `magnitude: 0.3`, and `source: 'auto-detected'`. If `suggestRule()` throws, the failure is non-fatal — reflect continues with partial suggestions.
+
+Generated suggestion IDs are returned in `ReflectionResult.ruleSuggestions`. These are pending suggestions in the `RuleRegistry` — they must be reviewed and accepted (e.g., during cooldown) before they influence future runs.
+
+---
+
 ## Advancing the Run Between Stages
 
 After completing all steps in a stage, `kata step next` returns `{ "status": "complete", "message": "All flavors in this stage are complete" }`. Use `kata stage complete` to advance:
@@ -232,6 +291,6 @@ kata stage complete "$RUN_ID" --stage build --synthesis /tmp/build-synthesis.md
 3. **Parallel flavors = parallel Task calls** — always spawn flavor sub-agents simultaneously when running in parallel mode.
 4. **Gates always block** — never skip a gate or proceed past `status: "waiting"` without user approval.
 5. **Sub-agents don't call `kata step next` at the run level** — only the bet teammate does that. Flavor sub-agents work within their assigned flavor.
-6. **Record every orchestration decision** — flavor selection, execution mode choice, gap assessments. This data drives self-improvement during cooldown.
+6. **Record every orchestration decision** — flavor selection, execution mode choice, and gap assessments are all recorded automatically. Reflect phase mines these decisions and generates rule suggestions. This data drives self-improvement during cooldown.
 7. **`kata step complete` to advance steps** — after completing a step, run `kata step complete` to mark it done. Flavor status updates automatically.
 8. **`kata stage complete` to advance stages** — marks stage done, copies synthesis, and advances `run.currentStage`. Run status becomes `completed` after the last stage.
