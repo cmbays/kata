@@ -198,6 +198,77 @@ describe('registerFlavorCommands', () => {
     });
   });
 
+  // ---- flavor create --from-json ----
+
+  describe('flavor create --from-json', () => {
+    const batchFlavorA = {
+      name: 'batch-flavor-a',
+      stageCategory: 'build',
+      steps: [{ stepName: 'compile', stepType: 'build' }],
+      synthesisArtifact: 'build-output-a',
+    };
+    const batchFlavorB = {
+      name: 'batch-flavor-b',
+      stageCategory: 'review',
+      steps: [{ stepName: 'audit', stepType: 'review' }],
+      synthesisArtifact: 'review-output-b',
+    };
+
+    it('creates multiple flavors atomically from a JSON array', async () => {
+      const filePath = join(baseDir, 'batch-flavors.json');
+      writeFileSync(filePath, JSON.stringify([batchFlavorA, batchFlavorB], null, 2));
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'flavor', 'create', '--from-json', filePath]);
+
+      expect(existsSync(join(flavorsDir, 'build.batch-flavor-a.json'))).toBe(true);
+      expect(existsSync(join(flavorsDir, 'review.batch-flavor-b.json'))).toBe(true);
+      const output = consoleSpy.mock.calls.flat().join('\n');
+      expect(output).toContain('2 flavor');
+    });
+
+    it('outputs JSON when --json flag is set', async () => {
+      const filePath = join(baseDir, 'batch-json-flavors.json');
+      writeFileSync(filePath, JSON.stringify([batchFlavorA], null, 2));
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--json', '--cwd', baseDir, 'flavor', 'create', '--from-json', filePath]);
+
+      const output = consoleSpy.mock.calls[0]?.[0] as string;
+      const parsed = JSON.parse(output);
+      expect(Array.isArray(parsed)).toBe(true);
+      expect(parsed[0].name).toBe('batch-flavor-a');
+    });
+
+    it('rolls back and errors when any entry fails validation', async () => {
+      const bad = { name: '', stageCategory: 'build', steps: [], synthesisArtifact: 'x' };
+      const filePath = join(baseDir, 'bad-batch-flavors.json');
+      writeFileSync(filePath, JSON.stringify([batchFlavorA, bad], null, 2));
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'flavor', 'create', '--from-json', filePath]);
+
+      expect(errorSpy).toHaveBeenCalled();
+      // batch-flavor-a should NOT have been created
+      expect(existsSync(join(flavorsDir, 'build.batch-flavor-a.json'))).toBe(false);
+    });
+
+    it('errors when JSON is not an array', async () => {
+      const filePath = join(baseDir, 'not-array-flavors.json');
+      writeFileSync(filePath, JSON.stringify(batchFlavorA));
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'flavor', 'create', '--from-json', filePath]);
+      expect(errorSpy).toHaveBeenCalled();
+    });
+
+    it('errors when file does not exist', async () => {
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'flavor', 'create', '--from-json', '/nonexistent/file.json']);
+      expect(errorSpy).toHaveBeenCalled();
+    });
+  });
+
   // ---- flavor delete ----
 
   describe('flavor delete', () => {

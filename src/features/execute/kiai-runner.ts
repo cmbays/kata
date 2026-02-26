@@ -83,7 +83,8 @@ export class KiaiRunner {
       pinnedFlavors: options.pin,
     };
 
-    // Create orchestrator
+    // Create orchestrator — pass custom vocabulary dir so seeded keywords are picked up
+    const customVocabularyDir = join(this.deps.kataDir, KATA_DIRS.vocabularies);
     const orchestrator = createStageOrchestrator(
       stageCategory,
       {
@@ -93,6 +94,7 @@ export class KiaiRunner {
         ruleRegistry: this.deps.ruleRegistry,
       },
       stage.orchestrator,
+      customVocabularyDir,
     );
 
     // For dry-run, we still run the orchestrator (which includes selection)
