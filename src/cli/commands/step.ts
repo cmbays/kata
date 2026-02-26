@@ -351,7 +351,24 @@ export function registerStepCommands(parent: Command): void {
           for (const err of errors) console.error(err);
           throw new Error(`Batch validation failed: ${errors.length} entr${errors.length === 1 ? 'y' : 'ies'} invalid. No steps created.`);
         }
-        const created = validated.map((s) => createStep({ stagesDir, input: s! }).step);
+        // Write atomically: collect writes in order, roll back on any failure
+        const created: Step[] = [];
+        try {
+          for (const s of validated) {
+            created.push(createStep({ stagesDir, input: s! }).step);
+          }
+        } catch (writeErr) {
+          // Roll back every step already written (best-effort)
+          for (const written of created) {
+            try { deleteStep({ stagesDir, type: written.type, flavor: written.flavor }); } catch { /* best-effort */ }
+          }
+          throw new Error(
+            `Batch write failed at entry ${created.length} of ${validated.length}: ` +
+            `${writeErr instanceof Error ? writeErr.message : String(writeErr)}. ` +
+            `Rolled back ${created.length} step(s). No steps persisted.`,
+            { cause: writeErr },
+          );
+        }
         if (isJson) {
           console.log(formatStepJson(created));
         } else {

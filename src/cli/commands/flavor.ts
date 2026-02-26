@@ -1,5 +1,5 @@
 import type { Command } from 'commander';
-import type { FlavorStepRef } from '@domain/types/flavor.js';
+import type { FlavorStepRef, Flavor } from '@domain/types/flavor.js';
 import { StageCategorySchema, type StageCategory } from '@domain/types/stage.js';
 import { FlavorRegistry } from '@infra/registries/flavor-registry.js';
 import { StepRegistry } from '@infra/registries/step-registry.js';
@@ -137,12 +137,29 @@ export function registerFlavorCommands(parent: Command): void {
           for (const err of errors) console.error(err);
           throw new Error(`Batch validation failed: ${errors.length} entr${errors.length === 1 ? 'y' : 'ies'} invalid. No flavors created.`);
         }
-        const created = validated.map((f) => { registry.register(f!); return f!; });
+        // Write atomically: collect writes in order, roll back on any failure
+        const createdFlavors: Flavor[] = [];
+        try {
+          for (const f of validated) {
+            registry.register(f!);
+            createdFlavors.push(f!);
+          }
+        } catch (writeErr) {
+          for (const written of createdFlavors) {
+            try { registry.delete(written.stageCategory, written.name); } catch { /* best-effort */ }
+          }
+          throw new Error(
+            `Batch write failed at entry ${createdFlavors.length} of ${validated.length}: ` +
+            `${writeErr instanceof Error ? writeErr.message : String(writeErr)}. ` +
+            `Rolled back ${createdFlavors.length} flavor(s). No flavors persisted.`,
+            { cause: writeErr },
+          );
+        }
         if (isJson) {
-          console.log(formatFlavorJson(created));
+          console.log(formatFlavorJson(createdFlavors));
         } else {
-          console.log(`Created ${created.length} flavor${created.length === 1 ? '' : 's'}:`);
-          for (const f of created) console.log(`  ✓ ${f.name} (${f.stageCategory})`);
+          console.log(`Created ${createdFlavors.length} flavor${createdFlavors.length === 1 ? '' : 's'}:`);
+          for (const f of createdFlavors) console.log(`  ✓ ${f.name} (${f.stageCategory})`);
         }
         return;
       }

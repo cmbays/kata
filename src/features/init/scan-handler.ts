@@ -110,7 +110,8 @@ function detectDevTooling(cwd: string): DevTooling {
   let pkg: { devDependencies?: Record<string, string>; dependencies?: Record<string, string> };
   try {
     pkg = JSON.parse(readFileSync(pkgPath, 'utf-8')) as typeof pkg;
-  } catch {
+  } catch (e) {
+    console.warn(`Warning: could not parse package.json at "${pkgPath}": ${e instanceof Error ? e.message : String(e)}`);
     return empty;
   }
 
@@ -131,7 +132,8 @@ function listDir(dir: string): string[] {
   if (!existsSync(dir)) return [];
   try {
     return readdirSync(dir);
-  } catch {
+  } catch (e) {
+    console.warn(`Warning: could not read directory "${dir}": ${e instanceof Error ? e.message : String(e)}`);
     return [];
   }
 }
@@ -180,7 +182,8 @@ function readPackageName(cwd: string): string | undefined {
   try {
     const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8')) as { name?: string };
     return pkg.name;
-  } catch {
+  } catch (e) {
+    console.warn(`Warning: could not parse package.json at "${pkgPath}": ${e instanceof Error ? e.message : String(e)}`);
     return undefined;
   }
 }
@@ -196,7 +199,7 @@ function analyzeGitHistory(cwd: string): GitInsights | undefined {
     ['log', '--name-only', '--oneline', '-200'],
     { cwd, encoding: 'utf-8', timeout: 10_000 },
   );
-  if (result.status !== 0 || !result.stdout) return undefined;
+  if (result.error || result.signal || result.status !== 0 || !result.stdout) return undefined;
 
   const fileCounts = new Map<string, number>();
   for (const line of result.stdout.split('\n')) {
@@ -266,13 +269,19 @@ function detectFrameworkGaps(cwd: string): FrameworkGap[] {
   const allDeps = { ...pkg.dependencies, ...pkg.devDependencies };
   const depKeys = Object.keys(allDeps).map((k) => k.toLowerCase());
 
+  const matchesDep = (key: string, name: string): boolean =>
+    key === name ||
+    key.startsWith(`${name}-`) ||
+    key.startsWith(`${name}/`) ||
+    key.startsWith(`@${name}/`);
+
   return FRAMEWORK_GAP_SPECS
-    .filter((spec) => depKeys.some((k) => k === spec.detectKey || k.includes(spec.detectKey)))
+    .filter((spec) => depKeys.some((k) => matchesDep(k, spec.detectKey)))
     .map((spec) => ({
       framework: spec.detectKey,
       recommendedTool: spec.recommendedTool,
       reason: spec.reason,
-      detected: depKeys.some((k) => k === spec.checkKey || k.includes(spec.checkKey)),
+      detected: depKeys.some((k) => matchesDep(k, spec.checkKey)),
     }));
 }
 

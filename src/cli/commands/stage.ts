@@ -209,7 +209,9 @@ export function registerStageCommands(parent: Command): void {
           throw new Error('--from-json expects an object mapping category names to keyword arrays.');
         }
         const input = raw as Record<string, unknown>;
-        const results: Array<{ category: StageCategory; added: number; total: number }> = [];
+        // Validate all entries before writing any (all-or-nothing)
+        type VocabEntry = { category: StageCategory; keywords: string[] };
+        const vocabEntries: VocabEntry[] = [];
         for (const [cat, kws] of Object.entries(input)) {
           const catResult = StageCategorySchema.safeParse(cat);
           if (!catResult.success) {
@@ -218,8 +220,13 @@ export function registerStageCommands(parent: Command): void {
           if (!Array.isArray(kws) || !kws.every((k) => typeof k === 'string')) {
             throw new Error(`Keywords for "${cat}" must be an array of strings.`);
           }
-          const { added, total } = seedVocabKeywords(vocabDir, catResult.data, kws as string[]);
-          results.push({ category: catResult.data, added, total });
+          vocabEntries.push({ category: catResult.data, keywords: kws as string[] });
+        }
+        // All valid — write all
+        const results: Array<{ category: StageCategory; added: number; total: number }> = [];
+        for (const { category, keywords } of vocabEntries) {
+          const { added, total } = seedVocabKeywords(vocabDir, category, keywords);
+          results.push({ category, added, total });
         }
         if (ctx.globalOpts.json) {
           console.log(JSON.stringify(results, null, 2));
@@ -266,7 +273,8 @@ function seedVocabKeywords(vocabDir: string, category: StageCategory, newKeyword
       const raw = JSON.parse(readFileSync(vocabPath, 'utf-8'));
       existing = StageVocabularySchema.parse(raw);
     } catch {
-      // File exists but is corrupt — start fresh
+      // File exists but is corrupt — warn and start fresh
+      console.warn(`Warning: vocabulary file "${vocabPath}" is corrupt and will be overwritten.`);
       existing = undefined;
     }
   }
