@@ -95,10 +95,57 @@ export function registerFlavorCommands(parent: Command): void {
     .command('create')
     .description('Interactively create a new flavor definition')
     .option('--from-file <path>', 'Load flavor definition from a JSON file')
+    .option('--from-json <path>', 'Batch create flavors from a JSON array file ("-" reads stdin)')
     .action(withCommandContext(async (ctx) => {
       const localOpts = ctx.cmd.opts();
       const registry = new FlavorRegistry(kataDirPath(ctx.kataDir, 'flavors'));
       const isJson = ctx.globalOpts.json;
+
+      if (localOpts.fromJson) {
+        const { readFileSync } = await import('node:fs');
+        const { resolve } = await import('node:path');
+        const { FlavorSchema } = await import('@domain/types/flavor.js');
+
+        let text: string;
+        const src = localOpts.fromJson as string;
+        if (src === '-') {
+          try { text = readFileSync('/dev/stdin', 'utf-8'); }
+          catch (e) { throw new Error(`Could not read from stdin: ${e instanceof Error ? e.message : String(e)}`, { cause: e }); }
+        } else {
+          const filePath = resolve(src);
+          try { text = readFileSync(filePath, 'utf-8'); }
+          catch (e) { throw new Error(`Could not read file "${resolve(src)}": ${e instanceof Error ? e.message : String(e)}`, { cause: e }); }
+        }
+
+        let raw: unknown;
+        try { raw = JSON.parse(text); }
+        catch (e) { throw new Error(`Invalid JSON: ${e instanceof Error ? e.message : String(e)}`, { cause: e }); }
+
+        if (!Array.isArray(raw)) {
+          throw new Error('--from-json expects a JSON array of flavor objects.');
+        }
+        const errors: string[] = [];
+        const validated = raw.map((entry, i) => {
+          const result = FlavorSchema.safeParse(entry);
+          if (!result.success) {
+            errors.push(`Entry ${i}: ${result.error.message}`);
+            return null;
+          }
+          return result.data;
+        });
+        if (errors.length > 0) {
+          for (const err of errors) console.error(err);
+          throw new Error(`Batch validation failed: ${errors.length} entr${errors.length === 1 ? 'y' : 'ies'} invalid. No flavors created.`);
+        }
+        const created = validated.map((f) => { registry.register(f!); return f!; });
+        if (isJson) {
+          console.log(formatFlavorJson(created));
+        } else {
+          console.log(`Created ${created.length} flavor${created.length === 1 ? '' : 's'}:`);
+          for (const f of created) console.log(`  ✓ ${f.name} (${f.stageCategory})`);
+        }
+        return;
+      }
 
       if (localOpts.fromFile) {
         const { readFileSync } = await import('node:fs');

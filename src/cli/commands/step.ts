@@ -31,6 +31,35 @@ import { JsonlStore } from '@infra/persistence/jsonl-store.js';
 import { ArtifactIndexEntrySchema, type FlavorState } from '@domain/types/run-state.js';
 import { StageCategorySchema } from '@domain/types/stage.js';
 
+// ---- Helpers ----
+
+/**
+ * Read and parse JSON from a file path or stdin ("-").
+ * Throws a descriptive error on read/parse failure.
+ */
+function readJsonInput(pathOrDash: string): unknown {
+  let text: string;
+  if (pathOrDash === '-') {
+    try {
+      text = readFileSync('/dev/stdin', 'utf-8');
+    } catch (e) {
+      throw new Error(`Could not read from stdin: ${e instanceof Error ? e.message : String(e)}`, { cause: e });
+    }
+  } else {
+    const filePath = resolve(pathOrDash);
+    try {
+      text = readFileSync(filePath, 'utf-8');
+    } catch (e) {
+      throw new Error(`Could not read file "${filePath}": ${e instanceof Error ? e.message : String(e)}`, { cause: e });
+    }
+  }
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    throw new Error(`Invalid JSON: ${e instanceof Error ? e.message : String(e)}`, { cause: e });
+  }
+}
+
 // ---- Register commands ----
 
 export function registerStepCommands(parent: Command): void {
@@ -297,10 +326,40 @@ export function registerStepCommands(parent: Command): void {
     .command('create')
     .description('Interactively scaffold a custom step definition')
     .option('--from-file <path>', 'Load step definition from a JSON file (skips interactive prompts)')
+    .option('--from-json <path>', 'Batch create steps from a JSON array file ("-" reads stdin)')
     .action(withCommandContext(async (ctx) => {
       const localOpts = ctx.cmd.opts();
       const stagesDir = kataDirPath(ctx.kataDir, 'stages');
       const isJson = ctx.globalOpts.json;
+
+      if (localOpts.fromJson) {
+        const raw = readJsonInput(localOpts.fromJson as string);
+        if (!Array.isArray(raw)) {
+          throw new Error('--from-json expects a JSON array of step objects.');
+        }
+        const { StepSchema } = await import('@domain/types/step.js');
+        const errors: string[] = [];
+        const validated = raw.map((entry, i) => {
+          const result = StepSchema.safeParse(entry);
+          if (!result.success) {
+            errors.push(`Entry ${i}: ${result.error.message}`);
+            return null;
+          }
+          return result.data;
+        });
+        if (errors.length > 0) {
+          for (const err of errors) console.error(err);
+          throw new Error(`Batch validation failed: ${errors.length} entr${errors.length === 1 ? 'y' : 'ies'} invalid. No steps created.`);
+        }
+        const created = validated.map((s) => createStep({ stagesDir, input: s! }).step);
+        if (isJson) {
+          console.log(formatStepJson(created));
+        } else {
+          console.log(`Created ${created.length} step${created.length === 1 ? '' : 's'}:`);
+          for (const s of created) console.log(`  ✓ ${stepLabel(s.type, s.flavor)}`);
+        }
+        return;
+      }
 
       if (localOpts.fromFile) {
         const filePath = resolve(localOpts.fromFile as string);

@@ -274,6 +274,71 @@ describe('registerStepCommands', () => {
     });
   });
 
+  // ---- step create --from-json ----
+
+  describe('step create --from-json', () => {
+    it('creates multiple steps atomically from a JSON array', async () => {
+      const steps = [
+        { type: 'batch-step-a', description: 'First batch step' },
+        { type: 'batch-step-b', description: 'Second batch step' },
+      ];
+      const filePath = join(baseDir, 'batch-steps.json');
+      writeFileSync(filePath, JSON.stringify(steps, null, 2));
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'step', 'create', '--from-json', filePath]);
+
+      expect(consoleSpy).toHaveBeenCalled();
+      expect(existsSync(join(stagesDir, 'batch-step-a.json'))).toBe(true);
+      expect(existsSync(join(stagesDir, 'batch-step-b.json'))).toBe(true);
+    });
+
+    it('outputs JSON when --json flag is set', async () => {
+      const steps = [{ type: 'json-batch-step' }];
+      const filePath = join(baseDir, 'batch-json.json');
+      writeFileSync(filePath, JSON.stringify(steps, null, 2));
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--json', '--cwd', baseDir, 'step', 'create', '--from-json', filePath]);
+
+      const output = consoleSpy.mock.calls[0]?.[0] as string;
+      const parsed = JSON.parse(output);
+      expect(Array.isArray(parsed)).toBe(true);
+      expect(parsed[0].type).toBe('json-batch-step');
+    });
+
+    it('rolls back and errors when any entry fails validation', async () => {
+      const steps = [
+        { type: 'valid-step' },
+        { type: '' },          // invalid: empty type
+      ];
+      const filePath = join(baseDir, 'bad-batch.json');
+      writeFileSync(filePath, JSON.stringify(steps, null, 2));
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'step', 'create', '--from-json', filePath]);
+
+      expect(errorSpy).toHaveBeenCalled();
+      // valid-step should NOT have been created (all-or-nothing)
+      expect(existsSync(join(stagesDir, 'valid-step.json'))).toBe(false);
+    });
+
+    it('errors when --from-json path does not exist', async () => {
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'step', 'create', '--from-json', '/nonexistent/batch.json']);
+      expect(errorSpy).toHaveBeenCalled();
+    });
+
+    it('errors when JSON is not an array', async () => {
+      const filePath = join(baseDir, 'not-array.json');
+      writeFileSync(filePath, JSON.stringify({ type: 'single' }));
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'step', 'create', '--from-json', filePath]);
+      expect(errorSpy).toHaveBeenCalled();
+    });
+  });
+
   // ---- step edit ----
 
   describe('step edit', () => {

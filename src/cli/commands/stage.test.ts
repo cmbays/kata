@@ -343,4 +343,94 @@ describe('registerStageCommands (category-level)', () => {
       expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('is now complete'));
     });
   });
+
+  // ---- kata stage vocab seed ----
+
+  describe('stage vocab seed', () => {
+    const vocabDir = join(kataDir, 'vocabularies');
+
+    it('seeds keywords for a stage category', async () => {
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir,
+        'stage', 'vocab', 'seed', 'research', 'rag', 'embeddings',
+      ]);
+
+      expect(consoleSpy).toHaveBeenCalled();
+      const output = consoleSpy.mock.calls.flat().join('\n');
+      expect(output).toContain('research');
+      expect(output).toContain('added');
+      expect(existsSync(join(vocabDir, 'research.json'))).toBe(true);
+      const saved = JSON.parse(readFileSync(join(vocabDir, 'research.json'), 'utf-8'));
+      expect(saved.keywords).toContain('rag');
+      expect(saved.keywords).toContain('embeddings');
+    });
+
+    it('appends to existing vocab without duplicates', async () => {
+      const program = createProgram();
+      // First seed
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'stage', 'vocab', 'seed', 'build', 'rust']);
+      // Second seed with overlap
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'stage', 'vocab', 'seed', 'build', 'rust', 'cargo']);
+
+      const saved = JSON.parse(readFileSync(join(vocabDir, 'build.json'), 'utf-8'));
+      const rustCount = saved.keywords.filter((k: string) => k === 'rust').length;
+      expect(rustCount).toBe(1); // no duplicates
+      expect(saved.keywords).toContain('cargo');
+    });
+
+    it('outputs JSON when --json flag is set', async () => {
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--json', '--cwd', baseDir,
+        'stage', 'vocab', 'seed', 'plan', 'architecture',
+      ]);
+
+      const output = consoleSpy.mock.calls[0]?.[0] as string;
+      const parsed = JSON.parse(output);
+      expect(parsed.category).toBe('plan');
+      expect(parsed.added).toBeGreaterThan(0);
+      expect(typeof parsed.total).toBe('number');
+    });
+
+    it('errors on unknown category', async () => {
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir,
+        'stage', 'vocab', 'seed', 'not-a-category', 'keyword',
+      ]);
+      expect(errorSpy).toHaveBeenCalled();
+    });
+
+    it('seeds multiple categories from --from-json file', async () => {
+      const payload = { research: ['vector-db', 'chunking'], build: ['wasm', 'cargo'] };
+      const filePath = join(baseDir, 'vocab-seed.json');
+      writeFileSync(filePath, JSON.stringify(payload, null, 2));
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir,
+        'stage', 'vocab', 'seed', '--from-json', filePath,
+      ]);
+
+      expect(consoleSpy).toHaveBeenCalled();
+      const researchVocab = JSON.parse(readFileSync(join(vocabDir, 'research.json'), 'utf-8'));
+      const buildVocab = JSON.parse(readFileSync(join(vocabDir, 'build.json'), 'utf-8'));
+      expect(researchVocab.keywords).toContain('vector-db');
+      expect(buildVocab.keywords).toContain('wasm');
+    });
+
+    it('errors when --from-json contains unknown category', async () => {
+      const payload = { bogus: ['keyword'] };
+      const filePath = join(baseDir, 'bad-vocab.json');
+      writeFileSync(filePath, JSON.stringify(payload, null, 2));
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir,
+        'stage', 'vocab', 'seed', '--from-json', filePath,
+      ]);
+      expect(errorSpy).toHaveBeenCalled();
+    });
+  });
 });

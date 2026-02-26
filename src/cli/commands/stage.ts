@@ -1,11 +1,13 @@
-import { copyFileSync, existsSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import type { Command } from 'commander';
 import { StageCategorySchema, type StageCategory } from '@domain/types/stage.js';
+import { StageVocabularySchema, type StageVocabulary } from '@domain/types/vocabulary.js';
 import { FlavorRegistry } from '@infra/registries/flavor-registry.js';
 import { RuleRegistry } from '@infra/registries/rule-registry.js';
 import { DecisionRegistry } from '@infra/registries/decision-registry.js';
 import { withCommandContext, kataDirPath } from '@cli/utils.js';
+import { KATA_DIRS } from '@shared/constants/paths.js';
 import {
   readRun,
   writeRun,
@@ -172,4 +174,111 @@ export function registerStageCommands(parent: Command): void {
         }));
       }
     }));
+
+  // ---- vocab ----
+  const vocab = stage
+    .command('vocab')
+    .description('Manage stage vocabulary — keywords used by orchestration scoring');
+
+  vocab
+    .command('seed [category] [keywords...]')
+    .description('Add keywords to a stage vocabulary (persisted to .kata/vocabularies/)')
+    .option('--from-json <path>', 'Bulk seed from JSON file ("-" reads stdin): { "research": [...], "build": [...] }')
+    .action(withCommandContext(async (ctx, category?: string, keywords?: string[]) => {
+      const localOpts = ctx.cmd.opts();
+      const vocabDir = join(ctx.kataDir, KATA_DIRS.vocabularies);
+      mkdirSync(vocabDir, { recursive: true });
+
+      if (localOpts.fromJson) {
+        // Bulk mode: JSON object { category: keyword[] }
+        let text: string;
+        const src = localOpts.fromJson as string;
+        if (src === '-') {
+          try { text = readFileSync('/dev/stdin', 'utf-8'); }
+          catch (e) { throw new Error(`Could not read from stdin: ${e instanceof Error ? e.message : String(e)}`, { cause: e }); }
+        } else {
+          const filePath = resolve(src);
+          try { text = readFileSync(filePath, 'utf-8'); }
+          catch (e) { throw new Error(`Could not read file "${resolve(src)}": ${e instanceof Error ? e.message : String(e)}`, { cause: e }); }
+        }
+        let raw: unknown;
+        try { raw = JSON.parse(text); }
+        catch (e) { throw new Error(`Invalid JSON: ${e instanceof Error ? e.message : String(e)}`, { cause: e }); }
+
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+          throw new Error('--from-json expects an object mapping category names to keyword arrays.');
+        }
+        const input = raw as Record<string, unknown>;
+        const results: Array<{ category: StageCategory; added: number; total: number }> = [];
+        for (const [cat, kws] of Object.entries(input)) {
+          const catResult = StageCategorySchema.safeParse(cat);
+          if (!catResult.success) {
+            throw new Error(`Unknown category "${cat}". Valid: ${StageCategorySchema.options.join(', ')}`);
+          }
+          if (!Array.isArray(kws) || !kws.every((k) => typeof k === 'string')) {
+            throw new Error(`Keywords for "${cat}" must be an array of strings.`);
+          }
+          const { added, total } = seedVocabKeywords(vocabDir, catResult.data, kws as string[]);
+          results.push({ category: catResult.data, added, total });
+        }
+        if (ctx.globalOpts.json) {
+          console.log(JSON.stringify(results, null, 2));
+        } else {
+          for (const r of results) {
+            console.log(`${r.category}: added ${r.added} keyword${r.added === 1 ? '' : 's'} (${r.total} total)`);
+          }
+        }
+        return;
+      }
+
+      // Single-category mode
+      if (!category) {
+        throw new Error('Usage: kata stage vocab seed <category> <keyword...> [or --from-json <file>]');
+      }
+      const catResult = StageCategorySchema.safeParse(category);
+      if (!catResult.success) {
+        throw new Error(`Unknown category "${category}". Valid: ${StageCategorySchema.options.join(', ')}`);
+      }
+      const kws = keywords ?? [];
+      if (kws.length === 0) {
+        throw new Error('At least one keyword is required.');
+      }
+      const { added, total } = seedVocabKeywords(vocabDir, catResult.data, kws);
+      const result = { category: catResult.data, added, total };
+      if (ctx.globalOpts.json) {
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        console.log(`${catResult.data}: added ${added} keyword${added === 1 ? '' : 's'} (${total} total)`);
+      }
+    }));
+}
+
+/**
+ * Merge new keywords into the vocabulary file for a category.
+ * Creates the file if it doesn't exist. Deduplicates keywords.
+ * Returns the count of newly added and total keywords.
+ */
+function seedVocabKeywords(vocabDir: string, category: StageCategory, newKeywords: string[]): { added: number; total: number } {
+  const vocabPath = join(vocabDir, `${category}.json`);
+  let existing: StageVocabulary | undefined;
+  if (existsSync(vocabPath)) {
+    try {
+      const raw = JSON.parse(readFileSync(vocabPath, 'utf-8'));
+      existing = StageVocabularySchema.parse(raw);
+    } catch {
+      // File exists but is corrupt — start fresh
+      existing = undefined;
+    }
+  }
+  const baseKeywords = existing?.keywords ?? [];
+  const existingSet = new Set(baseKeywords);
+  const toAdd = newKeywords.filter((k) => k.trim() && !existingSet.has(k.trim())).map((k) => k.trim());
+  const merged = [...baseKeywords, ...toAdd];
+  const vocab: StageVocabulary = StageVocabularySchema.parse({
+    ...(existing ?? {}),
+    category,
+    keywords: merged,
+  });
+  writeFileSync(vocabPath, JSON.stringify(vocab, null, 2), 'utf-8');
+  return { added: toAdd.length, total: merged.length };
 }

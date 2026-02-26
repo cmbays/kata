@@ -1,6 +1,7 @@
 import type { Command } from 'commander';
 import type { ProjectType } from '@features/init/project-detector.js';
 import { handleInit } from '@features/init/init-handler.js';
+import { scanProject, type ScanDepth } from '@features/init/scan-handler.js';
 import { withCommandContext } from '@cli/utils.js';
 
 const PROJECT_TYPE_LABELS: Record<ProjectType, string> = {
@@ -22,9 +23,21 @@ export function registerInitCommand(program: Command): void {
     .option('--methodology <name>', 'Methodology framework (default: shape-up)')
     .option('--adapter <name>', 'Execution adapter: manual, claude-cli, composio')
     .option('--skip-prompts', 'Skip interactive prompts and use defaults')
+    .option('--scan <depth>', 'Scan project for metadata without initializing (basic | full). Output is always JSON.')
     .action(withCommandContext(async (ctx) => {
       const localOpts = ctx.cmd.opts();
       const cwd = ctx.globalOpts.cwd ?? process.cwd();
+
+      // --scan mode: collect project data, output JSON, do not init
+      if (localOpts.scan) {
+        const depth = localOpts.scan as string;
+        if (depth !== 'basic' && depth !== 'full') {
+          throw new Error(`Invalid scan depth "${depth}". Valid values: basic, full`);
+        }
+        const scanResult = scanProject(cwd, depth as ScanDepth);
+        console.log(JSON.stringify(scanResult, null, 2));
+        return;
+      }
 
       const result = await handleInit({
         cwd,
