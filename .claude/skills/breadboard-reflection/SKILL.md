@@ -175,6 +175,61 @@ After any changes:
 
 ---
 
+## Visual Artifacts
+
+Use diagrams to make smell detection and user story tracing visible. Generate these using MCP tools when available.
+
+### Story Trace Diagrams
+
+When tracing a user story through wiring, generate a Mermaid sequence diagram showing the path through affordances:
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant U4 as U4: input
+    participant N1 as N1: handler
+    participant N2 as N2: validator
+    participant S1 as S1: store
+    participant U6 as U6: display
+
+    User->>U4: enters value
+    U4->>N1: onChange
+    N1->>N2: validate()
+    N2-->>N1: valid
+    N1->>S1: write
+    S1-->>U6: read (updated)
+    Note over N2: ⚠️ Story breaks here — no error path to user
+```
+
+Mark where the story breaks or where wiring is incoherent. This makes missing paths and broken chains immediately visible.
+
+### Smell Annotations
+
+When smells are detected, regenerate the breadboard Mermaid diagram with visual annotations:
+
+| Smell | Annotation Style |
+| ----- | ---------------- |
+| Incoherent wiring | Red highlight on conflicting arrows |
+| Missing path | Dashed red arrow showing where a wire should exist |
+| Naming resistance | Orange highlight on the affordance node |
+| Diagram-only nodes | Grey strikethrough node (exists in diagram but not tables) |
+
+After fixing smells, regenerate the diagram clean (no annotations) to confirm the fixes.
+
+### Interactive Review with Excalidraw
+
+For interactive challenge sessions, generate an Excalidraw breadboard layout that can be annotated live:
+
+- Places as labeled rectangles
+- Affordances inside their places
+- Wiring as arrows between affordances
+- Mark smells with colored highlights during the review
+- Annotate with notes and questions as they surface
+
+The freeform canvas makes it easy to sketch alternatives and rearrange affordances during discussion.
+
+---
+
 ## Quality Gate
 
 After reflection, verify:

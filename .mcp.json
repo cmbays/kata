@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "mermaid": {
+      "command": "npx",
+      "args": ["-y", "mcp-mermaid"],
+      "env": {}
+    },
+    "excalidraw": {
+      "command": "npx",
+      "args": ["-y", "mcp_excalidraw"],
+      "env": {
+        "CANVAS_MCP_BASE_URL": "http://localhost:3000"
+      }
+    }
+  }
+}
