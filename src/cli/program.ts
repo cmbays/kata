@@ -13,6 +13,7 @@ import { registerDecisionCommands } from './commands/decision.js';
 import { registerRunCommands } from './commands/run.js';
 import { registerApproveCommand } from './commands/approve.js';
 import { registerGateCommands } from './commands/gate.js';
+import { registerRuleCommands } from './commands/rules.js';
 
 const VERSION = '0.1.0';
 
@@ -49,6 +50,7 @@ export function createProgram(): Command {
   registerRunCommands(program);
   registerApproveCommand(program);
   registerGateCommands(program);
+  registerRuleCommands(program);
 
   return program;
 }

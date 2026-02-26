@@ -354,6 +354,35 @@ describe('formatCooldownSessionResult', () => {
     const result = formatCooldownSessionResult(makeSessionResult());
     expect(result).not.toContain('--- Run Summaries ---');
   });
+
+  it('shows Rule Suggestions section with counts when suggestionReview is provided', () => {
+    const review = { accepted: 2, rejected: 1, deferred: 0 };
+    const result = formatCooldownSessionResult(makeSessionResult(), review);
+    expect(result).toContain('--- Rule Suggestions ---');
+    expect(result).toContain('Accepted: 2, Rejected: 1, Deferred: 0');
+  });
+
+  it('shows pending count when ruleSuggestions present but no review taken', () => {
+    const ruleSuggestions = [
+      {
+        id: '00000000-0000-4000-8000-000000000001',
+        suggestedRule: { category: 'build' as const, name: 'Boost TS', condition: 'always', effect: 'boost' as const, magnitude: 0.3, confidence: 0.8, source: 'auto-detected' as const, evidence: [] },
+        triggerDecisionIds: [],
+        observationCount: 3,
+        reasoning: 'test',
+        status: 'pending' as const,
+        createdAt: new Date().toISOString(),
+      },
+    ];
+    const result = formatCooldownSessionResult(makeSessionResult({ ruleSuggestions }));
+    expect(result).toContain('--- Rule Suggestions ---');
+    expect(result).toContain('1 pending suggestion(s) (run interactively to review)');
+  });
+
+  it('omits Rule Suggestions section when no suggestions and no review', () => {
+    const result = formatCooldownSessionResult(makeSessionResult());
+    expect(result).not.toContain('--- Rule Suggestions ---');
+  });
 });
 
 describe('formatBetOutcomePrompt', () => {

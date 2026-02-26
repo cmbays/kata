@@ -5,6 +5,7 @@ import { CycleManager } from '@domain/services/cycle-manager.js';
 import { KnowledgeStore } from '@infra/knowledge/knowledge-store.js';
 import { ExecutionHistoryEntrySchema } from '@domain/types/history.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
+import { RuleRegistry } from '@infra/registries/rule-registry.js';
 import { createRunTree, writeStageState } from '@infra/persistence/run-store.js';
 import type { Run, StageState } from '@domain/types/run-state.js';
 // JsonStore satisfies IPersistence structurally — passed as persistence adapter in deps
@@ -554,6 +555,104 @@ describe('CooldownSession', () => {
       const cycle = cycleManager.create({ tokenBudget: 50000 });
       const result = await session.run(cycle.id);
       expect(result.runSummaries).toBeUndefined();
+    });
+  });
+
+  describe('run with ruleRegistry (ruleSuggestions)', () => {
+    const rulesDir = join(baseDir, 'rules');
+
+    function makeSuggestionInput() {
+      return {
+        suggestedRule: {
+          category: 'build' as const,
+          name: 'Boost TypeScript flavor',
+          condition: 'When tests exist',
+          effect: 'boost' as const,
+          magnitude: 0.3,
+          confidence: 0.8,
+          source: 'auto-detected' as const,
+          evidence: ['decision-abc'],
+        },
+        triggerDecisionIds: ['00000000-0000-4000-8000-000000000001'],
+        observationCount: 3,
+        reasoning: 'Observed 3 times in build stages',
+      };
+    }
+
+    beforeEach(() => {
+      mkdirSync(rulesDir, { recursive: true });
+    });
+
+    it('includes pending suggestions in result when ruleRegistry provided', async () => {
+      const ruleRegistry = new RuleRegistry(rulesDir);
+      const suggestion = ruleRegistry.suggestRule(makeSuggestionInput());
+
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      const sessionWithRegistry = new CooldownSession({
+        cycleManager,
+        knowledgeStore,
+        persistence: JsonStore,
+        pipelineDir,
+        historyDir,
+        ruleRegistry,
+      });
+
+      const result = await sessionWithRegistry.run(cycle.id);
+
+      expect(result.ruleSuggestions).toBeDefined();
+      expect(result.ruleSuggestions).toHaveLength(1);
+      expect(result.ruleSuggestions![0]!.id).toBe(suggestion.id);
+      expect(result.ruleSuggestions![0]!.status).toBe('pending');
+    });
+
+    it('returns empty array when no pending suggestions', async () => {
+      const ruleRegistry = new RuleRegistry(rulesDir);
+
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      const sessionWithRegistry = new CooldownSession({
+        cycleManager,
+        knowledgeStore,
+        persistence: JsonStore,
+        pipelineDir,
+        historyDir,
+        ruleRegistry,
+      });
+
+      const result = await sessionWithRegistry.run(cycle.id);
+
+      expect(result.ruleSuggestions).toBeDefined();
+      expect(result.ruleSuggestions).toHaveLength(0);
+    });
+
+    it('ruleSuggestions is undefined when ruleRegistry not provided (backward compat)', async () => {
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      const result = await session.run(cycle.id);
+      expect(result.ruleSuggestions).toBeUndefined();
+    });
+
+    it('only includes pending suggestions, not accepted or rejected', async () => {
+      const ruleRegistry = new RuleRegistry(rulesDir);
+      const pending = ruleRegistry.suggestRule(makeSuggestionInput());
+      const toAccept = ruleRegistry.suggestRule(makeSuggestionInput());
+      const toReject = ruleRegistry.suggestRule(makeSuggestionInput());
+
+      ruleRegistry.acceptSuggestion(toAccept.id);
+      ruleRegistry.rejectSuggestion(toReject.id, 'Not needed');
+
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      const sessionWithRegistry = new CooldownSession({
+        cycleManager,
+        knowledgeStore,
+        persistence: JsonStore,
+        pipelineDir,
+        historyDir,
+        ruleRegistry,
+      });
+
+      const result = await sessionWithRegistry.run(cycle.id);
+
+      expect(result.ruleSuggestions).toHaveLength(1);
+      expect(result.ruleSuggestions![0]!.id).toBe(pending.id);
     });
   });
 });

@@ -3,6 +3,7 @@ import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync } from 
 import type { StageCategory, Stage } from '@domain/types/stage.js';
 import type { IFlavorRegistry } from '@domain/ports/flavor-registry.js';
 import type { IDecisionRegistry } from '@domain/ports/decision-registry.js';
+import type { IStageRuleRegistry } from '@domain/ports/rule-registry.js';
 import type {
   IFlavorExecutor,
   OrchestratorContext,
@@ -21,6 +22,8 @@ export interface KiaiRunnerDeps {
   executor: IFlavorExecutor;
   kataDir: string;
   analytics?: UsageAnalytics;
+  /** Optional rule registry passed to the stage orchestrator for rule-driven selection. */
+  ruleRegistry?: IStageRuleRegistry;
 }
 
 export interface KiaiRunOptions {
@@ -87,6 +90,7 @@ export class KiaiRunner {
         flavorRegistry: this.deps.flavorRegistry,
         decisionRegistry: this.deps.decisionRegistry,
         executor: this.deps.executor,
+        ruleRegistry: this.deps.ruleRegistry,
       },
       stage.orchestrator,
     );
@@ -136,6 +140,7 @@ export class KiaiRunner {
       flavorRegistry: this.deps.flavorRegistry,
       decisionRegistry: this.deps.decisionRegistry,
       executor: this.deps.executor,
+      ruleRegistry: this.deps.ruleRegistry,
     });
 
     const result = await metaOrchestrator.runPipeline(categories, options.bet);

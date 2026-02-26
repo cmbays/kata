@@ -503,5 +503,93 @@ describe('registerCycleCommands', () => {
         }),
       );
     });
+
+    it('--auto-accept-suggestions accepts all pending rule suggestions without prompts', async () => {
+      const { RuleRegistry } = await import('@infra/registries/rule-registry.js');
+      const rulesDir = join(kataDir, 'rules');
+      mkdirSync(rulesDir, { recursive: true });
+      const ruleRegistry = new RuleRegistry(rulesDir);
+
+      const suggestion = ruleRegistry.suggestRule({
+        suggestedRule: {
+          category: 'build',
+          name: 'Boost TypeScript',
+          condition: 'When tests exist',
+          effect: 'boost',
+          magnitude: 0.3,
+          confidence: 0.8,
+          source: 'auto-detected',
+          evidence: [],
+        },
+        triggerDecisionIds: ['00000000-0000-4000-8000-000000000001'],
+        observationCount: 3,
+        reasoning: 'Observed 3 times',
+      });
+
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 50000 }, 'Auto-accept Test');
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir,
+        'cooldown', cycle.id,
+        '--skip-prompts', '--auto-accept-suggestions',
+      ]);
+
+      // Suggestion should be promoted to an active rule
+      const refreshed = new RuleRegistry(rulesDir);
+      expect(refreshed.getPendingSuggestions()).toHaveLength(0);
+      expect(refreshed.loadRules('build')).toHaveLength(1);
+      expect(refreshed.loadRules('build')[0]!.id).toBeDefined();
+
+      // Console should confirm auto-accept
+      const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('Auto-accepted 1 rule suggestion(s)');
+
+      // Cycle should be complete
+      const updated = manager.get(cycle.id);
+      expect(updated.state).toBe('complete');
+
+      // Suggestion id used was ours
+      void suggestion; // referenced to avoid unused var warning
+    });
+
+    it('--auto-accept-suggestions includes suggestionReview in --json output', async () => {
+      const { RuleRegistry } = await import('@infra/registries/rule-registry.js');
+      const rulesDir = join(kataDir, 'rules');
+      mkdirSync(rulesDir, { recursive: true });
+      const ruleRegistry = new RuleRegistry(rulesDir);
+
+      ruleRegistry.suggestRule({
+        suggestedRule: {
+          category: 'build',
+          name: 'Boost TS',
+          condition: 'When tests exist',
+          effect: 'boost',
+          magnitude: 0.3,
+          confidence: 0.8,
+          source: 'auto-detected',
+          evidence: [],
+        },
+        triggerDecisionIds: ['00000000-0000-4000-8000-000000000001'],
+        observationCount: 3,
+        reasoning: 'test',
+      });
+
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 50000 });
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--json', '--cwd', baseDir,
+        'cooldown', cycle.id,
+        '--skip-prompts', '--auto-accept-suggestions',
+      ]);
+
+      const firstCall = consoleSpy.mock.calls[0]?.[0] as string;
+      const parsed = JSON.parse(firstCall);
+      expect(parsed.suggestionReview).toEqual({ accepted: 1, rejected: 0, deferred: 0 });
+      expect(parsed.ruleSuggestions).toHaveLength(1);
+    });
   });
 });
