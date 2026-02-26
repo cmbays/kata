@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "mermaid": {
+      "command": "npx",
+      "args": ["-y", "mcp-mermaid"],
+      "env": {}
+    },
+    "excalidraw": {
+      "command": "npx",
+      "args": ["-y", "mcp-excalidraw-server"],
+      "env": {
+        "EXPRESS_SERVER_URL": "http://localhost:3100"
+      }
+    }
+  }
+}

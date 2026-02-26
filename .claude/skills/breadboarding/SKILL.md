@@ -903,9 +903,22 @@ class dynamicForm chunk
 
 ---
 
-## Visualization (Mermaid)
+## Visualization
 
-The tables are the truth. Mermaid diagrams are optional visualizations for humans.
+The tables are the truth. Diagrams are visualizations for humans — they make spatial relationships, wiring patterns, and structural issues visible.
+
+Two tools complement each other:
+
+| Tool | Best for | Output |
+| ---- | -------- | ------ |
+| **Mermaid** | Structured diagrams embedded in markdown docs | Flowcharts, sequences, rendered inline |
+| **Excalidraw** | Freeform spatial layouts, interactive review sessions | Canvas at localhost or shareable URL |
+
+Use Mermaid by default (always embed in the breadboard doc). Use Excalidraw when doing interactive challenge/review sessions where you need to annotate, rearrange, or sketch alternatives live.
+
+### Mermaid Diagrams
+
+Mermaid diagrams are the standard visualization embedded in breadboard docs.
 
 ### Basic Structure
 
@@ -1071,6 +1084,29 @@ flowchart TB
 - Avoid `"1) ACTION"` — parentheses can also cause parsing issues
 - Connect step markers to affordances with dashed lines (`-.->`)
 - Style steps green to distinguish from UI (pink) and Code (grey) affordances
+
+### Excalidraw Diagrams
+
+For interactive review and challenge sessions, generate an Excalidraw breadboard layout. This is especially valuable when:
+
+- Doing a walkthrough with the user to validate the design
+- Challenging breadboard decisions — annotate issues live
+- Exploring alternative arrangements of affordances
+- The breadboard is complex enough that a static Mermaid diagram is hard to parse
+
+**Layout conventions (match the Mermaid conventions):**
+
+| Element | Visual | Color |
+| ------- | ------ | ----- |
+| Places | Large labeled rectangles (containers) | White/light grey border |
+| UI affordances (U) | Rounded rectangles inside their Place | Pink `#ffb6c1` |
+| Code affordances (N) | Rectangles between/below Places | Grey `#d3d3d3` |
+| Data stores (S) | Cylinder or database shape | Lavender `#e6e6fa` |
+| Wires Out (calls) | Solid arrows | Dark grey |
+| Returns To (reads) | Dashed arrows | Light grey |
+| Annotations/notes | Sticky-note style | Yellow |
+
+**When to generate:** After the affordance tables and wiring are complete, offer to generate an Excalidraw layout for interactive review. If the user declines, the Mermaid diagram in the doc is sufficient.
 
 ---
 

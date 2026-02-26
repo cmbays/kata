@@ -313,6 +313,50 @@ Summaries hide detail and shift control away from the user.
 
 When re-rendering a requirements table or shape table after making changes, mark every changed or added line with a 🟡 so the user can instantly spot what's different. Place the 🟡 at the start of the changed cell content. This makes iterative refinement easy to follow — the user should never have to diff the table mentally.
 
+## Visual Artifacts
+
+Generate visual diagrams at key decision points to make patterns and misalignments visible.
+Use MCP tools when available: **Mermaid** for structured diagrams, **Excalidraw** for freeform spatial layouts.
+
+### When to Generate
+
+| Trigger | Diagram | Tool | Purpose |
+| ------- | ------- | ---- | ------- |
+| After creating/updating a fit check | R × S fit matrix | Mermaid | Color-coded pass/fail patterns across shapes |
+| After selecting a shape | Shape parts map | Mermaid | Show component relationships, shared logic, hierarchy |
+| When comparing alternatives (C3-A vs C3-B) | Alternative comparison | Mermaid | Side-by-side mechanism comparison |
+
+### Fit Check Diagram
+
+After creating or updating a fit check, generate a Mermaid block diagram that renders the R × S matrix visually. Color-code cells so pass/fail patterns pop at a glance:
+
+```mermaid
+block-beta
+    columns 4
+    space A["A"] B["B"] C["C"]
+    R0["R0: Searchable"] a0["✅"]:::pass b0["✅"]:::pass c0["✅"]:::pass
+    R1["R1: Survives refresh"] a1["✅"]:::pass b1["❌"]:::fail c1["✅"]:::pass
+    R2["R2: Back button"] a2["❌"]:::fail b2["✅"]:::pass c2["✅"]:::pass
+
+    classDef pass fill:#90EE90,stroke:#228B22,color:#000
+    classDef fail fill:#ffb6c1,stroke:#d87093,color:#000
+```
+
+The visual makes it easy to spot which shapes have the fewest failures and where requirement gaps cluster.
+
+### Shape Parts Map
+
+After selecting a shape and expanding its parts, generate a Mermaid flowchart showing:
+
+- Parts as nodes
+- Cross-references between parts (e.g., "→ calls B1") as arrows
+- Flagged unknowns (⚠️) as dashed-border nodes
+- Shared extracted logic as highlighted nodes
+
+This makes the shape's internal structure visible — which parts depend on which, where shared logic lives, and where unknowns remain.
+
+---
+
 ## Spikes
 
 A spike is an investigation task to learn how the existing system works and what concrete steps are needed to implement a component. Use spikes when there's uncertainty about mechanics or feasibility.

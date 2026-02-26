@@ -19,6 +19,8 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "exactOptionalPropertyTypes": false,
+    "jsx": "react-jsx",
+    "jsxImportSource": "react",
     "paths": {
       "@domain/*": ["./src/domain/*"],
       "@infra/*": ["./src/infrastructure/*"],
@@ -27,6 +29,6 @@
       "@cli/*": ["./src/cli/*"]
     }
   },
-  "include": ["src/**/*.ts"],
-  "exclude": ["node_modules", "dist", "**/*.test.ts"]
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.test.tsx"]
 }
