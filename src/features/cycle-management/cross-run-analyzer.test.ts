@@ -139,6 +139,19 @@ describe('analyzeRecurringGaps', () => {
     expect(result[1]!.betCount).toBe(2);
   });
 
+  it('upgrades severity to the highest level seen across bets', () => {
+    const s1 = makeSummary({
+      stageDetails: [{ category: 'build', selectedFlavors: [], gaps: [{ description: 'Shared gap', severity: 'low' }] }],
+    });
+    const s2 = makeSummary({
+      stageDetails: [{ category: 'build', selectedFlavors: [], gaps: [{ description: 'Shared gap', severity: 'high' }] }],
+    });
+
+    const result = analyzeRecurringGaps([s1, s2]);
+    expect(result).toHaveLength(1);
+    expect(result[0]!.severity).toBe('high'); // upgraded from low → high
+  });
+
   it('excludes gaps that appear in only 1 bet', () => {
     const s1 = makeSummary({
       stageDetails: [{ category: 'build', selectedFlavors: [], gaps: [{ description: 'Unique gap', severity: 'low' }] }],

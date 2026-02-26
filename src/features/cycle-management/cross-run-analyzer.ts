@@ -1,5 +1,14 @@
 import type { RunSummary } from './types.js';
 
+const SEVERITY_RANK: Record<'low' | 'medium' | 'high', number> = { low: 0, medium: 1, high: 2 };
+
+function maxSeverity(
+  a: 'low' | 'medium' | 'high',
+  b: 'low' | 'medium' | 'high',
+): 'low' | 'medium' | 'high' {
+  return SEVERITY_RANK[a] >= SEVERITY_RANK[b] ? a : b;
+}
+
 /**
  * Returns flavor name → count of runs that used it.
  * Counts each flavor once per run (not per stage occurrence).
@@ -39,6 +48,7 @@ export function analyzeRecurringGaps(
           const existing = gapMap.get(gap.description);
           if (existing) {
             existing.betCount++;
+            existing.severity = maxSeverity(existing.severity, gap.severity);
           } else {
             gapMap.set(gap.description, { severity: gap.severity, betCount: 1 });
           }

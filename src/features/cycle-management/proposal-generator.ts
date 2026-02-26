@@ -167,9 +167,11 @@ export class ProposalGenerator {
     }
 
     // Under-used flavors (appear in exactly 1 run out of 2+ — potentially valuable but under-adopted)
+    // Sort alphabetically for deterministic output regardless of Map insertion order.
     const flavorFreq = analyzeFlavorFrequency(summaries);
+    const sortedFlavors = Array.from(flavorFreq.entries()).sort(([a], [b]) => a.localeCompare(b));
     let unusedFlavorCount = 0;
-    for (const [flavorName, count] of flavorFreq.entries()) {
+    for (const [flavorName, count] of sortedFlavors) {
       if (summaries.length >= 2 && count === 1 && unusedFlavorCount < 3) {
         proposals.push({
           id: crypto.randomUUID(),
