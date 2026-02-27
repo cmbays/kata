@@ -104,20 +104,41 @@ function isPromptCancelled(e: unknown): boolean {
 
 // ── Action dispatcher ─────────────────────────────────────────────────────────
 
+/**
+ * Determines where to return after an action completes (or is cancelled).
+ * Computed before the action runs so cancellation still navigates correctly.
+ */
+function getRelaunchState(action: ConfigAction): RelaunchState | null {
+  switch (action.type) {
+    case 'step:edit': {
+      const fromFlavorName = (action as { type: 'step:edit'; step: Step; fromFlavorName?: string }).fromFlavorName;
+      return fromFlavorName ? { sectionIndex: 1, flavorName: fromFlavorName } : null;
+    }
+    case 'flavor:create':
+    case 'flavor:delete':
+      return { sectionIndex: 1 };
+    case 'flavor:edit':
+      return { sectionIndex: 1, flavorName: action.flavor.name };
+    case 'kata:create':
+    case 'kata:delete':
+      return { sectionIndex: 2 };
+    default:
+      return null;
+  }
+}
+
 async function runConfigAction(action: ConfigAction, ctx: ActionCtx): Promise<RelaunchState | null> {
-  let relaunchState: RelaunchState | null = null;
+  // Resolve relaunch target upfront so Ctrl+C cancellation still returns to the right place
+  const relaunchState = getRelaunchState(action);
+
   try {
     switch (action.type) {
       case 'step:create':
         await handleStepCreate(ctx);
         break;
-      case 'step:edit': {
+      case 'step:edit':
         await handleStepEdit(action.step, ctx);
-        // If the edit was triggered from a flavor drill-down, return to that flavor
-        const fromFlavorName = (action as { type: 'step:edit'; step: Step; fromFlavorName?: string }).fromFlavorName;
-        if (fromFlavorName) relaunchState = { sectionIndex: 1, flavorName: fromFlavorName };
         break;
-      }
       case 'step:delete':
         await handleStepDelete(action.step, ctx);
         break;

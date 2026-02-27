@@ -38,11 +38,11 @@ export default function ConfigApp({ stepsDir, flavorsDir, katasDir, onAction, in
   };
 
   useInput((input, key) => {
-    if (inDetail) return;
     if (input === 'q') {
       exit();
       return;
     }
+    if (inDetail) return;
     if (key.tab || input === ']') {
       setSectionIndex((i) => (i + 1) % SECTIONS.length);
     } else if (input === '[') {

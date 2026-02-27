@@ -73,7 +73,7 @@ describe('KataList rendering', () => {
   it('shows kata count header', () => {
     mockJsonList.mockReturnValue([makeKata(), makeKata({ name: 'quick-fix' })]);
     const output = renderToString(<KataList {...defaultProps} />);
-    expect(output).toContain('Kata Patterns (2)');
+    expect(output).toContain('Katas (2)');
   });
 
   it('shows empty message when no katas', () => {

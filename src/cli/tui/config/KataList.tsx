@@ -68,7 +68,7 @@ export default function KataList({
 
   return (
     <Box flexDirection="column">
-      <Text bold>Kata Patterns ({katas.length})</Text>
+      <Text bold>Katas ({katas.length})</Text>
       <Box flexDirection="column" marginTop={1}>
         {katas.length === 0 ? (
           <Text dimColor>
