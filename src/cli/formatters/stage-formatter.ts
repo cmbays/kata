@@ -3,7 +3,7 @@ import type { Flavor } from '@domain/types/flavor.js';
 import type { StageRule } from '@domain/types/rule.js';
 import type { Decision } from '@domain/types/decision.js';
 import { getLexicon, cap, pl } from '@cli/lexicon.js';
-import { bold, cyan, dim, magenta, visiblePadEnd } from '@shared/lib/ansi.js';
+import { bold, cyan, dim, magenta, visiblePadEnd, strip } from '@shared/lib/ansi.js';
 
 export interface StageCategoryEntry {
   category: StageCategory;
@@ -28,11 +28,12 @@ export function formatStageCategoryTable(entries: StageCategoryEntry[], plain?: 
   const lex = getLexicon(plain);
 
   const headerCols = [cap(lex.stage), pl(cap(lex.flavor), plain), 'Rules'];
-  const header = bold(padColumns(headerCols));
-  const separator = dim('-'.repeat(padColumns(headerCols).length));
-  const rows = entries.map((e) =>
-    padColumns([cyan(e.category), String(e.flavorCount), String(e.ruleCount ?? 0)]),
-  );
+  const dataRows = entries.map((e) => [cyan(e.category), String(e.flavorCount), String(e.ruleCount ?? 0)]);
+
+  const widths = computeWidths([headerCols, ...dataRows]);
+  const header = bold(padColumns(headerCols, widths));
+  const separator = dim('-'.repeat(widths.reduce((a, b) => a + b, 0) + (widths.length - 1) * 2));
+  const rows = dataRows.map((cols) => padColumns(cols, widths));
 
   return [header, separator, ...rows].join('\n');
 }
@@ -95,8 +96,14 @@ export function formatStageCategoryJson(entries: StageCategoryEntry[]): string {
 
 // ---- Helpers ----
 
-function padColumns(values: string[]): string {
-  const widths = [16, 10, 8];
+function computeWidths(rows: string[][]): number[] {
+  const colCount = rows[0]?.length ?? 0;
+  return Array.from({ length: colCount }, (_, i) =>
+    Math.max(...rows.map((r) => strip(r[i] ?? '').length)),
+  );
+}
+
+function padColumns(values: string[], widths: number[]): string {
   return values.map((v, i) => visiblePadEnd(v, widths[i] ?? 20)).join('  ');
 }
 

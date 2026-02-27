@@ -44,7 +44,7 @@ describe('StepNotFoundError', () => {
     const err = new StepNotFoundError('research');
     expect(err.name).toBe('StepNotFoundError');
     expect(err.message).toContain('"research"');
-    expect(err.message).toContain('kata stage list');
+    expect(err.message).toContain('kata step list');
     expect(err).toBeInstanceOf(KataError);
   });
 
@@ -75,11 +75,11 @@ describe('CycleNotFoundError', () => {
 });
 
 describe('FlavorNotFoundError', () => {
-  it('formats message with stageCategory and name and suggests kata stage list', () => {
+  it('formats message with stageCategory and name and suggests kata flavor list', () => {
     const err = new FlavorNotFoundError('plan', 'ui-planning');
     expect(err.name).toBe('FlavorNotFoundError');
     expect(err.message).toContain('plan/ui-planning');
-    expect(err.message).toContain('kata stage list');
+    expect(err.message).toContain('kata flavor list');
     expect(err).toBeInstanceOf(KataError);
   });
 });
