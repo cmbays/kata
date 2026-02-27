@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { StepRegistry } from '@infra/registries/step-registry.js';
-import type { Step } from '@domain/types/step.js';
+import type { Step, StepResources } from '@domain/types/step.js';
+import type { Gate } from '@domain/types/gate.js';
 
 export type StepAction =
   | { type: 'step:create' }
@@ -110,8 +111,6 @@ function StepRow({ step, isSelected }: { step: Step; isSelected: boolean }) {
 function StepDetail({ step }: { step: Step }) {
   const label = step.flavor ? `${step.type}.${step.flavor}` : step.type;
   const artifactNames = step.artifacts.map((a) => a.name).join(', ');
-  const entryCount = step.entryGate ? step.entryGate.conditions.length : 0;
-  const exitCount = step.exitGate ? step.exitGate.conditions.length : 0;
 
   return (
     <Box flexDirection="column">
@@ -128,19 +127,99 @@ function StepDetail({ step }: { step: Step }) {
       {step.promptTemplate !== undefined && (
         <Text dimColor>Prompt: {step.promptTemplate}</Text>
       )}
-      <Text>
-        Gates: entry={entryCount > 0 ? `${entryCount} cond.` : 'none'}
-        {'  '}exit={exitCount > 0 ? `${exitCount} cond.` : 'none'}
-      </Text>
-      {step.resources !== undefined && (
-        <Text>
-          Resources: {step.resources.tools.length} tool(s),{' '}
-          {step.resources.agents.length} agent(s), {step.resources.skills.length} skill(s)
-        </Text>
-      )}
+      <GateDetail label="Entry gate" gate={step.entryGate} />
+      <GateDetail label="Exit gate" gate={step.exitGate} />
+      {step.resources !== undefined && <ResourceDetail resources={step.resources} />}
       <Box marginTop={1}>
         <Text dimColor>[←/Esc] back  [e] edit this step  [d] delete this step</Text>
       </Box>
+    </Box>
+  );
+}
+
+function GateDetail({ label, gate }: { label: string; gate?: Gate }) {
+  if (!gate || gate.conditions.length === 0) {
+    return (
+      <Text>
+        {label}: <Text dimColor>none</Text>
+      </Text>
+    );
+  }
+  return (
+    <Box flexDirection="column" marginTop={1}>
+      <Text bold>
+        {label}
+        <Text dimColor> ({gate.required ? 'required' : 'optional'}):</Text>
+      </Text>
+      {gate.conditions.map((c, i) => {
+        const detail = c.artifactName
+          ? ` → ${c.artifactName}`
+          : c.predecessorType
+            ? ` → ${c.predecessorType}`
+            : c.command
+              ? `: ${c.command}`
+              : '';
+        const desc = c.description ? `  (${c.description})` : '';
+        return (
+          <Box key={i}>
+            <Text dimColor>  {i + 1}. </Text>
+            <Text color="yellow">{c.type}</Text>
+            <Text dimColor>
+              {detail}
+              {desc}
+            </Text>
+          </Box>
+        );
+      })}
+    </Box>
+  );
+}
+
+function ResourceDetail({ resources }: { resources: StepResources }) {
+  const { tools, agents, skills } = resources;
+  if (tools.length === 0 && agents.length === 0 && skills.length === 0) return null;
+  return (
+    <Box flexDirection="column" marginTop={1}>
+      <Text bold>Resources:</Text>
+      {tools.length > 0 && (
+        <Box flexDirection="column">
+          <Text dimColor>  Tools:</Text>
+          {tools.map((t, i) => (
+            <Box key={i}>
+              <Text dimColor>    {i + 1}. </Text>
+              <Text color="cyan">{t.name}</Text>
+              <Text dimColor>
+                {' '}— {t.purpose}
+                {t.command ? ` (${t.command})` : ''}
+              </Text>
+            </Box>
+          ))}
+        </Box>
+      )}
+      {agents.length > 0 && (
+        <Box flexDirection="column">
+          <Text dimColor>  Agents:</Text>
+          {agents.map((a, i) => (
+            <Box key={i}>
+              <Text dimColor>    {i + 1}. </Text>
+              <Text color="cyan">{a.name}</Text>
+              {a.when !== undefined && <Text dimColor> — when {a.when}</Text>}
+            </Box>
+          ))}
+        </Box>
+      )}
+      {skills.length > 0 && (
+        <Box flexDirection="column">
+          <Text dimColor>  Skills:</Text>
+          {skills.map((s, i) => (
+            <Box key={i}>
+              <Text dimColor>    {i + 1}. </Text>
+              <Text color="cyan">{s.name}</Text>
+              {s.when !== undefined && <Text dimColor> — when {s.when}</Text>}
+            </Box>
+          ))}
+        </Box>
+      )}
     </Box>
   );
 }
