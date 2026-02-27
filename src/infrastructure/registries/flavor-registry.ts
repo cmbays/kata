@@ -234,6 +234,7 @@ export class FlavorRegistry implements IFlavorRegistry {
 
     // Full DAG validation: track artifacts available at each position
     const availableArtifacts = new Set<string>(stageInputArtifacts);
+    const warnings: string[] = [];
     let synthesisArtifactProduced = false;
 
     for (const stepRef of flavor.steps) {
@@ -254,22 +255,32 @@ export class FlavorRegistry implements IFlavorRegistry {
       for (const condition of entryConditions) {
         if (condition.type === 'artifact-exists' && condition.artifactName) {
           if (!availableArtifacts.has(condition.artifactName)) {
-            // Find which step produces this artifact (using pre-resolved map)
-            const producerRef = flavor.steps.find((ref) =>
-              resolvedSteps.get(ref.stepName)?.artifacts.some((a) => a.name === condition.artifactName),
-            );
-
-            if (!producerRef) {
-              errors.push(
-                `Step "${stepRef.stepName}" requires artifact "${condition.artifactName}" ` +
-                  `which is not produced by any step in this flavor and is not a stage input.`,
+            if (condition.sourceStage) {
+              // Declared cross-stage dependency — valid when the kata sequence includes the source stage
+              warnings.push(
+                `Step "${stepRef.stepName}" expects artifact "${condition.artifactName}" ` +
+                  `from the "${condition.sourceStage}" stage. ` +
+                  `Ensure your kata sequence includes "${condition.sourceStage}" before this stage.`,
               );
             } else {
-              errors.push(
-                `Step "${stepRef.stepName}" requires artifact "${condition.artifactName}" ` +
-                  `which is produced by step "${producerRef.stepName}", ` +
-                  `but "${producerRef.stepName}" is not included before "${stepRef.stepName}" in this flavor.`,
+              // Find which step produces this artifact (using pre-resolved map)
+              const producerRef = flavor.steps.find((ref) =>
+                resolvedSteps.get(ref.stepName)?.artifacts.some((a) => a.name === condition.artifactName),
               );
+
+              if (!producerRef) {
+                errors.push(
+                  `Step "${stepRef.stepName}" requires artifact "${condition.artifactName}" ` +
+                    `which is not produced by any step in this flavor and is not a stage input. ` +
+                    `If this artifact comes from a prior stage, add sourceStage to the condition.`,
+                );
+              } else {
+                errors.push(
+                  `Step "${stepRef.stepName}" requires artifact "${condition.artifactName}" ` +
+                    `which is produced by step "${producerRef.stepName}", ` +
+                    `but "${producerRef.stepName}" is not included before "${stepRef.stepName}" in this flavor.`,
+                );
+              }
             }
           }
         }
@@ -291,7 +302,12 @@ export class FlavorRegistry implements IFlavorRegistry {
       );
     }
 
-    return errors.length === 0 ? { valid: true } : { valid: false, errors: errors as [string, ...string[]] };
+    if (errors.length === 0) {
+      return warnings.length > 0 ? { valid: true, warnings } : { valid: true };
+    }
+    return warnings.length > 0
+      ? { valid: false, errors: errors as [string, ...string[]], warnings }
+      : { valid: false, errors: errors as [string, ...string[]] };
   }
 
   /**

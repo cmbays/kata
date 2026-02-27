@@ -6,10 +6,14 @@ import type { Step } from '@domain/types/step.js';
  * Discriminated union for flavor validation results.
  * When valid is true, there are no errors (the inconsistent states
  * `{ valid: true, errors: ['oops'] }` and `{ valid: false, errors: [] }` are unrepresentable).
+ *
+ * Warnings are informational — the flavor is structurally valid but has cross-stage
+ * artifact dependencies that should be noted (e.g., an artifact-exists condition with
+ * a declared sourceStage). Both arms may include an optional warnings array.
  */
 export type FlavorValidationResult =
-  | { valid: true }
-  | { valid: false; errors: [string, ...string[]] };
+  | { valid: true; warnings?: string[] }
+  | { valid: false; errors: [string, ...string[]]; warnings?: string[] };
 
 /**
  * Resolves a step reference to a Step definition.

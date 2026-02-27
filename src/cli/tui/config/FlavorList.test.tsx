@@ -200,6 +200,50 @@ describe('FlavorList action keys', () => {
   });
 });
 
+// ── DAG validation display ─────────────────────────────────────────────────
+
+describe('FlavorList DAG validation display', () => {
+  it('shows DAG valid when validation passes with no warnings', () => {
+    const flavor = makeFlavor();
+    mockFlavorList.mockReturnValue([flavor]);
+    mockValidate.mockReturnValue({ valid: true });
+    // Enter detail view via renderToString with initialFlavorName
+    const output = renderToString(
+      <FlavorList {...defaultProps} initialFlavorName="typescript-tdd" plain />,
+    );
+    expect(output).toContain('DAG valid');
+  });
+
+  it('shows cross-stage warning when validation returns warnings', () => {
+    const flavor = makeFlavor();
+    mockFlavorList.mockReturnValue([flavor]);
+    mockValidate.mockReturnValue({
+      valid: true,
+      warnings: ['Step "build-step" expects artifact "plan.md" from the "plan" stage.'],
+    });
+    const output = renderToString(
+      <FlavorList {...defaultProps} initialFlavorName="typescript-tdd" plain />,
+    );
+    expect(output).toContain('Cross-stage dependencies');
+    expect(output).toContain('plan.md');
+  });
+
+  it('shows DAG errors without warnings section when only errors exist', () => {
+    const flavor = makeFlavor();
+    mockFlavorList.mockReturnValue([flavor]);
+    mockValidate.mockReturnValue({
+      valid: false,
+      errors: ['Step "build-step" requires artifact "missing.md" which is not produced by any step.'],
+    });
+    const output = renderToString(
+      <FlavorList {...defaultProps} initialFlavorName="typescript-tdd" plain />,
+    );
+    expect(output).toContain('DAG errors');
+    expect(output).toContain('missing.md');
+    expect(output).not.toContain('Cross-stage dependencies');
+  });
+});
+
 // ── error handling ─────────────────────────────────────────────────────────
 
 describe('FlavorList error handling', () => {

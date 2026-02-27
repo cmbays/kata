@@ -471,6 +471,128 @@ describe('FlavorRegistry', () => {
       const result = registry.validate(flavor, stepResolver);
       expect(result.valid).toBe(true);
     });
+
+    it('treats artifact-exists with sourceStage as a warning, not an error', () => {
+      const buildStep = makeStep({
+        type: 'build',
+        entryGate: {
+          type: 'entry',
+          conditions: [
+            {
+              type: 'artifact-exists',
+              artifactName: 'implementation-plan.md',
+              sourceStage: 'plan',
+            },
+          ],
+          required: true,
+        },
+        artifacts: [{ name: 'build-output', required: true }],
+      });
+
+      const stepResolver = () => buildStep;
+
+      const flavor = makeFlavor({
+        stageCategory: 'build',
+        steps: [{ stepName: 'implementation', stepType: 'build' }],
+        synthesisArtifact: 'build-output',
+      });
+
+      const result = registry.validate(flavor, stepResolver);
+      expect(result.valid).toBe(true);
+      expect(result.warnings).toBeDefined();
+      expect(result.warnings!.some((w) => w.includes('implementation-plan.md'))).toBe(true);
+      expect(result.warnings!.some((w) => w.includes('plan'))).toBe(true);
+    });
+
+    it('includes both warnings and errors when both are present', () => {
+      const buildStep = makeStep({
+        type: 'build',
+        entryGate: {
+          type: 'entry',
+          conditions: [
+            // cross-stage → warning
+            { type: 'artifact-exists', artifactName: 'plan-output.md', sourceStage: 'plan' },
+            // undeclared → error
+            { type: 'artifact-exists', artifactName: 'mystery-file.md' },
+          ],
+          required: true,
+        },
+        artifacts: [{ name: 'build-output', required: true }],
+      });
+
+      const stepResolver = () => buildStep;
+
+      const flavor = makeFlavor({
+        stageCategory: 'build',
+        steps: [{ stepName: 'build-step', stepType: 'build' }],
+        synthesisArtifact: 'build-output',
+      });
+
+      const result = registry.validate(flavor, stepResolver);
+      expect(result.valid).toBe(false);
+      assert(!result.valid);
+      expect(result.errors.some((e) => e.includes('mystery-file.md'))).toBe(true);
+      expect(result.warnings).toBeDefined();
+      expect(result.warnings!.some((w) => w.includes('plan-output.md'))).toBe(true);
+    });
+
+    it('includes sourceStage hint in error message for undeclared cross-stage deps', () => {
+      const buildStep = makeStep({
+        type: 'build',
+        entryGate: {
+          type: 'entry',
+          conditions: [{ type: 'artifact-exists', artifactName: 'mystery-file.md' }],
+          required: true,
+        },
+        artifacts: [{ name: 'build-output', required: true }],
+      });
+
+      const stepResolver = () => buildStep;
+
+      const flavor = makeFlavor({
+        stageCategory: 'build',
+        steps: [{ stepName: 'build-step', stepType: 'build' }],
+        synthesisArtifact: 'build-output',
+      });
+
+      const result = registry.validate(flavor, stepResolver);
+      assert(!result.valid);
+      expect(result.errors.some((e) => e.includes('sourceStage'))).toBe(true);
+    });
+
+    it('returns no warnings when all artifacts are locally satisfied', () => {
+      const shapingStep = makeStep({
+        type: 'shape',
+        artifacts: [{ name: 'shape-document', required: true }],
+      });
+      const breadboardStep = makeStep({
+        type: 'breadboard',
+        entryGate: {
+          type: 'entry',
+          conditions: [{ type: 'artifact-exists', artifactName: 'shape-document' }],
+          required: true,
+        },
+        artifacts: [{ name: 'breadboard-sketch', required: true }],
+      });
+
+      const stepResolver = ({ stepName }: FlavorStepRef) => {
+        if (stepName === 'shaping') return shapingStep;
+        if (stepName === 'breadboarding') return breadboardStep;
+        return undefined;
+      };
+
+      const flavor = makeFlavor({
+        steps: [
+          { stepName: 'shaping', stepType: 'shape' },
+          { stepName: 'breadboarding', stepType: 'breadboard' },
+        ],
+        synthesisArtifact: 'breadboard-sketch',
+      });
+
+      const result = registry.validate(flavor, stepResolver);
+      expect(result.valid).toBe(true);
+      expect(result.warnings).toBeUndefined();
+    });
   });
 
   describe('validate — additional edge cases', () => {

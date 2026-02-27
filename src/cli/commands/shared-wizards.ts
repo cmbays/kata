@@ -248,6 +248,7 @@ export async function promptGateConditions(gateLabel: string, existing: GateCond
     });
     const condDesc = (await input({ message: '  Short note describing this condition (optional):' })).trim();
     let artifactName: string | undefined;
+    let sourceStage: string | undefined;
     let command: string | undefined;
     if (condType === 'artifact-exists') {
       artifactName = (await input({
@@ -257,6 +258,32 @@ export async function promptGateConditions(gateLabel: string, existing: GateCond
           return validateArtifactName(v);
         },
       })).trim() || undefined;
+      const origin = await select({
+        message: '  Where does this artifact come from?',
+        choices: [
+          {
+            name: 'A step in this flavor',
+            value: 'flavor' as const,
+            description: 'The file is produced by an earlier step in this same flavor.',
+          },
+          {
+            name: 'A prior stage in the kata sequence',
+            value: 'stage' as const,
+            description: 'The file is produced in a different stage (e.g., a plan output used in build).',
+          },
+        ],
+      });
+      if (origin === 'stage') {
+        sourceStage = await select({
+          message: '  Which stage produces this artifact?',
+          choices: [
+            { name: 'research', value: 'research' as const },
+            { name: 'plan', value: 'plan' as const },
+            { name: 'build', value: 'build' as const },
+            { name: 'review', value: 'review' as const },
+          ],
+        });
+      }
     } else if (condType === 'schema-valid') {
       artifactName = (await input({
         message: '  JSON/YAML file to validate (e.g., "config.json"):',
@@ -275,6 +302,7 @@ export async function promptGateConditions(gateLabel: string, existing: GateCond
       type: condType,
       ...(condDesc ? { description: condDesc } : {}),
       ...(artifactName ? { artifactName } : {}),
+      ...(sourceStage ? { sourceStage } : {}),
       ...(command ? { command } : {}),
     }));
     addCond = await confirm({ message: `Add another ${gateLabel} gate condition?`, default: false });

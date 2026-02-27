@@ -227,7 +227,7 @@ function FlavorDetail({ flavor, validation, resolveStep, selectedStepIndex, plai
           plain={plain}
         />
       </Box>
-      <Box marginTop={1}>
+      <Box marginTop={1} flexDirection="column">
         {validation.valid ? (
           <Text color="green">✓ DAG valid</Text>
         ) : (
@@ -236,6 +236,16 @@ function FlavorDetail({ flavor, validation, resolveStep, selectedStepIndex, plai
             {validation.errors.map((e, idx) => (
               <Text key={idx} color="red">
                 {'  '}• {e}
+              </Text>
+            ))}
+          </Box>
+        )}
+        {validation.warnings && validation.warnings.length > 0 && (
+          <Box flexDirection="column">
+            <Text color="yellow">⚠ Cross-stage dependencies:</Text>
+            {validation.warnings.map((w, idx) => (
+              <Text key={idx} color="yellow">
+                {'  '}• {w}
               </Text>
             ))}
           </Box>
@@ -569,7 +579,10 @@ function conditionLabel(type: string): string {
 }
 
 function conditionDetail(c: GateCondition): string {
-  if (c.artifactName) return `→ ${c.artifactName}`;
+  if (c.artifactName) {
+    const stagePart = c.sourceStage ? ` [from ${c.sourceStage}]` : '';
+    return `→ ${c.artifactName}${stagePart}`;
+  }
   if (c.predecessorType) return `→ ${c.predecessorType}`;
   if (c.command) return `: ${c.command}`;
   return '';
