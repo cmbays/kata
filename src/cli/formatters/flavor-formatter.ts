@@ -40,7 +40,7 @@ export function formatFlavorDetail(flavor: Flavor, plain?: boolean): string {
   lines.push('');
 
   // Steps
-  lines.push(`${pl(cap(lex.step), plain)} (${flavor.steps.length}):`);
+  lines.push(`${pl(cap(lex.step), plain, flavor.steps.length)} (${flavor.steps.length}):`);
   for (const step of flavor.steps) {
     lines.push(`  - ${step.stepName} (type: ${step.stepType})`);
   }

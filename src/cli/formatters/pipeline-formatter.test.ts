@@ -54,6 +54,17 @@ describe('formatPipelineStatus', () => {
     expect(output).toContain('1/3 stages (33%)');
   });
 
+  it('uses singular stage label for single-stage progress in plain mode', () => {
+    const pipeline = makePipeline({
+      stages: [{ stageRef: { type: 'research' }, state: 'complete', artifacts: [] }],
+      currentStageIndex: 0,
+      state: 'complete',
+    });
+    const output = formatPipelineStatus(pipeline, true);
+
+    expect(output).toContain('1/1 stage (100%)');
+  });
+
   it('uses thematic stage label by default', () => {
     const pipeline = makePipeline();
     const output = formatPipelineStatus(pipeline);

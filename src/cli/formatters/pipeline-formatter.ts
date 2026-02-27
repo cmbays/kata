@@ -34,9 +34,9 @@ export function formatPipelineStatus(pipeline: Pipeline, plain?: boolean): strin
   lines.push(`Flow: ${pipeline.name} (${pipeline.id})`);
   lines.push(`Type: ${pipeline.type}`);
   lines.push(`State: ${PIPELINE_STATE_LABELS[pipeline.state] ?? pipeline.state}`);
-  lines.push(`Progress: ${completedCount}/${pipeline.stages.length} ${pl(lex.stage, plain)} (${pct}%)`);
+  lines.push(`Progress: ${completedCount}/${pipeline.stages.length} ${pl(lex.stage, plain, pipeline.stages.length)} (${pct}%)`);
   lines.push('');
-  lines.push(`${cap(lex.stage)}s:`);
+  lines.push(`${pl(cap(lex.stage), plain)}:`);
 
   for (let i = 0; i < pipeline.stages.length; i++) {
     const stage = pipeline.stages[i];
