@@ -20,6 +20,12 @@ import { StageCategorySchema } from '@domain/types/stage.js';
 import type { StageCategory } from '@domain/types/stage.js';
 import { editFieldLoop, stepLabel, buildStepChoiceLabel } from '@cli/commands/shared-wizards.js';
 
+/** State passed to the next ConfigApp render to restore navigation position. */
+interface RelaunchState {
+  sectionIndex?: number;
+  flavorName?: string;
+}
+
 export function registerConfigCommand(parent: Command): void {
   parent
     .command('config')
@@ -30,6 +36,8 @@ export function registerConfigCommand(parent: Command): void {
         const stepsDir = kataDirPath(ctx.kataDir, 'stages');
         const flavorsDir = kataDirPath(ctx.kataDir, 'flavors');
         const katasDir = kataDirPath(ctx.kataDir, 'katas');
+
+        let relaunchState: RelaunchState | null = null;
 
         while (true) {
           let pendingAction: ConfigAction | null = null;
@@ -42,6 +50,8 @@ export function registerConfigCommand(parent: Command): void {
               onAction: (a) => {
                 pendingAction = a;
               },
+              initialSectionIndex: relaunchState?.sectionIndex,
+              initialFlavorName: relaunchState?.flavorName,
             }),
           );
 
@@ -56,7 +66,7 @@ export function registerConfigCommand(parent: Command): void {
           // Re-ref stdin to keep the process anchored until Inquirer takes over.
           process.stdin.ref();
 
-          await runConfigAction(pendingAction, {
+          relaunchState = await runConfigAction(pendingAction, {
             stepsDir,
             flavorsDir,
             katasDir,
@@ -94,15 +104,20 @@ function isPromptCancelled(e: unknown): boolean {
 
 // ── Action dispatcher ─────────────────────────────────────────────────────────
 
-async function runConfigAction(action: ConfigAction, ctx: ActionCtx): Promise<void> {
+async function runConfigAction(action: ConfigAction, ctx: ActionCtx): Promise<RelaunchState | null> {
+  let relaunchState: RelaunchState | null = null;
   try {
     switch (action.type) {
       case 'step:create':
         await handleStepCreate(ctx);
         break;
-      case 'step:edit':
+      case 'step:edit': {
         await handleStepEdit(action.step, ctx);
+        // If the edit was triggered from a flavor drill-down, return to that flavor
+        const fromFlavorName = (action as { type: 'step:edit'; step: Step; fromFlavorName?: string }).fromFlavorName;
+        if (fromFlavorName) relaunchState = { sectionIndex: 1, flavorName: fromFlavorName };
         break;
+      }
       case 'step:delete':
         await handleStepDelete(action.step, ctx);
         break;
@@ -133,6 +148,7 @@ async function runConfigAction(action: ConfigAction, ctx: ActionCtx): Promise<vo
   // Brief pause so users can read the outcome before the TUI reappears
   await new Promise<void>((resolve) => setTimeout(resolve, 900));
   console.clear();
+  return relaunchState;
 }
 
 // ── Step handlers ─────────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect, useRef } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { FlavorRegistry } from '@infra/registries/flavor-registry.js';
 import { StepRegistry } from '@infra/registries/step-registry.js';
@@ -13,7 +13,7 @@ export type FlavorAction =
   | { type: 'flavor:create' }
   | { type: 'flavor:edit'; flavor: Flavor }
   | { type: 'flavor:delete'; flavor: Flavor }
-  | { type: 'step:edit'; step: Step };
+  | { type: 'step:edit'; step: Step; fromFlavorName?: string };
 
 export interface FlavorListProps {
   flavorsDir: string;
@@ -21,6 +21,8 @@ export interface FlavorListProps {
   onDetailEnter: () => void;
   onDetailExit: () => void;
   onAction?: (action: FlavorAction) => void;
+  /** When provided, restores the view directly into this flavor's detail on mount. */
+  initialFlavorName?: string;
 }
 
 export default function FlavorList({
@@ -29,6 +31,7 @@ export default function FlavorList({
   onDetailEnter,
   onDetailExit,
   onAction = () => {},
+  initialFlavorName,
 }: FlavorListProps) {
   const { flavors, validate, resolveStep } = useMemo(() => {
     try {
@@ -53,9 +56,23 @@ export default function FlavorList({
   }, [flavorsDir, stepsDir]);
 
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [detail, setDetail] = useState<Flavor | null>(null);
+  // Restore into flavor detail on mount when initialFlavorName is provided (e.g., returning from step:edit)
+  const [detail, setDetail] = useState<Flavor | null>(() => {
+    if (!initialFlavorName) return null;
+    return flavors.find((f) => f.name === initialFlavorName) ?? null;
+  });
   const [detailStepIndex, setDetailStepIndex] = useState(0);
   const [drillStep, setDrillStep] = useState<Step | null>(null);
+
+  // Fire onDetailEnter once after mount if we restored into a detail view.
+  // Empty deps is intentional: this only needs to run once on mount.
+  const restoredRef = useRef(false);
+  useEffect(() => {
+    if (!restoredRef.current && initialFlavorName && detail !== null) {
+      restoredRef.current = true;
+      onDetailEnter();
+    }
+  }, []); // eslint-disable-line
 
   const clamped = Math.min(selectedIndex, Math.max(0, flavors.length - 1));
   const clampedStepIndex = detail
@@ -68,7 +85,7 @@ export default function FlavorList({
       if (key.escape || key.leftArrow) {
         setDrillStep(null);
       } else if (input === 'e') {
-        onAction({ type: 'step:edit', step: drillStep });
+        onAction({ type: 'step:edit', step: drillStep, fromFlavorName: detail.name });
       }
       return;
     }

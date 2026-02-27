@@ -29,6 +29,20 @@ export const PRESET_SKILLS: string[] = [
   'pr-review-toolkit:type-design-analyzer',
 ];
 
+/**
+ * Preset learning hooks with descriptions.
+ * Learning hooks are event tags that the self-improvement system watches for.
+ * When a step completes with one of these events, Kata captures a pattern entry
+ * that surfaces as improvement suggestions during cooldown sessions.
+ */
+export const PRESET_LEARNING_HOOKS: { value: string; description: string }[] = [
+  { value: 'gate-failure', description: 'Track gate condition failures — helps refine gate definitions over time' },
+  { value: 'high-token-usage', description: 'Track high token usage — identifies steps needing more efficient prompts' },
+  { value: 'skip', description: 'Track when this step is skipped — detects under-used or misconfigured steps' },
+  { value: 'artifact-missing', description: 'Track missing expected outputs — catches incomplete executions' },
+  { value: 'retry', description: 'Track execution retries — identifies unstable or unreliable steps' },
+];
+
 // ---- Shared helpers ----
 
 /**
@@ -116,27 +130,41 @@ export async function selectStep(registry: StepRegistry): Promise<Step> {
   });
 }
 
-// ---- Interactive: artifact picker (checkbox keep/remove + add loop) ----
+// ---- Interactive: output artifact picker ----
 
+/**
+ * Prompts the user to manage output artifacts for a step.
+ *
+ * Output artifacts are FILES this step will PRODUCE during execution.
+ * The executing agent is instructed to create these files.
+ *
+ * To REQUIRE an input file before this step starts, use an Entry Gate
+ * with a "File exists" condition instead.
+ */
 export async function promptArtifacts(existing: Artifact[]): Promise<Artifact[]> {
   const { checkbox, confirm, input } = await import('@inquirer/prompts');
+
+  console.log('\n── Output Artifacts ───────────────────────────────────────────────────────────');
+  console.log('Output artifacts are FILES this step will PRODUCE during execution.');
+  console.log('The agent is instructed to create these files. Examples: "research.md", "plan.json"');
+  console.log('→ To require an INPUT file before this step starts, use Entry Gate → File Exists.\n');
 
   let artifacts: Artifact[] = [];
   if (existing.length > 0) {
     artifacts = await checkbox({
-      message: 'Select artifacts to keep (uncheck to remove):',
+      message: 'Select output artifacts to keep (uncheck to remove):',
       choices: existing.map((a) => ({
-        name: `${a.name} (${a.required ? 'required' : 'optional'})${a.extension ? ' ' + a.extension : ''}${a.description ? ': ' + a.description : ''}`,
+        name: `${a.name} (${a.required ? 'required output' : 'optional output'})${a.extension ? ' ' + a.extension : ''}${a.description ? ': ' + a.description : ''}`,
         value: a,
         checked: true,
       })),
     });
   }
 
-  let addMore = await confirm({ message: 'Add a new artifact?', default: false });
+  let addMore = await confirm({ message: 'Add an output artifact?', default: false });
   while (addMore) {
     const name = (await input({
-      message: '  Artifact name (include extension, e.g., "research.md"):',
+      message: '  Output file name (the file this step will produce, e.g., "research.md"):',
       validate: (v) => {
         const check = validateArtifactName(v);
         if (check !== true) return check;
@@ -145,21 +173,39 @@ export async function promptArtifacts(existing: Artifact[]): Promise<Artifact[]>
         return true;
       },
     })).trim();
-    const artifactDesc = (await input({ message: '  Description (optional):' })).trim();
-    const required = await confirm({ message: '  Required?', default: true });
-    // Auto-extract file extension (e.g. "research.md" → ".md")
+    const artifactDesc = (await input({ message: '  Description (what is this file? optional):' })).trim();
+    const required = await confirm({ message: '  Is this output required (must always be produced)?', default: true });
     const dotIdx = name.lastIndexOf('.');
     const extension = dotIdx > 0 ? name.slice(dotIdx) : undefined;
     artifacts.push({ name, description: artifactDesc || undefined, extension, required });
-    addMore = await confirm({ message: 'Add another artifact?', default: false });
+    addMore = await confirm({ message: 'Add another output artifact?', default: false });
   }
   return artifacts;
 }
 
-// ---- Interactive: gate condition picker (checkbox keep/remove + add loop) ----
+// ---- Interactive: gate condition picker ----
 
+/**
+ * Prompts the user to manage gate conditions.
+ *
+ * Entry gate: conditions checked BEFORE the step starts — all must pass.
+ * Exit gate:  conditions checked AFTER the step finishes — all must pass to allow the next step.
+ *
+ * NOTE: "predecessor-complete" is not offered here. Steps within a flavor always run
+ * sequentially in DAG order — the predecessor finishing is always guaranteed by the runtime.
+ */
 export async function promptGateConditions(gateLabel: string, existing: GateCondition[]): Promise<GateCondition[]> {
   const { checkbox, confirm, input, select } = await import('@inquirer/prompts');
+
+  if (gateLabel === 'entry') {
+    console.log('\n── Entry Gate ─────────────────────────────────────────────────────────────────');
+    console.log('Conditions checked BEFORE this step can start. All must pass for execution to');
+    console.log('proceed. Leave empty if this step can always run without preconditions.\n');
+  } else {
+    console.log('\n── Exit Gate ──────────────────────────────────────────────────────────────────');
+    console.log('Conditions checked AFTER this step finishes. All must pass before the next step');
+    console.log('in the flavor can start. Use to verify the step produced its expected outputs.\n');
+  }
 
   let conditions: GateCondition[] = [];
   if (existing.length > 0) {
@@ -176,45 +222,56 @@ export async function promptGateConditions(gateLabel: string, existing: GateCond
   let addCond = await confirm({ message: `Add a ${gateLabel} gate condition?`, default: false });
   while (addCond) {
     const condType = await select({
-      message: '  Condition type:',
+      message: '  What type of condition?',
       choices: [
-        { name: 'File exists          — a named artifact/file must exist on disk', value: 'artifact-exists' as const },
-        { name: 'Schema valid         — a JSON/YAML file must have valid contents', value: 'schema-valid' as const },
-        { name: 'Human approved       — requires explicit human sign-off before continuing', value: 'human-approved' as const },
-        { name: 'Predecessor done     — a specific step type must have run earlier in this session', value: 'predecessor-complete' as const },
-        { name: 'Command passes       — a shell command must exit with code 0', value: 'command-passes' as const },
+        {
+          name: 'File exists',
+          value: 'artifact-exists' as const,
+          description: 'A named file must exist on disk. Use to check that a required input or prior output is present.',
+        },
+        {
+          name: 'Schema valid',
+          value: 'schema-valid' as const,
+          description: 'A JSON or YAML file must parse and validate successfully. Use to verify structured output files are well-formed.',
+        },
+        {
+          name: 'Human approved  ★',
+          value: 'human-approved' as const,
+          description: 'A human must explicitly approve before execution continues. Use for review checkpoints or high-stakes decisions (shown in amber).',
+        },
+        {
+          name: 'Command passes',
+          value: 'command-passes' as const,
+          description: 'A shell command must exit with code 0. Use for tests (npm test), lint (eslint), or build checks (tsc --noEmit).',
+        },
       ],
     });
-    const condDesc = (await input({ message: '  Description / note (optional):' })).trim();
+    const condDesc = (await input({ message: '  Short note describing this condition (optional):' })).trim();
     let artifactName: string | undefined;
-    let predecessorType: string | undefined;
     let command: string | undefined;
     if (condType === 'artifact-exists') {
       artifactName = (await input({
-        message: '  Artifact/file name (e.g., "research.md"):',
+        message: '  File name to check (e.g., "research.md"):',
         validate: (v) => {
-          if (!v.trim()) return 'Artifact name is required for file-exists conditions';
+          if (!v.trim()) return 'File name is required';
           return validateArtifactName(v);
         },
       })).trim() || undefined;
     } else if (condType === 'schema-valid') {
       artifactName = (await input({
-        message: '  Artifact file to validate (JSON/YAML, e.g., "config.json"):',
+        message: '  JSON/YAML file to validate (e.g., "config.json"):',
         validate: (v) => {
-          if (!v.trim()) return 'Artifact name is required for schema-valid conditions';
+          if (!v.trim()) return 'File name is required';
           return validateArtifactName(v);
         },
       })).trim() || undefined;
-    } else if (condType === 'predecessor-complete') {
-      predecessorType = (await input({ message: '  Step type that must have already run (e.g., "research"):' })).trim() || undefined;
     } else if (condType === 'command-passes') {
-      command = (await input({ message: '  Shell command to run (must exit with code 0):' })).trim() || undefined;
+      command = (await input({ message: '  Shell command (must exit 0 to pass):' })).trim() || undefined;
     }
     conditions.push(GateConditionSchema.parse({
       type: condType,
       ...(condDesc ? { description: condDesc } : {}),
       ...(artifactName ? { artifactName } : {}),
-      ...(predecessorType ? { predecessorType } : {}),
       ...(command ? { command } : {}),
     }));
     addCond = await confirm({ message: `Add another ${gateLabel} gate condition?`, default: false });
@@ -240,17 +297,17 @@ export async function promptResources(existing: StepResources | undefined): Prom
       })
     : [...existingTools];
 
-  let addTool = await confirm({ message: 'Add a tool?', default: false });
+  let addTool = await confirm({ message: 'Add a tool hint?', default: false });
   while (addTool) {
     const toolName = (await input({
       message: '  Tool name (e.g., "tsc"):',
       validate: (v) => v.trim().length > 0 || 'Tool name is required',
     })).trim();
     const toolPurpose = (await input({
-      message: '  Purpose:',
+      message: '  Purpose (why is this tool useful for this step?):',
       validate: (v) => v.trim().length > 0 || 'Purpose is required',
     })).trim();
-    const toolCmd = (await input({ message: '  Invocation hint (optional):' })).trim();
+    const toolCmd = (await input({ message: '  Invocation example (optional, e.g., "tsc --noEmit"):' })).trim();
     tools.push({ name: toolName, purpose: toolPurpose, command: toolCmd || undefined });
     addTool = await confirm({ message: 'Add another tool?', default: false });
   }
@@ -264,13 +321,13 @@ export async function promptResources(existing: StepResources | undefined): Prom
     ...customAgents.map((a) => ({ name: `${a.name}${a.when ? ` — ${a.when}` : ''}`, value: a, checked: true })),
   ];
   const agents: { name: string; when?: string }[] = agentChoices.length > 0
-    ? await checkbox({ message: 'Select agents (check to include):', choices: agentChoices })
+    ? await checkbox({ message: 'Select agents (check to include — these are spawned as sub-agents):', choices: agentChoices })
     : [];
 
   let addAgent = await confirm({ message: 'Add a custom agent?', default: false });
   while (addAgent) {
     const agentName = (await input({ message: '  Agent name (e.g., "my-team:my-agent"):' })).trim();
-    const agentWhen = (await input({ message: '  When to use (optional):' })).trim();
+    const agentWhen = (await input({ message: '  When to use (optional, e.g., "when tests fail"):' })).trim();
     if (agentName) agents.push({ name: agentName, when: agentWhen || undefined });
     addAgent = await confirm({ message: 'Add another custom agent?', default: false });
   }
@@ -284,7 +341,7 @@ export async function promptResources(existing: StepResources | undefined): Prom
     ...customSkills.map((s) => ({ name: `${s.name}${s.when ? ` — ${s.when}` : ''}`, value: s, checked: true })),
   ];
   const skills: { name: string; when?: string }[] = skillChoices.length > 0
-    ? await checkbox({ message: 'Select skills (check to include):', choices: skillChoices })
+    ? await checkbox({ message: 'Select skills (check to include — these are invoked via the Skill tool):', choices: skillChoices })
     : [];
 
   let addSkill = await confirm({ message: 'Add a custom skill?', default: false });
@@ -308,10 +365,16 @@ export async function editFieldLoop(
   kataDir: string,
   isJson: boolean,
 ): Promise<{ step: Step; cancelled: boolean }> {
-  const { Separator, select, input, confirm, editor } = await import('@inquirer/prompts');
+  const { Separator, select, input, confirm, checkbox, editor } = await import('@inquirer/prompts');
   let draft = { ...existing };
+  let firstLoop = true;
 
   while (true) {
+    if (firstLoop) {
+      if (!isJson) console.log('All fields are optional — configure only what this step needs, then Save.\n');
+      firstLoop = false;
+    }
+
     const descPreview = draft.description
       ? `"${draft.description.slice(0, 40)}${draft.description.length > 40 ? '...' : ''}"`
       : '(none)';
@@ -319,10 +382,10 @@ export async function editFieldLoop(
       ? `${draft.artifacts.length}: ${draft.artifacts.map((a) => `${a.name}(${a.required ? 'req' : 'opt'})`).join(', ')}`
       : '(none)';
     const entryPreview = draft.entryGate
-      ? `${draft.entryGate.conditions.length} cond, ${draft.entryGate.required ? 'required' : 'optional'}`
+      ? `${draft.entryGate.conditions.length} cond${draft.entryGate.conditions.length !== 1 ? 's' : ''}`
       : '(none)';
     const exitPreview = draft.exitGate
-      ? `${draft.exitGate.conditions.length} cond, ${draft.exitGate.required ? 'required' : 'optional'}`
+      ? `${draft.exitGate.conditions.length} cond${draft.exitGate.conditions.length !== 1 ? 's' : ''}`
       : '(none)';
     const hooksPreview = draft.learningHooks.length > 0 ? draft.learningHooks.join(', ') : '(none)';
     const promptPreview = draft.promptTemplate ?? '(none)';
@@ -333,16 +396,44 @@ export async function editFieldLoop(
     const choice = await select<EditField>({
       message: 'What would you like to edit?',
       choices: [
-        { name: `Description [${descPreview}]`, value: 'description' },
-        { name: `Artifacts [${artPreview}]`, value: 'artifacts' },
-        { name: `Entry gate [${entryPreview}]`, value: 'entryGate' },
-        { name: `Exit gate [${exitPreview}]`, value: 'exitGate' },
-        { name: `Learning hooks [${hooksPreview}]`, value: 'learningHooks' },
-        { name: `Prompt template [${promptPreview}]`, value: 'promptTemplate' },
-        { name: `Resources [${resPreview}]`, value: 'resources' },
+        {
+          name: `Description [${descPreview}]`,
+          value: 'description' as EditField,
+          description: 'A short summary of what this step does — shown in lists to help identify steps at a glance.',
+        },
+        {
+          name: `Output artifacts [${artPreview}]`,
+          value: 'artifacts' as EditField,
+          description: 'Files this step will PRODUCE. The agent is expected to write these files during execution. (Input requirements → Entry Gate → File Exists)',
+        },
+        {
+          name: `Entry gate [${entryPreview}]`,
+          value: 'entryGate' as EditField,
+          description: 'Conditions checked BEFORE this step starts — file checks, human approval, shell commands. All must pass.',
+        },
+        {
+          name: `Exit gate [${exitPreview}]`,
+          value: 'exitGate' as EditField,
+          description: 'Conditions checked AFTER this step finishes — ensures the step produced its expected outputs before the next step starts.',
+        },
+        {
+          name: `Prompt template [${promptPreview}]`,
+          value: 'promptTemplate' as EditField,
+          description: 'The Markdown file containing agent instructions for this step. The agent reads this to understand what to do, what to produce, and what tools to use.',
+        },
+        {
+          name: `Resources [${resPreview}]`,
+          value: 'resources' as EditField,
+          description: 'Suggested tools (CLI), agents (sub-agents to spawn), and skills (Claude Code skills). These are appended to the agent\'s prompt as a "Suggested Resources" section.',
+        },
+        {
+          name: `Learning hooks [${hooksPreview}]`,
+          value: 'learningHooks' as EditField,
+          description: 'Events this step tracks for Kata\'s self-improvement system. When these events occur during execution, patterns are captured and surface as improvement suggestions.',
+        },
         new Separator(),
-        { name: 'Save and exit', value: 'save' },
-        { name: 'Cancel (discard changes)', value: 'cancel' },
+        { name: 'Save and exit', value: 'save' as EditField },
+        { name: 'Cancel (discard changes)', value: 'cancel' as EditField },
       ],
     });
 
@@ -371,16 +462,50 @@ export async function editFieldLoop(
           : { ...draft, exitGate: undefined };
 
     } else if (choice === 'learningHooks') {
-      const raw = await input({
-        message: 'Learning hooks (comma-separated):',
-        default: draft.learningHooks.join(', '),
+      if (!isJson) {
+        console.log('\n── Learning Hooks ─────────────────────────────────────────────────────────────');
+        console.log('Learning hooks tell Kata\'s self-improvement system which events from this step');
+        console.log('to analyze. When these events occur in execution runs, patterns are captured');
+        console.log('and surface as improvement suggestions during cooldown sessions.\n');
+      }
+
+      const existingHookSet = new Set(draft.learningHooks);
+      const customHooks = draft.learningHooks.filter(
+        (h) => !PRESET_LEARNING_HOOKS.some((p) => p.value === h),
+      );
+      const hookChoices = [
+        ...PRESET_LEARNING_HOOKS.map((h) => ({
+          name: `${h.value.padEnd(22)}  ${h.description}`,
+          value: h.value,
+          checked: existingHookSet.has(h.value),
+        })),
+        ...customHooks.map((h) => ({ name: h, value: h, checked: true })),
+      ];
+
+      const selected: string[] = await checkbox<string>({
+        message: 'Select learning hooks to enable (space to toggle):',
+        choices: hookChoices,
       });
-      draft = {
-        ...draft,
-        learningHooks: raw.split(',').map((h) => h.trim()).filter((h) => h.length > 0),
-      };
+
+      const addCustom = await confirm({ message: 'Add a custom hook name?', default: false });
+      if (addCustom) {
+        const customHook = (await input({
+          message: 'Custom hook name (e.g., "validation-error"):',
+          validate: (v) => v.trim().length > 0 || 'Required',
+        })).trim();
+        if (customHook && !selected.includes(customHook)) selected.push(customHook);
+      }
+
+      draft = { ...draft, learningHooks: selected };
 
     } else if (choice === 'promptTemplate') {
+      if (!isJson) {
+        console.log('\n── Prompt Template ────────────────────────────────────────────────────────────');
+        console.log('The Markdown (.md) file containing the agent\'s instructions for this step.');
+        console.log('When this step executes, the agent reads these instructions to understand');
+        console.log('what to do, what to produce, and what tools and resources to use.\n');
+      }
+
       const slug = draft.flavor ? `${draft.type}.${draft.flavor}` : draft.type;
       const promptPath = join(kataDir, 'prompts', `${slug}.md`);
       mkdirSync(join(kataDir, 'prompts'), { recursive: true });
@@ -409,6 +534,14 @@ export async function editFieldLoop(
       }
 
     } else if (choice === 'resources') {
+      if (!isJson) {
+        console.log('\n── Resources ──────────────────────────────────────────────────────────────────');
+        console.log('Resources are appended to the step\'s prompt as a "Suggested Resources" section.');
+        console.log('They tell the executing agent what tools and agents are available for this step:');
+        console.log('  Tools:  CLI tool hints (e.g., "tsc", "npx jest --coverage")');
+        console.log('  Agents: Sub-agents to spawn for specialized subtasks (via the Task tool)');
+        console.log('  Skills: Claude Code skills to invoke (e.g., "everything-claude-code:tdd")\n');
+      }
       draft = { ...draft, resources: await promptResources(draft.resources) };
     }
   }
