@@ -16,7 +16,7 @@ export const GateConditionSchema = z.object({
   /** For artifact-exists: which artifact name to check */
   artifactName: z.string().optional(),
   /**
-   * For artifact-exists / schema-valid: the stage category that produces this artifact.
+   * For artifact-exists: the stage category that produces this artifact.
    * When set, the DAG validator treats this as a declared cross-stage dependency
    * (informational warning) rather than a DAG error. Use when the artifact is produced
    * by a prior stage in the kata sequence — e.g., a build step that needs a plan output.

@@ -47,7 +47,8 @@ export function formatStepDetail(step: Step, plain?: boolean): string {
   if (step.entryGate) {
     lines.push(`├─ ${bold(cap(lex.entryGate))}  ${dim('Required:')} ${step.entryGate.required ? green('yes') : yellow('no')}`);
     for (const cond of step.entryGate.conditions) {
-      lines.push(`│  ● ${dim(`[${cond.type}]`)} ${cond.description ?? cond.artifactName ?? cond.predecessorType ?? ''}`);
+      const detail = cond.description ?? (cond.artifactName ? `${cond.artifactName}${cond.sourceStage ? ` (from ${cond.sourceStage})` : ''}` : cond.predecessorType ?? '');
+      lines.push(`│  ● ${dim(`[${cond.type}]`)} ${detail}`);
     }
   }
 
@@ -55,7 +56,8 @@ export function formatStepDetail(step: Step, plain?: boolean): string {
   if (step.exitGate) {
     lines.push(`├─ ${bold(cap(lex.exitGate))}  ${dim('Required:')} ${step.exitGate.required ? green('yes') : yellow('no')}`);
     for (const cond of step.exitGate.conditions) {
-      lines.push(`│  ● ${dim(`[${cond.type}]`)} ${cond.description ?? cond.artifactName ?? cond.predecessorType ?? ''}`);
+      const detail = cond.description ?? (cond.artifactName ? `${cond.artifactName}${cond.sourceStage ? ` (from ${cond.sourceStage})` : ''}` : cond.predecessorType ?? '');
+      lines.push(`│  ● ${dim(`[${cond.type}]`)} ${detail}`);
     }
   }
 
