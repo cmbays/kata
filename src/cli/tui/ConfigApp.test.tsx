@@ -140,9 +140,7 @@ describe('ConfigApp keyboard navigation', () => {
     expect(() => handlerRef.current?.('[', noKey())).not.toThrow();
   });
 
-  it('does not call exit when inDetail is true (q guarded)', () => {
-    // Simulate the inDetail=true path: q should not call exit when in detail
-    // We test this by verifying q DOES call exit when NOT in detail (initial state)
+  it('calls exit when q is pressed (works from all pages)', () => {
     renderToString(<ConfigApp {...defaultProps} />);
     handlerRef.current?.('q', noKey());
     expect(mockExit).toHaveBeenCalled();

@@ -327,7 +327,7 @@ async function promptFlavorSteps(
   while (true) {
     if (flavorSteps.length > 0) {
       console.log('\nSteps so far:');
-      flavorSteps.forEach((s, i) => console.log(`  ${i + 1}. ${s.stepName} (→ ${s.stepType})`));
+      flavorSteps.forEach((s, i) => { console.log(`  ${i + 1}. ${s.stepName} (→ ${s.stepType})`); });
     }
 
     // Build choices list (Step | string values; Separator is not selectable so no value needed)

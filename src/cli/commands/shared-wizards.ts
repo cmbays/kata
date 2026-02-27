@@ -266,7 +266,10 @@ export async function promptGateConditions(gateLabel: string, existing: GateCond
         },
       })).trim() || undefined;
     } else if (condType === 'command-passes') {
-      command = (await input({ message: '  Shell command (must exit 0 to pass):' })).trim() || undefined;
+      command = (await input({
+        message: '  Shell command (must exit 0 to pass):',
+        validate: (v) => v.trim().length > 0 || 'Shell command is required',
+      })).trim();
     }
     conditions.push(GateConditionSchema.parse({
       type: condType,
