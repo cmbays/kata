@@ -114,7 +114,7 @@ export async function promptArtifacts(existing: Artifact[]): Promise<Artifact[]>
   let addMore = await confirm({ message: 'Add a new artifact?', default: false });
   while (addMore) {
     const name = (await input({
-      message: '  Artifact name:',
+      message: '  Artifact name (include extension, e.g., "research.md"):',
       validate: (v) => {
         const t = v.trim();
         if (!t) return 'Name is required';
@@ -123,9 +123,11 @@ export async function promptArtifacts(existing: Artifact[]): Promise<Artifact[]>
       },
     })).trim();
     const artifactDesc = (await input({ message: '  Description (optional):' })).trim();
-    const ext = (await input({ message: '  File extension (optional, e.g., ".md"):' })).trim();
     const required = await confirm({ message: '  Required?', default: true });
-    artifacts.push({ name, description: artifactDesc || undefined, extension: ext || undefined, required });
+    // Auto-extract file extension (e.g. "research.md" → ".md")
+    const dotIdx = name.lastIndexOf('.');
+    const extension = dotIdx > 0 ? name.slice(dotIdx) : undefined;
+    artifacts.push({ name, description: artifactDesc || undefined, extension, required });
     addMore = await confirm({ message: 'Add another artifact?', default: false });
   }
   return artifacts;

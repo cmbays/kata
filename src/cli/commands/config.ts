@@ -11,10 +11,14 @@ import { editStep } from '@features/step-create/step-editor.js';
 import { deleteStep } from '@features/step-create/step-deleter.js';
 import { FlavorRegistry } from '@infra/registries/flavor-registry.js';
 import { FlavorSchema } from '@domain/types/flavor.js';
+import type { Flavor } from '@domain/types/flavor.js';
+import { StepRegistry } from '@infra/registries/step-registry.js';
+import type { Step } from '@domain/types/step.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
 import { SavedKataSchema } from '@domain/types/saved-kata.js';
 import { StageCategorySchema } from '@domain/types/stage.js';
-import { editFieldLoop, stepLabel } from '@cli/commands/shared-wizards.js';
+import type { StageCategory } from '@domain/types/stage.js';
+import { editFieldLoop, stepLabel, buildStepChoiceLabel } from '@cli/commands/shared-wizards.js';
 
 export function registerConfigCommand(parent: Command): void {
   parent
@@ -105,6 +109,9 @@ async function runConfigAction(action: ConfigAction, ctx: ActionCtx): Promise<vo
       case 'flavor:create':
         await handleFlavorCreate(ctx);
         break;
+      case 'flavor:edit':
+        await handleFlavorEdit(action.flavor, ctx);
+        break;
       case 'flavor:delete':
         await handleFlavorDelete(action.flavor, ctx);
         break;
@@ -131,7 +138,7 @@ async function runConfigAction(action: ConfigAction, ctx: ActionCtx): Promise<vo
 // ── Step handlers ─────────────────────────────────────────────────────────────
 
 async function handleStepCreate(ctx: ActionCtx): Promise<void> {
-  const { input, confirm } = await import('@inquirer/prompts');
+  const { input, confirm, select } = await import('@inquirer/prompts');
 
   console.log('\n── Create Step ───────────────────────────────────────────────');
 
@@ -149,12 +156,21 @@ async function handleStepCreate(ctx: ActionCtx): Promise<void> {
   ).trim();
   const flavor = flavorRaw || undefined;
 
+  const categoryPick = await select<string>({
+    message: 'Stage category:',
+    choices: [
+      { name: '(none)', value: '' },
+      ...StageCategorySchema.options.map((c) => ({ name: c, value: c })),
+    ],
+  });
+  const stageCategory = categoryPick ? (categoryPick as StageCategory) : undefined;
+
   const descRaw = (await input({ message: 'Description (optional):' })).trim();
   const description = descRaw || undefined;
 
   const { step: created } = createStep({
     stagesDir: ctx.stepsDir,
-    input: { type, flavor, description, artifacts: [], learningHooks: [] },
+    input: { type, flavor, stageCategory, description, artifacts: [], learningHooks: [] },
   });
 
   console.log(`\nStep "${stepLabel(created.type, created.flavor)}" created.`);
@@ -211,11 +227,11 @@ async function handleStepDelete(
 // ── Flavor handlers ───────────────────────────────────────────────────────────
 
 async function handleFlavorCreate(ctx: ActionCtx): Promise<void> {
-  const { input, confirm, select } = await import('@inquirer/prompts');
+  const { input, select } = await import('@inquirer/prompts');
 
   console.log('\n── Create Flavor ─────────────────────────────────────────────');
 
-  const stageCategory = await select({
+  const stageCategory = await select<StageCategory>({
     message: 'Stage category:',
     choices: StageCategorySchema.options.map((c) => ({ name: c, value: c })),
   });
@@ -232,33 +248,15 @@ async function handleFlavorCreate(ctx: ActionCtx): Promise<void> {
 
   const synthesisArtifact = (
     await input({
-      message: 'Synthesis artifact name:',
+      message: 'Synthesis artifact name (e.g., "research.md"):',
       validate: (v) => v.trim().length > 0 || 'Synthesis artifact is required',
     })
   ).trim();
 
-  const steps: { stepName: string; stepType: string }[] = [];
-  let addStep = true;
-  while (addStep) {
-    const stepName = (
-      await input({
-        message: `Step ${steps.length + 1} name:`,
-        validate: (v) => {
-          const t = v.trim();
-          if (!t) return 'Step name is required';
-          if (steps.some((s) => s.stepName === t)) return `Step "${t}" already added`;
-          return true;
-        },
-      })
-    ).trim();
-    const stepType = (
-      await input({
-        message: `Step "${stepName}" type:`,
-        validate: (v) => v.trim().length > 0 || 'Step type is required',
-      })
-    ).trim();
-    steps.push({ stepName, stepType });
-    addStep = await confirm({ message: 'Add another step?', default: false });
+  const steps = await promptFlavorSteps([], stageCategory, ctx);
+  if (!steps) {
+    console.log('Cancelled — at least one step is required.');
+    return;
   }
 
   const registry = new FlavorRegistry(ctx.flavorsDir);
@@ -266,6 +264,104 @@ async function handleFlavorCreate(ctx: ActionCtx): Promise<void> {
   registry.register(flavor);
 
   console.log(`\nFlavor "${name}" created for stage "${stageCategory}".`);
+}
+
+// ── Flavor step library picker ─────────────────────────────────────────────────
+
+/**
+ * Interactive loop to build an ordered step list for a flavor.
+ * Shows steps already registered for the given stage category as a library.
+ * Supports inline step creation and undo (remove last).
+ * Returns null if cancelled before any step was added.
+ */
+async function promptFlavorSteps(
+  existing: { stepName: string; stepType: string }[],
+  stageCategory: StageCategory,
+  ctx: ActionCtx,
+): Promise<{ stepName: string; stepType: string }[] | null> {
+  const { input, select, Separator } = await import('@inquirer/prompts');
+
+  const stepReg = new StepRegistry(ctx.stepsDir);
+  const availableSteps = stepReg.list().filter((s) => s.stageCategory === stageCategory);
+  const flavorSteps: { stepName: string; stepType: string }[] = [...existing];
+
+  console.log(`\nPick steps for this flavor from the "${stageCategory}" stage library:`);
+
+  while (true) {
+    if (flavorSteps.length > 0) {
+      console.log('\nSteps so far:');
+      flavorSteps.forEach((s, i) => console.log(`  ${i + 1}. ${s.stepName} (→ ${s.stepType})`));
+    }
+
+    // Build choices list (Step | string values; Separator is not selectable so no value needed)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const choices: any[] = [];
+    for (const s of availableSteps) {
+      choices.push({ name: buildStepChoiceLabel(s), value: s });
+    }
+    if (availableSteps.length > 0) choices.push(new Separator());
+    choices.push({ name: '+ Create a new step for this stage', value: '_new' });
+    if (flavorSteps.length > 0) {
+      choices.push({ name: '↩  Remove last step', value: '_undo' });
+      choices.push({ name: '✓  Done', value: '_done' });
+    }
+
+    const pick = await select<Step | string>({
+      message: `Add step ${flavorSteps.length + 1}:`,
+      choices,
+    });
+
+    if (pick === '_done') break;
+    if (pick === '_undo') { flavorSteps.pop(); continue; }
+
+    if (pick === '_new') {
+      // Inline step creation
+      const newType = (
+        await input({ message: '  New step type:', validate: (v) => v.trim().length > 0 || 'Required' })
+      ).trim();
+      const newFlavor = (await input({ message: '  Flavor (optional):' })).trim() || undefined;
+      const newDesc = (await input({ message: '  Description (optional):' })).trim() || undefined;
+      const { step: newStep } = createStep({
+        stagesDir: ctx.stepsDir,
+        input: { type: newType, flavor: newFlavor, stageCategory, description: newDesc, artifacts: [], learningHooks: [] },
+      });
+      console.log(`  Step "${stepLabel(newType, newFlavor)}" created.`);
+      availableSteps.push(newStep);
+      const defaultName = stepLabel(newType, newFlavor);
+      const sName = (
+        await input({
+          message: `  Name for this step in the flavor:`,
+          default: defaultName,
+          validate: (v) => {
+            const t = v.trim();
+            if (!t) return 'Required';
+            if (flavorSteps.some((s) => s.stepName === t)) return `"${t}" already used in this flavor`;
+            return true;
+          },
+        })
+      ).trim();
+      flavorSteps.push({ stepName: sName, stepType: newType });
+      continue;
+    }
+
+    const selectedStep = pick as Step;
+    const defaultName = stepLabel(selectedStep.type, selectedStep.flavor);
+    const sName = (
+      await input({
+        message: `  Name for this step in the flavor:`,
+        default: defaultName,
+        validate: (v) => {
+          const t = v.trim();
+          if (!t) return 'Required';
+          if (flavorSteps.some((s) => s.stepName === t)) return `"${t}" already used in this flavor`;
+          return true;
+        },
+      })
+    ).trim();
+    flavorSteps.push({ stepName: sName, stepType: selectedStep.type });
+  }
+
+  return flavorSteps.length > 0 ? flavorSteps : null;
 }
 
 async function handleFlavorDelete(
@@ -288,10 +384,59 @@ async function handleFlavorDelete(
   }
 }
 
+// ── Flavor edit handler ────────────────────────────────────────────────────────
+
+async function handleFlavorEdit(flavor: Flavor, ctx: ActionCtx): Promise<void> {
+  const { input, select, Separator } = await import('@inquirer/prompts');
+
+  console.log(`\n── Edit Flavor: ${flavor.name} (${flavor.stageCategory}) ${'─'.repeat(40)}`);
+
+  type FlavorField = 'description' | 'synthesisArtifact' | 'steps' | 'save' | 'cancel';
+  let draft = { ...flavor };
+
+  while (true) {
+    const stepsLabel = draft.steps.map((s) => s.stepName).join(', ') || '(none)';
+    const choice = await select<FlavorField>({
+      message: 'What to edit?',
+      choices: [
+        { name: `Description [${draft.description ?? '(none)'}]`, value: 'description' },
+        { name: `Synthesis artifact [${draft.synthesisArtifact}]`, value: 'synthesisArtifact' },
+        { name: `Steps [${draft.steps.length}: ${stepsLabel}]`, value: 'steps' },
+        new Separator(),
+        { name: 'Save', value: 'save' },
+        { name: 'Cancel (discard changes)', value: 'cancel' },
+      ],
+    });
+
+    if (choice === 'save') break;
+    if (choice === 'cancel') { console.log('Edit cancelled.'); return; }
+
+    if (choice === 'description') {
+      const raw = await input({ message: 'Description:', default: draft.description ?? '' });
+      draft = { ...draft, description: raw.trim() || undefined };
+    } else if (choice === 'synthesisArtifact') {
+      const raw = await input({
+        message: 'Synthesis artifact name:',
+        default: draft.synthesisArtifact,
+        validate: (v) => v.trim().length > 0 || 'Required',
+      });
+      draft = { ...draft, synthesisArtifact: raw.trim() };
+    } else if (choice === 'steps') {
+      const newSteps = await promptFlavorSteps(draft.steps, draft.stageCategory, ctx);
+      if (newSteps) draft = { ...draft, steps: newSteps };
+    }
+  }
+
+  const parsed = FlavorSchema.parse(draft);
+  const registry = new FlavorRegistry(ctx.flavorsDir);
+  registry.register(parsed);
+  console.log(`\nFlavor "${parsed.name}" saved.`);
+}
+
 // ── Kata handlers ─────────────────────────────────────────────────────────────
 
 async function handleKataCreate(ctx: ActionCtx): Promise<void> {
-  const { input, checkbox } = await import('@inquirer/prompts');
+  const { input, select } = await import('@inquirer/prompts');
 
   console.log('\n── Create Kata Pattern ───────────────────────────────────────');
 
@@ -307,10 +452,25 @@ async function handleKataCreate(ctx: ActionCtx): Promise<void> {
     })
   ).trim();
 
-  const stages = await checkbox({
-    message: 'Select stages (they run in the order listed):',
-    choices: StageCategorySchema.options.map((c) => ({ name: c, value: c })),
-  });
+  // Build the stage sequence with an ordered loop — same stage may appear multiple times
+  const stages: StageCategory[] = [];
+  console.log('\nBuild your stage sequence — you can add the same stage multiple times.');
+
+  while (true) {
+    if (stages.length > 0) {
+      console.log(`\nCurrent: ${stages.join(' → ')}`);
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stageChoices: any[] = StageCategorySchema.options.map((c) => ({ name: c, value: c }));
+    if (stages.length > 0) {
+      stageChoices.push({ name: '↩  Remove last stage', value: '_undo' });
+      stageChoices.push({ name: '✓  Done — save this sequence', value: '_done' });
+    }
+    const pick = await select<string>({ message: 'Add stage:', choices: stageChoices });
+    if (pick === '_done') break;
+    if (pick === '_undo') { stages.pop(); continue; }
+    stages.push(pick as StageCategory);
+  }
 
   if (stages.length === 0) {
     console.log('Cancelled — at least one stage is required.');

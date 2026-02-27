@@ -7,6 +7,7 @@ import type { FlavorValidationResult } from '@domain/ports/flavor-registry.js';
 
 export type FlavorAction =
   | { type: 'flavor:create' }
+  | { type: 'flavor:edit'; flavor: Flavor }
   | { type: 'flavor:delete'; flavor: Flavor };
 
 export interface FlavorListProps {
@@ -55,6 +56,8 @@ export default function FlavorList({
       if (key.escape || key.leftArrow) {
         setDetail(null);
         onDetailExit();
+      } else if (input === 'e') {
+        onAction({ type: 'flavor:edit', flavor: detail });
       } else if (input === 'd') {
         onAction({ type: 'flavor:delete', flavor: detail });
       }
@@ -72,6 +75,9 @@ export default function FlavorList({
       }
     } else if (input === 'n') {
       onAction({ type: 'flavor:create' });
+    } else if (input === 'e' && flavors.length > 0) {
+      const f = flavors[clamped];
+      if (f) onAction({ type: 'flavor:edit', flavor: f });
     } else if (input === 'd' && flavors.length > 0) {
       const f = flavors[clamped];
       if (f) onAction({ type: 'flavor:delete', flavor: f });
@@ -99,7 +105,7 @@ export default function FlavorList({
         )}
       </Box>
       <Box marginTop={1}>
-        <Text dimColor>[↑↓] select  [Enter] detail  [n] new  [d] del  [Tab] switch section</Text>
+        <Text dimColor>[↑↓] select  [Enter] detail  [n] new  [e] edit  [d] del  [Tab] switch section</Text>
       </Box>
     </Box>
   );
@@ -159,7 +165,7 @@ function FlavorDetail({ flavor, validation }: FlavorDetailProps) {
         )}
       </Box>
       <Box marginTop={1}>
-        <Text dimColor>[←/Esc] back  [d] delete this flavor</Text>
+        <Text dimColor>[←/Esc] back  [e] edit  [d] delete this flavor</Text>
       </Box>
     </Box>
   );
