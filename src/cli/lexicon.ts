@@ -76,3 +76,18 @@ export function getLexicon(plain?: boolean): Lexicon {
 export function cap(s: string): string {
   return s.replace(/\b\w/g, (c) => c.toUpperCase());
 }
+
+/**
+ * Return the plural form of a lexicon word.
+ * In plain mode, appends "s" (optionally count-aware — skips when count === 1).
+ * In thematic mode, returns the word unchanged: Japanese words do not pluralise with "s".
+ *
+ * @param word  - the lexicon term, already capitalised if desired
+ * @param plain - true for plain English mode
+ * @param count - optional count for count-aware pluralisation
+ */
+export function pl(word: string, plain?: boolean, count?: number): string {
+  if (!plain) return word;
+  if (count !== undefined && count === 1) return word;
+  return word + 's';
+}

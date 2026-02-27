@@ -97,7 +97,7 @@ describe('StepList rendering', () => {
 
   it('shows thematic empty message by default', () => {
     const output = renderToString(<StepList {...defaultProps} />);
-    expect(output).toContain('No wazas found');
+    expect(output).toContain('No waza found');
   });
 
   it('shows step type label', () => {

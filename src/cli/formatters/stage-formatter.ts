@@ -2,7 +2,7 @@ import type { StageCategory } from '@domain/types/stage.js';
 import type { Flavor } from '@domain/types/flavor.js';
 import type { StageRule } from '@domain/types/rule.js';
 import type { Decision } from '@domain/types/decision.js';
-import { getLexicon, cap } from '@cli/lexicon.js';
+import { getLexicon, cap, pl } from '@cli/lexicon.js';
 
 export interface StageCategoryEntry {
   category: StageCategory;
@@ -26,7 +26,7 @@ export function formatStageCategoryTable(entries: StageCategoryEntry[], plain?: 
   }
   const lex = getLexicon(plain);
 
-  const header = padColumns([cap(lex.stage), cap(lex.flavor) + 's', 'Rules']);
+  const header = padColumns([cap(lex.stage), pl(cap(lex.flavor), plain), 'Rules']);
   const separator = '-'.repeat(header.length);
   const rows = entries.map((e) =>
     padColumns([e.category, String(e.flavorCount), String(e.ruleCount ?? 0)]),
@@ -51,7 +51,7 @@ export function formatStageCategoryDetail(data: StageInspectData, plain?: boolea
     for (const f of data.flavors) {
       const stepCount = f.steps.length;
       const desc = f.description ? ` — ${f.description}` : '';
-      lines.push(`  - ${f.name} (${stepCount} ${lex.step}${stepCount !== 1 ? 's' : ''})${desc}`);
+      lines.push(`  - ${f.name} (${stepCount} ${pl(lex.step, plain, stepCount)})${desc}`);
     }
   } else {
     lines.push(`${cap(lex.flavor)}s: (none registered)`);
@@ -71,14 +71,14 @@ export function formatStageCategoryDetail(data: StageInspectData, plain?: boolea
 
   // Recent decisions
   if (data.recentDecisions.length > 0) {
-    lines.push(`Recent ${lex.decision}s (${data.recentDecisions.length}):`);
+    lines.push(`Recent ${pl(lex.decision, plain)} (${data.recentDecisions.length}):`);
     for (const d of data.recentDecisions) {
       const conf = `${(d.confidence * 100).toFixed(0)}%`;
       const outcome = d.outcome?.artifactQuality ?? 'pending';
       lines.push(`  - ${d.decisionType}: ${d.selection} (confidence: ${conf}, outcome: ${outcome})`);
     }
   } else {
-    lines.push(`${cap(lex.decision)}s: (no recent ${lex.decision}s)`);
+    lines.push(`${pl(cap(lex.decision), plain)}: (no recent ${pl(lex.decision, plain)})`);
   }
 
   return lines.join('\n').trimEnd();

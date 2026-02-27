@@ -6,11 +6,15 @@ import KataList from './config/KataList.js';
 import type { StepAction } from './config/StepList.js';
 import type { FlavorAction } from './config/FlavorList.js';
 import type { KataAction } from './config/KataList.js';
-import { getLexicon, cap } from '@cli/lexicon.js';
+import { getLexicon, cap, pl } from '@cli/lexicon.js';
 
 export type ConfigAction = StepAction | FlavorAction | KataAction;
 
 type SectionIndex = 0 | 1 | 2;
+
+function toSectionIndex(n: number | undefined): SectionIndex {
+  return (n === 1 || n === 2) ? n : 0;
+}
 
 export interface ConfigAppProps {
   stepsDir: string;
@@ -24,20 +28,20 @@ export interface ConfigAppProps {
 
 export default function ConfigApp({ stepsDir, flavorsDir, katasDir, onAction, initialSectionIndex, initialFlavorName, plain }: ConfigAppProps) {
   const { exit } = useApp();
-  const [sectionIndex, setSectionIndex] = useState(initialSectionIndex ?? 0);
+  const [sectionIndex, setSectionIndex] = useState<SectionIndex>(toSectionIndex(initialSectionIndex));
   const [inDetail, setInDetail] = useState(false);
   const lex = getLexicon(plain);
 
   const SECTIONS = [
-    cap(lex.step) + 's',
-    cap(lex.flavor) + 's',
+    pl(cap(lex.step), plain),
+    pl(cap(lex.flavor), plain),
     'Katas',
   ] as const;
 
   const SECTION_DESCRIPTIONS = [
-    `Atomic tasks — what an agent does within a ${lex.stage}. Each ${lex.step} has a prompt (instructions), ${lex.gate}s (entry/exit conditions), and output artifacts (files it produces).`,
-    `Named ${lex.step} sequences — one approach to executing a ${lex.stage}. ${cap(lex.step)}s run sequentially within a ${lex.flavor}. Multiple ${lex.flavor}s of the same ${lex.stage} run in parallel.`,
-    `Saved workflows — an ordered sequence of ${lex.stage}s (e.g., research → plan → build → review). Use as a template when starting a new execution session.`,
+    `Atomic tasks — what an agent does within a ${lex.stage}. Each ${lex.step} has a prompt (instructions), ${pl(lex.gate, plain)} (entry/exit conditions), and output artifacts (files it produces).`,
+    `Named ${pl(lex.step, plain)} — one approach to executing a ${lex.stage}. ${pl(cap(lex.step), plain)} run sequentially within a ${lex.flavor}. Multiple ${pl(lex.flavor, plain)} of the same ${lex.stage} run in parallel.`,
+    `Saved workflows — an ordered sequence of ${pl(lex.stage, plain)} (e.g., research → plan → build → review). Use as a template when starting a new execution session.`,
   ];
 
   const handleAction = (action: ConfigAction) => {
@@ -52,9 +56,9 @@ export default function ConfigApp({ stepsDir, flavorsDir, katasDir, onAction, in
     }
     if (inDetail) return;
     if (key.tab || input === ']') {
-      setSectionIndex((i) => (i + 1) % SECTIONS.length);
+      setSectionIndex((i) => toSectionIndex((i + 1) % SECTIONS.length));
     } else if (input === '[') {
-      setSectionIndex((i) => (i - 1 + SECTIONS.length) % SECTIONS.length);
+      setSectionIndex((i) => toSectionIndex((i - 1 + SECTIONS.length) % SECTIONS.length));
     }
   });
 
@@ -81,7 +85,7 @@ export default function ConfigApp({ stepsDir, flavorsDir, katasDir, onAction, in
       </Box>
 
       <Box marginBottom={1}>
-        <Text dimColor>{SECTION_DESCRIPTIONS[sectionIndex as SectionIndex] ?? SECTION_DESCRIPTIONS[0]}</Text>
+        <Text dimColor>{SECTION_DESCRIPTIONS[sectionIndex]}</Text>
       </Box>
 
       {sectionIndex === 0 && <StepList stepsDir={stepsDir} flavorsDir={flavorsDir} plain={plain} {...sectionProps} />}

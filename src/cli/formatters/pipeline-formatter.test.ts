@@ -58,7 +58,7 @@ describe('formatPipelineStatus', () => {
     const pipeline = makePipeline();
     const output = formatPipelineStatus(pipeline);
 
-    expect(output).toContain('1/3 gyos (33%)');
+    expect(output).toContain('1/3 gyo (33%)');
   });
 
   it('should list stages with state indicators', () => {

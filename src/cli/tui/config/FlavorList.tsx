@@ -8,7 +8,7 @@ import type { Flavor, FlavorStepRef } from '@domain/types/flavor.js';
 import type { Step, StepResources } from '@domain/types/step.js';
 import type { Gate, GateCondition } from '@domain/types/gate.js';
 import type { FlavorValidationResult } from '@domain/ports/flavor-registry.js';
-import { getLexicon, cap } from '@cli/lexicon.js';
+import { getLexicon, cap, pl } from '@cli/lexicon.js';
 
 export type FlavorAction =
   | { type: 'flavor:create' }
@@ -162,10 +162,10 @@ export default function FlavorList({
 
   return (
     <Box flexDirection="column">
-      <Text bold>{cap(lex.flavor)}s ({flavors.length})</Text>
+      <Text bold>{pl(cap(lex.flavor), plain)} ({flavors.length})</Text>
       <Box flexDirection="column" marginTop={1}>
         {flavors.length === 0 ? (
-          <Text dimColor>No {lex.flavor}s found.</Text>
+          <Text dimColor>No {pl(lex.flavor, plain)} found.</Text>
         ) : (
           flavors.map((flavor, i) => (
             <FlavorRow
@@ -191,7 +191,7 @@ function FlavorRow({ flavor, isSelected, plain }: { flavor: Flavor; isSelected: 
       <Text color="cyan">{isSelected ? '>' : ' '} </Text>
       <Text bold={isSelected}>{flavor.name.padEnd(28)}</Text>
       <Text color="yellow">{`[${flavor.stageCategory}]`.padEnd(12)}</Text>
-      <Text dimColor>{flavor.steps.length} {lex.step}(s)</Text>
+      <Text dimColor>{flavor.steps.length} {pl(lex.step, plain, flavor.steps.length)}</Text>
     </Box>
   );
 }
@@ -219,7 +219,7 @@ function FlavorDetail({ flavor, validation, resolveStep, selectedStepIndex, plai
         Synthesis artifact: <Text bold>{flavor.synthesisArtifact}</Text>
       </Text>
       <Box flexDirection="column" marginTop={1}>
-        <Text bold>{cap(lex.step)}s ({flavor.steps.length}):</Text>
+        <Text bold>{pl(cap(lex.step), plain)} ({flavor.steps.length}):</Text>
         <FlavorPipeline
           steps={flavor.steps}
           resolveStep={resolveStep}

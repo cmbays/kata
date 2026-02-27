@@ -92,8 +92,6 @@ export function formatReviewSummary(
   return lines.join('\n');
 }
 
-// ---- Helpers ----
-
 /**
  * Format suggested learnings as JSON output.
  */

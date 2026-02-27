@@ -127,7 +127,7 @@ describe('FlavorList rendering', () => {
     });
     mockFlavorList.mockReturnValue([flavor]);
     const output = renderToString(<FlavorList {...defaultProps} plain />);
-    expect(output).toContain('2 step(s)');
+    expect(output).toContain('2 steps');
   });
 
   it('shows keyboard hint footer', () => {

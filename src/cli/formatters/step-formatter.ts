@@ -1,5 +1,5 @@
 import type { Step } from '@domain/types/step.js';
-import { getLexicon, cap } from '@cli/lexicon.js';
+import { getLexicon, cap, pl } from '@cli/lexicon.js';
 
 /**
  * Format a list of steps as an aligned text table.
@@ -10,7 +10,7 @@ export function formatStepTable(steps: Step[], plain?: boolean): string {
   }
   const lex = getLexicon(plain);
 
-  const header = padColumns([cap(lex.step), cap(lex.flavor), cap(lex.gate) + 's', 'Artifacts']);
+  const header = padColumns([cap(lex.step), cap(lex.flavor), pl(cap(lex.gate), plain), 'Artifacts']);
   const separator = '-'.repeat(header.length);
   const rows = steps.map((s) => {
     const gates = buildGatesSummary(s, plain);

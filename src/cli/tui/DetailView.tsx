@@ -1,6 +1,6 @@
 import { Box, Text, useInput } from 'ink';
 import type { WatchRun, WatchStageDetail } from './run-reader.js';
-import { getLexicon, cap } from '@cli/lexicon.js';
+import { getLexicon, cap, pl } from '@cli/lexicon.js';
 
 export interface DetailViewProps {
   run: WatchRun | undefined;
@@ -105,11 +105,11 @@ function StageRow({ detail, plain }: StageRowProps) {
       <Text color={color}>{icon} </Text>
       <Text bold>{detail.category.toUpperCase().padEnd(10)}</Text>
       <Text dimColor>
-        {detail.flavorCount} {lex.flavor}{detail.flavorCount !== 1 ? 's' : ''}
+        {detail.flavorCount} {pl(lex.flavor, plain, detail.flavorCount)}
         {'  '}
         {detail.artifactCount} artifact{detail.artifactCount !== 1 ? 's' : ''}
         {'  '}
-        {detail.decisionCount} {lex.decision}{detail.decisionCount !== 1 ? 's' : ''}
+        {detail.decisionCount} {pl(lex.decision, plain, detail.decisionCount)}
         {confStr}
       </Text>
       {detail.pendingGateId && <Text color="yellow">{'  '}⚠ {detail.pendingGateId}</Text>}

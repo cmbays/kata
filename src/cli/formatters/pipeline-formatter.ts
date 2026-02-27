@@ -1,6 +1,6 @@
 import type { Pipeline } from '@domain/types/pipeline.js';
 import type { PipelineResult } from '@features/pipeline-run/pipeline-runner.js';
-import { getLexicon, cap } from '@cli/lexicon.js';
+import { getLexicon, cap, pl } from '@cli/lexicon.js';
 
 const STATE_ICONS: Record<string, string> = {
   pending: '  ',
@@ -34,7 +34,7 @@ export function formatPipelineStatus(pipeline: Pipeline, plain?: boolean): strin
   lines.push(`Flow: ${pipeline.name} (${pipeline.id})`);
   lines.push(`Type: ${pipeline.type}`);
   lines.push(`State: ${PIPELINE_STATE_LABELS[pipeline.state] ?? pipeline.state}`);
-  lines.push(`Progress: ${completedCount}/${pipeline.stages.length} ${lex.stage}s (${pct}%)`);
+  lines.push(`Progress: ${completedCount}/${pipeline.stages.length} ${pl(lex.stage, plain)} (${pct}%)`);
   lines.push('');
   lines.push(`${cap(lex.stage)}s:`);
 

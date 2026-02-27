@@ -1,5 +1,5 @@
 import type { Flavor } from '@domain/types/flavor.js';
-import { getLexicon, cap } from '@cli/lexicon.js';
+import { getLexicon, cap, pl } from '@cli/lexicon.js';
 
 /**
  * Format a list of flavors as an aligned text table.
@@ -10,7 +10,7 @@ export function formatFlavorTable(flavors: Flavor[], plain?: boolean): string {
   }
   const lex = getLexicon(plain);
 
-  const header = padColumns(['Name', cap(lex.stage), cap(lex.step) + 's', 'Synthesis Artifact']);
+  const header = padColumns(['Name', cap(lex.stage), pl(cap(lex.step), plain), 'Synthesis Artifact']);
   const separator = '-'.repeat(header.length);
   const rows = flavors.map((f) =>
     padColumns([

@@ -6,7 +6,7 @@ import { StepRegistry } from '@infra/registries/step-registry.js';
 import { FlavorRegistry } from '@infra/registries/flavor-registry.js';
 import type { Step, StepResources } from '@domain/types/step.js';
 import type { Gate, GateCondition } from '@domain/types/gate.js';
-import { getLexicon, cap } from '@cli/lexicon.js';
+import { getLexicon, cap, pl } from '@cli/lexicon.js';
 
 export type StepAction =
   | { type: 'step:create' }
@@ -86,7 +86,7 @@ export default function StepList({
       <Text bold>{cap(lex.step)}s ({steps.length})</Text>
       <Box flexDirection="column" marginTop={1}>
         {steps.length === 0 ? (
-          <Text dimColor>No {lex.step}s found.</Text>
+          <Text dimColor>No {pl(lex.step, plain)} found.</Text>
         ) : (
           steps.map((step, i) => (
             <StepRow
