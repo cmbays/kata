@@ -1,6 +1,6 @@
 import type { Step } from '@domain/types/step.js';
 import { getLexicon, cap, pl } from '@cli/lexicon.js';
-import { bold, cyan, green, yellow, dim } from '@shared/lib/ansi.js';
+import { bold, cyan, green, yellow, dim, visiblePadEnd } from '@shared/lib/ansi.js';
 
 /**
  * Format a list of steps as an aligned text table.
@@ -30,55 +30,40 @@ export function formatStepDetail(step: Step, plain?: boolean): string {
   const lines: string[] = [];
   const lex = getLexicon(plain);
 
-  lines.push(`${bold(cap(lex.step))}: ${cyan(step.type)}${step.flavor ? dim(` (${step.flavor})`) : ''}`);
+  // Card header
+  const title = `${cap(lex.step)}: ${step.type}${step.flavor ? ` (${step.flavor})` : ''}`;
+  lines.push(bold(`╭─ ${cyan(title)} ─`));
   if (step.description) {
-    lines.push(`${dim('Description:')} ${step.description}`);
+    lines.push(`│  ${dim(step.description)}`);
   }
-  lines.push('');
 
   // Entry gate
   if (step.entryGate) {
-    lines.push(bold(`${cap(lex.entryGate)}:`));
-    lines.push(`  Required: ${step.entryGate.required ? green('yes') : yellow('no')}`);
+    lines.push(`├─ ${bold(cap(lex.entryGate))}  ${dim('Required:')} ${step.entryGate.required ? green('yes') : yellow('no')}`);
     for (const cond of step.entryGate.conditions) {
-      lines.push(`  ${dim('-')} ${dim(`[${cond.type}]`)} ${cond.description ?? cond.artifactName ?? cond.predecessorType ?? ''}`);
+      lines.push(`│  ● ${dim(`[${cond.type}]`)} ${cond.description ?? cond.artifactName ?? cond.predecessorType ?? ''}`);
     }
-    lines.push('');
   }
 
   // Exit gate
   if (step.exitGate) {
-    lines.push(bold(`${cap(lex.exitGate)}:`));
-    lines.push(`  Required: ${step.exitGate.required ? green('yes') : yellow('no')}`);
+    lines.push(`├─ ${bold(cap(lex.exitGate))}  ${dim('Required:')} ${step.exitGate.required ? green('yes') : yellow('no')}`);
     for (const cond of step.exitGate.conditions) {
-      lines.push(`  ${dim('-')} ${dim(`[${cond.type}]`)} ${cond.description ?? cond.artifactName ?? cond.predecessorType ?? ''}`);
+      lines.push(`│  ● ${dim(`[${cond.type}]`)} ${cond.description ?? cond.artifactName ?? cond.predecessorType ?? ''}`);
     }
-    lines.push('');
   }
 
   // Artifacts
   if (step.artifacts.length > 0) {
-    lines.push(bold('Artifacts:'));
+    lines.push(`├─ ${bold('Artifacts')}`);
     for (const artifact of step.artifacts) {
-      const req = artifact.required ? green(' (required)') : dim(' (optional)');
-      lines.push(`  ${dim('-')} ${cyan(artifact.name)}${req}${artifact.extension ? dim(` [${artifact.extension}]`) : ''}`);
+      const req = artifact.required ? green('required') : dim('optional');
+      const ext = artifact.extension ? dim(` [${artifact.extension}]`) : '';
+      lines.push(`│  ● ${cyan(artifact.name)}  ${req}${ext}`);
       if (artifact.description) {
-        lines.push(`    ${artifact.description}`);
+        lines.push(`│    ${dim(artifact.description)}`);
       }
     }
-    lines.push('');
-  }
-
-  // Prompt template
-  if (step.promptTemplate) {
-    lines.push(`${bold('Prompt Template:')} ${step.promptTemplate}`);
-    lines.push('');
-  }
-
-  // Learning hooks
-  if (step.learningHooks.length > 0) {
-    lines.push(`${bold('Learning Hooks:')} ${step.learningHooks.join(', ')}`);
-    lines.push('');
   }
 
   // Resources
@@ -86,33 +71,32 @@ export function formatStepDetail(step: Step, plain?: boolean): string {
     const { tools, agents, skills } = step.resources;
     const hasResources = tools.length > 0 || agents.length > 0 || skills.length > 0;
     if (hasResources) {
-      lines.push(bold('Resources:'));
-      if (tools.length > 0) {
-        lines.push('  Tools:');
-        for (const tool of tools) {
-          const cmd = tool.command ? ` (${tool.command})` : '';
-          lines.push(`    - ${tool.name}: ${tool.purpose}${cmd}`);
-        }
+      lines.push(`├─ ${bold('Resources')}`);
+      for (const tool of tools) {
+        const cmd = tool.command ? dim(` (${tool.command})`) : '';
+        lines.push(`│  ● ${cyan(tool.name)}: ${tool.purpose}${cmd}`);
       }
-      if (agents.length > 0) {
-        lines.push('  Agents:');
-        for (const agent of agents) {
-          const when = agent.when ? ` — ${agent.when}` : '';
-          lines.push(`    - ${agent.name}${when}`);
-        }
+      for (const agent of agents) {
+        const when = agent.when ? dim(` — ${agent.when}`) : '';
+        lines.push(`│  ● ${agent.name}${when}`);
       }
-      if (skills.length > 0) {
-        lines.push('  Skills:');
-        for (const skill of skills) {
-          const when = skill.when ? ` — ${skill.when}` : '';
-          lines.push(`    - ${skill.name}${when}`);
-        }
+      for (const skill of skills) {
+        const when = skill.when ? dim(` — ${skill.when}`) : '';
+        lines.push(`│  ● ${skill.name}${when}`);
       }
-      lines.push('');
     }
   }
 
-  return lines.join('\n').trimEnd();
+  // Footer meta
+  const meta: string[] = [];
+  if (step.promptTemplate) meta.push(`${dim('template:')} ${step.promptTemplate}`);
+  if (step.learningHooks.length > 0) meta.push(`${dim('hooks:')} ${step.learningHooks.join(', ')}`);
+  if (meta.length > 0) {
+    lines.push(`├─ ${meta.join('  ')}`);
+  }
+
+  lines.push(bold('╰─'));
+  return lines.join('\n');
 }
 
 /**
@@ -140,6 +124,6 @@ function buildGatesSummary(step: Step, plain?: boolean): string {
 
 function padColumns(values: string[]): string {
   const widths = [16, 12, 32, 30];
-  return values.map((v, i) => v.padEnd(widths[i] ?? 20)).join('  ');
+  return values.map((v, i) => visiblePadEnd(v, widths[i] ?? 20)).join('  ');
 }
 

@@ -1,5 +1,6 @@
 import type { Flavor } from '@domain/types/flavor.js';
 import { getLexicon, cap, pl } from '@cli/lexicon.js';
+import { bold, cyan, dim, visiblePadEnd } from '@shared/lib/ansi.js';
 
 /**
  * Format a list of flavors as an aligned text table.
@@ -10,14 +11,15 @@ export function formatFlavorTable(flavors: Flavor[], plain?: boolean): string {
   }
   const lex = getLexicon(plain);
 
-  const header = padColumns(['Name', cap(lex.stage), pl(cap(lex.step), plain), 'Synthesis Artifact']);
-  const separator = '-'.repeat(header.length);
+  const headerCols = ['Name', cap(lex.stage), pl(cap(lex.step), plain), 'Synthesis Artifact'];
+  const header = bold(padColumns(headerCols));
+  const separator = dim('-'.repeat(padColumns(headerCols).length));
   const rows = flavors.map((f) =>
     padColumns([
-      f.name,
+      cyan(f.name),
       f.stageCategory,
       String(f.steps.length),
-      f.synthesisArtifact,
+      dim(f.synthesisArtifact),
     ]),
   );
 
@@ -73,6 +75,6 @@ export function formatFlavorJson(flavors: Flavor[]): string {
 
 function padColumns(values: string[]): string {
   const widths = [20, 12, 8, 24];
-  return values.map((v, i) => v.padEnd(widths[i] ?? 20)).join('  ');
+  return values.map((v, i) => visiblePadEnd(v, widths[i] ?? 20)).join('  ');
 }
 

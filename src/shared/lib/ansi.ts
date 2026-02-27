@@ -24,3 +24,12 @@ const ANSI_RE = new RegExp(String.fromCharCode(0x1b) + '\\[[0-9;]*m', 'g');
 export function strip(s: string): string {
   return s.replace(ANSI_RE, '');
 }
+
+/**
+ * Like String.padEnd, but measures visible width (ignoring ANSI codes).
+ * Use this when padding strings that may already contain color codes.
+ */
+export function visiblePadEnd(s: string, width: number): string {
+  const padding = Math.max(0, width - strip(s).length);
+  return s + ' '.repeat(padding);
+}

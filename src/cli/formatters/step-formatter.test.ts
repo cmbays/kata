@@ -82,7 +82,7 @@ describe('formatStepDetail', () => {
   it('shows type and description', () => {
     const result = formatStepDetail(makeStep({ description: 'Do research' }), true);
     expect(result).toContain('Step: research');
-    expect(result).toContain('Description: Do research');
+    expect(result).toContain('Do research');
   });
 
   it('uses thematic label by default', () => {
@@ -109,9 +109,9 @@ describe('formatStepDetail', () => {
       },
     });
     const result = formatStepDetail(step, true);
-    expect(result).toContain('Entry Gate:');
+    expect(result).toContain('Entry Gate');
     expect(result).toContain('[predecessor-complete]');
-    expect(result).toContain('Exit Gate:');
+    expect(result).toContain('Exit Gate');
     expect(result).toContain('Summary must exist');
   });
 
@@ -121,8 +121,8 @@ describe('formatStepDetail', () => {
       exitGate: { type: 'exit', conditions: [{ type: 'artifact-exists', artifactName: 'out' }], required: true },
     });
     const result = formatStepDetail(step);
-    expect(result).toContain('Iri-Mon:');
-    expect(result).toContain('De-Mon:');
+    expect(result).toContain('Iri-Mon');
+    expect(result).toContain('De-Mon');
   });
 
   it('shows artifacts', () => {
@@ -133,20 +133,23 @@ describe('formatStepDetail', () => {
       ],
     });
     const result = formatStepDetail(step);
-    expect(result).toContain('Artifacts:');
-    expect(result).toContain('report (required) [.md]');
-    expect(result).toContain('data (optional)');
+    expect(result).toContain('Artifacts');
+    expect(result).toContain('report');
+    expect(result).toContain('required');
+    expect(result).toContain('[.md]');
+    expect(result).toContain('data');
+    expect(result).toContain('optional');
     expect(result).toContain('A report');
   });
 
   it('shows prompt template', () => {
     const result = formatStepDetail(makeStep({ promptTemplate: '../prompts/research.md' }));
-    expect(result).toContain('Prompt Template: ../prompts/research.md');
+    expect(result).toContain('../prompts/research.md');
   });
 
   it('shows learning hooks', () => {
     const result = formatStepDetail(makeStep({ learningHooks: ['quality', 'insights'] }));
-    expect(result).toContain('Learning Hooks: quality, insights');
+    expect(result).toContain('quality, insights');
   });
 
   it('shows resources section when present', () => {
@@ -158,12 +161,11 @@ describe('formatStepDetail', () => {
       },
     });
     const result = formatStepDetail(step);
-    expect(result).toContain('Resources:');
-    expect(result).toContain('Tools:');
-    expect(result).toContain('tsc: Type checking (npx tsc --noEmit)');
-    expect(result).toContain('Agents:');
-    expect(result).toContain('everything-claude-code:build-error-resolver — when build fails');
-    expect(result).toContain('Skills:');
+    expect(result).toContain('Resources');
+    expect(result).toContain('tsc: Type checking');
+    expect(result).toContain('npx tsc --noEmit');
+    expect(result).toContain('everything-claude-code:build-error-resolver');
+    expect(result).toContain('when build fails');
     expect(result).toContain('pr-review-toolkit:code-reviewer');
   });
 
