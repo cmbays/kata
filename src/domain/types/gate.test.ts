@@ -30,6 +30,21 @@ describe('GateConditionSchema', () => {
     expect(result.artifactName).toBe('shaping.md');
   });
 
+  it('parses artifact-exists with sourceStage for cross-stage dependencies', () => {
+    const result = GateConditionSchema.parse({
+      type: 'artifact-exists',
+      artifactName: 'implementation-plan.md',
+      sourceStage: 'plan',
+    });
+    expect(result.artifactName).toBe('implementation-plan.md');
+    expect(result.sourceStage).toBe('plan');
+  });
+
+  it('sourceStage is undefined when not provided', () => {
+    const result = GateConditionSchema.parse({ type: 'artifact-exists', artifactName: 'file.md' });
+    expect(result.sourceStage).toBeUndefined();
+  });
+
   it('parses predecessor-complete with predecessorType', () => {
     const result = GateConditionSchema.parse({
       type: 'predecessor-complete',

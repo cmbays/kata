@@ -246,7 +246,10 @@ function conditionLabel(type: string): string {
 }
 
 function conditionDetail(c: GateCondition): string {
-  if (c.artifactName) return `→ ${c.artifactName}`;
+  if (c.artifactName) {
+    const stagePart = c.sourceStage ? ` (from ${c.sourceStage})` : '';
+    return `→ ${c.artifactName}${stagePart}`;
+  }
   if (c.predecessorType) return `→ ${c.predecessorType}`;
   if (c.command) return `: ${c.command}`;
   return '';
