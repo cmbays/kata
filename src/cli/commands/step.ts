@@ -295,7 +295,7 @@ export function registerStepCommands(parent: Command): void {
       if (ctx.globalOpts.json) {
         console.log(formatStepJson(stages));
       } else {
-        console.log(formatStepTable(stages));
+        console.log(formatStepTable(stages, ctx.globalOpts.plain));
       }
     }));
 
@@ -317,7 +317,7 @@ export function registerStepCommands(parent: Command): void {
       if (ctx.globalOpts.json) {
         console.log(formatStepJson([stepObj]));
       } else {
-        console.log(formatStepDetail(stepObj));
+        console.log(formatStepDetail(stepObj, ctx.globalOpts.plain));
       }
     }));
 
@@ -454,7 +454,7 @@ export function registerStepCommands(parent: Command): void {
         console.log(formatStepJson([created]));
       } else {
         console.log(`\nStep "${stepLabel(created.type, created.flavor)}" created successfully.`);
-        console.log(formatStepDetail(created));
+        console.log(formatStepDetail(created, ctx.globalOpts.plain));
       }
     }));
 
@@ -496,7 +496,7 @@ export function registerStepCommands(parent: Command): void {
         console.log(formatStepJson([saved]));
       } else {
         console.log(`\nStep "${stepLabel(saved.type, saved.flavor)}" updated successfully.`);
-        console.log(formatStepDetail(saved));
+        console.log(formatStepDetail(saved, ctx.globalOpts.plain));
       }
     }));
 

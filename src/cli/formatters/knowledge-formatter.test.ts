@@ -70,10 +70,15 @@ describe('formatKnowledgeStats', () => {
     ...overrides,
   });
 
-  it('shows header and total count', () => {
-    const result = formatKnowledgeStats(makeStats());
+  it('shows header and total count (plain)', () => {
+    const result = formatKnowledgeStats(makeStats(), true);
     expect(result).toContain('=== Knowledge Store Stats ===');
     expect(result).toContain('Total Learnings: 42');
+  });
+
+  it('uses thematic knowledge label by default', () => {
+    const result = formatKnowledgeStats(makeStats());
+    expect(result).toContain('=== Bunkai Store Stats ===');
   });
 
   it('shows average confidence', () => {
@@ -81,11 +86,16 @@ describe('formatKnowledgeStats', () => {
     expect(result).toContain('Average Confidence: 0.73');
   });
 
-  it('shows tier breakdown', () => {
-    const result = formatKnowledgeStats(makeStats());
+  it('shows tier breakdown (plain)', () => {
+    const result = formatKnowledgeStats(makeStats(), true);
     expect(result).toContain('Stage:    20');
     expect(result).toContain('Category: 15');
     expect(result).toContain('Agent:    7');
+  });
+
+  it('uses thematic stage label in tier breakdown by default', () => {
+    const result = formatKnowledgeStats(makeStats());
+    expect(result).toContain('Gyo:    20');
   });
 
   it('shows top categories', () => {

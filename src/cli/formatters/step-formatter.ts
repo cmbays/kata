@@ -1,17 +1,19 @@
 import type { Step } from '@domain/types/step.js';
+import { getLexicon, cap } from '@cli/lexicon.js';
 
 /**
  * Format a list of steps as an aligned text table.
  */
-export function formatStepTable(steps: Step[]): string {
+export function formatStepTable(steps: Step[], plain?: boolean): string {
   if (steps.length === 0) {
     return 'No steps found.';
   }
+  const lex = getLexicon(plain);
 
-  const header = padColumns(['Type', 'Flavor', 'Gates', 'Artifacts']);
+  const header = padColumns([cap(lex.step), cap(lex.flavor), cap(lex.gate) + 's', 'Artifacts']);
   const separator = '-'.repeat(header.length);
   const rows = steps.map((s) => {
-    const gates = buildGatesSummary(s);
+    const gates = buildGatesSummary(s, plain);
     const artifacts = s.artifacts.map((a) => a.name).join(', ') || '-';
     return padColumns([s.type, s.flavor ?? '-', gates, artifacts]);
   });
@@ -22,10 +24,11 @@ export function formatStepTable(steps: Step[]): string {
 /**
  * Format a single step with full detail.
  */
-export function formatStepDetail(step: Step): string {
+export function formatStepDetail(step: Step, plain?: boolean): string {
   const lines: string[] = [];
+  const lex = getLexicon(plain);
 
-  lines.push(`Step: ${step.type}${step.flavor ? ` (${step.flavor})` : ''}`);
+  lines.push(`${cap(lex.step)}: ${step.type}${step.flavor ? ` (${step.flavor})` : ''}`);
   if (step.description) {
     lines.push(`Description: ${step.description}`);
   }
@@ -33,7 +36,7 @@ export function formatStepDetail(step: Step): string {
 
   // Entry gate
   if (step.entryGate) {
-    lines.push('Entry Gate:');
+    lines.push(`${cap(lex.entryGate)}:`);
     lines.push(`  Required: ${step.entryGate.required}`);
     for (const cond of step.entryGate.conditions) {
       lines.push(`  - [${cond.type}] ${cond.description ?? cond.artifactName ?? cond.predecessorType ?? ''}`);
@@ -43,7 +46,7 @@ export function formatStepDetail(step: Step): string {
 
   // Exit gate
   if (step.exitGate) {
-    lines.push('Exit Gate:');
+    lines.push(`${cap(lex.exitGate)}:`);
     lines.push(`  Required: ${step.exitGate.required}`);
     for (const cond of step.exitGate.conditions) {
       lines.push(`  - [${cond.type}] ${cond.description ?? cond.artifactName ?? cond.predecessorType ?? ''}`);
@@ -119,20 +122,22 @@ export function formatStepJson(steps: Step[]): string {
 
 // ---- Helpers ----
 
-function buildGatesSummary(step: Step): string {
+function buildGatesSummary(step: Step, plain?: boolean): string {
+  const lex = getLexicon(plain);
   const parts: string[] = [];
   if (step.entryGate) {
     const req = step.entryGate.required ? 'req' : 'opt';
-    parts.push(`entry(${step.entryGate.conditions.length},${req})`);
+    parts.push(`${lex.entryGate}(${step.entryGate.conditions.length},${req})`);
   }
   if (step.exitGate) {
     const req = step.exitGate.required ? 'req' : 'opt';
-    parts.push(`exit(${step.exitGate.conditions.length},${req})`);
+    parts.push(`${lex.exitGate}(${step.exitGate.conditions.length},${req})`);
   }
   return parts.join(', ') || '-';
 }
 
 function padColumns(values: string[]): string {
-  const widths = [16, 12, 24, 30];
+  const widths = [16, 12, 32, 30];
   return values.map((v, i) => v.padEnd(widths[i] ?? 20)).join('  ');
 }
+

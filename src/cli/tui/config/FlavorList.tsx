@@ -8,6 +8,7 @@ import type { Flavor, FlavorStepRef } from '@domain/types/flavor.js';
 import type { Step, StepResources } from '@domain/types/step.js';
 import type { Gate, GateCondition } from '@domain/types/gate.js';
 import type { FlavorValidationResult } from '@domain/ports/flavor-registry.js';
+import { getLexicon, cap } from '@cli/lexicon.js';
 
 export type FlavorAction =
   | { type: 'flavor:create' }
@@ -23,6 +24,7 @@ export interface FlavorListProps {
   onAction?: (action: FlavorAction) => void;
   /** When provided, restores the view directly into this flavor's detail on mount. */
   initialFlavorName?: string;
+  plain?: boolean;
 }
 
 export default function FlavorList({
@@ -32,6 +34,7 @@ export default function FlavorList({
   onDetailExit,
   onAction = () => {},
   initialFlavorName,
+  plain,
 }: FlavorListProps) {
   const { flavors, validate, resolveStep } = useMemo(() => {
     try {
@@ -72,7 +75,7 @@ export default function FlavorList({
       restoredRef.current = true;
       onDetailEnter();
     }
-  }, []); // eslint-disable-line
+  }, []);
 
   const clamped = Math.min(selectedIndex, Math.max(0, flavors.length - 1));
   const clampedStepIndex = detail
@@ -139,8 +142,10 @@ export default function FlavorList({
     }
   });
 
+  const lex = getLexicon(plain);
+
   if (detail !== null && drillStep !== null) {
-    return <StepDrillView step={drillStep} stepsDir={stepsDir} flavors={flavors} />;
+    return <StepDrillView step={drillStep} stepsDir={stepsDir} flavors={flavors} plain={plain} />;
   }
 
   if (detail !== null) {
@@ -150,22 +155,24 @@ export default function FlavorList({
         validation={validate(detail)}
         resolveStep={resolveStep}
         selectedStepIndex={clampedStepIndex}
+        plain={plain}
       />
     );
   }
 
   return (
     <Box flexDirection="column">
-      <Text bold>Flavors ({flavors.length})</Text>
+      <Text bold>{cap(lex.flavor)}s ({flavors.length})</Text>
       <Box flexDirection="column" marginTop={1}>
         {flavors.length === 0 ? (
-          <Text dimColor>No flavors found.</Text>
+          <Text dimColor>No {lex.flavor}s found.</Text>
         ) : (
           flavors.map((flavor, i) => (
             <FlavorRow
               key={`${flavor.stageCategory}:${flavor.name}`}
               flavor={flavor}
               isSelected={i === clamped}
+              plain={plain}
             />
           ))
         )}
@@ -177,13 +184,14 @@ export default function FlavorList({
   );
 }
 
-function FlavorRow({ flavor, isSelected }: { flavor: Flavor; isSelected: boolean }) {
+function FlavorRow({ flavor, isSelected, plain }: { flavor: Flavor; isSelected: boolean; plain?: boolean }) {
+  const lex = getLexicon(plain);
   return (
     <Box>
       <Text color="cyan">{isSelected ? '>' : ' '} </Text>
       <Text bold={isSelected}>{flavor.name.padEnd(28)}</Text>
       <Text color="yellow">{`[${flavor.stageCategory}]`.padEnd(12)}</Text>
-      <Text dimColor>{flavor.steps.length} step(s)</Text>
+      <Text dimColor>{flavor.steps.length} {lex.step}(s)</Text>
     </Box>
   );
 }
@@ -193,27 +201,30 @@ interface FlavorDetailProps {
   validation: FlavorValidationResult;
   resolveStep: (ref: FlavorStepRef) => Step | undefined;
   selectedStepIndex: number;
+  plain?: boolean;
 }
 
-function FlavorDetail({ flavor, validation, resolveStep, selectedStepIndex }: FlavorDetailProps) {
+function FlavorDetail({ flavor, validation, resolveStep, selectedStepIndex, plain }: FlavorDetailProps) {
+  const lex = getLexicon(plain);
   return (
     <Box flexDirection="column">
       <Text bold color="cyan">
         {flavor.name}
       </Text>
       <Text>
-        Category: <Text color="yellow">{flavor.stageCategory}</Text>
+        {cap(lex.stage)}: <Text color="yellow">{flavor.stageCategory}</Text>
       </Text>
       {flavor.description !== undefined && <Text>Description: {flavor.description}</Text>}
       <Text>
         Synthesis artifact: <Text bold>{flavor.synthesisArtifact}</Text>
       </Text>
       <Box flexDirection="column" marginTop={1}>
-        <Text bold>Steps ({flavor.steps.length}):</Text>
+        <Text bold>{cap(lex.step)}s ({flavor.steps.length}):</Text>
         <FlavorPipeline
           steps={flavor.steps}
           resolveStep={resolveStep}
           selectedStepIndex={selectedStepIndex}
+          plain={plain}
         />
       </Box>
       <Box marginTop={1}>
@@ -243,10 +254,12 @@ function FlavorPipeline({
   steps,
   resolveStep,
   selectedStepIndex,
+  plain,
 }: {
   steps: FlavorStepRef[];
   resolveStep: (ref: FlavorStepRef) => Step | undefined;
   selectedStepIndex: number;
+  plain?: boolean;
 }) {
   return (
     <Box flexDirection="column">
@@ -272,6 +285,7 @@ function FlavorPipeline({
               step={step}
               index={i + 1}
               isSelected={i === selectedStepIndex}
+              plain={plain}
             />
             {showConnector && <PipelineConnector matchedArtifacts={matchedArtifacts} />}
           </Box>
@@ -286,12 +300,15 @@ function StepPipelineBlock({
   step,
   index,
   isSelected,
+  plain,
 }: {
   stepRef: FlavorStepRef;
   step: Step | undefined;
   index: number;
   isSelected: boolean;
+  plain?: boolean;
 }) {
+  const lex = getLexicon(plain);
   const typeLabel = step
     ? step.flavor
       ? `${step.type}.${step.flavor}`
@@ -305,7 +322,7 @@ function StepPipelineBlock({
     <Box flexDirection="column">
       {entryConditions.length > 0 ? (
         <Box flexDirection="column">
-          <Text color="green">  Entry:</Text>
+          <Text color="green">  {cap(lex.entryGate)}:</Text>
           {entryConditions.map((c, ci) => (
             <Box key={ci}>
               <Text dimColor>{'    '}</Text>
@@ -317,7 +334,7 @@ function StepPipelineBlock({
           ))}
         </Box>
       ) : (
-        <Text dimColor>  Entry: none</Text>
+        <Text dimColor>  {cap(lex.entryGate)}: none</Text>
       )}
       <Box
         borderStyle="round"
@@ -338,12 +355,12 @@ function StepPipelineBlock({
           <Text dimColor>{'    '}→ {artifacts.map((a) => a.name).join(', ')}</Text>
         )}
         {step === undefined && (
-          <Text color="red">{'    '}⚠ step type "{stepRef.stepType}" not found</Text>
+          <Text color="red">{'    '}⚠ {lex.step} type "{stepRef.stepType}" not found</Text>
         )}
       </Box>
       {exitConditions.length > 0 ? (
         <Box flexDirection="column">
-          <Text color="magenta">  Exit:</Text>
+          <Text color="magenta">  {cap(lex.exitGate)}:</Text>
           {exitConditions.map((c, ci) => (
             <Box key={ci}>
               <Text dimColor>{'    '}</Text>
@@ -355,7 +372,7 @@ function StepPipelineBlock({
           ))}
         </Box>
       ) : (
-        <Text dimColor>  Exit: none</Text>
+        <Text dimColor>  {cap(lex.exitGate)}: none</Text>
       )}
     </Box>
   );
@@ -381,11 +398,14 @@ function StepDrillView({
   step,
   stepsDir,
   flavors,
+  plain,
 }: {
   step: Step;
   stepsDir: string;
   flavors: Flavor[];
+  plain?: boolean;
 }) {
+  const lex = getLexicon(plain);
   const label = step.flavor ? `${step.type}.${step.flavor}` : step.type;
 
   const promptPreview = useMemo(() => {
@@ -415,7 +435,7 @@ function StepDrillView({
       </Text>
       {step.stageCategory !== undefined && (
         <Text>
-          Category: <Text color="yellow">{step.stageCategory}</Text>
+          {cap(lex.stage)}: <Text color="yellow">{step.stageCategory}</Text>
         </Text>
       )}
       {step.description !== undefined && <Text dimColor>{step.description}</Text>}
@@ -427,18 +447,18 @@ function StepDrillView({
           </Text>
         </Text>
       ) : (
-        <Text dimColor>Not used in any flavor in this stage</Text>
+        <Text dimColor>Not used in any {lex.flavor} in this {lex.stage}</Text>
       )}
 
       <Box flexDirection="column" marginTop={1}>
-        <GateSection gate={step.entryGate} label="Entry gate" />
+        <GateSection gate={step.entryGate} isEntry={true} plain={plain} />
         <Box borderStyle="round" flexDirection="column" paddingX={1}>
           <Text bold>{label}</Text>
           {step.artifacts.length > 0 && (
             <Text dimColor>produces: {step.artifacts.map((a) => a.name).join(', ')}</Text>
           )}
         </Box>
-        <GateSection gate={step.exitGate} label="Exit gate" />
+        <GateSection gate={step.exitGate} isEntry={false} plain={plain} />
       </Box>
 
       {promptPreview !== null && (
@@ -456,7 +476,7 @@ function StepDrillView({
 
       {step.resources !== undefined && <ResourceDetail resources={step.resources} />}
       <Box marginTop={1}>
-        <Text dimColor>[←/Esc] back to flavor  [e] edit this step</Text>
+        <Text dimColor>[←/Esc] back to {lex.flavor}  [e] edit this {lex.step}</Text>
       </Box>
     </Box>
   );
@@ -464,13 +484,15 @@ function StepDrillView({
 
 // ── Shared sub-components ────────────────────────────────────────────────────
 
-function GateSection({ gate, label }: { label: string; gate?: Gate }) {
+function GateSection({ gate, isEntry, plain }: { isEntry: boolean; gate?: Gate; plain?: boolean }) {
+  const lex = getLexicon(plain);
+  const label = isEntry ? cap(lex.entryGate) : cap(lex.exitGate);
   if (!gate || gate.conditions.length === 0) {
     return <Text dimColor>{label}: none</Text>;
   }
   return (
     <Box flexDirection="column">
-      <Text color={label.startsWith('Entry') ? 'green' : 'magenta'}>{label}:</Text>
+      <Text color={isEntry ? 'green' : 'magenta'}>{label}:</Text>
       {gate.conditions.map((c, i) => (
         <Box key={i} marginLeft={2}>
           <Text dimColor>{i + 1}. </Text>
@@ -484,6 +506,7 @@ function GateSection({ gate, label }: { label: string; gate?: Gate }) {
     </Box>
   );
 }
+
 
 function ResourceDetail({ resources }: { resources: StepResources }) {
   const { tools, agents, skills } = resources;

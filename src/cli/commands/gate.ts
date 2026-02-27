@@ -9,10 +9,12 @@ import {
 } from '@infra/persistence/run-store.js';
 import { StageCategorySchema } from '@domain/types/stage.js';
 import { PendingGateSchema } from '@domain/types/run-state.js';
+import { getLexicon } from '@cli/lexicon.js';
 
 export function registerGateCommands(parent: Command): void {
   const gate = parent
     .command('gate')
+    .alias('mon')
     .description('Manage run gates');
 
   // ---- set <run-id> ----
@@ -83,7 +85,8 @@ export function registerGateCommands(parent: Command): void {
       if (ctx.globalOpts.json) {
         console.log(JSON.stringify(result, null, 2));
       } else {
-        console.log(`Gate "${gateId}" (${gateType}) set on stage "${stage}" in run ${runId.slice(0, 8)}.`);
+        const lex = getLexicon(ctx.globalOpts.plain);
+        console.log(`${lex.gate} "${gateId}" (${gateType}) set on ${lex.stage} "${stage}" in run ${runId.slice(0, 8)}.`);
         console.log(`Run "kata approve ${gateId}" to unblock.`);
       }
     }));

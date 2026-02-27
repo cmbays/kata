@@ -45,7 +45,7 @@ export function registerFlavorCommands(parent: Command): void {
       if (ctx.globalOpts.json) {
         console.log(formatFlavorJson(flavors));
       } else {
-        console.log(formatFlavorTable(flavors));
+        console.log(formatFlavorTable(flavors, ctx.globalOpts.plain));
       }
     }));
 
@@ -70,7 +70,7 @@ export function registerFlavorCommands(parent: Command): void {
         if (ctx.globalOpts.json) {
           console.log(formatFlavorJson([flavorObj]));
         } else {
-          console.log(formatFlavorDetail(flavorObj));
+          console.log(formatFlavorDetail(flavorObj, ctx.globalOpts.plain));
         }
         return;
       }
@@ -86,7 +86,7 @@ export function registerFlavorCommands(parent: Command): void {
       if (ctx.globalOpts.json) {
         console.log(formatFlavorJson([match]));
       } else {
-        console.log(formatFlavorDetail(match));
+        console.log(formatFlavorDetail(match, ctx.globalOpts.plain));
       }
     }));
 
@@ -242,7 +242,7 @@ export function registerFlavorCommands(parent: Command): void {
         console.log(formatFlavorJson([flavor]));
       } else {
         console.log(`\nFlavor "${name}" created for stage "${stageCategory}".`);
-        console.log(formatFlavorDetail(flavor));
+        console.log(formatFlavorDetail(flavor, ctx.globalOpts.plain));
       }
     }));
 

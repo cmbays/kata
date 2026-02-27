@@ -16,12 +16,20 @@ function makeGateResult(overrides?: Partial<GateResult>): GateResult {
 }
 
 describe('formatGateResult', () => {
-  it('should display gate type and status', () => {
+  it('should display gate type and status (plain)', () => {
     const result = makeGateResult({ passed: true });
-    const output = formatGateResult(result);
+    const output = formatGateResult(result, true);
 
     expect(output).toContain('Entry Gate');
     expect(output).toContain('required');
+    expect(output).toContain('PASSED');
+  });
+
+  it('should use thematic labels by default', () => {
+    const result = makeGateResult({ passed: true });
+    const output = formatGateResult(result);
+
+    expect(output).toContain('Iri-Mon');
     expect(output).toContain('PASSED');
   });
 
@@ -32,14 +40,22 @@ describe('formatGateResult', () => {
     expect(output).toContain('FAILED');
   });
 
-  it('should display optional for non-required gates', () => {
+  it('should display optional for non-required gates (plain)', () => {
+    const result = makeGateResult({
+      gate: { type: 'exit', conditions: [], required: false },
+    });
+    const output = formatGateResult(result, true);
+
+    expect(output).toContain('Exit Gate');
+    expect(output).toContain('optional');
+  });
+
+  it('should use thematic exit gate label by default', () => {
     const result = makeGateResult({
       gate: { type: 'exit', conditions: [], required: false },
     });
     const output = formatGateResult(result);
-
-    expect(output).toContain('Exit Gate');
-    expect(output).toContain('optional');
+    expect(output).toContain('De-Mon');
   });
 
   it('should display condition results with icons', () => {

@@ -3,6 +3,7 @@ import { Box, Text, useInput } from 'ink';
 import { JsonStore } from '@infra/persistence/json-store.js';
 import { SavedKataSchema } from '@domain/types/saved-kata.js';
 import type { SavedKata } from '@domain/types/saved-kata.js';
+import { getLexicon, cap } from '@cli/lexicon.js';
 
 export type KataAction =
   | { type: 'kata:create' }
@@ -13,6 +14,7 @@ export interface KataListProps {
   onDetailEnter: () => void;
   onDetailExit: () => void;
   onAction?: (action: KataAction) => void;
+  plain?: boolean;
 }
 
 export default function KataList({
@@ -20,6 +22,7 @@ export default function KataList({
   onDetailEnter,
   onDetailExit,
   onAction = () => {},
+  plain,
 }: KataListProps) {
   const katas = useMemo(() => {
     try {
@@ -63,7 +66,7 @@ export default function KataList({
   });
 
   if (detail !== null) {
-    return <KataDetail kata={detail} />;
+    return <KataDetail kata={detail} plain={plain} />;
   }
 
   return (
@@ -98,7 +101,8 @@ function KataRow({ kata, isSelected }: { kata: SavedKata; isSelected: boolean })
   );
 }
 
-function KataDetail({ kata }: { kata: SavedKata }) {
+function KataDetail({ kata, plain }: { kata: SavedKata; plain?: boolean }) {
+  const lex = getLexicon(plain);
   return (
     <Box flexDirection="column">
       <Text bold color="cyan">
@@ -106,7 +110,7 @@ function KataDetail({ kata }: { kata: SavedKata }) {
       </Text>
       {kata.description !== undefined && <Text>Description: {kata.description}</Text>}
       <Box marginTop={1} flexDirection="column">
-        <Text bold>Stage sequence:</Text>
+        <Text bold>{cap(lex.stage)} sequence:</Text>
         {kata.stages.map((stage, i) => (
           <Box key={`${stage}-${i}`}>
             <Text dimColor>{String(i + 1).padStart(2)}. </Text>
@@ -120,3 +124,4 @@ function KataDetail({ kata }: { kata: SavedKata }) {
     </Box>
   );
 }
+

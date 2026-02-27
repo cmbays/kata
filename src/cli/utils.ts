@@ -3,6 +3,8 @@ import { existsSync } from 'node:fs';
 import type { Command } from 'commander';
 import { ConfigNotFoundError } from '@shared/lib/errors.js';
 import { KATA_DIRS, type KataDirKey } from '@shared/constants/paths.js';
+import { JsonStore } from '@infra/persistence/json-store.js';
+import { KataConfigSchema } from '@domain/types/config.js';
 
 /**
  * Resolve the .kata/ directory path from a given cwd (or process.cwd()).
@@ -26,6 +28,7 @@ export function kataDirPath(kataDir: string, subdir: KataDirKey): string {
 export interface GlobalOptions {
   json: boolean;
   verbose: boolean;
+  plain: boolean;
   cwd?: string;
 }
 
@@ -40,10 +43,13 @@ type CommandHandler = (ctx: CommandContext, ...args: any[]) => void | Promise<vo
 
 /**
  * Extract global CLI options from a Commander command.
+ * Respects --plain flag and KATA_PLAIN=1 env var (env var takes effect here;
+ * config-file outputMode is merged later in withCommandContext).
  */
 export function getGlobalOptions(cmd: Command): GlobalOptions {
   const opts = cmd.optsWithGlobals();
-  return { json: !!opts.json, verbose: !!opts.verbose, cwd: opts.cwd };
+  const plain = !!opts.plain || process.env['KATA_PLAIN'] === '1';
+  return { json: !!opts.json, verbose: !!opts.verbose, plain, cwd: opts.cwd };
 }
 
 /**
@@ -67,12 +73,31 @@ export function withCommandContext(
         ? ''
         : resolveKataDir(globalOpts.cwd);
 
-      const ctx: CommandContext = { globalOpts, kataDir, cmd };
+      // Merge outputMode from config when not already forced plain by flag/env.
+      // Config is lowest precedence: --plain / KATA_PLAIN=1 always win.
+      let plain = globalOpts.plain;
+      if (!plain && kataDir) {
+        plain = loadConfigOutputMode(kataDir);
+      }
+
+      const ctx: CommandContext = { globalOpts: { ...globalOpts, plain }, kataDir, cmd };
       await handler(ctx, ...positionalArgs);
     } catch (error) {
       handleCommandError(error, globalOpts.verbose);
     }
   };
+}
+
+/** Read outputMode from .kata/config.json; returns true if 'plain', false otherwise. */
+function loadConfigOutputMode(kataDir: string): boolean {
+  const configPath = join(kataDir, 'config.json');
+  if (!existsSync(configPath)) return false;
+  try {
+    const config = JsonStore.read(configPath, KataConfigSchema);
+    return config.outputMode === 'plain';
+  } catch {
+    return false;
+  }
 }
 
 /**

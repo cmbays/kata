@@ -74,7 +74,7 @@ describe('registerStepCommands', () => {
 
   function createProgram(): Command {
     const program = new Command();
-    program.option('--json').option('--verbose').option('--cwd <path>');
+    program.option('--json').option('--verbose').option('--cwd <path>').option('--plain');
     program.exitOverride();
     registerStepCommands(program);
     return program;
@@ -163,7 +163,7 @@ describe('registerStepCommands', () => {
   describe('step inspect', () => {
     it('shows step detail when type is provided', async () => {
       const program = createProgram();
-      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'step', 'inspect', 'research']);
+      await program.parseAsync(['node', 'test', '--plain', '--cwd', baseDir, 'step', 'inspect', 'research']);
 
       const output = consoleSpy.mock.calls[0]?.[0] as string;
       expect(output).toContain('Step: research');
@@ -172,7 +172,7 @@ describe('registerStepCommands', () => {
 
     it('shows flavored step detail with --flavor', async () => {
       const program = createProgram();
-      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'step', 'inspect', 'build', '--flavor', 'typescript']);
+      await program.parseAsync(['node', 'test', '--plain', '--cwd', baseDir, 'step', 'inspect', 'build', '--flavor', 'typescript']);
 
       const output = consoleSpy.mock.calls[0]?.[0] as string;
       expect(output).toContain('Step: build (typescript)');

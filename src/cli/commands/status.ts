@@ -6,12 +6,13 @@ import { JsonStore } from '@infra/persistence/json-store.js';
 import { listRecentArtifacts } from '@features/execute/kiai-runner.js';
 import { StageCategorySchema, type StageCategory } from '@domain/types/stage.js';
 import { withCommandContext, kataDirPath } from '@cli/utils.js';
+import { getLexicon } from '@cli/lexicon.js';
 
 // ---------------------------------------------------------------------------
 // Core handlers (exported so `kata kiai status/stats` can delegate here)
 // ---------------------------------------------------------------------------
 
-export function handleStatus(ctx: { kataDir: string; globalOpts: { json?: boolean } }): void {
+export function handleStatus(ctx: { kataDir: string; globalOpts: { json?: boolean; plain?: boolean } }): void {
   const isJson = ctx.globalOpts.json;
 
   // Active cycle
@@ -79,7 +80,7 @@ export function handleStatus(ctx: { kataDir: string; globalOpts: { json?: boolea
 }
 
 export function handleStats(
-  ctx: { kataDir: string; globalOpts: { json?: boolean } },
+  ctx: { kataDir: string; globalOpts: { json?: boolean; plain?: boolean } },
   categoryFilter?: StageCategory,
 ): void {
   const isJson = ctx.globalOpts.json;
@@ -135,7 +136,8 @@ export function handleStats(
       console.log(`    Avg duration: ${executionStats.avgDurationMs.toFixed(0)}ms`);
     }
   } else {
-    console.log('  No execution data. Run "kata kiai <category>" to generate analytics.');
+    const lex = getLexicon(ctx.globalOpts.plain);
+    console.log(`  No execution data. Run "kata ${lex.execute} <category>" to generate analytics.`);
   }
   console.log('');
 

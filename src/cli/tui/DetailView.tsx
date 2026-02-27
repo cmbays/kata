@@ -1,11 +1,13 @@
 import { Box, Text, useInput } from 'ink';
 import type { WatchRun, WatchStageDetail } from './run-reader.js';
+import { getLexicon, cap } from '@cli/lexicon.js';
 
 export interface DetailViewProps {
   run: WatchRun | undefined;
   onBack: () => void;
   onApprove: (gateId: string) => void;
   onQuit: () => void;
+  plain?: boolean;
 }
 
 function stageStatusIcon(status: WatchStageDetail['status']): string {
@@ -34,7 +36,9 @@ function stageStatusColor(status: WatchStageDetail['status']): string {
   }
 }
 
-export default function DetailView({ run, onBack, onApprove, onQuit }: DetailViewProps) {
+export default function DetailView({ run, onBack, onApprove, onQuit, plain }: DetailViewProps) {
+  const lex = getLexicon(plain);
+
   useInput((input, key) => {
     if (input === 'q') {
       onQuit();
@@ -67,18 +71,18 @@ export default function DetailView({ run, onBack, onApprove, onQuit }: DetailVie
 
       <Box marginTop={1} flexDirection="column">
         {run.stageDetails.map((detail) => (
-          <StageRow key={detail.category} detail={detail} />
+          <StageRow key={detail.category} detail={detail} plain={plain} />
         ))}
       </Box>
 
       {run.pendingGateId && (
         <Box marginTop={1}>
-          <Text color="yellow">Gate pending: {run.pendingGateId}</Text>
+          <Text color="yellow">{cap(lex.gate)} pending: {run.pendingGateId}</Text>
         </Box>
       )}
 
       <Box marginTop={1}>
-        <Text dimColor>[a] approve gate{'  '}[←] back{'  '}[q] quit</Text>
+        <Text dimColor>[a] approve {lex.gate}{'  '}[←] back{'  '}[q] quit</Text>
       </Box>
     </Box>
   );
@@ -86,9 +90,11 @@ export default function DetailView({ run, onBack, onApprove, onQuit }: DetailVie
 
 interface StageRowProps {
   detail: WatchStageDetail;
+  plain?: boolean;
 }
 
-function StageRow({ detail }: StageRowProps) {
+function StageRow({ detail, plain }: StageRowProps) {
+  const lex = getLexicon(plain);
   const icon = stageStatusIcon(detail.status);
   const color = stageStatusColor(detail.status);
   const confStr =
@@ -99,14 +105,15 @@ function StageRow({ detail }: StageRowProps) {
       <Text color={color}>{icon} </Text>
       <Text bold>{detail.category.toUpperCase().padEnd(10)}</Text>
       <Text dimColor>
-        {detail.flavorCount} flavor{detail.flavorCount !== 1 ? 's' : ''}
+        {detail.flavorCount} {lex.flavor}{detail.flavorCount !== 1 ? 's' : ''}
         {'  '}
         {detail.artifactCount} artifact{detail.artifactCount !== 1 ? 's' : ''}
         {'  '}
-        {detail.decisionCount} decision{detail.decisionCount !== 1 ? 's' : ''}
+        {detail.decisionCount} {lex.decision}{detail.decisionCount !== 1 ? 's' : ''}
         {confStr}
       </Text>
       {detail.pendingGateId && <Text color="yellow">{'  '}⚠ {detail.pendingGateId}</Text>}
     </Box>
   );
 }
+

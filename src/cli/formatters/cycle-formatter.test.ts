@@ -38,11 +38,16 @@ const makeStatus = (overrides: Partial<BudgetStatus> = {}): BudgetStatus => ({
 
 describe('formatCycleStatus', () => {
   it('shows cycle name, state, and budget', () => {
-    const result = formatCycleStatus(makeStatus(), makeCycle());
+    const result = formatCycleStatus(makeStatus(), makeCycle(), true);
     expect(result).toContain('Cycle: Test Cycle');
     expect(result).toContain('State: active');
     expect(result).toContain('25,000 / 100,000');
     expect(result).toContain('25.0%');
+  });
+
+  it('uses thematic cycle label by default', () => {
+    const result = formatCycleStatus(makeStatus(), makeCycle());
+    expect(result).toContain('Keiko: Test Cycle');
   });
 
   it('shows alert level when present', () => {
@@ -85,7 +90,7 @@ describe('formatCycleStatus', () => {
 
   it('uses cycle id when name is missing', () => {
     const cycle = makeCycle({ name: undefined });
-    const result = formatCycleStatus(makeStatus(), cycle);
+    const result = formatCycleStatus(makeStatus(), cycle, true);
     expect(result).toContain('Cycle: 00000000-0000-0000-0000-000000000001');
   });
 });
@@ -103,10 +108,15 @@ describe('formatCooldownReport', () => {
     ...overrides,
   });
 
-  it('shows the report header', () => {
-    const result = formatCooldownReport(makeReport());
+  it('shows the report header (plain)', () => {
+    const result = formatCooldownReport(makeReport(), true);
     expect(result).toContain('=== Cooldown Report ===');
     expect(result).toContain('Sprint 1');
+  });
+
+  it('uses thematic cooldown label by default', () => {
+    const result = formatCooldownReport(makeReport());
+    expect(result).toContain('=== Ma Report ===');
   });
 
   it('shows completion rate and utilization', () => {
@@ -176,13 +186,18 @@ describe('formatProposals', () => {
     ...overrides,
   });
 
-  it('shows empty message when no proposals', () => {
-    const result = formatProposals([]);
+  it('shows empty message when no proposals (plain)', () => {
+    const result = formatProposals([], true);
     expect(result).toBe('No proposals generated for the next cycle.');
   });
 
-  it('shows proposal with priority tag and details', () => {
-    const result = formatProposals([makeProposal()]);
+  it('shows thematic empty message by default', () => {
+    const result = formatProposals([]);
+    expect(result).toBe('No proposals generated for the next keiko.');
+  });
+
+  it('shows proposal with priority tag and details (plain)', () => {
+    const result = formatProposals([makeProposal()], true);
     expect(result).toContain('=== Next-Cycle Proposals ===');
     expect(result).toContain('[HIGH]');
     expect(result).toContain('Continue: Build auth system');
@@ -262,8 +277,8 @@ describe('formatCooldownSessionResult', () => {
     ...overrides,
   });
 
-  it('includes cooldown report', () => {
-    const result = formatCooldownSessionResult(makeSessionResult());
+  it('includes cooldown report (plain)', () => {
+    const result = formatCooldownSessionResult(makeSessionResult(), undefined, true);
     expect(result).toContain('=== Cooldown Report ===');
     expect(result).toContain('Sprint 1');
   });
@@ -290,7 +305,7 @@ describe('formatCooldownSessionResult', () => {
     expect(result).toContain('Learnings captured: 3');
   });
 
-  it('shows proposals when present', () => {
+  it('shows proposals when present (plain)', () => {
     const result = formatCooldownSessionResult(
       makeSessionResult({
         proposals: [
@@ -304,13 +319,15 @@ describe('formatCooldownSessionResult', () => {
           },
         ],
       }),
+      undefined,
+      true,
     );
     expect(result).toContain('=== Next-Cycle Proposals ===');
     expect(result).toContain('Continue: Auth system');
   });
 
-  it('shows no-proposals message when empty', () => {
-    const result = formatCooldownSessionResult(makeSessionResult());
+  it('shows no-proposals message when empty (plain)', () => {
+    const result = formatCooldownSessionResult(makeSessionResult(), undefined, true);
     expect(result).toContain('No proposals generated for the next cycle.');
   });
 

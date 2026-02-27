@@ -19,6 +19,7 @@ export function registerWatchCommand(parent: Command): void {
           React.createElement(WatchApp, {
             runsDir,
             cycleId: localOpts['cycle'] as string | undefined,
+            plain: ctx.globalOpts.plain,
           }),
         );
 

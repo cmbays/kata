@@ -92,17 +92,17 @@ beforeEach(() => {
 describe('FlavorList rendering', () => {
   it('shows flavor count when flavors exist', () => {
     mockFlavorList.mockReturnValue([makeFlavor(), makeFlavor({ name: 'basic' })]);
-    const output = renderToString(<FlavorList {...defaultProps} />);
+    const output = renderToString(<FlavorList {...defaultProps} plain />);
     expect(output).toContain('Flavors (2)');
   });
 
   it('shows zero count when no flavors', () => {
-    const output = renderToString(<FlavorList {...defaultProps} />);
+    const output = renderToString(<FlavorList {...defaultProps} plain />);
     expect(output).toContain('Flavors (0)');
   });
 
   it('shows empty message when no flavors', () => {
-    const output = renderToString(<FlavorList {...defaultProps} />);
+    const output = renderToString(<FlavorList {...defaultProps} plain />);
     expect(output).toContain('No flavors found');
   });
 
@@ -126,7 +126,7 @@ describe('FlavorList rendering', () => {
       ],
     });
     mockFlavorList.mockReturnValue([flavor]);
-    const output = renderToString(<FlavorList {...defaultProps} />);
+    const output = renderToString(<FlavorList {...defaultProps} plain />);
     expect(output).toContain('2 step(s)');
   });
 
@@ -205,7 +205,7 @@ describe('FlavorList action keys', () => {
 describe('FlavorList error handling', () => {
   it('shows empty list when FlavorRegistry constructor throws', () => {
     throwOnConstruct = true;
-    const output = renderToString(<FlavorList {...defaultProps} />);
+    const output = renderToString(<FlavorList {...defaultProps} plain />);
     expect(output).toContain('No flavors found');
   });
 
@@ -213,7 +213,7 @@ describe('FlavorList error handling', () => {
     mockFlavorList.mockImplementation(() => {
       throw new Error('disk error');
     });
-    const output = renderToString(<FlavorList {...defaultProps} />);
+    const output = renderToString(<FlavorList {...defaultProps} plain />);
     expect(output).toContain('No flavors found');
   });
 });

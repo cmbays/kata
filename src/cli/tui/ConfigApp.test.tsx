@@ -78,7 +78,7 @@ describe('ConfigApp rendering', () => {
   });
 
   it('shows all three section tab labels', () => {
-    const output = renderToString(<ConfigApp {...defaultProps} />);
+    const output = renderToString(<ConfigApp {...defaultProps} plain />);
     expect(output).toContain('Steps');
     expect(output).toContain('Flavors');
     expect(output).toContain('Katas');

@@ -1,5 +1,6 @@
 import type { Pipeline } from '@domain/types/pipeline.js';
 import type { PipelineResult } from '@features/pipeline-run/pipeline-runner.js';
+import { getLexicon, cap } from '@cli/lexicon.js';
 
 const STATE_ICONS: Record<string, string> = {
   pending: '  ',
@@ -20,8 +21,9 @@ const PIPELINE_STATE_LABELS: Record<string, string> = {
 /**
  * Format a single pipeline's status with stage breakdown.
  */
-export function formatPipelineStatus(pipeline: Pipeline): string {
+export function formatPipelineStatus(pipeline: Pipeline, plain?: boolean): string {
   const lines: string[] = [];
+  const lex = getLexicon(plain);
   const completedCount = pipeline.stages.filter(
     (s) => s.state === 'complete' || s.state === 'skipped',
   ).length;
@@ -32,9 +34,9 @@ export function formatPipelineStatus(pipeline: Pipeline): string {
   lines.push(`Flow: ${pipeline.name} (${pipeline.id})`);
   lines.push(`Type: ${pipeline.type}`);
   lines.push(`State: ${PIPELINE_STATE_LABELS[pipeline.state] ?? pipeline.state}`);
-  lines.push(`Progress: ${completedCount}/${pipeline.stages.length} stages (${pct}%)`);
+  lines.push(`Progress: ${completedCount}/${pipeline.stages.length} ${lex.stage}s (${pct}%)`);
   lines.push('');
-  lines.push('Stages:');
+  lines.push(`${cap(lex.stage)}s:`);
 
   for (let i = 0; i < pipeline.stages.length; i++) {
     const stage = pipeline.stages[i];
@@ -47,7 +49,7 @@ export function formatPipelineStatus(pipeline: Pipeline): string {
 
   if (pipeline.metadata.cycleId) {
     lines.push('');
-    lines.push(`Cycle: ${pipeline.metadata.cycleId}`);
+    lines.push(`${cap(lex.cycle)}: ${pipeline.metadata.cycleId}`);
   }
   if (pipeline.metadata.betId) {
     lines.push(`Bet: ${pipeline.metadata.betId}`);
@@ -180,3 +182,4 @@ export function formatPipelineListJson(pipelines: Pipeline[]): string {
 export function formatPipelineResultJson(result: PipelineResult): string {
   return JSON.stringify(result, null, 2);
 }
+

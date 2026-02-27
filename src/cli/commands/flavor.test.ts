@@ -53,7 +53,7 @@ describe('registerFlavorCommands', () => {
 
   function createProgram(): Command {
     const program = new Command();
-    program.option('--json').option('--verbose').option('--cwd <path>');
+    program.option('--json').option('--verbose').option('--cwd <path>').option('--plain');
     program.exitOverride();
     registerFlavorCommands(program);
     return program;
@@ -123,7 +123,7 @@ describe('registerFlavorCommands', () => {
   describe('flavor inspect', () => {
     it('shows flavor detail with --stage', async () => {
       const program = createProgram();
-      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'flavor', 'inspect', 'typescript-tdd', '--stage', 'build']);
+      await program.parseAsync(['node', 'test', '--plain', '--cwd', baseDir, 'flavor', 'inspect', 'typescript-tdd', '--stage', 'build']);
 
       const output = consoleSpy.mock.calls[0]?.[0] as string;
       expect(output).toContain('Flavor: typescript-tdd');
@@ -133,7 +133,7 @@ describe('registerFlavorCommands', () => {
 
     it('finds flavor without --stage by searching all categories', async () => {
       const program = createProgram();
-      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'flavor', 'inspect', 'security-audit']);
+      await program.parseAsync(['node', 'test', '--plain', '--cwd', baseDir, 'flavor', 'inspect', 'security-audit']);
 
       const output = consoleSpy.mock.calls[0]?.[0] as string;
       expect(output).toContain('Flavor: security-audit');

@@ -28,6 +28,7 @@ export function createProgram(): Command {
     .version(VERSION)
     .option('--json', 'Output in JSON format')
     .option('--verbose', 'Enable verbose logging')
+    .option('--plain', 'Use plain English output instead of thematic vocabulary (also: KATA_PLAIN=1)')
     .option('--cwd <path>', 'Set working directory');
 
   // Wire --verbose to logger before any command runs

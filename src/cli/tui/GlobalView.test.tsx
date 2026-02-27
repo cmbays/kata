@@ -103,7 +103,7 @@ describe('GlobalView rendering', () => {
 
   it('shows pending gate indicator for a run with a pending gate', () => {
     const run = baseRun({ pendingGateId: 'gate-approval-42' });
-    const output = renderToString(<GlobalView runs={[run]} {...defaultProps()} />);
+    const output = renderToString(<GlobalView runs={[run]} {...defaultProps({ plain: true })} />);
     expect(output).toContain('gate pending');
     expect(output).toContain('gate-approval-42');
   });

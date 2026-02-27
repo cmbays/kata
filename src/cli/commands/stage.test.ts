@@ -63,7 +63,7 @@ describe('registerStageCommands (category-level)', () => {
 
   function createProgram(): Command {
     const program = new Command();
-    program.option('--json').option('--verbose').option('--cwd <path>');
+    program.option('--json').option('--verbose').option('--cwd <path>').option('--plain');
     program.exitOverride();
     registerStageCommands(program);
     return program;
@@ -117,7 +117,7 @@ describe('registerStageCommands (category-level)', () => {
   describe('stage inspect', () => {
     it('shows stage details for a valid category', async () => {
       const program = createProgram();
-      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'stage', 'inspect', 'build']);
+      await program.parseAsync(['node', 'test', '--plain', '--cwd', baseDir, 'stage', 'inspect', 'build']);
 
       const output = consoleSpy.mock.calls[0]?.[0] as string;
       expect(output).toContain('Stage: build');
@@ -145,7 +145,7 @@ describe('registerStageCommands (category-level)', () => {
 
     it('shows empty flavors for category with none', async () => {
       const program = createProgram();
-      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'stage', 'inspect', 'research']);
+      await program.parseAsync(['node', 'test', '--plain', '--cwd', baseDir, 'stage', 'inspect', 'research']);
 
       const output = consoleSpy.mock.calls[0]?.[0] as string;
       expect(output).toContain('Stage: research');
@@ -154,7 +154,7 @@ describe('registerStageCommands (category-level)', () => {
 
     it('shows rules and decisions sections', async () => {
       const program = createProgram();
-      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'stage', 'inspect', 'build']);
+      await program.parseAsync(['node', 'test', '--plain', '--cwd', baseDir, 'stage', 'inspect', 'build']);
 
       const output = consoleSpy.mock.calls[0]?.[0] as string;
       expect(output).toContain('Rules:');
