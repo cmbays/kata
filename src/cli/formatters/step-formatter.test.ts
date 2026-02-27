@@ -28,15 +28,17 @@ describe('formatStepTable', () => {
     expect(result).toContain('Waza');
   });
 
-  it('shows flavor when present', () => {
-    const steps = [makeStep({ type: 'build', flavor: 'fast' })];
-    const result = formatStepTable(steps, true);
-    expect(result).toContain('fast');
+  it('shows flavor count when flavorUsage map provided', () => {
+    const steps = [makeStep({ type: 'build' })];
+    const usage = new Map([['build', 3]]);
+    const result = formatStepTable(steps, true, usage);
+    expect(result).toContain('3');
   });
 
-  it('shows "-" for missing flavor', () => {
-    const steps = [makeStep()];
-    const lines = formatStepTable(steps, true).split('\n');
+  it('shows "-" when step has no flavor references', () => {
+    const steps = [makeStep({ type: 'research' })];
+    const result = formatStepTable(steps, true, new Map());
+    const lines = result.split('\n');
     const dataRow = lines[2]; // header, separator, data
     expect(dataRow).toContain('-');
   });

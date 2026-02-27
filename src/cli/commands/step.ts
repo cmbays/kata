@@ -295,7 +295,14 @@ export function registerStepCommands(parent: Command): void {
       if (ctx.globalOpts.json) {
         console.log(formatStepJson(stages));
       } else {
-        console.log(formatStepTable(stages, ctx.globalOpts.plain));
+        const flavorReg = new FlavorRegistry(kataDirPath(ctx.kataDir, 'flavors'));
+        const flavorUsage = new Map<string, number>();
+        for (const flavor of flavorReg.list()) {
+          for (const step of flavor.steps) {
+            flavorUsage.set(step.stepName, (flavorUsage.get(step.stepName) ?? 0) + 1);
+          }
+        }
+        console.log(formatStepTable(stages, ctx.globalOpts.plain, flavorUsage));
       }
     }));
 

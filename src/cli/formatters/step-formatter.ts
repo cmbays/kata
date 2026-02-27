@@ -4,18 +4,21 @@ import { bold, cyan, green, yellow, dim, visiblePadEnd, strip } from '@shared/li
 
 /**
  * Format a list of steps as an aligned text table.
+ * @param flavorUsage - map of step name → number of flavors that reference it
  */
-export function formatStepTable(steps: Step[], plain?: boolean): string {
+export function formatStepTable(steps: Step[], plain?: boolean, flavorUsage?: Map<string, number>): string {
   if (steps.length === 0) {
     return 'No steps found.';
   }
   const lex = getLexicon(plain);
 
-  const headerCols = [cap(lex.step), cap(lex.flavor), pl(cap(lex.gate), plain), 'Artifacts'];
+  const headerCols = [cap(lex.step), pl(cap(lex.flavor), plain), pl(cap(lex.gate), plain), 'Artifacts'];
   const dataRows = steps.map((s) => {
     const gates = buildGatesSummary(s, plain);
     const artifacts = s.artifacts.map((a) => a.name).join(', ') || '-';
-    return [cyan(s.type), s.flavor ?? '-', gates, artifacts];
+    const usedIn = flavorUsage?.get(s.type) ?? 0;
+    const flavorCol = usedIn > 0 ? String(usedIn) : dim('-');
+    return [cyan(s.type), flavorCol, gates, artifacts];
   });
 
   const widths = computeWidths([headerCols, ...dataRows]);
