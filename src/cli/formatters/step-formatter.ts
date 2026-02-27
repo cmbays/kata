@@ -12,13 +12,13 @@ export function formatStepTable(steps: Step[], plain?: boolean, flavorUsage?: Ma
   }
   const lex = getLexicon(plain);
 
-  const headerCols = [cap(lex.step), pl(cap(lex.flavor), plain), pl(cap(lex.gate), plain), 'Artifacts'];
+  const headerCols = [cap(lex.step), pl(cap(lex.gate), plain), 'Artifacts', cap(lex.flavor)];
   const dataRows = steps.map((s) => {
     const gates = buildGatesSummary(s, plain);
     const artifacts = s.artifacts.map((a) => a.name).join(', ') || '-';
     const usedIn = flavorUsage?.get(s.type) ?? 0;
     const flavorCol = usedIn > 0 ? String(usedIn) : dim('-');
-    return [cyan(s.type), flavorCol, gates, artifacts];
+    return [cyan(s.type), gates, artifacts, flavorCol];
   });
 
   const widths = computeWidths([headerCols, ...dataRows]);
