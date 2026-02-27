@@ -1,12 +1,14 @@
 import type { GateResult } from '@domain/types/gate.js';
+import { getLexicon, cap } from '@cli/lexicon.js';
 
 /**
  * Format a gate evaluation result for human-readable display.
  */
-export function formatGateResult(result: GateResult): string {
+export function formatGateResult(result: GateResult, plain?: boolean): string {
   const lines: string[] = [];
+  const lex = getLexicon(plain);
 
-  const gateLabel = result.gate.type === 'entry' ? 'Entry Gate' : 'Exit Gate';
+  const gateLabel = cap(result.gate.type === 'entry' ? lex.entryGate : lex.exitGate);
   const requiredLabel = result.gate.required ? 'required' : 'optional';
   const statusLabel = result.passed ? 'PASSED' : 'FAILED';
 

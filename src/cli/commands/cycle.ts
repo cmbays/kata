@@ -102,7 +102,7 @@ export function registerCycleCommands(parent: Command): void {
         } else {
           console.log('Cycle created!');
           console.log('');
-          console.log(formatCycleStatus(status, updatedCycle));
+          console.log(formatCycleStatus(status, updatedCycle, ctx.globalOpts.plain));
         }
       } else {
         // Non-interactive: create cycle with provided options
@@ -117,7 +117,7 @@ export function registerCycleCommands(parent: Command): void {
         } else {
           console.log('Cycle created!');
           console.log('');
-          console.log(formatCycleStatus(status, cycle));
+          console.log(formatCycleStatus(status, cycle, ctx.globalOpts.plain));
         }
       }
     }));
@@ -137,7 +137,7 @@ export function registerCycleCommands(parent: Command): void {
         if (ctx.globalOpts.json) {
           console.log(formatCycleStatusJson(status, cycle));
         } else {
-          console.log(formatCycleStatus(status, cycle));
+          console.log(formatCycleStatus(status, cycle, ctx.globalOpts.plain));
         }
       } else {
         const cycles = manager.list();
@@ -155,7 +155,7 @@ export function registerCycleCommands(parent: Command): void {
         } else {
           for (const cycle of cycles) {
             const status = manager.getBudgetStatus(cycle.id);
-            console.log(formatCycleStatus(status, cycle));
+            console.log(formatCycleStatus(status, cycle, ctx.globalOpts.plain));
             console.log('');
           }
         }
@@ -205,7 +205,7 @@ export function registerCycleCommands(parent: Command): void {
       } else {
         console.log('Bet added!');
         console.log('');
-        console.log(formatCycleStatus(status, cycle));
+        console.log(formatCycleStatus(status, cycle, ctx.globalOpts.plain));
       }
     }));
 
@@ -249,7 +249,7 @@ export function registerCycleCommands(parent: Command): void {
       } else {
         console.log('Bet updated!');
         console.log('');
-        console.log(formatCycleStatus(status, cycle));
+        console.log(formatCycleStatus(status, cycle, ctx.globalOpts.plain));
       }
     }));
 
@@ -391,7 +391,7 @@ export function registerCycleCommands(parent: Command): void {
       } else {
         console.log('Focus added!');
         console.log('');
-        console.log(formatCycleStatus(status, cycle));
+        console.log(formatCycleStatus(status, cycle, ctx.globalOpts.plain));
       }
     }));
 
@@ -535,7 +535,7 @@ export function registerCycleCommands(parent: Command): void {
           suggestionReview,
         }, null, 2));
       } else {
-        console.log(formatCooldownSessionResult(result, suggestionReview));
+        console.log(formatCooldownSessionResult(result, suggestionReview, ctx.globalOpts.plain));
       }
     }));
 }

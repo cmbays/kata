@@ -129,13 +129,13 @@ describe('DetailView rendering', () => {
   });
 
   it('shows flavor count', () => {
-    const output = renderToString(<DetailView run={makeRun()} {...defaultProps()} />);
+    const output = renderToString(<DetailView run={makeRun()} {...defaultProps({ plain: true })} />);
     expect(output).toContain('2 flavors');
   });
 
   it('shows singular flavor when count is 1', () => {
     const run = makeRun({ stageDetails: [makeStageDetail({ flavorCount: 1 })] });
-    const output = renderToString(<DetailView run={run} {...defaultProps()} />);
+    const output = renderToString(<DetailView run={run} {...defaultProps({ plain: true })} />);
     expect(output).toContain('1 flavor');
     expect(output).not.toContain('1 flavors');
   });
@@ -146,7 +146,7 @@ describe('DetailView rendering', () => {
   });
 
   it('shows decision count', () => {
-    const output = renderToString(<DetailView run={makeRun()} {...defaultProps()} />);
+    const output = renderToString(<DetailView run={makeRun()} {...defaultProps({ plain: true })} />);
     expect(output).toContain('4 decisions');
   });
 
@@ -171,7 +171,7 @@ describe('DetailView rendering', () => {
 
   it('shows run-level pending gate banner', () => {
     const run = makeRun({ pendingGateId: 'gate-run-level' });
-    const output = renderToString(<DetailView run={run} {...defaultProps()} />);
+    const output = renderToString(<DetailView run={run} {...defaultProps({ plain: true })} />);
     expect(output).toContain('Gate pending: gate-run-level');
   });
 

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Command } from 'commander';
 import { withCommandContext, kataDirPath } from '@cli/utils.js';
+import { getLexicon } from '@cli/lexicon.js';
 import { JsonlStore } from '@infra/persistence/jsonl-store.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
 import { readRun, readStageState, writeStageState, runPaths } from '@infra/persistence/run-store.js';
@@ -19,6 +20,7 @@ import { existsSync } from 'node:fs';
 export function registerDecisionCommands(parent: Command): void {
   const decision = parent
     .command('decision')
+    .alias('kime')
     .description('Record and update decisions made during kata runs');
 
   // kata decision record <run-id>
@@ -167,15 +169,16 @@ export function registerDecisionCommands(parent: Command): void {
           ...(isLowConfidence && yolo ? { lowConfidenceYolo: true } : {}),
         }, null, 2));
       } else {
-        console.log(`Decision recorded: ${decisionType}`);
+        const lex = getLexicon(ctx.globalOpts.plain);
+        console.log(`${lex.decision} recorded: ${decisionType}`);
         console.log(`  ID:         ${id}`);
-        console.log(`  Stage:      ${stage}`);
-        if (entry.flavor) console.log(`  Flavor:     ${entry.flavor}`);
-        if (entry.step) console.log(`  Step:       ${entry.step}`);
+        console.log(`  ${lex.stage}:      ${stage}`);
+        if (entry.flavor) console.log(`  ${lex.flavor}:     ${entry.flavor}`);
+        if (entry.step) console.log(`  ${lex.step}:       ${entry.step}`);
         console.log(`  Selected:   ${selected}`);
         console.log(`  Confidence: ${confidence}`);
         if (lowConfidenceGateCreated) {
-          console.log(`  ⚠ Low confidence gate created (threshold: ${confidenceThreshold}). Use "kata approve" to unblock.`);
+          console.log(`  ⚠ Low confidence ${lex.gate} created (threshold: ${confidenceThreshold}). Use "kata approve" to unblock.`);
         } else if (isLowConfidence && yolo) {
           console.log(`  ⚠ Low confidence bypassed with --yolo.`);
         }

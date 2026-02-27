@@ -6,6 +6,7 @@ import { StepRegistry } from '@infra/registries/step-registry.js';
 import { FlavorRegistry } from '@infra/registries/flavor-registry.js';
 import type { Step, StepResources } from '@domain/types/step.js';
 import type { Gate, GateCondition } from '@domain/types/gate.js';
+import { getLexicon, cap, pl } from '@cli/lexicon.js';
 
 export type StepAction =
   | { type: 'step:create' }
@@ -18,6 +19,7 @@ export interface StepListProps {
   onDetailEnter: () => void;
   onDetailExit: () => void;
   onAction?: (action: StepAction) => void;
+  plain?: boolean;
 }
 
 export default function StepList({
@@ -26,7 +28,9 @@ export default function StepList({
   onDetailEnter,
   onDetailExit,
   onAction = () => {},
+  plain,
 }: StepListProps) {
+  const lex = getLexicon(plain);
   const steps = useMemo(() => {
     try {
       return new StepRegistry(stepsDir).list();
@@ -74,15 +78,15 @@ export default function StepList({
   });
 
   if (detail !== null) {
-    return <StepDetail step={detail} stepsDir={stepsDir} flavorsDir={flavorsDir} />;
+    return <StepDetail step={detail} stepsDir={stepsDir} flavorsDir={flavorsDir} plain={plain} />;
   }
 
   return (
     <Box flexDirection="column">
-      <Text bold>Steps ({steps.length})</Text>
+      <Text bold>{cap(lex.step)}s ({steps.length})</Text>
       <Box flexDirection="column" marginTop={1}>
         {steps.length === 0 ? (
-          <Text dimColor>No steps found.</Text>
+          <Text dimColor>No {pl(lex.step, plain)} found.</Text>
         ) : (
           steps.map((step, i) => (
             <StepRow
@@ -117,11 +121,14 @@ function StepDetail({
   step,
   stepsDir,
   flavorsDir,
+  plain,
 }: {
   step: Step;
   stepsDir: string;
   flavorsDir?: string;
+  plain?: boolean;
 }) {
+  const lex = getLexicon(plain);
   const label = step.flavor ? `${step.type}.${step.flavor}` : step.type;
 
   const promptPreview = useMemo(() => {
@@ -157,7 +164,7 @@ function StepDetail({
       </Text>
       {step.stageCategory !== undefined && (
         <Text>
-          Category: <Text color="yellow">{step.stageCategory}</Text>
+          {cap(lex.stage)}: <Text color="yellow">{step.stageCategory}</Text>
         </Text>
       )}
       {step.description !== undefined && <Text dimColor>{step.description}</Text>}
@@ -169,18 +176,18 @@ function StepDetail({
           </Text>
         </Text>
       ) : (
-        flavorsDir !== undefined && <Text dimColor>Not used in any flavor</Text>
+        flavorsDir !== undefined && <Text dimColor>Not used in any {lex.flavor}</Text>
       )}
 
       <Box flexDirection="column" marginTop={1}>
-        <GateSection gate={step.entryGate} label="Entry gate" />
+        <GateSection gate={step.entryGate} isEntry={true} plain={plain} />
         <Box borderStyle="round" flexDirection="column" paddingX={1}>
           <Text bold>{label}</Text>
           {step.artifacts.length > 0 && (
             <Text dimColor>produces: {step.artifacts.map((a) => a.name).join(', ')}</Text>
           )}
         </Box>
-        <GateSection gate={step.exitGate} label="Exit gate" />
+        <GateSection gate={step.exitGate} isEntry={false} plain={plain} />
       </Box>
 
       {promptPreview !== null && (
@@ -204,13 +211,15 @@ function StepDetail({
   );
 }
 
-function GateSection({ gate, label }: { label: string; gate?: Gate }) {
+function GateSection({ gate, isEntry, plain }: { isEntry: boolean; gate?: Gate; plain?: boolean }) {
+  const lex = getLexicon(plain);
+  const label = isEntry ? cap(lex.entryGate) : cap(lex.exitGate);
   if (!gate || gate.conditions.length === 0) {
     return <Text dimColor>{label}: none</Text>;
   }
   return (
     <Box flexDirection="column">
-      <Text color={label.startsWith('Entry') ? 'green' : 'magenta'}>{label}:</Text>
+      <Text color={isEntry ? 'green' : 'magenta'}>{label}:</Text>
       {gate.conditions.map((c, i) => (
         <Box key={i} marginLeft={2}>
           <Text dimColor>{i + 1}. </Text>
@@ -291,3 +300,4 @@ function ResourceDetail({ resources }: { resources: StepResources }) {
     </Box>
   );
 }
+

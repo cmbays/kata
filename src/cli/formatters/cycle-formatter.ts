@@ -3,14 +3,16 @@ import type { CooldownReport, CooldownBetReport } from '@domain/services/cycle-m
 import type { CycleProposal } from '@features/cycle-management/proposal-generator.js';
 import type { CooldownSessionResult } from '@features/cycle-management/cooldown-session.js';
 import type { RunSummary } from '@features/cycle-management/types.js';
+import { getLexicon, cap } from '@cli/lexicon.js';
 
 /**
  * Format cycle budget status as a human-readable summary.
  */
-export function formatCycleStatus(status: BudgetStatus, cycle: Cycle): string {
+export function formatCycleStatus(status: BudgetStatus, cycle: Cycle, plain?: boolean): string {
   const lines: string[] = [];
+  const lex = getLexicon(plain);
 
-  lines.push(`Cycle: ${cycle.name ?? cycle.id}`);
+  lines.push(`${cap(lex.cycle)}: ${cycle.name ?? cycle.id}`);
   lines.push(`State: ${cycle.state}`);
   lines.push(`Bets: ${cycle.bets.length}`);
   lines.push('');
@@ -46,12 +48,13 @@ export function formatCycleStatus(status: BudgetStatus, cycle: Cycle): string {
 /**
  * Format a cooldown report as a retrospective summary.
  */
-export function formatCooldownReport(report: CooldownReport): string {
+export function formatCooldownReport(report: CooldownReport, plain?: boolean): string {
   const lines: string[] = [];
+  const lex = getLexicon(plain);
 
-  lines.push('=== Cooldown Report ===');
+  lines.push(`=== ${cap(lex.cooldown)} Report ===`);
   lines.push('');
-  lines.push(`Cycle: ${report.cycleName ?? report.cycleId}`);
+  lines.push(`${cap(lex.cycle)}: ${report.cycleName ?? report.cycleId}`);
   lines.push(`Completion Rate: ${report.completionRate.toFixed(1)}%`);
   lines.push(`Token Utilization: ${report.utilizationPercent.toFixed(1)}%`);
   if (report.alertLevel) {
@@ -108,13 +111,14 @@ export function formatCooldownReportJson(report: CooldownReport): string {
 /**
  * Format cycle proposals as a human-readable list.
  */
-export function formatProposals(proposals: CycleProposal[]): string {
+export function formatProposals(proposals: CycleProposal[], plain?: boolean): string {
+  const lex = getLexicon(plain);
   if (proposals.length === 0) {
-    return 'No proposals generated for the next cycle.';
+    return `No proposals generated for the next ${lex.cycle}.`;
   }
 
   const lines: string[] = [];
-  lines.push('=== Next-Cycle Proposals ===');
+  lines.push(`=== Next-${cap(lex.cycle)} Proposals ===`);
   lines.push('');
 
   for (let i = 0; i < proposals.length; i++) {
@@ -149,11 +153,12 @@ export function formatProposalsJson(proposals: CycleProposal[]): string {
 export function formatCooldownSessionResult(
   result: CooldownSessionResult,
   suggestionReview?: { accepted: number; rejected: number; deferred: number },
+  plain?: boolean,
 ): string {
   const lines: string[] = [];
 
   // Use the existing cooldown report formatter
-  lines.push(formatCooldownReport(result.report));
+  lines.push(formatCooldownReport(result.report, plain));
   lines.push('');
 
   // Bet outcomes section
@@ -194,9 +199,10 @@ export function formatCooldownSessionResult(
 
   // Proposals section
   if (result.proposals.length > 0) {
-    lines.push(formatProposals(result.proposals));
+    lines.push(formatProposals(result.proposals, plain));
   } else {
-    lines.push('No proposals generated for the next cycle.');
+    const lex = getLexicon(plain);
+    lines.push(`No proposals generated for the next ${lex.cycle}.`);
   }
 
   return lines.join('\n').trimEnd();

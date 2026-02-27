@@ -38,7 +38,7 @@ describe('registerCycleCommands', () => {
 
   function createProgram(): Command {
     const program = new Command();
-    program.option('--json').option('--verbose').option('--cwd <path>');
+    program.option('--json').option('--verbose').option('--cwd <path>').option('--plain');
     program.exitOverride();
     registerCycleCommands(program);
     return program;
@@ -397,7 +397,7 @@ describe('registerCycleCommands', () => {
       });
 
       const program = createProgram();
-      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'cooldown', cycle.id, '--skip-prompts']);
+      await program.parseAsync(['node', 'test', '--plain', '--cwd', baseDir, 'cooldown', cycle.id, '--skip-prompts']);
 
       const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
       expect(output).toContain('Cooldown Report');
@@ -433,7 +433,7 @@ describe('registerCycleCommands', () => {
       });
 
       const program = createProgram();
-      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'cooldown', cycle.id, '--skip-prompts']);
+      await program.parseAsync(['node', 'test', '--plain', '--cwd', baseDir, 'cooldown', cycle.id, '--skip-prompts']);
 
       const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
       expect(output).toContain('Next-Cycle Proposals');

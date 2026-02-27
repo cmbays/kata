@@ -58,7 +58,7 @@ describe('bunkai review command', () => {
 
   function createProgram(): Command {
     const program = new Command();
-    program.option('--json').option('--verbose').option('--cwd <path>');
+    program.option('--json').option('--verbose').option('--cwd <path>').option('--plain');
     program.exitOverride();
     registerKnowledgeCommands(program);
     return program;
@@ -124,7 +124,7 @@ describe('bunkai review command', () => {
 
     const program = createProgram();
     await program.parseAsync([
-      'node', 'test', '--cwd', baseDir,
+      'node', 'test', '--plain', '--cwd', baseDir,
       'knowledge', 'review', '--skip-prompts',
     ]);
 
@@ -214,7 +214,7 @@ describe('bunkai review command', () => {
 
     const program = createProgram();
     await program.parseAsync([
-      'node', 'test', '--cwd', baseDir,
+      'node', 'test', '--plain', '--cwd', baseDir,
       'knowledge', 'review',
     ]);
 
@@ -298,7 +298,7 @@ describe('bunkai review command', () => {
 
     const program = createProgram();
     await program.parseAsync([
-      'node', 'test', '--cwd', baseDir,
+      'node', 'test', '--plain', '--cwd', baseDir,
       'knowledge', 'review', '--skip-prompts',
     ]);
 

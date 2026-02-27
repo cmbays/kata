@@ -52,6 +52,7 @@ export function registerConfigCommand(parent: Command): void {
               },
               initialSectionIndex: relaunchState?.sectionIndex,
               initialFlavorName: relaunchState?.flavorName,
+              plain: ctx.globalOpts.plain,
             }),
           );
 

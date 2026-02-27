@@ -4,6 +4,7 @@ import { RuleRegistry } from '@infra/registries/rule-registry.js';
 import type { LearningFilter } from '@domain/types/learning.js';
 import { StageCategorySchema, type StageCategory } from '@domain/types/stage.js';
 import { withCommandContext, kataDirPath } from '@cli/utils.js';
+import { getLexicon } from '@cli/lexicon.js';
 import {
   formatLearningTable,
   formatKnowledgeStats,
@@ -59,7 +60,7 @@ export function registerKnowledgeCommands(parent: Command): void {
       if (ctx.globalOpts.json) {
         console.log(formatKnowledgeStatsJson(stats));
       } else {
-        console.log(formatKnowledgeStats(stats));
+        console.log(formatKnowledgeStats(stats, ctx.globalOpts.plain));
       }
     }));
 
@@ -99,7 +100,8 @@ export function registerKnowledgeCommands(parent: Command): void {
       }
 
       if (allRules.length === 0) {
-        console.log('No active rules found. Rules are created via "kata bunkai review" or the reflect phase.');
+        const lex = getLexicon(ctx.globalOpts.plain);
+        console.log(`No active rules found. Rules are created via "kata ${lex.knowledge} review" or the reflect phase.`);
         return;
       }
 

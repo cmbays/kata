@@ -43,7 +43,7 @@ describe('registerStatusCommands', () => {
 
       const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
       expect(output).toContain('Kata Project Status');
-      expect(output).toContain('No cycles created yet');
+      expect(output).toContain('No keiko created yet');
       expect(output).toContain('No recent artifacts');
       expect(output).toContain('no learnings captured yet');
     });
@@ -80,7 +80,7 @@ describe('registerStatusCommands', () => {
       await program.parseAsync(['node', 'test', '--cwd', baseDir, 'status']);
 
       const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
-      expect(output).toContain('Active cycle: test-cycle');
+      expect(output).toContain('Active keiko: test-cycle');
       expect(output).toContain('Bets: 1');
     });
 
@@ -111,7 +111,7 @@ describe('registerStatusCommands', () => {
       const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
       expect(output).toContain('Kata Analytics');
       expect(output).toContain('No execution data');
-      expect(output).toContain('No knowledge data');
+      expect(output).toContain('No bunkai data');
     });
 
     it('shows JSON output', async () => {

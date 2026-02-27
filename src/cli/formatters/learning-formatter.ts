@@ -1,17 +1,19 @@
 import type { SuggestedLearning, PromptUpdate } from '@features/self-improvement/learning-extractor.js';
+import { getLexicon, cap } from '@cli/lexicon.js';
 
 /**
  * Format a single suggested learning for interactive review.
  */
-export function formatSuggestedLearning(suggestion: SuggestedLearning): string {
+export function formatSuggestedLearning(suggestion: SuggestedLearning, plain?: boolean): string {
   const lines: string[] = [];
+  const lex = getLexicon(plain);
 
   lines.push('=== Suggested Learning ===');
   lines.push('');
   lines.push(`  Tier:       ${suggestion.tier}`);
   lines.push(`  Category:   ${suggestion.category}`);
   if (suggestion.stageType) {
-    lines.push(`  Stage:      ${suggestion.stageType}`);
+    lines.push(`  ${cap(lex.stage)}:      ${suggestion.stageType}`);
   }
   lines.push(`  Confidence: ${suggestion.confidence.toFixed(2)}`);
   lines.push(`  Evidence:   ${suggestion.evidenceCount} observation(s)`);
@@ -38,12 +40,13 @@ export function formatSuggestedLearning(suggestion: SuggestedLearning): string {
 /**
  * Format a prompt update as a readable diff.
  */
-export function formatPromptUpdateDiff(update: PromptUpdate): string {
+export function formatPromptUpdateDiff(update: PromptUpdate, plain?: boolean): string {
   const lines: string[] = [];
+  const lex = getLexicon(plain);
 
   lines.push('=== Prompt Update ===');
   lines.push('');
-  lines.push(`  Stage:   ${update.stageType}`);
+  lines.push(`  ${cap(lex.stage)}:   ${update.stageType}`);
   lines.push(`  Section: ${update.section}`);
   if (update.currentPromptPath) {
     lines.push(`  File:    ${update.currentPromptPath}`);
@@ -69,10 +72,12 @@ export function formatReviewSummary(
   accepted: number,
   rejected: number,
   promptsUpdated: number,
+  plain?: boolean,
 ): string {
   const lines: string[] = [];
+  const lex = getLexicon(plain);
 
-  lines.push('=== Knowledge Review Summary ===');
+  lines.push(`=== ${cap(lex.knowledge)} Review Summary ===`);
   lines.push('');
   lines.push(`  Learnings accepted:  ${accepted}`);
   lines.push(`  Learnings rejected:  ${rejected}`);

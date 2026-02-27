@@ -16,35 +16,53 @@ describe('formatStepTable', () => {
 
   it('formats a single step row', () => {
     const steps = [makeStep({ type: 'build', artifacts: [{ name: 'code', required: true }] })];
-    const result = formatStepTable(steps);
-    expect(result).toContain('Type');
+    const result = formatStepTable(steps, true);
+    expect(result).toContain('Step');
     expect(result).toContain('build');
     expect(result).toContain('code');
   });
 
+  it('shows thematic column header by default', () => {
+    const steps = [makeStep({ type: 'build' })];
+    const result = formatStepTable(steps);
+    expect(result).toContain('Waza');
+  });
+
   it('shows flavor when present', () => {
     const steps = [makeStep({ type: 'build', flavor: 'fast' })];
-    const result = formatStepTable(steps);
+    const result = formatStepTable(steps, true);
     expect(result).toContain('fast');
   });
 
   it('shows "-" for missing flavor', () => {
     const steps = [makeStep()];
-    const lines = formatStepTable(steps).split('\n');
+    const lines = formatStepTable(steps, true).split('\n');
     const dataRow = lines[2]; // header, separator, data
     expect(dataRow).toContain('-');
   });
 
-  it('summarizes required gates with req suffix', () => {
+  it('summarizes required gates with req suffix (plain)', () => {
     const steps = [
       makeStep({
         entryGate: { type: 'entry', conditions: [{ type: 'predecessor-complete' }], required: true },
         exitGate: { type: 'exit', conditions: [{ type: 'artifact-exists', artifactName: 'x' }], required: true },
       }),
     ];
+    const result = formatStepTable(steps, true);
+    expect(result).toContain('entry gate(1,req)');
+    expect(result).toContain('exit gate(1,req)');
+  });
+
+  it('summarizes gates with thematic labels by default', () => {
+    const steps = [
+      makeStep({
+        entryGate: { type: 'entry', conditions: [{ type: 'predecessor-complete' }], required: true },
+        exitGate: { type: 'exit', conditions: [{ type: 'artifact-exists', artifactName: 'x' }], required: false },
+      }),
+    ];
     const result = formatStepTable(steps);
-    expect(result).toContain('entry(1,req)');
-    expect(result).toContain('exit(1,req)');
+    expect(result).toContain('iri-mon(1,req)');
+    expect(result).toContain('de-mon(1,opt)');
   });
 
   it('summarizes optional gates with opt suffix', () => {
@@ -54,25 +72,30 @@ describe('formatStepTable', () => {
         exitGate: { type: 'exit', conditions: [{ type: 'artifact-exists', artifactName: 'y' }, { type: 'human-approved' }], required: false },
       }),
     ];
-    const result = formatStepTable(steps);
-    expect(result).toContain('entry(1,opt)');
-    expect(result).toContain('exit(2,opt)');
+    const result = formatStepTable(steps, true);
+    expect(result).toContain('entry gate(1,opt)');
+    expect(result).toContain('exit gate(2,opt)');
   });
 });
 
 describe('formatStepDetail', () => {
   it('shows type and description', () => {
-    const result = formatStepDetail(makeStep({ description: 'Do research' }));
+    const result = formatStepDetail(makeStep({ description: 'Do research' }), true);
     expect(result).toContain('Step: research');
     expect(result).toContain('Description: Do research');
   });
 
+  it('uses thematic label by default', () => {
+    const result = formatStepDetail(makeStep());
+    expect(result).toContain('Waza: research');
+  });
+
   it('shows flavor in parentheses', () => {
-    const result = formatStepDetail(makeStep({ flavor: 'deep' }));
+    const result = formatStepDetail(makeStep({ flavor: 'deep' }), true);
     expect(result).toContain('Step: research (deep)');
   });
 
-  it('shows entry and exit gates', () => {
+  it('shows entry and exit gates (plain)', () => {
     const step = makeStep({
       entryGate: {
         type: 'entry',
@@ -85,11 +108,21 @@ describe('formatStepDetail', () => {
         required: true,
       },
     });
-    const result = formatStepDetail(step);
+    const result = formatStepDetail(step, true);
     expect(result).toContain('Entry Gate:');
     expect(result).toContain('[predecessor-complete]');
     expect(result).toContain('Exit Gate:');
     expect(result).toContain('Summary must exist');
+  });
+
+  it('shows thematic gate labels by default', () => {
+    const step = makeStep({
+      entryGate: { type: 'entry', conditions: [{ type: 'predecessor-complete' }], required: true },
+      exitGate: { type: 'exit', conditions: [{ type: 'artifact-exists', artifactName: 'out' }], required: true },
+    });
+    const result = formatStepDetail(step);
+    expect(result).toContain('Iri-Mon:');
+    expect(result).toContain('De-Mon:');
   });
 
   it('shows artifacts', () => {

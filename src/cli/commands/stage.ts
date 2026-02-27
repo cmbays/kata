@@ -52,7 +52,7 @@ export function registerStageCommands(parent: Command): void {
       if (ctx.globalOpts.json) {
         console.log(formatStageCategoryJson(entries));
       } else {
-        console.log(formatStageCategoryTable(entries));
+        console.log(formatStageCategoryTable(entries, ctx.globalOpts.plain));
       }
     }));
 
@@ -171,7 +171,7 @@ export function registerStageCommands(parent: Command): void {
           flavors,
           rules,
           recentDecisions,
-        }));
+        }, ctx.globalOpts.plain));
       }
     }));
 

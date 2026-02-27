@@ -1,6 +1,7 @@
 import { Box, Text, useInput } from 'ink';
 import { getAvatar } from './avatars.js';
 import type { WatchRun } from './run-reader.js';
+import { getLexicon } from '@cli/lexicon.js';
 
 export interface GlobalViewProps {
   runs: WatchRun[];
@@ -9,6 +10,7 @@ export interface GlobalViewProps {
   onDrillIn: (run: WatchRun) => void;
   onApprove: (gateId: string) => void;
   onQuit: () => void;
+  plain?: boolean;
 }
 
 function progressBar(progress: number, width = 8): string {
@@ -23,7 +25,10 @@ export default function GlobalView({
   onDrillIn,
   onApprove,
   onQuit,
+  plain,
 }: GlobalViewProps) {
+  const lex = getLexicon(plain);
+
   useInput((input, key) => {
     if (input === 'q') {
       onQuit();
@@ -65,13 +70,13 @@ export default function GlobalView({
           <Text dimColor>No active runs.</Text>
         ) : (
           runs.map((run, i) => (
-            <RunRow key={run.runId} run={run} isSelected={i === selectedIndex} />
+            <RunRow key={run.runId} run={run} isSelected={i === selectedIndex} plain={plain} />
           ))
         )}
       </Box>
 
       <Box marginTop={1}>
-        <Text dimColor>[↑↓] select  [Enter] drill in  [a] approve gate  [q] quit</Text>
+        <Text dimColor>[↑↓] select  [Enter] drill in  [a] approve {lex.gate}  [q] quit</Text>
       </Box>
     </Box>
   );
@@ -80,12 +85,14 @@ export default function GlobalView({
 interface RunRowProps {
   run: WatchRun;
   isSelected: boolean;
+  plain?: boolean;
 }
 
-function RunRow({ run, isSelected }: RunRowProps) {
+function RunRow({ run, isSelected, plain }: RunRowProps) {
   const bar = progressBar(run.stageProgress);
   const stage = (run.currentStage ?? '').toUpperCase();
   const avatar = getAvatar(run.avatarState.stage);
+  const lex = getLexicon(plain);
 
   return (
     <Box flexDirection="column" marginBottom={1}>
@@ -98,7 +105,7 @@ function RunRow({ run, isSelected }: RunRowProps) {
       </Box>
       {run.pendingGateId && (
         <Box marginLeft={4}>
-          <Text color="yellow">⚠ gate pending: {run.pendingGateId}</Text>
+          <Text color="yellow">⚠ {lex.gate} pending: {run.pendingGateId}</Text>
         </Box>
       )}
     </Box>

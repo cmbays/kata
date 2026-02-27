@@ -2,6 +2,7 @@ import type { StageCategory } from '@domain/types/stage.js';
 import type { Flavor } from '@domain/types/flavor.js';
 import type { StageRule } from '@domain/types/rule.js';
 import type { Decision } from '@domain/types/decision.js';
+import { getLexicon, cap, pl } from '@cli/lexicon.js';
 
 export interface StageCategoryEntry {
   category: StageCategory;
@@ -19,12 +20,13 @@ export interface StageInspectData {
 /**
  * Format stage categories as an aligned text table.
  */
-export function formatStageCategoryTable(entries: StageCategoryEntry[]): string {
+export function formatStageCategoryTable(entries: StageCategoryEntry[], plain?: boolean): string {
   if (entries.length === 0) {
     return 'No stage categories found.';
   }
+  const lex = getLexicon(plain);
 
-  const header = padColumns(['Category', 'Flavors', 'Rules']);
+  const header = padColumns([cap(lex.stage), pl(cap(lex.flavor), plain), 'Rules']);
   const separator = '-'.repeat(header.length);
   const rows = entries.map((e) =>
     padColumns([e.category, String(e.flavorCount), String(e.ruleCount ?? 0)]),
@@ -36,22 +38,23 @@ export function formatStageCategoryTable(entries: StageCategoryEntry[]): string 
 /**
  * Format a stage category detail view including orchestrator info, flavors, rules, decisions.
  */
-export function formatStageCategoryDetail(data: StageInspectData): string {
+export function formatStageCategoryDetail(data: StageInspectData, plain?: boolean): string {
   const lines: string[] = [];
+  const lex = getLexicon(plain);
 
-  lines.push(`Stage: ${data.category}`);
+  lines.push(`${cap(lex.stage)}: ${data.category}`);
   lines.push('');
 
   // Flavors
   if (data.flavors.length > 0) {
-    lines.push(`Flavors (${data.flavors.length}):`);
+    lines.push(`${pl(cap(lex.flavor), plain)} (${data.flavors.length}):`);
     for (const f of data.flavors) {
       const stepCount = f.steps.length;
       const desc = f.description ? ` — ${f.description}` : '';
-      lines.push(`  - ${f.name} (${stepCount} step${stepCount !== 1 ? 's' : ''})${desc}`);
+      lines.push(`  - ${f.name} (${stepCount} ${pl(lex.step, plain, stepCount)})${desc}`);
     }
   } else {
-    lines.push('Flavors: (none registered)');
+    lines.push(`${pl(cap(lex.flavor), plain)}: (none registered)`);
   }
   lines.push('');
 
@@ -68,14 +71,14 @@ export function formatStageCategoryDetail(data: StageInspectData): string {
 
   // Recent decisions
   if (data.recentDecisions.length > 0) {
-    lines.push(`Recent decisions (${data.recentDecisions.length}):`);
+    lines.push(`Recent ${pl(lex.decision, plain)} (${data.recentDecisions.length}):`);
     for (const d of data.recentDecisions) {
       const conf = `${(d.confidence * 100).toFixed(0)}%`;
       const outcome = d.outcome?.artifactQuality ?? 'pending';
       lines.push(`  - ${d.decisionType}: ${d.selection} (confidence: ${conf}, outcome: ${outcome})`);
     }
   } else {
-    lines.push('Decisions: (no recent decisions)');
+    lines.push(`${pl(cap(lex.decision), plain)}: (no recent ${pl(lex.decision, plain)})`);
   }
 
   return lines.join('\n').trimEnd();
@@ -94,3 +97,4 @@ function padColumns(values: string[]): string {
   const widths = [16, 10, 8];
   return values.map((v, i) => v.padEnd(widths[i] ?? 20)).join('  ');
 }
+

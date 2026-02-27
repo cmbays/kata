@@ -26,7 +26,7 @@ describe('registerKnowledgeCommands', () => {
 
   function createProgram(): Command {
     const program = new Command();
-    program.option('--json').option('--verbose').option('--cwd <path>');
+    program.option('--json').option('--verbose').option('--cwd <path>').option('--plain');
     program.exitOverride();
     registerKnowledgeCommands(program);
     return program;
@@ -143,7 +143,7 @@ describe('registerKnowledgeCommands', () => {
       });
 
       const program = createProgram();
-      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'knowledge', 'stats']);
+      await program.parseAsync(['node', 'test', '--plain', '--cwd', baseDir, 'knowledge', 'stats']);
 
       const output = consoleSpy.mock.calls[0]?.[0] as string;
       expect(output).toContain('Total Learnings: 1');

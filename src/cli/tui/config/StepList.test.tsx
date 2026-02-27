@@ -73,20 +73,31 @@ beforeEach(() => {
 // ── rendering ──────────────────────────────────────────────────────────────
 
 describe('StepList rendering', () => {
-  it('shows step count when steps exist', () => {
+  it('shows step count when steps exist (plain)', () => {
     mockList.mockReturnValue([makeStep(), makeStep({ type: 'build' })]);
-    const output = renderToString(<StepList {...defaultProps} />);
+    const output = renderToString(<StepList {...defaultProps} plain />);
     expect(output).toContain('Steps (2)');
   });
 
-  it('shows zero count when no steps', () => {
+  it('shows thematic step count by default', () => {
+    mockList.mockReturnValue([makeStep(), makeStep({ type: 'build' })]);
     const output = renderToString(<StepList {...defaultProps} />);
+    expect(output).toContain('Wazas (2)');
+  });
+
+  it('shows zero count when no steps (plain)', () => {
+    const output = renderToString(<StepList {...defaultProps} plain />);
     expect(output).toContain('Steps (0)');
   });
 
-  it('shows empty message when list is empty', () => {
-    const output = renderToString(<StepList {...defaultProps} />);
+  it('shows empty message when list is empty (plain)', () => {
+    const output = renderToString(<StepList {...defaultProps} plain />);
     expect(output).toContain('No steps found');
+  });
+
+  it('shows thematic empty message by default', () => {
+    const output = renderToString(<StepList {...defaultProps} />);
+    expect(output).toContain('No waza found');
   });
 
   it('shows step type label', () => {
@@ -205,11 +216,11 @@ describe('StepList action keys', () => {
 // ── error handling ─────────────────────────────────────────────────────────
 
 describe('StepList error handling', () => {
-  it('shows empty list when registry throws', () => {
+  it('shows empty list when registry throws (plain)', () => {
     mockList.mockImplementation(() => {
       throw new Error('disk error');
     });
-    const output = renderToString(<StepList {...defaultProps} />);
+    const output = renderToString(<StepList {...defaultProps} plain />);
     expect(output).toContain('No steps found');
   });
 });

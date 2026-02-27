@@ -58,9 +58,14 @@ describe('formatSuggestedLearning', () => {
     expect(result).toContain('Build frequently fails entry gate.');
   });
 
-  it('shows stageType when present', () => {
-    const result = formatSuggestedLearning(makeSuggestion({ stageType: 'research' }));
+  it('shows stageType when present (plain)', () => {
+    const result = formatSuggestedLearning(makeSuggestion({ stageType: 'research' }), true);
     expect(result).toContain('Stage:      research');
+  });
+
+  it('uses thematic stage label by default', () => {
+    const result = formatSuggestedLearning(makeSuggestion({ stageType: 'research' }));
+    expect(result).toContain('Gyo:      research');
   });
 
   it('omits stageType when undefined', () => {
@@ -90,12 +95,17 @@ describe('formatSuggestedLearning', () => {
 });
 
 describe('formatPromptUpdateDiff', () => {
-  it('displays stage, section, and file', () => {
-    const result = formatPromptUpdateDiff(makePromptUpdate());
+  it('displays stage, section, and file (plain)', () => {
+    const result = formatPromptUpdateDiff(makePromptUpdate(), true);
     expect(result).toContain('=== Prompt Update ===');
     expect(result).toContain('Stage:   build');
     expect(result).toContain('Section: testing');
     expect(result).toContain('File:    prompts/build.md');
+  });
+
+  it('uses thematic stage label by default', () => {
+    const result = formatPromptUpdateDiff(makePromptUpdate());
+    expect(result).toContain('Gyo:   build');
   });
 
   it('shows diff-style additions', () => {
@@ -127,12 +137,17 @@ describe('formatPromptUpdateDiff', () => {
 });
 
 describe('formatReviewSummary', () => {
-  it('shows accepted, rejected, and prompts updated', () => {
-    const result = formatReviewSummary(5, 3, 2);
+  it('shows accepted, rejected, and prompts updated (plain)', () => {
+    const result = formatReviewSummary(5, 3, 2, true);
     expect(result).toContain('=== Knowledge Review Summary ===');
     expect(result).toContain('Learnings accepted:  5');
     expect(result).toContain('Learnings rejected:  3');
     expect(result).toContain('Prompts updated:     2');
+  });
+
+  it('uses thematic knowledge label by default', () => {
+    const result = formatReviewSummary(5, 3, 2);
+    expect(result).toContain('=== Bunkai Review Summary ===');
   });
 
   it('calculates acceptance rate', () => {

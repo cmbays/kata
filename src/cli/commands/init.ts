@@ -3,6 +3,7 @@ import type { ProjectType } from '@features/init/project-detector.js';
 import { handleInit } from '@features/init/init-handler.js';
 import { scanProject, type ScanDepth } from '@features/init/scan-handler.js';
 import { withCommandContext } from '@cli/utils.js';
+import { getLexicon } from '@cli/lexicon.js';
 
 const PROJECT_TYPE_LABELS: Record<ProjectType, string> = {
   node: 'Node.js / TypeScript',
@@ -76,13 +77,14 @@ export function registerInitCommand(program: Command): void {
           console.log('    See issue #23 for full integration status.');
         }
 
+        const lex = getLexicon(ctx.globalOpts.plain);
         console.log('');
         console.log('  What\'s next:');
-        console.log('  → See stages:          kata gyo list');
-        console.log('  → See steps:           kata waza list');
-        console.log('  → Create a step:       kata waza create');
-        console.log('  → Start execution:     kata kiai build');
-        console.log('  → Start a cycle:       kata keiko new');
+        console.log(`  → See stages:          kata ${lex.stage} list`);
+        console.log(`  → See steps:           kata ${lex.step} list`);
+        console.log(`  → Create a step:       kata ${lex.step} create`);
+        console.log(`  → Start execution:     kata ${lex.execute} build`);
+        console.log(`  → Start a cycle:       kata ${lex.cycle} new`);
         console.log('');
         console.log('  Tip: add these lines to your .gitignore:');
         console.log('    .kata/history/');

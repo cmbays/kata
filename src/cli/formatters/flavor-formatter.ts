@@ -1,14 +1,16 @@
 import type { Flavor } from '@domain/types/flavor.js';
+import { getLexicon, cap, pl } from '@cli/lexicon.js';
 
 /**
  * Format a list of flavors as an aligned text table.
  */
-export function formatFlavorTable(flavors: Flavor[]): string {
+export function formatFlavorTable(flavors: Flavor[], plain?: boolean): string {
   if (flavors.length === 0) {
     return 'No flavors found.';
   }
+  const lex = getLexicon(plain);
 
-  const header = padColumns(['Name', 'Stage', 'Steps', 'Synthesis Artifact']);
+  const header = padColumns(['Name', cap(lex.stage), pl(cap(lex.step), plain), 'Synthesis Artifact']);
   const separator = '-'.repeat(header.length);
   const rows = flavors.map((f) =>
     padColumns([
@@ -25,11 +27,12 @@ export function formatFlavorTable(flavors: Flavor[]): string {
 /**
  * Format a single flavor with full detail.
  */
-export function formatFlavorDetail(flavor: Flavor): string {
+export function formatFlavorDetail(flavor: Flavor, plain?: boolean): string {
   const lines: string[] = [];
+  const lex = getLexicon(plain);
 
-  lines.push(`Flavor: ${flavor.name}`);
-  lines.push(`Stage: ${flavor.stageCategory}`);
+  lines.push(`${cap(lex.flavor)}: ${flavor.name}`);
+  lines.push(`${cap(lex.stage)}: ${flavor.stageCategory}`);
   if (flavor.description) {
     lines.push(`Description: ${flavor.description}`);
   }
@@ -37,7 +40,7 @@ export function formatFlavorDetail(flavor: Flavor): string {
   lines.push('');
 
   // Steps
-  lines.push(`Steps (${flavor.steps.length}):`);
+  lines.push(`${pl(cap(lex.step), plain, flavor.steps.length)} (${flavor.steps.length}):`);
   for (const step of flavor.steps) {
     lines.push(`  - ${step.stepName} (type: ${step.stepType})`);
   }
@@ -72,3 +75,4 @@ function padColumns(values: string[]): string {
   const widths = [20, 12, 8, 24];
   return values.map((v, i) => v.padEnd(widths[i] ?? 20)).join('  ');
 }
+

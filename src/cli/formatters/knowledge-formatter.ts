@@ -1,5 +1,6 @@
 import type { Learning } from '@domain/types/learning.js';
 import type { KnowledgeStats } from '@infra/knowledge/knowledge-store.js';
+import { getLexicon, cap } from '@cli/lexicon.js';
 
 /**
  * Format learnings as an aligned text table.
@@ -22,17 +23,18 @@ export function formatLearningTable(learnings: Learning[]): string {
 /**
  * Format knowledge store summary statistics.
  */
-export function formatKnowledgeStats(stats: KnowledgeStats): string {
+export function formatKnowledgeStats(stats: KnowledgeStats, plain?: boolean): string {
   const lines: string[] = [];
+  const lex = getLexicon(plain);
 
-  lines.push('=== Knowledge Store Stats ===');
+  lines.push(`=== ${cap(lex.knowledge)} Store Stats ===`);
   lines.push('');
   lines.push(`Total Learnings: ${stats.total}`);
   lines.push(`Average Confidence: ${stats.averageConfidence.toFixed(2)}`);
   lines.push('');
 
   lines.push('By Tier:');
-  lines.push(`  Stage:    ${stats.byTier.stage}`);
+  lines.push(`  ${cap(lex.stage)}:    ${stats.byTier.stage}`);
   lines.push(`  Category: ${stats.byTier.category}`);
   lines.push(`  Agent:    ${stats.byTier.agent}`);
   lines.push('');

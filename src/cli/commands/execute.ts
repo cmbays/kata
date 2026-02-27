@@ -2,6 +2,7 @@ import { join } from 'node:path';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
 import type { Command } from 'commander';
 import { withCommandContext, kataDirPath } from '@cli/utils.js';
+import { getLexicon } from '@cli/lexicon.js';
 import { StageCategorySchema, type StageCategory } from '@domain/types/stage.js';
 import { SavedKataSchema } from '@domain/types/saved-kata.js';
 import { KataConfigSchema } from '@domain/types/config.js';
@@ -147,8 +148,9 @@ export function registerExecuteCommands(program: Command): void {
       }
 
       if (resolvedCategories.length === 0) {
+        const lex = getLexicon(ctx.globalOpts.plain);
         const valid = StageCategorySchema.options.join(', ');
-        console.error(`No categories specified. Usage: kata kiai <category> [category...]`);
+        console.error(`No categories specified. Usage: kata ${lex.execute} <category> [category...]`);
         console.error(`Valid categories: ${valid}`);
         console.error('Or use: --kata <name>, --gyo <stages>');
         process.exitCode = 1;

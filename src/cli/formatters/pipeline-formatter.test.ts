@@ -47,11 +47,29 @@ describe('formatPipelineStatus', () => {
     expect(output).toContain('Active');
   });
 
-  it('should display stage progress', () => {
+  it('should display stage progress (plain)', () => {
+    const pipeline = makePipeline();
+    const output = formatPipelineStatus(pipeline, true);
+
+    expect(output).toContain('1/3 stages (33%)');
+  });
+
+  it('uses singular stage label for single-stage progress in plain mode', () => {
+    const pipeline = makePipeline({
+      stages: [{ stageRef: { type: 'research' }, state: 'complete', artifacts: [] }],
+      currentStageIndex: 0,
+      state: 'complete',
+    });
+    const output = formatPipelineStatus(pipeline, true);
+
+    expect(output).toContain('1/1 stage (100%)');
+  });
+
+  it('uses thematic stage label by default', () => {
     const pipeline = makePipeline();
     const output = formatPipelineStatus(pipeline);
 
-    expect(output).toContain('1/3 stages (33%)');
+    expect(output).toContain('1/3 gyo (33%)');
   });
 
   it('should list stages with state indicators', () => {
@@ -63,16 +81,25 @@ describe('formatPipelineStatus', () => {
     expect(output).toContain('  3. build [pending]');
   });
 
-  it('should display cycle and bet metadata when present', () => {
+  it('should display cycle and bet metadata when present (plain)', () => {
     const cycleId = randomUUID();
     const betId = randomUUID();
     const pipeline = makePipeline({
       metadata: { issueRefs: [], cycleId, betId },
     });
-    const output = formatPipelineStatus(pipeline);
+    const output = formatPipelineStatus(pipeline, true);
 
     expect(output).toContain(`Cycle: ${cycleId}`);
     expect(output).toContain(`Bet: ${betId}`);
+  });
+
+  it('uses thematic cycle label by default', () => {
+    const cycleId = randomUUID();
+    const pipeline = makePipeline({
+      metadata: { issueRefs: [], cycleId },
+    });
+    const output = formatPipelineStatus(pipeline);
+    expect(output).toContain(`Keiko: ${cycleId}`);
   });
 
   it('should handle flavored stages', () => {

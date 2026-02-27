@@ -4,15 +4,17 @@ import { spawn } from 'node:child_process';
 import { useRunWatcher } from './use-run-watcher.js';
 import GlobalView from './GlobalView.js';
 import DetailView from './DetailView.js';
+import { getLexicon } from '@cli/lexicon.js';
 
 export interface WatchAppProps {
   runsDir: string;
   cycleId?: string;
+  plain?: boolean;
 }
 
 type ViewState = { mode: 'global'; selectedIndex: number } | { mode: 'detail'; runId: string };
 
-export default function WatchApp({ runsDir, cycleId }: WatchAppProps) {
+export default function WatchApp({ runsDir, cycleId, plain }: WatchAppProps) {
   const { runs, refresh } = useRunWatcher(runsDir, cycleId);
   const { exit } = useApp();
   const [view, setView] = useState<ViewState>({ mode: 'global', selectedIndex: 0 });
@@ -41,10 +43,12 @@ export default function WatchApp({ runsDir, cycleId }: WatchAppProps) {
     [refresh],
   );
 
+  const lex = getLexicon(plain);
+
   if (approving) {
     return (
       <Box>
-        <Text color="yellow">Approving gate…</Text>
+        <Text color="yellow">Approving {lex.gate}…</Text>
       </Box>
     );
   }
@@ -60,6 +64,7 @@ export default function WatchApp({ runsDir, cycleId }: WatchAppProps) {
           onBack={() => setView({ mode: 'global', selectedIndex: backIndex })}
           onApprove={approveGate}
           onQuit={() => exit()}
+          plain={plain}
         />
       </Box>
     );
@@ -77,6 +82,7 @@ export default function WatchApp({ runsDir, cycleId }: WatchAppProps) {
         onDrillIn={(run) => setView({ mode: 'detail', runId: run.runId })}
         onApprove={approveGate}
         onQuit={() => exit()}
+        plain={plain}
       />
     </Box>
   );

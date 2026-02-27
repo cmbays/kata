@@ -82,7 +82,7 @@ export function registerLearningReviewCommand(knowledge: Command): void {
       if (localOpts.skipPrompts) {
         // Auto-accept all
         for (const suggestion of suggestions) {
-          console.log(formatSuggestedLearning(suggestion));
+          console.log(formatSuggestedLearning(suggestion, ctx.globalOpts.plain));
           console.log('  [Auto-accepted]\n');
 
           captureLearning(knowledgeStore, suggestion);
@@ -94,7 +94,7 @@ export function registerLearningReviewCommand(knowledge: Command): void {
         const { confirm } = await import('@inquirer/prompts');
 
         for (const suggestion of suggestions) {
-          console.log(formatSuggestedLearning(suggestion));
+          console.log(formatSuggestedLearning(suggestion, ctx.globalOpts.plain));
           console.log('');
 
           const accept = await confirm({
@@ -124,7 +124,7 @@ export function registerLearningReviewCommand(knowledge: Command): void {
           console.log(`\n${promptUpdates.length} prompt update(s) suggested:\n`);
 
           for (const update of promptUpdates) {
-            console.log(formatPromptUpdateDiff(update));
+            console.log(formatPromptUpdateDiff(update, ctx.globalOpts.plain));
             console.log('');
 
             let applyUpdate = localOpts.skipPrompts;
@@ -165,7 +165,7 @@ export function registerLearningReviewCommand(knowledge: Command): void {
         if (localOpts.skipPrompts) {
           for (const suggestion of pendingSuggestions) {
             try {
-              console.log(formatRuleSuggestion(suggestion));
+              console.log(formatRuleSuggestion(suggestion, ctx.globalOpts.plain));
               ruleRegistry.acceptSuggestion(suggestion.id);
               console.log('  [Auto-accepted]\n');
               rulesAccepted++;
@@ -178,7 +178,7 @@ export function registerLearningReviewCommand(knowledge: Command): void {
 
           for (const suggestion of pendingSuggestions) {
             try {
-              console.log(formatRuleSuggestion(suggestion));
+              console.log(formatRuleSuggestion(suggestion, ctx.globalOpts.plain));
               console.log('');
 
               const action = await select({
@@ -220,7 +220,7 @@ export function registerLearningReviewCommand(knowledge: Command): void {
       }
 
       console.log('');
-      console.log(formatReviewSummary(accepted, rejected, promptsUpdated));
+      console.log(formatReviewSummary(accepted, rejected, promptsUpdated, ctx.globalOpts.plain));
       if (rulesAccepted > 0 || rulesRejected > 0) {
         console.log('');
         console.log(`  Rules accepted:      ${rulesAccepted}`);
@@ -231,7 +231,8 @@ export function registerLearningReviewCommand(knowledge: Command): void {
 
 // ---- Helpers ----
 
-function formatRuleSuggestion(suggestion: RuleSuggestion): string {
+function formatRuleSuggestion(suggestion: RuleSuggestion, plain?: boolean): string {
+  void plain; // reserved for future localisation
   const rule = suggestion.suggestedRule;
   const lines: string[] = [];
   lines.push('=== Rule Suggestion ===');

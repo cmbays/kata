@@ -11,6 +11,13 @@ export type ExecutionAdapterType = z.infer<typeof ExecutionAdapterType>;
 export const KataConfigSchema = z.object({
   /** Methodology framework (default: shape-up) */
   methodology: z.string().default('shape-up'),
+  /**
+   * CLI output vocabulary mode.
+   * - 'thematic' (default): Japanese karate-inspired terms (gyo, waza, ryu, …)
+   * - 'plain': Standard English equivalents (stage, step, flavor, …)
+   * Can be overridden per-command with --plain or KATA_PLAIN=1.
+   */
+  outputMode: z.enum(['thematic', 'plain']).default('thematic'),
   /** Execution adapter configuration */
   execution: z.object({
     adapter: ExecutionAdapterType.default('manual'),
