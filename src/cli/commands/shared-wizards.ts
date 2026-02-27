@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { GateConditionSchema } from '@domain/types/gate.js';
 import type { GateCondition } from '@domain/types/gate.js';
+import { StageCategorySchema } from '@domain/types/stage.js';
 import type { Artifact } from '@domain/types/artifact.js';
 import type { Step, StepResources } from '@domain/types/step.js';
 import { StepRegistry } from '@infra/registries/step-registry.js';
@@ -276,12 +277,7 @@ export async function promptGateConditions(gateLabel: string, existing: GateCond
       if (origin === 'stage') {
         sourceStage = await select({
           message: '  Which stage produces this artifact?',
-          choices: [
-            { name: 'research', value: 'research' as const },
-            { name: 'plan', value: 'plan' as const },
-            { name: 'build', value: 'build' as const },
-            { name: 'review', value: 'review' as const },
-          ],
+          choices: StageCategorySchema.options.map((cat) => ({ name: cat, value: cat })),
         });
       }
     } else if (condType === 'schema-valid') {
