@@ -50,11 +50,13 @@ export default function FlavorList({
 
   const clamped = Math.min(selectedIndex, Math.max(0, flavors.length - 1));
 
-  useInput((_input, key) => {
+  useInput((input, key) => {
     if (detail !== null) {
       if (key.escape) {
         setDetail(null);
         onDetailExit();
+      } else if (input === 'd') {
+        onAction({ type: 'flavor:delete', flavor: detail });
       }
       return;
     }
@@ -68,9 +70,9 @@ export default function FlavorList({
         setDetail(f);
         onDetailEnter();
       }
-    } else if (_input === 'n') {
+    } else if (input === 'n') {
       onAction({ type: 'flavor:create' });
-    } else if (_input === 'd' && flavors.length > 0) {
+    } else if (input === 'd' && flavors.length > 0) {
       const f = flavors[clamped];
       if (f) onAction({ type: 'flavor:delete', flavor: f });
     }

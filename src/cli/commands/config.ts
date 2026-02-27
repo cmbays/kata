@@ -65,31 +65,55 @@ interface ActionCtx {
   kataDir: string;
 }
 
+// ── Prompt cancellation detection ─────────────────────────────────────────────
+
+/**
+ * Returns true when the user force-closes an Inquirer prompt (Ctrl+C / Esc).
+ * Inquirer v9+ throws ExitPromptError; we detect it by name + message pattern
+ * so we don't need a direct import from @inquirer/core.
+ */
+function isPromptCancelled(e: unknown): boolean {
+  if (!(e instanceof Error)) return false;
+  return (
+    e.name === 'ExitPromptError' ||
+    e.name === 'AbortPromptError' ||
+    e.message.includes('User force closed')
+  );
+}
+
 // ── Action dispatcher ─────────────────────────────────────────────────────────
 
 async function runConfigAction(action: ConfigAction, ctx: ActionCtx): Promise<void> {
-  switch (action.type) {
-    case 'step:create':
-      await handleStepCreate(ctx);
-      break;
-    case 'step:edit':
-      await handleStepEdit(action.step, ctx);
-      break;
-    case 'step:delete':
-      await handleStepDelete(action.step, ctx);
-      break;
-    case 'flavor:create':
-      await handleFlavorCreate(ctx);
-      break;
-    case 'flavor:delete':
-      await handleFlavorDelete(action.flavor, ctx);
-      break;
-    case 'kata:create':
-      await handleKataCreate(ctx);
-      break;
-    case 'kata:delete':
-      await handleKataDelete(action.kata, ctx);
-      break;
+  try {
+    switch (action.type) {
+      case 'step:create':
+        await handleStepCreate(ctx);
+        break;
+      case 'step:edit':
+        await handleStepEdit(action.step, ctx);
+        break;
+      case 'step:delete':
+        await handleStepDelete(action.step, ctx);
+        break;
+      case 'flavor:create':
+        await handleFlavorCreate(ctx);
+        break;
+      case 'flavor:delete':
+        await handleFlavorDelete(action.flavor, ctx);
+        break;
+      case 'kata:create':
+        await handleKataCreate(ctx);
+        break;
+      case 'kata:delete':
+        await handleKataDelete(action.kata, ctx);
+        break;
+    }
+  } catch (e) {
+    if (isPromptCancelled(e)) {
+      console.log('\nCancelled — returning to editor.');
+    } else {
+      throw e;
+    }
   }
 
   // Brief pause so users can read the outcome before the TUI reappears

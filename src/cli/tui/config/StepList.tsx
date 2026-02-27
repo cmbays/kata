@@ -39,6 +39,10 @@ export default function StepList({
       if (key.escape) {
         setDetail(null);
         onDetailExit();
+      } else if (input === 'e') {
+        onAction({ type: 'step:edit', step: detail });
+      } else if (input === 'd') {
+        onAction({ type: 'step:delete', step: detail });
       }
       return;
     }
@@ -135,7 +139,7 @@ function StepDetail({ step }: { step: Step }) {
         </Text>
       )}
       <Box marginTop={1}>
-        <Text dimColor>[Esc] back  [e] edit  [d] delete</Text>
+        <Text dimColor>[Esc] back  [e] edit this step  [d] delete this step</Text>
       </Box>
     </Box>
   );
