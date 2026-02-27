@@ -3,6 +3,7 @@ import type { Flavor } from '@domain/types/flavor.js';
 import type { StageRule } from '@domain/types/rule.js';
 import type { Decision } from '@domain/types/decision.js';
 import { getLexicon, cap, pl } from '@cli/lexicon.js';
+import { bold, cyan, dim, magenta } from '@shared/lib/ansi.js';
 
 export interface StageCategoryEntry {
   category: StageCategory;
@@ -26,10 +27,11 @@ export function formatStageCategoryTable(entries: StageCategoryEntry[], plain?: 
   }
   const lex = getLexicon(plain);
 
-  const header = padColumns([cap(lex.stage), pl(cap(lex.flavor), plain), 'Rules']);
-  const separator = '-'.repeat(header.length);
+  const headerCols = [cap(lex.stage), pl(cap(lex.flavor), plain), 'Rules'];
+  const header = bold(padColumns(headerCols));
+  const separator = dim('-'.repeat(padColumns(headerCols).length));
   const rows = entries.map((e) =>
-    padColumns([e.category, String(e.flavorCount), String(e.ruleCount ?? 0)]),
+    padColumns([cyan(e.category), String(e.flavorCount), String(e.ruleCount ?? 0)]),
   );
 
   return [header, separator, ...rows].join('\n');
@@ -42,43 +44,43 @@ export function formatStageCategoryDetail(data: StageInspectData, plain?: boolea
   const lines: string[] = [];
   const lex = getLexicon(plain);
 
-  lines.push(`${cap(lex.stage)}: ${data.category}`);
+  lines.push(`${bold(cap(lex.stage))}: ${cyan(data.category)}`);
   lines.push('');
 
   // Flavors
   if (data.flavors.length > 0) {
-    lines.push(`${pl(cap(lex.flavor), plain)} (${data.flavors.length}):`);
+    lines.push(bold(`${pl(cap(lex.flavor), plain)} (${data.flavors.length}):`));
     for (const f of data.flavors) {
       const stepCount = f.steps.length;
-      const desc = f.description ? ` — ${f.description}` : '';
-      lines.push(`  - ${f.name} (${stepCount} ${pl(lex.step, plain, stepCount)})${desc}`);
+      const desc = f.description ? dim(` — ${f.description}`) : '';
+      lines.push(`  ${dim('-')} ${magenta(f.name)} ${dim(`(${stepCount} ${pl(lex.step, plain, stepCount)})`)}${desc}`);
     }
   } else {
-    lines.push(`${pl(cap(lex.flavor), plain)}: (none registered)`);
+    lines.push(dim(`${pl(cap(lex.flavor), plain)}: (none registered)`));
   }
   lines.push('');
 
   // Rules
   if (data.rules.length > 0) {
-    lines.push(`Rules (${data.rules.length}):`);
+    lines.push(bold(`Rules (${data.rules.length}):`));
     for (const r of data.rules) {
-      lines.push(`  - ${r.effect} "${r.name}": magnitude=${r.magnitude.toFixed(2)}, confidence=${(r.confidence * 100).toFixed(0)}%`);
+      lines.push(`  ${dim('-')} ${r.effect} ${dim(`"${r.name}"`)}: magnitude=${r.magnitude.toFixed(2)}, confidence=${(r.confidence * 100).toFixed(0)}%`);
     }
   } else {
-    lines.push('Rules: (none active)');
+    lines.push(dim('Rules: (none active)'));
   }
   lines.push('');
 
   // Recent decisions
   if (data.recentDecisions.length > 0) {
-    lines.push(`Recent ${pl(lex.decision, plain)} (${data.recentDecisions.length}):`);
+    lines.push(bold(`Recent ${pl(lex.decision, plain)} (${data.recentDecisions.length}):`));
     for (const d of data.recentDecisions) {
       const conf = `${(d.confidence * 100).toFixed(0)}%`;
       const outcome = d.outcome?.artifactQuality ?? 'pending';
-      lines.push(`  - ${d.decisionType}: ${d.selection} (confidence: ${conf}, outcome: ${outcome})`);
+      lines.push(`  ${dim('-')} ${d.decisionType}: ${d.selection} ${dim(`(confidence: ${conf}, outcome: ${outcome})`)}`);
     }
   } else {
-    lines.push(`${pl(cap(lex.decision), plain)}: (no recent ${pl(lex.decision, plain)})`);
+    lines.push(dim(`${pl(cap(lex.decision), plain)}: (no recent ${pl(lex.decision, plain)})`));
   }
 
   return lines.join('\n').trimEnd();

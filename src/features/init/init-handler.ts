@@ -10,6 +10,7 @@ import { checkBinaryExists } from '@infra/execution/claude-cli-adapter.js';
 import { generateAoConfig, detectGitBranch, deriveProjectKey } from '@infra/execution/ao-config-generator.js';
 import { KATA_DIRS } from '@shared/constants/paths.js';
 import { logger } from '@shared/lib/logger.js';
+import { KataError } from '@shared/lib/errors.js';
 import { detectProject, type ProjectInfo, type ProjectType } from './project-detector.js';
 
 export interface InitOptions {
@@ -30,6 +31,8 @@ export interface InitResult {
   claudeCliDetected?: boolean;
   /** Path to generated AO config file (only set when adapter = composio) */
   aoConfigPath?: string;
+  /** True if AO config generation was attempted but failed */
+  aoConfigFailed?: boolean;
 }
 
 
@@ -56,8 +59,13 @@ function resolvePackageRoot(): string {
     return candidate;
   }
 
-  // Last resort: return the first candidate
-  return resolve(thisDir, '..', '..', '..');
+  // Last resort: return the first candidate and warn — builtin loading will fail gracefully
+  const fallback = resolve(thisDir, '..', '..', '..');
+  logger.warn(
+    `Could not locate package root with stages/builtin/ in either "${resolve(thisDir, '..', '..', '..')} " or "${resolve(thisDir, '..', '..')}". ` +
+    `Falling back to "${fallback}" — built-in stages, flavors, and templates may not load. This usually indicates a broken installation.`,
+  );
+  return fallback;
 }
 
 /**
@@ -140,18 +148,25 @@ export async function handleInit(options: InitOptions): Promise<InitResult> {
   const cyclesDir = join(kataDir, KATA_DIRS.cycles);
   const knowledgeDir = join(kataDir, KATA_DIRS.knowledge);
 
-  // Create directory structure
-  JsonStore.ensureDir(kataDir);
-  JsonStore.ensureDir(stagesDir);
-  JsonStore.ensureDir(flavorsDir);
-  JsonStore.ensureDir(templatesDir);
-  JsonStore.ensureDir(cyclesDir);
-  JsonStore.ensureDir(knowledgeDir);
-  JsonStore.ensureDir(join(kataDir, KATA_DIRS.pipelines));
-  JsonStore.ensureDir(join(kataDir, KATA_DIRS.history));
-  JsonStore.ensureDir(join(kataDir, KATA_DIRS.tracking));
-  JsonStore.ensureDir(join(kataDir, KATA_DIRS.prompts));
-  JsonStore.ensureDir(join(kataDir, KATA_DIRS.artifacts));
+  // Create directory structure — fatal if we cannot write to disk
+  try {
+    JsonStore.ensureDir(kataDir);
+    JsonStore.ensureDir(stagesDir);
+    JsonStore.ensureDir(flavorsDir);
+    JsonStore.ensureDir(templatesDir);
+    JsonStore.ensureDir(cyclesDir);
+    JsonStore.ensureDir(knowledgeDir);
+    JsonStore.ensureDir(join(kataDir, KATA_DIRS.pipelines));
+    JsonStore.ensureDir(join(kataDir, KATA_DIRS.history));
+    JsonStore.ensureDir(join(kataDir, KATA_DIRS.tracking));
+    JsonStore.ensureDir(join(kataDir, KATA_DIRS.prompts));
+    JsonStore.ensureDir(join(kataDir, KATA_DIRS.artifacts));
+  } catch (err) {
+    throw new KataError(
+      `Failed to create kata directory structure at "${kataDir}": ${err instanceof Error ? err.message : String(err)}. ` +
+      `Ensure you have write permissions to this directory.`,
+    );
+  }
 
   // Build config
   const config: KataConfig = KataConfigSchema.parse({
@@ -174,6 +189,7 @@ export async function handleInit(options: InitOptions): Promise<InitResult> {
   // Adapter-specific setup
   let claudeCliDetected: boolean | undefined;
   let aoConfigPath: string | undefined;
+  let aoConfigFailed: boolean | undefined;
 
   if (adapter === 'claude-cli') {
     claudeCliDetected = await checkBinaryExists('claude');
@@ -188,7 +204,11 @@ export async function handleInit(options: InitOptions): Promise<InitResult> {
       generateAoConfig({ projectKey, repoPath: cwd, branch, outputPath: aoPath });
       aoConfigPath = aoPath;
     } catch (err) {
-      logger.warn(`Failed to write AO config to "${aoPath}": ${err instanceof Error ? err.message : String(err)}. The file can be generated manually.`);
+      aoConfigFailed = true;
+      logger.warn(
+        `Failed to write AO config to "${aoPath}": ${err instanceof Error ? err.message : String(err)}. ` +
+        `Run "kata init --adapter composio" again or create the file manually using the AO config schema.`,
+      );
     }
   }
 
@@ -199,8 +219,12 @@ export async function handleInit(options: InitOptions): Promise<InitResult> {
 
   let stagesLoaded = 0;
   if (existsSync(builtinStagesDir)) {
-    registry.loadBuiltins(builtinStagesDir);
-    stagesLoaded = registry.list().length;
+    try {
+      registry.loadBuiltins(builtinStagesDir);
+      stagesLoaded = registry.list().length;
+    } catch (err) {
+      logger.warn(`Failed to load built-in stages from "${builtinStagesDir}": ${err instanceof Error ? err.message : String(err)}`);
+    }
   } else {
     logger.warn(`Built-in stages not found at "${builtinStagesDir}". Stages were not loaded — check your installation.`);
   }
@@ -211,8 +235,12 @@ export async function handleInit(options: InitOptions): Promise<InitResult> {
 
   let flavorsLoaded = 0;
   if (existsSync(builtinFlavorsDir)) {
-    flavorRegistry.loadBuiltins(builtinFlavorsDir);
-    flavorsLoaded = flavorRegistry.list().length;
+    try {
+      flavorRegistry.loadBuiltins(builtinFlavorsDir);
+      flavorsLoaded = flavorRegistry.list().length;
+    } catch (err) {
+      logger.warn(`Failed to load built-in flavors from "${builtinFlavorsDir}": ${err instanceof Error ? err.message : String(err)}`);
+    }
   } else {
     logger.warn(`Built-in flavors not found at "${builtinFlavorsDir}". Flavors were not loaded — check your installation.`);
   }
@@ -258,14 +286,21 @@ export async function handleInit(options: InitOptions): Promise<InitResult> {
   const builtinTemplatesDir = join(packageRoot, KATA_DIRS.templates);
   let templatesLoaded = 0;
   if (existsSync(builtinTemplatesDir)) {
-    const templates = loadPipelineTemplates(builtinTemplatesDir);
-    // Write each template into .kata/templates/
-    const { PipelineTemplateSchema } = await import('@domain/types/pipeline.js');
-    for (const template of templates) {
-      const templatePath = join(templatesDir, `${template.name.toLowerCase().replace(/\s+/g, '-')}.json`);
-      JsonStore.write(templatePath, template, PipelineTemplateSchema);
+    try {
+      const templates = loadPipelineTemplates(builtinTemplatesDir);
+      const { PipelineTemplateSchema } = await import('@domain/types/pipeline.js');
+      for (const template of templates) {
+        const templatePath = join(templatesDir, `${template.name.toLowerCase().replace(/\s+/g, '-')}.json`);
+        try {
+          JsonStore.write(templatePath, template, PipelineTemplateSchema);
+          templatesLoaded++;
+        } catch (err) {
+          logger.warn(`Failed to write pipeline template "${template.name}": ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+    } catch (err) {
+      logger.warn(`Failed to load pipeline templates from "${builtinTemplatesDir}": ${err instanceof Error ? err.message : String(err)}`);
     }
-    templatesLoaded = templates.length;
   } else {
     logger.warn(`Built-in pipeline templates not found at "${builtinTemplatesDir}". Templates were not loaded.`);
   }
@@ -279,5 +314,6 @@ export async function handleInit(options: InitOptions): Promise<InitResult> {
     projectType: projectInfo.projectType,
     claudeCliDetected,
     aoConfigPath,
+    aoConfigFailed,
   };
 }
