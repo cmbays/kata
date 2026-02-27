@@ -27,7 +27,7 @@ export class ValidationError extends KataError {
 export class StepNotFoundError extends KataError {
   constructor(type: string, flavor?: string) {
     const name = flavor ? `${type}:${flavor}` : type;
-    super(`Step not found: "${name}". Run "kata stage list" to see available steps.`);
+    super(`Step not found: "${name}". Run "kata step list" to see available steps.`);
     this.name = 'StepNotFoundError';
   }
 }
@@ -51,7 +51,7 @@ export class CycleNotFoundError extends KataError {
 
 export class FlavorNotFoundError extends KataError {
   constructor(stageCategory: string, name: string) {
-    super(`Flavor not found: "${stageCategory}/${name}". Run "kata stage list" to see available flavors.`);
+    super(`Flavor not found: "${stageCategory}/${name}". Run "kata flavor list" to see available flavors.`);
     this.name = 'FlavorNotFoundError';
   }
 }

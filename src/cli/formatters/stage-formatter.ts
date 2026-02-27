@@ -3,6 +3,7 @@ import type { Flavor } from '@domain/types/flavor.js';
 import type { StageRule } from '@domain/types/rule.js';
 import type { Decision } from '@domain/types/decision.js';
 import { getLexicon, cap, pl } from '@cli/lexicon.js';
+import { bold, cyan, dim, magenta, visiblePadEnd, strip } from '@shared/lib/ansi.js';
 
 export interface StageCategoryEntry {
   category: StageCategory;
@@ -26,11 +27,13 @@ export function formatStageCategoryTable(entries: StageCategoryEntry[], plain?: 
   }
   const lex = getLexicon(plain);
 
-  const header = padColumns([cap(lex.stage), pl(cap(lex.flavor), plain), 'Rules']);
-  const separator = '-'.repeat(header.length);
-  const rows = entries.map((e) =>
-    padColumns([e.category, String(e.flavorCount), String(e.ruleCount ?? 0)]),
-  );
+  const headerCols = [cap(lex.stage), pl(cap(lex.flavor), plain), 'Rules'];
+  const dataRows = entries.map((e) => [cyan(e.category), String(e.flavorCount), String(e.ruleCount ?? 0)]);
+
+  const widths = computeWidths([headerCols, ...dataRows]);
+  const header = bold(padColumns(headerCols, widths));
+  const separator = dim('-'.repeat(widths.reduce((a, b) => a + b, 0) + (widths.length - 1) * 2));
+  const rows = dataRows.map((cols) => padColumns(cols, widths));
 
   return [header, separator, ...rows].join('\n');
 }
@@ -42,46 +45,46 @@ export function formatStageCategoryDetail(data: StageInspectData, plain?: boolea
   const lines: string[] = [];
   const lex = getLexicon(plain);
 
-  lines.push(`${cap(lex.stage)}: ${data.category}`);
-  lines.push('');
+  // Card header
+  lines.push(bold(`╭─ ${cyan(cap(lex.stage))}: ${cyan(data.category)} ─`));
 
   // Flavors
   if (data.flavors.length > 0) {
-    lines.push(`${pl(cap(lex.flavor), plain)} (${data.flavors.length}):`);
+    lines.push(`├─ ${bold(pl(cap(lex.flavor), plain))}  ${dim(`(${data.flavors.length})`)}`);
     for (const f of data.flavors) {
       const stepCount = f.steps.length;
-      const desc = f.description ? ` — ${f.description}` : '';
-      lines.push(`  - ${f.name} (${stepCount} ${pl(lex.step, plain, stepCount)})${desc}`);
+      const count = dim(`${stepCount} ${pl(lex.step, plain, stepCount)}`);
+      const desc = f.description ? `  ${dim(f.description)}` : '';
+      lines.push(`│  ● ${magenta(f.name)}  ${count}${desc}`);
     }
   } else {
-    lines.push(`${pl(cap(lex.flavor), plain)}: (none registered)`);
+    lines.push(`│  ${dim(`${pl(cap(lex.flavor), plain)}: (none registered)`)}`);
   }
-  lines.push('');
 
   // Rules
   if (data.rules.length > 0) {
-    lines.push(`Rules (${data.rules.length}):`);
+    lines.push(`├─ ${bold('Rules')}  ${dim(`(${data.rules.length})`)}`);
     for (const r of data.rules) {
-      lines.push(`  - ${r.effect} "${r.name}": magnitude=${r.magnitude.toFixed(2)}, confidence=${(r.confidence * 100).toFixed(0)}%`);
+      lines.push(`│  ● ${r.effect} ${dim(`"${r.name}"`)}  magnitude=${r.magnitude.toFixed(2)}, confidence=${(r.confidence * 100).toFixed(0)}%`);
     }
   } else {
-    lines.push('Rules: (none active)');
+    lines.push(`│  ${dim('Rules: (none active)')}`);
   }
-  lines.push('');
 
   // Recent decisions
   if (data.recentDecisions.length > 0) {
-    lines.push(`Recent ${pl(lex.decision, plain)} (${data.recentDecisions.length}):`);
+    lines.push(`├─ ${bold(`Recent ${pl(lex.decision, plain)}`)}  ${dim(`(${data.recentDecisions.length})`)}`);
     for (const d of data.recentDecisions) {
       const conf = `${(d.confidence * 100).toFixed(0)}%`;
       const outcome = d.outcome?.artifactQuality ?? 'pending';
-      lines.push(`  - ${d.decisionType}: ${d.selection} (confidence: ${conf}, outcome: ${outcome})`);
+      lines.push(`│  ● ${d.decisionType}: ${d.selection}  ${dim(`confidence: ${conf}, outcome: ${outcome}`)}`);
     }
   } else {
-    lines.push(`${pl(cap(lex.decision), plain)}: (no recent ${pl(lex.decision, plain)})`);
+    lines.push(`│  ${dim(`${pl(cap(lex.decision), plain)}: (no recent ${pl(lex.decision, plain)})`)}`);
   }
 
-  return lines.join('\n').trimEnd();
+  lines.push(bold('╰─'));
+  return lines.join('\n');
 }
 
 /**
@@ -93,8 +96,14 @@ export function formatStageCategoryJson(entries: StageCategoryEntry[]): string {
 
 // ---- Helpers ----
 
-function padColumns(values: string[]): string {
-  const widths = [16, 10, 8];
-  return values.map((v, i) => v.padEnd(widths[i] ?? 20)).join('  ');
+function computeWidths(rows: string[][]): number[] {
+  const colCount = rows[0]?.length ?? 0;
+  return Array.from({ length: colCount }, (_, i) =>
+    Math.max(...rows.map((r) => strip(r[i] ?? '').length)),
+  );
+}
+
+function padColumns(values: string[], widths: number[]): string {
+  return values.map((v, i) => visiblePadEnd(v, widths[i] ?? 20)).join('  ');
 }
 

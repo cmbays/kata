@@ -10,7 +10,14 @@ const PROJECT_TYPE_LABELS: Record<ProjectType, string> = {
   rust: 'Rust',
   go: 'Go',
   python: 'Python',
-  unknown: 'Generic',
+  unknown: 'Generic (no framework detected)',
+};
+
+type AdapterKey = 'manual' | 'claude-cli' | 'composio';
+const ADAPTER_LABELS: Record<AdapterKey, string> = {
+  manual: 'Manual — you drive each step and approve gates',
+  'claude-cli': 'Claude CLI — stages run autonomously via the claude binary',
+  composio: 'Composio — stages dispatched to a remote agent (experimental)',
 };
 
 /**
@@ -56,40 +63,45 @@ export function registerInitCommand(program: Command): void {
 
         console.log(`✓ ${projectLabel}`);
         console.log('');
+        const adapter = result.config.execution.adapter;
         console.log(`  Steps loaded:     ${result.stagesLoaded}`);
         console.log(`  Flavors loaded:   ${result.flavorsLoaded}`);
         console.log(`  Templates loaded: ${result.templatesLoaded}`);
         console.log(`  Project type:     ${PROJECT_TYPE_LABELS[result.projectType] ?? result.projectType}`);
-        console.log(`  Adapter:          ${result.config.execution.adapter}`);
+        console.log(`  Adapter:          ${ADAPTER_LABELS[adapter] ?? adapter}`);
 
         // Adapter-specific notes
-        if (result.config.execution.adapter === 'claude-cli') {
+        if (adapter === 'claude-cli') {
           if (result.claudeCliDetected === false) {
             console.log('');
             console.log('  ⚠ claude binary not found on PATH.');
-            console.log('    Install Claude Code before running stages:');
-            console.log('    https://docs.anthropic.com/en/docs/claude-code');
-          } else {
-            console.log('    Stages run in isolated worktrees via: claude -w');
+            console.log('    Install Claude Code: https://docs.anthropic.com/en/docs/claude-code');
           }
-        } else if (result.config.execution.adapter === 'composio') {
-          console.log('    [experimental] AO config written to .kata/ao-config.yaml');
-          console.log('    See issue #23 for full integration status.');
+        } else if (adapter === 'composio') {
+          if (result.aoConfigFailed) {
+            console.log('');
+            console.log('  ⚠ AO config could not be written. Run "kata init --adapter composio" again');
+            console.log('    or create .kata/ao-config.yaml manually.');
+          } else {
+            console.log('');
+            console.log('  ✓ AO config written to .kata/ao-config.yaml');
+          }
         }
 
         const lex = getLexicon(ctx.globalOpts.plain);
         console.log('');
         console.log('  What\'s next:');
-        console.log(`  → See stages:          kata ${lex.stage} list`);
-        console.log(`  → See steps:           kata ${lex.step} list`);
-        console.log(`  → Create a step:       kata ${lex.step} create`);
+        console.log(`  → Explore steps:       kata ${lex.step} list`);
+        console.log(`  → Build your method:   kata config            (interactive editor)`);
         console.log(`  → Start execution:     kata ${lex.execute} build`);
+        console.log(`  → Monitor runs:        kata watch             (live TUI dashboard)`);
         console.log(`  → Start a cycle:       kata ${lex.cycle} new`);
         console.log('');
-        console.log('  Tip: add these lines to your .gitignore:');
+        console.log('  .gitignore — commit your .kata/ config, ignore generated data:');
         console.log('    .kata/history/');
         console.log('    .kata/tracking/');
-        if (result.config.execution.adapter === 'claude-cli') {
+        console.log('    .kata/artifacts/');
+        if (adapter === 'claude-cli') {
           console.log('    .claude/worktrees/');
         }
         console.log('');
