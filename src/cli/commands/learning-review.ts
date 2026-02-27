@@ -231,7 +231,8 @@ export function registerLearningReviewCommand(knowledge: Command): void {
 
 // ---- Helpers ----
 
-function formatRuleSuggestion(suggestion: RuleSuggestion, _plain?: boolean): string {
+function formatRuleSuggestion(suggestion: RuleSuggestion, plain?: boolean): string {
+  void plain; // reserved for future localisation
   const rule = suggestion.suggestedRule;
   const lines: string[] = [];
   lines.push('=== Rule Suggestion ===');

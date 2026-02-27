@@ -47,14 +47,14 @@ export function formatStageCategoryDetail(data: StageInspectData, plain?: boolea
 
   // Flavors
   if (data.flavors.length > 0) {
-    lines.push(`${cap(lex.flavor)}s (${data.flavors.length}):`);
+    lines.push(`${pl(cap(lex.flavor), plain)} (${data.flavors.length}):`);
     for (const f of data.flavors) {
       const stepCount = f.steps.length;
       const desc = f.description ? ` — ${f.description}` : '';
       lines.push(`  - ${f.name} (${stepCount} ${pl(lex.step, plain, stepCount)})${desc}`);
     }
   } else {
-    lines.push(`${cap(lex.flavor)}s: (none registered)`);
+    lines.push(`${pl(cap(lex.flavor), plain)}: (none registered)`);
   }
   lines.push('');
 

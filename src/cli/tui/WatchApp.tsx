@@ -4,6 +4,7 @@ import { spawn } from 'node:child_process';
 import { useRunWatcher } from './use-run-watcher.js';
 import GlobalView from './GlobalView.js';
 import DetailView from './DetailView.js';
+import { getLexicon } from '@cli/lexicon.js';
 
 export interface WatchAppProps {
   runsDir: string;
@@ -42,10 +43,12 @@ export default function WatchApp({ runsDir, cycleId, plain }: WatchAppProps) {
     [refresh],
   );
 
+  const lex = getLexicon(plain);
+
   if (approving) {
     return (
       <Box>
-        <Text color="yellow">Approving gate…</Text>
+        <Text color="yellow">Approving {lex.gate}…</Text>
       </Box>
     );
   }

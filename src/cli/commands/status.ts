@@ -6,7 +6,7 @@ import { JsonStore } from '@infra/persistence/json-store.js';
 import { listRecentArtifacts } from '@features/execute/kiai-runner.js';
 import { StageCategorySchema, type StageCategory } from '@domain/types/stage.js';
 import { withCommandContext, kataDirPath } from '@cli/utils.js';
-import { getLexicon } from '@cli/lexicon.js';
+import { getLexicon, cap } from '@cli/lexicon.js';
 
 // ---------------------------------------------------------------------------
 // Core handlers (exported so `kata kiai status/stats` can delegate here)
@@ -46,17 +46,19 @@ export function handleStatus(ctx: { kataDir: string; globalOpts: { json?: boolea
     return;
   }
 
+  const lex = getLexicon(ctx.globalOpts.plain);
+
   console.log('Kata Project Status');
   console.log('');
 
   // Cycle
   if (activeCycle) {
-    console.log(`  Active cycle: ${activeCycle.name}`);
+    console.log(`  Active ${lex.cycle}: ${activeCycle.name}`);
     console.log(`  Bets: ${activeCycle.bets.length}`);
   } else if (cycles.length > 0) {
-    console.log(`  No active cycle (${cycles.length} total)`);
+    console.log(`  No active ${lex.cycle} (${cycles.length} total)`);
   } else {
-    console.log('  No cycles created yet');
+    console.log(`  No ${lex.cycle} created yet`);
   }
   console.log('');
 
@@ -73,9 +75,9 @@ export function handleStatus(ctx: { kataDir: string; globalOpts: { json?: boolea
 
   // Knowledge
   if (knowledgeStats.total > 0) {
-    console.log(`  Knowledge: ${knowledgeStats.total} learnings (avg confidence: ${(knowledgeStats.averageConfidence * 100).toFixed(0)}%)`);
+    console.log(`  ${cap(lex.knowledge)}: ${knowledgeStats.total} learnings (avg confidence: ${(knowledgeStats.averageConfidence * 100).toFixed(0)}%)`);
   } else {
-    console.log('  Knowledge: no learnings captured yet');
+    console.log(`  ${cap(lex.knowledge)}: no learnings captured yet`);
   }
 }
 
@@ -84,6 +86,7 @@ export function handleStats(
   categoryFilter?: StageCategory,
 ): void {
   const isJson = ctx.globalOpts.json;
+  const lex = getLexicon(ctx.globalOpts.plain);
 
   // Execution analytics
   let executionStats: ReturnType<UsageAnalytics['getStats']> = {
@@ -136,14 +139,13 @@ export function handleStats(
       console.log(`    Avg duration: ${executionStats.avgDurationMs.toFixed(0)}ms`);
     }
   } else {
-    const lex = getLexicon(ctx.globalOpts.plain);
     console.log(`  No execution data. Run "kata ${lex.execute} <category>" to generate analytics.`);
   }
   console.log('');
 
   // Knowledge
   if (knowledgeStats.total > 0) {
-    console.log('  Knowledge:');
+    console.log(`  ${cap(lex.knowledge)}:`);
     console.log(`    Total learnings: ${knowledgeStats.total}`);
     console.log(`    By tier: stage=${knowledgeStats.byTier.stage}, category=${knowledgeStats.byTier.category}, agent=${knowledgeStats.byTier.agent}`);
     console.log(`    Avg confidence: ${(knowledgeStats.averageConfidence * 100).toFixed(0)}%`);
@@ -154,7 +156,7 @@ export function handleStats(
       }
     }
   } else {
-    console.log('  No knowledge data. Learnings are captured from execution runs.');
+    console.log(`  No ${lex.knowledge} data. Learnings are captured from execution runs.`);
   }
 }
 
