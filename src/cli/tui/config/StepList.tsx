@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { useMemo, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { StepRegistry } from '@infra/registries/step-registry.js';
+import { FlavorRegistry } from '@infra/registries/flavor-registry.js';
 import type { Step, StepResources } from '@domain/types/step.js';
 import type { Gate, GateCondition } from '@domain/types/gate.js';
 
@@ -13,6 +14,7 @@ export type StepAction =
 
 export interface StepListProps {
   stepsDir: string;
+  flavorsDir?: string;
   onDetailEnter: () => void;
   onDetailExit: () => void;
   onAction?: (action: StepAction) => void;
@@ -20,6 +22,7 @@ export interface StepListProps {
 
 export default function StepList({
   stepsDir,
+  flavorsDir,
   onDetailEnter,
   onDetailExit,
   onAction = () => {},
@@ -71,7 +74,7 @@ export default function StepList({
   });
 
   if (detail !== null) {
-    return <StepDetail step={detail} stepsDir={stepsDir} />;
+    return <StepDetail step={detail} stepsDir={stepsDir} flavorsDir={flavorsDir} />;
   }
 
   return (
@@ -110,7 +113,15 @@ function StepRow({ step, isSelected }: { step: Step; isSelected: boolean }) {
   );
 }
 
-function StepDetail({ step, stepsDir }: { step: Step; stepsDir: string }) {
+function StepDetail({
+  step,
+  stepsDir,
+  flavorsDir,
+}: {
+  step: Step;
+  stepsDir: string;
+  flavorsDir?: string;
+}) {
   const label = step.flavor ? `${step.type}.${step.flavor}` : step.type;
 
   const promptPreview = useMemo(() => {
@@ -128,6 +139,17 @@ function StepDetail({ step, stepsDir }: { step: Step; stepsDir: string }) {
     }
   }, [step.promptTemplate, stepsDir]);
 
+  const usedInFlavors = useMemo(() => {
+    if (!flavorsDir) return [];
+    try {
+      return new FlavorRegistry(flavorsDir)
+        .list()
+        .filter((f) => f.steps.some((s) => s.stepType === step.type));
+    } catch {
+      return [];
+    }
+  }, [flavorsDir, step.type]);
+
   return (
     <Box flexDirection="column">
       <Text bold color="cyan">
@@ -139,6 +161,16 @@ function StepDetail({ step, stepsDir }: { step: Step; stepsDir: string }) {
         </Text>
       )}
       {step.description !== undefined && <Text dimColor>{step.description}</Text>}
+      {usedInFlavors.length > 0 ? (
+        <Text>
+          Used in:{' '}
+          <Text color="cyan">
+            {usedInFlavors.map((f) => `${f.name} (${f.stageCategory})`).join(', ')}
+          </Text>
+        </Text>
+      ) : (
+        flavorsDir !== undefined && <Text dimColor>Not used in any flavor</Text>
+      )}
 
       <Box flexDirection="column" marginTop={1}>
         <GateSection gate={step.entryGate} label="Entry gate" />
@@ -182,7 +214,9 @@ function GateSection({ gate, label }: { label: string; gate?: Gate }) {
       {gate.conditions.map((c, i) => (
         <Box key={i} marginLeft={2}>
           <Text dimColor>{i + 1}. </Text>
-          <Text color="yellow">{conditionLabel(c.type)}</Text>
+          <Text color={c.type === 'human-approved' ? 'yellowBright' : 'yellow'}>
+            {conditionLabel(c.type)}
+          </Text>
           {conditionDetail(c) !== '' && <Text dimColor> {conditionDetail(c)}</Text>}
           {c.description !== undefined && <Text dimColor> ({c.description})</Text>}
         </Box>

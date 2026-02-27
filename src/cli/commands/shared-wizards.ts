@@ -31,6 +31,28 @@ export const PRESET_SKILLS: string[] = [
 
 // ---- Shared helpers ----
 
+/**
+ * Validates an artifact name: must be non-empty, have a file extension,
+ * and contain only safe filename characters.
+ * Returns an error string on failure, or `true` on success.
+ */
+export function validateArtifactName(value: string): string | true {
+  const name = value.trim();
+  if (!name) return 'Name is required';
+  if (!/^[a-zA-Z0-9_\-./]+$/.test(name)) {
+    return 'Only letters, numbers, hyphens, underscores, dots, and "/" are allowed';
+  }
+  const dotIdx = name.lastIndexOf('.');
+  if (dotIdx <= 0) {
+    return 'A file extension is required (e.g., "research.md", "config.json")';
+  }
+  const ext = name.slice(dotIdx + 1);
+  if (ext.length === 0 || ext.length > 10) {
+    return 'Extension must be 1–10 characters';
+  }
+  return true;
+}
+
 export function stepLabel(type: string, flavor?: string): string {
   return flavor ? `${type} (${flavor})` : type;
 }
@@ -116,8 +138,9 @@ export async function promptArtifacts(existing: Artifact[]): Promise<Artifact[]>
     const name = (await input({
       message: '  Artifact name (include extension, e.g., "research.md"):',
       validate: (v) => {
+        const check = validateArtifactName(v);
+        if (check !== true) return check;
         const t = v.trim();
-        if (!t) return 'Name is required';
         if (artifacts.some((a) => a.name === t)) return `Artifact "${t}" already exists`;
         return true;
       },
@@ -155,23 +178,37 @@ export async function promptGateConditions(gateLabel: string, existing: GateCond
     const condType = await select({
       message: '  Condition type:',
       choices: [
-        { name: 'File exists          — a named artifact/file must exist', value: 'artifact-exists' as const },
-        { name: 'Schema valid         — artifact must match a schema', value: 'schema-valid' as const },
-        { name: 'Human approved       — requires manual sign-off before proceeding', value: 'human-approved' as const },
-        { name: 'Predecessor done     — another step must complete first', value: 'predecessor-complete' as const },
-        { name: 'Command passes       — a shell command must exit 0', value: 'command-passes' as const },
+        { name: 'File exists          — a named artifact/file must exist on disk', value: 'artifact-exists' as const },
+        { name: 'Schema valid         — a JSON/YAML file must have valid contents', value: 'schema-valid' as const },
+        { name: 'Human approved       — requires explicit human sign-off before continuing', value: 'human-approved' as const },
+        { name: 'Predecessor done     — a specific step type must have run earlier in this session', value: 'predecessor-complete' as const },
+        { name: 'Command passes       — a shell command must exit with code 0', value: 'command-passes' as const },
       ],
     });
     const condDesc = (await input({ message: '  Description / note (optional):' })).trim();
     let artifactName: string | undefined;
     let predecessorType: string | undefined;
     let command: string | undefined;
-    if (condType === 'artifact-exists' || condType === 'schema-valid') {
-      artifactName = (await input({ message: '  File/artifact name (e.g., "research.md"):' })).trim() || undefined;
+    if (condType === 'artifact-exists') {
+      artifactName = (await input({
+        message: '  Artifact/file name (e.g., "research.md"):',
+        validate: (v) => {
+          if (!v.trim()) return 'Artifact name is required for file-exists conditions';
+          return validateArtifactName(v);
+        },
+      })).trim() || undefined;
+    } else if (condType === 'schema-valid') {
+      artifactName = (await input({
+        message: '  Artifact file to validate (JSON/YAML, e.g., "config.json"):',
+        validate: (v) => {
+          if (!v.trim()) return 'Artifact name is required for schema-valid conditions';
+          return validateArtifactName(v);
+        },
+      })).trim() || undefined;
     } else if (condType === 'predecessor-complete') {
-      predecessorType = (await input({ message: '  Required step type (e.g., "research"):' })).trim() || undefined;
+      predecessorType = (await input({ message: '  Step type that must have already run (e.g., "research"):' })).trim() || undefined;
     } else if (condType === 'command-passes') {
-      command = (await input({ message: '  Shell command to run (must exit 0):' })).trim() || undefined;
+      command = (await input({ message: '  Shell command to run (must exit with code 0):' })).trim() || undefined;
     }
     conditions.push(GateConditionSchema.parse({
       type: condType,

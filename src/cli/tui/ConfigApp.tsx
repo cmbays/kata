@@ -64,7 +64,7 @@ export default function ConfigApp({ stepsDir, flavorsDir, katasDir, onAction }: 
         <Text dimColor>[Tab] switch  [n] new  [e] edit  [d] del  [q] quit</Text>
       </Box>
 
-      {sectionIndex === 0 && <StepList stepsDir={stepsDir} {...sectionProps} />}
+      {sectionIndex === 0 && <StepList stepsDir={stepsDir} flavorsDir={flavorsDir} {...sectionProps} />}
       {sectionIndex === 1 && (
         <FlavorList flavorsDir={flavorsDir} stepsDir={stepsDir} {...sectionProps} />
       )}
