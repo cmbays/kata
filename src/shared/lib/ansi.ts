@@ -3,7 +3,7 @@
  * All functions are pass-through when color is disabled.
  */
 
-const enabled = !process.env['NO_COLOR'] && !!process.stdout.isTTY;
+const enabled = !('NO_COLOR' in process.env) && !!process.stdout.isTTY;
 
 function wrap(open: number, close: number) {
   return (s: string): string =>

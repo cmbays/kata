@@ -13,7 +13,8 @@ const PROJECT_TYPE_LABELS: Record<ProjectType, string> = {
   unknown: 'Generic (no framework detected)',
 };
 
-const ADAPTER_LABELS: Record<string, string> = {
+type AdapterKey = 'manual' | 'claude-cli' | 'composio';
+const ADAPTER_LABELS: Record<AdapterKey, string> = {
   manual: 'Manual — you drive each step and approve gates',
   'claude-cli': 'Claude CLI — stages run autonomously via the claude binary',
   composio: 'Composio — stages dispatched to a remote agent (experimental)',
