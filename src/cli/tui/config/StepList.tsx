@@ -3,13 +3,24 @@ import { Box, Text, useInput } from 'ink';
 import { StepRegistry } from '@infra/registries/step-registry.js';
 import type { Step } from '@domain/types/step.js';
 
+export type StepAction =
+  | { type: 'step:create' }
+  | { type: 'step:edit'; step: Step }
+  | { type: 'step:delete'; step: Step };
+
 export interface StepListProps {
   stepsDir: string;
   onDetailEnter: () => void;
   onDetailExit: () => void;
+  onAction?: (action: StepAction) => void;
 }
 
-export default function StepList({ stepsDir, onDetailEnter, onDetailExit }: StepListProps) {
+export default function StepList({
+  stepsDir,
+  onDetailEnter,
+  onDetailExit,
+  onAction = () => {},
+}: StepListProps) {
   const steps = useMemo(() => {
     try {
       return new StepRegistry(stepsDir).list();
@@ -23,7 +34,7 @@ export default function StepList({ stepsDir, onDetailEnter, onDetailExit }: Step
 
   const clamped = Math.min(selectedIndex, Math.max(0, steps.length - 1));
 
-  useInput((_input, key) => {
+  useInput((input, key) => {
     if (detail !== null) {
       if (key.escape) {
         setDetail(null);
@@ -41,6 +52,14 @@ export default function StepList({ stepsDir, onDetailEnter, onDetailExit }: Step
         setDetail(s);
         onDetailEnter();
       }
+    } else if (input === 'n') {
+      onAction({ type: 'step:create' });
+    } else if (input === 'e' && steps.length > 0) {
+      const s = steps[clamped];
+      if (s) onAction({ type: 'step:edit', step: s });
+    } else if (input === 'd' && steps.length > 0) {
+      const s = steps[clamped];
+      if (s) onAction({ type: 'step:delete', step: s });
     }
   });
 
@@ -53,7 +72,7 @@ export default function StepList({ stepsDir, onDetailEnter, onDetailExit }: Step
       <Text bold>Steps ({steps.length})</Text>
       <Box flexDirection="column" marginTop={1}>
         {steps.length === 0 ? (
-          <Text dimColor>No steps found. Run `kata step create` to add one.</Text>
+          <Text dimColor>No steps found.</Text>
         ) : (
           steps.map((step, i) => (
             <StepRow
@@ -65,7 +84,7 @@ export default function StepList({ stepsDir, onDetailEnter, onDetailExit }: Step
         )}
       </Box>
       <Box marginTop={1}>
-        <Text dimColor>[↑↓] select  [Enter] detail  [Tab] switch section</Text>
+        <Text dimColor>[↑↓] select  [Enter] detail  [n] new  [e] edit  [d] del  [Tab] switch section</Text>
       </Box>
     </Box>
   );
@@ -116,7 +135,7 @@ function StepDetail({ step }: { step: Step }) {
         </Text>
       )}
       <Box marginTop={1}>
-        <Text dimColor>[Esc] back  —  edit: kata step edit {label}</Text>
+        <Text dimColor>[Esc] back  [e] edit  [d] delete</Text>
       </Box>
     </Box>
   );

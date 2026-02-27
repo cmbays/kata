@@ -149,6 +149,33 @@ describe('KataList keyboard navigation', () => {
   });
 });
 
+// ── action keys ────────────────────────────────────────────────────────────
+
+describe('KataList action keys', () => {
+  it('calls onAction kata:create when n is pressed', () => {
+    const onAction = vi.fn();
+    renderToString(<KataList {...defaultProps} onAction={onAction} />);
+    handlerRef.current?.('n', noKey());
+    expect(onAction).toHaveBeenCalledWith({ type: 'kata:create' });
+  });
+
+  it('calls onAction kata:delete with selected kata when d is pressed', () => {
+    const onAction = vi.fn();
+    const kata = makeKata({ name: 'my-kata' });
+    mockJsonList.mockReturnValue([kata]);
+    renderToString(<KataList {...defaultProps} onAction={onAction} />);
+    handlerRef.current?.('d', noKey());
+    expect(onAction).toHaveBeenCalledWith({ type: 'kata:delete', kata });
+  });
+
+  it('does not call onAction on d when list is empty', () => {
+    const onAction = vi.fn();
+    renderToString(<KataList {...defaultProps} onAction={onAction} />);
+    handlerRef.current?.('d', noKey());
+    expect(onAction).not.toHaveBeenCalled();
+  });
+});
+
 // ── error handling ─────────────────────────────────────────────────────────
 
 describe('KataList error handling', () => {

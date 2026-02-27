@@ -3,6 +3,11 @@ import { Box, Text, useApp, useInput } from 'ink';
 import StepList from './config/StepList.js';
 import FlavorList from './config/FlavorList.js';
 import KataList from './config/KataList.js';
+import type { StepAction } from './config/StepList.js';
+import type { FlavorAction } from './config/FlavorList.js';
+import type { KataAction } from './config/KataList.js';
+
+export type ConfigAction = StepAction | FlavorAction | KataAction;
 
 const SECTIONS = ['Steps', 'Flavors', 'Katas'] as const;
 type SectionName = (typeof SECTIONS)[number];
@@ -11,12 +16,18 @@ export interface ConfigAppProps {
   stepsDir: string;
   flavorsDir: string;
   katasDir: string;
+  onAction?: (action: ConfigAction) => void;
 }
 
-export default function ConfigApp({ stepsDir, flavorsDir, katasDir }: ConfigAppProps) {
+export default function ConfigApp({ stepsDir, flavorsDir, katasDir, onAction }: ConfigAppProps) {
   const { exit } = useApp();
   const [sectionIndex, setSectionIndex] = useState(0);
   const [inDetail, setInDetail] = useState(false);
+
+  const handleAction = (action: ConfigAction) => {
+    onAction?.(action);
+    exit();
+  };
 
   useInput((input, key) => {
     if (inDetail) return;
@@ -34,6 +45,7 @@ export default function ConfigApp({ stepsDir, flavorsDir, katasDir }: ConfigAppP
   const sectionProps = {
     onDetailEnter: () => setInDetail(true),
     onDetailExit: () => setInDetail(false),
+    onAction: handleAction,
   };
 
   return (
@@ -49,7 +61,7 @@ export default function ConfigApp({ stepsDir, flavorsDir, katasDir }: ConfigAppP
         {SECTIONS.map((s, i) => (
           <TabLabel key={s} label={s} isActive={i === sectionIndex} />
         ))}
-        <Text dimColor>[Tab] switch  [q] quit</Text>
+        <Text dimColor>[Tab] switch  [n] new  [e] edit  [d] del  [q] quit</Text>
       </Box>
 
       {sectionIndex === 0 && <StepList stepsDir={stepsDir} {...sectionProps} />}

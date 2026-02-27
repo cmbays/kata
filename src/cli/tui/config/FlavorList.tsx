@@ -5,11 +5,16 @@ import { StepRegistry } from '@infra/registries/step-registry.js';
 import type { Flavor, FlavorStepRef } from '@domain/types/flavor.js';
 import type { FlavorValidationResult } from '@domain/ports/flavor-registry.js';
 
+export type FlavorAction =
+  | { type: 'flavor:create' }
+  | { type: 'flavor:delete'; flavor: Flavor };
+
 export interface FlavorListProps {
   flavorsDir: string;
   stepsDir: string;
   onDetailEnter: () => void;
   onDetailExit: () => void;
+  onAction?: (action: FlavorAction) => void;
 }
 
 export default function FlavorList({
@@ -17,6 +22,7 @@ export default function FlavorList({
   stepsDir,
   onDetailEnter,
   onDetailExit,
+  onAction = () => {},
 }: FlavorListProps) {
   const { flavors, validate } = useMemo(() => {
     try {
@@ -62,6 +68,11 @@ export default function FlavorList({
         setDetail(f);
         onDetailEnter();
       }
+    } else if (_input === 'n') {
+      onAction({ type: 'flavor:create' });
+    } else if (_input === 'd' && flavors.length > 0) {
+      const f = flavors[clamped];
+      if (f) onAction({ type: 'flavor:delete', flavor: f });
     }
   });
 
@@ -74,7 +85,7 @@ export default function FlavorList({
       <Text bold>Flavors ({flavors.length})</Text>
       <Box flexDirection="column" marginTop={1}>
         {flavors.length === 0 ? (
-          <Text dimColor>No flavors found. Run `kata flavor create` to add one.</Text>
+          <Text dimColor>No flavors found.</Text>
         ) : (
           flavors.map((flavor, i) => (
             <FlavorRow
@@ -86,7 +97,7 @@ export default function FlavorList({
         )}
       </Box>
       <Box marginTop={1}>
-        <Text dimColor>[↑↓] select  [Enter] detail  [Tab] switch section</Text>
+        <Text dimColor>[↑↓] select  [Enter] detail  [n] new  [d] del  [Tab] switch section</Text>
       </Box>
     </Box>
   );
@@ -146,9 +157,7 @@ function FlavorDetail({ flavor, validation }: FlavorDetailProps) {
         )}
       </Box>
       <Box marginTop={1}>
-        <Text dimColor>
-          [Esc] back  —  edit: kata flavor edit {flavor.stageCategory} {flavor.name}
-        </Text>
+        <Text dimColor>[Esc] back</Text>
       </Box>
     </Box>
   );

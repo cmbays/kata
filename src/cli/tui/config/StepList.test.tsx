@@ -159,6 +159,49 @@ describe('StepList keyboard navigation', () => {
   });
 });
 
+// ── action keys ────────────────────────────────────────────────────────────
+
+describe('StepList action keys', () => {
+  it('calls onAction step:create when n is pressed', () => {
+    const onAction = vi.fn();
+    renderToString(<StepList {...defaultProps} onAction={onAction} />);
+    handlerRef.current?.('n', noKey());
+    expect(onAction).toHaveBeenCalledWith({ type: 'step:create' });
+  });
+
+  it('calls onAction step:edit with selected step when e is pressed', () => {
+    const onAction = vi.fn();
+    const step = makeStep({ type: 'shape' });
+    mockList.mockReturnValue([step]);
+    renderToString(<StepList {...defaultProps} onAction={onAction} />);
+    handlerRef.current?.('e', noKey());
+    expect(onAction).toHaveBeenCalledWith({ type: 'step:edit', step });
+  });
+
+  it('calls onAction step:delete with selected step when d is pressed', () => {
+    const onAction = vi.fn();
+    const step = makeStep({ type: 'deploy' });
+    mockList.mockReturnValue([step]);
+    renderToString(<StepList {...defaultProps} onAction={onAction} />);
+    handlerRef.current?.('d', noKey());
+    expect(onAction).toHaveBeenCalledWith({ type: 'step:delete', step });
+  });
+
+  it('does not call onAction on e when list is empty', () => {
+    const onAction = vi.fn();
+    renderToString(<StepList {...defaultProps} onAction={onAction} />);
+    handlerRef.current?.('e', noKey());
+    expect(onAction).not.toHaveBeenCalled();
+  });
+
+  it('does not call onAction on d when list is empty', () => {
+    const onAction = vi.fn();
+    renderToString(<StepList {...defaultProps} onAction={onAction} />);
+    handlerRef.current?.('d', noKey());
+    expect(onAction).not.toHaveBeenCalled();
+  });
+});
+
 // ── error handling ─────────────────────────────────────────────────────────
 
 describe('StepList error handling', () => {

@@ -4,13 +4,23 @@ import { JsonStore } from '@infra/persistence/json-store.js';
 import { SavedKataSchema } from '@domain/types/saved-kata.js';
 import type { SavedKata } from '@domain/types/saved-kata.js';
 
+export type KataAction =
+  | { type: 'kata:create' }
+  | { type: 'kata:delete'; kata: SavedKata };
+
 export interface KataListProps {
   katasDir: string;
   onDetailEnter: () => void;
   onDetailExit: () => void;
+  onAction?: (action: KataAction) => void;
 }
 
-export default function KataList({ katasDir, onDetailEnter, onDetailExit }: KataListProps) {
+export default function KataList({
+  katasDir,
+  onDetailEnter,
+  onDetailExit,
+  onAction = () => {},
+}: KataListProps) {
   const katas = useMemo(() => {
     try {
       return JsonStore.list(katasDir, SavedKataSchema);
@@ -24,7 +34,7 @@ export default function KataList({ katasDir, onDetailEnter, onDetailExit }: Kata
 
   const clamped = Math.min(selectedIndex, Math.max(0, katas.length - 1));
 
-  useInput((_input, key) => {
+  useInput((input, key) => {
     if (detail !== null) {
       if (key.escape) {
         setDetail(null);
@@ -42,6 +52,11 @@ export default function KataList({ katasDir, onDetailEnter, onDetailExit }: Kata
         setDetail(k);
         onDetailEnter();
       }
+    } else if (input === 'n') {
+      onAction({ type: 'kata:create' });
+    } else if (input === 'd' && katas.length > 0) {
+      const k = katas[clamped];
+      if (k) onAction({ type: 'kata:delete', kata: k });
     }
   });
 
@@ -55,7 +70,7 @@ export default function KataList({ katasDir, onDetailEnter, onDetailExit }: Kata
       <Box flexDirection="column" marginTop={1}>
         {katas.length === 0 ? (
           <Text dimColor>
-            No kata patterns found. Run `kata execute --save-kata &lt;name&gt;` to save one.
+            No kata patterns found.
           </Text>
         ) : (
           katas.map((kata, i) => (
@@ -64,7 +79,7 @@ export default function KataList({ katasDir, onDetailEnter, onDetailExit }: Kata
         )}
       </Box>
       <Box marginTop={1}>
-        <Text dimColor>[↑↓] select  [Enter] detail  [Tab] switch section</Text>
+        <Text dimColor>[↑↓] select  [Enter] detail  [n] new  [d] del  [Tab] switch section</Text>
       </Box>
     </Box>
   );

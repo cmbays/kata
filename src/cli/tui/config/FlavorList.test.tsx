@@ -173,6 +173,33 @@ describe('FlavorList detail view', () => {
   });
 });
 
+// ── action keys ────────────────────────────────────────────────────────────
+
+describe('FlavorList action keys', () => {
+  it('calls onAction flavor:create when n is pressed', () => {
+    const onAction = vi.fn();
+    renderToString(<FlavorList {...defaultProps} onAction={onAction} />);
+    handlerRef.current?.('n', noKey());
+    expect(onAction).toHaveBeenCalledWith({ type: 'flavor:create' });
+  });
+
+  it('calls onAction flavor:delete with selected flavor when d is pressed', () => {
+    const onAction = vi.fn();
+    const flavor = makeFlavor({ name: 'my-flavor' });
+    mockFlavorList.mockReturnValue([flavor]);
+    renderToString(<FlavorList {...defaultProps} onAction={onAction} />);
+    handlerRef.current?.('d', noKey());
+    expect(onAction).toHaveBeenCalledWith({ type: 'flavor:delete', flavor });
+  });
+
+  it('does not call onAction on d when list is empty', () => {
+    const onAction = vi.fn();
+    renderToString(<FlavorList {...defaultProps} onAction={onAction} />);
+    handlerRef.current?.('d', noKey());
+    expect(onAction).not.toHaveBeenCalled();
+  });
+});
+
 // ── error handling ─────────────────────────────────────────────────────────
 
 describe('FlavorList error handling', () => {
