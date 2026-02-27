@@ -45,6 +45,23 @@ export function registerConfigCommand(parent: Command): void {
 
           if (!pendingAction) break; // user pressed q — truly exit
 
+          // Drain any stdin bytes buffered during the Ink session (e.g. the
+          // keypress that triggered onAction) so they don't bleed into the
+          // first Inquirer prompt and cause an immediate ExitPromptError.
+          {
+            let chunk;
+            while ((chunk = process.stdin.read()) !== null) {
+              void chunk;
+            }
+          }
+          await new Promise<void>((resolve) => setImmediate(resolve));
+          {
+            let chunk;
+            while ((chunk = process.stdin.read()) !== null) {
+              void chunk;
+            }
+          }
+
           await runConfigAction(pendingAction, {
             stepsDir,
             flavorsDir,

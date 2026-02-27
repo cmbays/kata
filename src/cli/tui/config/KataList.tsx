@@ -36,9 +36,11 @@ export default function KataList({
 
   useInput((input, key) => {
     if (detail !== null) {
-      if (key.escape) {
+      if (key.escape || key.leftArrow) {
         setDetail(null);
         onDetailExit();
+      } else if (input === 'd') {
+        onAction({ type: 'kata:delete', kata: detail });
       }
       return;
     }
@@ -46,7 +48,7 @@ export default function KataList({
       setSelectedIndex((i) => Math.max(0, i - 1));
     } else if (key.downArrow) {
       setSelectedIndex((i) => Math.min(katas.length - 1, i + 1));
-    } else if (key.return) {
+    } else if (key.return || key.rightArrow) {
       const k = katas[clamped];
       if (k) {
         setDetail(k);
@@ -113,7 +115,7 @@ function KataDetail({ kata }: { kata: SavedKata }) {
         ))}
       </Box>
       <Box marginTop={1}>
-        <Text dimColor>[Esc] back</Text>
+        <Text dimColor>[←/Esc] back  [d] delete this kata</Text>
       </Box>
     </Box>
   );

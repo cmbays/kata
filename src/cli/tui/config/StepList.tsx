@@ -36,7 +36,7 @@ export default function StepList({
 
   useInput((input, key) => {
     if (detail !== null) {
-      if (key.escape) {
+      if (key.escape || key.leftArrow) {
         setDetail(null);
         onDetailExit();
       } else if (input === 'e') {
@@ -50,7 +50,7 @@ export default function StepList({
       setSelectedIndex((i) => Math.max(0, i - 1));
     } else if (key.downArrow) {
       setSelectedIndex((i) => Math.min(steps.length - 1, i + 1));
-    } else if (key.return) {
+    } else if (key.return || key.rightArrow) {
       const s = steps[clamped];
       if (s) {
         setDetail(s);
@@ -139,7 +139,7 @@ function StepDetail({ step }: { step: Step }) {
         </Text>
       )}
       <Box marginTop={1}>
-        <Text dimColor>[Esc] back  [e] edit this step  [d] delete this step</Text>
+        <Text dimColor>[←/Esc] back  [e] edit this step  [d] delete this step</Text>
       </Box>
     </Box>
   );
