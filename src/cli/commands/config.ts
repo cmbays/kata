@@ -45,22 +45,12 @@ export function registerConfigCommand(parent: Command): void {
 
           if (!pendingAction) break; // user pressed q — truly exit
 
-          // Drain stdin between Ink teardown and Inquirer startup.
-          // Ink leaves stdin paused; the triggering keypress (or any focus/
-          // protocol escape sequences Ghostty sends during mode changes) may
-          // still be in the OS buffer.  We must resume() first (to pull OS
-          // bytes into Node's stream), listen on 'data' to consume them while
-          // in flowing mode, then pause again before Inquirer takes over.
-          await new Promise<void>((resolve) => {
-            const discard = () => {};
-            process.stdin.on('data', discard);
-            process.stdin.resume();
-            setTimeout(() => {
-              process.stdin.removeListener('data', discard);
-              process.stdin.pause();
-              resolve();
-            }, 80);
-          });
+          // Ink calls stdin.unref() on exit. If nothing else holds the event
+          // loop open, Node.js can reach "process exit" between Ink teardown
+          // and Inquirer startup, which fires signal-exit and immediately
+          // rejects every Inquirer prompt with ExitPromptError("0 null").
+          // Re-ref stdin to keep the process anchored until Inquirer takes over.
+          process.stdin.ref();
 
           await runConfigAction(pendingAction, {
             stepsDir,
