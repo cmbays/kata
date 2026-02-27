@@ -155,23 +155,23 @@ export async function promptGateConditions(gateLabel: string, existing: GateCond
     const condType = await select({
       message: '  Condition type:',
       choices: [
-        { name: 'artifact-exists', value: 'artifact-exists' as const },
-        { name: 'schema-valid', value: 'schema-valid' as const },
-        { name: 'human-approved', value: 'human-approved' as const },
-        { name: 'predecessor-complete', value: 'predecessor-complete' as const },
-        { name: 'command-passes', value: 'command-passes' as const },
+        { name: 'File exists          — a named artifact/file must exist', value: 'artifact-exists' as const },
+        { name: 'Schema valid         — artifact must match a schema', value: 'schema-valid' as const },
+        { name: 'Human approved       — requires manual sign-off before proceeding', value: 'human-approved' as const },
+        { name: 'Predecessor done     — another step must complete first', value: 'predecessor-complete' as const },
+        { name: 'Command passes       — a shell command must exit 0', value: 'command-passes' as const },
       ],
     });
-    const condDesc = (await input({ message: '  Description (optional):' })).trim();
+    const condDesc = (await input({ message: '  Description / note (optional):' })).trim();
     let artifactName: string | undefined;
     let predecessorType: string | undefined;
     let command: string | undefined;
     if (condType === 'artifact-exists' || condType === 'schema-valid') {
-      artifactName = (await input({ message: '  Artifact name:' })).trim() || undefined;
+      artifactName = (await input({ message: '  File/artifact name (e.g., "research.md"):' })).trim() || undefined;
     } else if (condType === 'predecessor-complete') {
-      predecessorType = (await input({ message: '  Predecessor stage type:' })).trim() || undefined;
+      predecessorType = (await input({ message: '  Required step type (e.g., "research"):' })).trim() || undefined;
     } else if (condType === 'command-passes') {
-      command = (await input({ message: '  Shell command to run:' })).trim() || undefined;
+      command = (await input({ message: '  Shell command to run (must exit 0):' })).trim() || undefined;
     }
     conditions.push(GateConditionSchema.parse({
       type: condType,
@@ -321,27 +321,17 @@ export async function editFieldLoop(
 
     } else if (choice === 'entryGate') {
       const conditions = await promptGateConditions('entry', draft.entryGate?.conditions ?? []);
-      if (conditions.length > 0) {
-        const required = await confirm({
-          message: 'Is the entry gate required (blocking)?',
-          default: draft.entryGate?.required ?? true,
-        });
-        draft = { ...draft, entryGate: { type: 'entry', conditions, required } };
-      } else {
-        draft = { ...draft, entryGate: undefined };
-      }
+      draft =
+        conditions.length > 0
+          ? { ...draft, entryGate: { type: 'entry', conditions, required: true } }
+          : { ...draft, entryGate: undefined };
 
     } else if (choice === 'exitGate') {
       const conditions = await promptGateConditions('exit', draft.exitGate?.conditions ?? []);
-      if (conditions.length > 0) {
-        const required = await confirm({
-          message: 'Is the exit gate required (blocking)?',
-          default: draft.exitGate?.required ?? true,
-        });
-        draft = { ...draft, exitGate: { type: 'exit', conditions, required } };
-      } else {
-        draft = { ...draft, exitGate: undefined };
-      }
+      draft =
+        conditions.length > 0
+          ? { ...draft, exitGate: { type: 'exit', conditions, required: true } }
+          : { ...draft, exitGate: undefined };
 
     } else if (choice === 'learningHooks') {
       const raw = await input({

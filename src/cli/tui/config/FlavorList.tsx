@@ -3,6 +3,8 @@ import { Box, Text, useInput } from 'ink';
 import { FlavorRegistry } from '@infra/registries/flavor-registry.js';
 import { StepRegistry } from '@infra/registries/step-registry.js';
 import type { Flavor, FlavorStepRef } from '@domain/types/flavor.js';
+import type { Step } from '@domain/types/step.js';
+import type { GateCondition } from '@domain/types/gate.js';
 import type { FlavorValidationResult } from '@domain/ports/flavor-registry.js';
 
 export type FlavorAction =
@@ -25,7 +27,7 @@ export default function FlavorList({
   onDetailExit,
   onAction = () => {},
 }: FlavorListProps) {
-  const { flavors, validate } = useMemo(() => {
+  const { flavors, validate, resolveStep } = useMemo(() => {
     try {
       const flavorReg = new FlavorRegistry(flavorsDir);
       const stepReg = new StepRegistry(stepsDir);
@@ -39,10 +41,11 @@ export default function FlavorList({
       return {
         flavors: flavorReg.list(),
         validate: (f: Flavor) => flavorReg.validate(f, stepResolver),
+        resolveStep: stepResolver,
       };
     } catch {
       const noopValidate = (_: Flavor): FlavorValidationResult => ({ valid: true });
-      return { flavors: [], validate: noopValidate };
+      return { flavors: [], validate: noopValidate, resolveStep: () => undefined };
     }
   }, [flavorsDir, stepsDir]);
 
@@ -85,7 +88,9 @@ export default function FlavorList({
   });
 
   if (detail !== null) {
-    return <FlavorDetail flavor={detail} validation={validate(detail)} />;
+    return (
+      <FlavorDetail flavor={detail} validation={validate(detail)} resolveStep={resolveStep} />
+    );
   }
 
   return (
@@ -125,9 +130,10 @@ function FlavorRow({ flavor, isSelected }: { flavor: Flavor; isSelected: boolean
 interface FlavorDetailProps {
   flavor: Flavor;
   validation: FlavorValidationResult;
+  resolveStep: (ref: FlavorStepRef) => Step | undefined;
 }
 
-function FlavorDetail({ flavor, validation }: FlavorDetailProps) {
+function FlavorDetail({ flavor, validation, resolveStep }: FlavorDetailProps) {
   return (
     <Box flexDirection="column">
       <Text bold color="cyan">
@@ -142,13 +148,7 @@ function FlavorDetail({ flavor, validation }: FlavorDetailProps) {
       </Text>
       <Box flexDirection="column" marginTop={1}>
         <Text bold>Steps ({flavor.steps.length}):</Text>
-        {flavor.steps.map((ref, i) => (
-          <Box key={ref.stepName}>
-            <Text dimColor>{String(i + 1).padStart(2)}. </Text>
-            <Text>{ref.stepName}</Text>
-            <Text dimColor> (type: {ref.stepType})</Text>
-          </Box>
-        ))}
+        <FlavorPipeline steps={flavor.steps} resolveStep={resolveStep} />
       </Box>
       <Box marginTop={1}>
         {validation.valid ? (
@@ -169,4 +169,140 @@ function FlavorDetail({ flavor, validation }: FlavorDetailProps) {
       </Box>
     </Box>
   );
+}
+
+function FlavorPipeline({
+  steps,
+  resolveStep,
+}: {
+  steps: FlavorStepRef[];
+  resolveStep: (ref: FlavorStepRef) => Step | undefined;
+}) {
+  return (
+    <Box flexDirection="column">
+      {steps.map((stepRef, i) => {
+        const step = resolveStep(stepRef);
+        const nextRef = steps[i + 1];
+        const nextStep = nextRef ? resolveStep(nextRef) : undefined;
+        const showConnector = i < steps.length - 1;
+
+        // Artifacts that exit this step and enter the next (visual "hand-off")
+        const exitArtifacts =
+          step?.exitGate?.conditions.filter((c) => c.artifactName).map((c) => c.artifactName!) ??
+          [];
+        const entryArtifacts =
+          nextStep?.entryGate?.conditions
+            .filter((c) => c.artifactName)
+            .map((c) => c.artifactName!) ?? [];
+        const matchedArtifacts = exitArtifacts.filter((a) => entryArtifacts.includes(a));
+
+        return (
+          <Box key={stepRef.stepName} flexDirection="column">
+            <StepPipelineBlock stepRef={stepRef} step={step} index={i + 1} />
+            {showConnector && <PipelineConnector matchedArtifacts={matchedArtifacts} />}
+          </Box>
+        );
+      })}
+    </Box>
+  );
+}
+
+function StepPipelineBlock({
+  stepRef,
+  step,
+  index,
+}: {
+  stepRef: FlavorStepRef;
+  step: Step | undefined;
+  index: number;
+}) {
+  const typeLabel = step
+    ? step.flavor
+      ? `${step.type}.${step.flavor}`
+      : step.type
+    : stepRef.stepType;
+  const entryConditions = step?.entryGate?.conditions ?? [];
+  const exitConditions = step?.exitGate?.conditions ?? [];
+  const artifacts = step?.artifacts ?? [];
+
+  return (
+    <Box flexDirection="column">
+      {entryConditions.length > 0 ? (
+        <Box flexDirection="column">
+          <Text color="green">  Entry:</Text>
+          {entryConditions.map((c, ci) => (
+            <Text key={ci} dimColor>
+              {'    '}
+              {conditionLabel(c.type)}
+              {conditionDetail(c) !== '' ? ` ${conditionDetail(c)}` : ''}
+            </Text>
+          ))}
+        </Box>
+      ) : (
+        <Text dimColor>  Entry: none</Text>
+      )}
+      <Box borderStyle="round" flexDirection="column" paddingX={1}>
+        <Box>
+          <Text dimColor>{String(index).padStart(2)}. </Text>
+          <Text bold>{stepRef.stepName}</Text>
+          <Text dimColor> [{typeLabel}]</Text>
+        </Box>
+        {step?.description !== undefined && (
+          <Text dimColor>{'    '}{step.description.slice(0, 50)}</Text>
+        )}
+        {artifacts.length > 0 && (
+          <Text dimColor>{'    '}→ {artifacts.map((a) => a.name).join(', ')}</Text>
+        )}
+        {step === undefined && (
+          <Text color="red">{'    '}⚠ step type "{stepRef.stepType}" not found</Text>
+        )}
+      </Box>
+      {exitConditions.length > 0 ? (
+        <Box flexDirection="column">
+          <Text color="magenta">  Exit:</Text>
+          {exitConditions.map((c, ci) => (
+            <Text key={ci} dimColor>
+              {'    '}
+              {conditionLabel(c.type)}
+              {conditionDetail(c) !== '' ? ` ${conditionDetail(c)}` : ''}
+            </Text>
+          ))}
+        </Box>
+      ) : (
+        <Text dimColor>  Exit: none</Text>
+      )}
+    </Box>
+  );
+}
+
+function PipelineConnector({ matchedArtifacts }: { matchedArtifacts: string[] }) {
+  return (
+    <Box flexDirection="column" marginLeft={4}>
+      <Text dimColor>│</Text>
+      {matchedArtifacts.map((a, i) => (
+        <Text key={i} color="green">
+          ✓ {a}
+        </Text>
+      ))}
+      <Text dimColor>▼</Text>
+    </Box>
+  );
+}
+
+function conditionLabel(type: string): string {
+  const labels: Record<string, string> = {
+    'artifact-exists': 'File exists',
+    'schema-valid': 'Schema valid',
+    'human-approved': 'Human approved',
+    'predecessor-complete': 'Predecessor done',
+    'command-passes': 'Command passes',
+  };
+  return labels[type] ?? type;
+}
+
+function conditionDetail(c: GateCondition): string {
+  if (c.artifactName) return `→ ${c.artifactName}`;
+  if (c.predecessorType) return `→ ${c.predecessorType}`;
+  if (c.command) return `: ${c.command}`;
+  return '';
 }

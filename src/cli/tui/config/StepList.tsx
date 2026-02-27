@@ -1,8 +1,10 @@
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { useMemo, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { StepRegistry } from '@infra/registries/step-registry.js';
 import type { Step, StepResources } from '@domain/types/step.js';
-import type { Gate } from '@domain/types/gate.js';
+import type { Gate, GateCondition } from '@domain/types/gate.js';
 
 export type StepAction =
   | { type: 'step:create' }
@@ -69,7 +71,7 @@ export default function StepList({
   });
 
   if (detail !== null) {
-    return <StepDetail step={detail} />;
+    return <StepDetail step={detail} stepsDir={stepsDir} />;
   }
 
   return (
@@ -108,9 +110,23 @@ function StepRow({ step, isSelected }: { step: Step; isSelected: boolean }) {
   );
 }
 
-function StepDetail({ step }: { step: Step }) {
+function StepDetail({ step, stepsDir }: { step: Step; stepsDir: string }) {
   const label = step.flavor ? `${step.type}.${step.flavor}` : step.type;
-  const artifactNames = step.artifacts.map((a) => a.name).join(', ');
+
+  const promptPreview = useMemo(() => {
+    if (!step.promptTemplate) return null;
+    try {
+      const fullPath = join(stepsDir, step.promptTemplate);
+      if (!existsSync(fullPath)) return null;
+      const lines = readFileSync(fullPath, 'utf-8').split('\n');
+      return {
+        path: step.promptTemplate,
+        lines: lines.filter((l) => l.trim().length > 0).slice(0, 8),
+      };
+    } catch {
+      return null;
+    }
+  }, [step.promptTemplate, stepsDir]);
 
   return (
     <Box flexDirection="column">
@@ -122,57 +138,75 @@ function StepDetail({ step }: { step: Step }) {
           Category: <Text color="yellow">{step.stageCategory}</Text>
         </Text>
       )}
-      {step.description !== undefined && <Text>Description: {step.description}</Text>}
-      <Text>Artifacts: {artifactNames.length > 0 ? artifactNames : '(none)'}</Text>
-      {step.promptTemplate !== undefined && (
-        <Text dimColor>Prompt: {step.promptTemplate}</Text>
+      {step.description !== undefined && <Text dimColor>{step.description}</Text>}
+
+      <Box flexDirection="column" marginTop={1}>
+        <GateSection gate={step.entryGate} label="Entry gate" />
+        <Box borderStyle="round" flexDirection="column" paddingX={1}>
+          <Text bold>{label}</Text>
+          {step.artifacts.length > 0 && (
+            <Text dimColor>produces: {step.artifacts.map((a) => a.name).join(', ')}</Text>
+          )}
+        </Box>
+        <GateSection gate={step.exitGate} label="Exit gate" />
+      </Box>
+
+      {promptPreview !== null && (
+        <Box flexDirection="column" marginTop={1}>
+          <Text dimColor>Prompt: {promptPreview.path}</Text>
+          <Box flexDirection="column" borderStyle="single" paddingX={1}>
+            {promptPreview.lines.map((l, i) => (
+              <Text key={i} dimColor>
+                {l}
+              </Text>
+            ))}
+          </Box>
+        </Box>
       )}
-      <GateDetail label="Entry gate" gate={step.entryGate} />
-      <GateDetail label="Exit gate" gate={step.exitGate} />
+
       {step.resources !== undefined && <ResourceDetail resources={step.resources} />}
       <Box marginTop={1}>
-        <Text dimColor>[←/Esc] back  [e] edit this step  [d] delete this step</Text>
+        <Text dimColor>[←/Esc] back  [e] edit  [d] delete</Text>
       </Box>
     </Box>
   );
 }
 
-function GateDetail({ label, gate }: { label: string; gate?: Gate }) {
+function GateSection({ gate, label }: { label: string; gate?: Gate }) {
   if (!gate || gate.conditions.length === 0) {
-    return (
-      <Text>
-        {label}: <Text dimColor>none</Text>
-      </Text>
-    );
+    return <Text dimColor>{label}: none</Text>;
   }
   return (
-    <Box flexDirection="column" marginTop={1}>
-      <Text bold>
-        {label}
-        <Text dimColor> ({gate.required ? 'required' : 'optional'}):</Text>
-      </Text>
-      {gate.conditions.map((c, i) => {
-        const detail = c.artifactName
-          ? ` → ${c.artifactName}`
-          : c.predecessorType
-            ? ` → ${c.predecessorType}`
-            : c.command
-              ? `: ${c.command}`
-              : '';
-        const desc = c.description ? `  (${c.description})` : '';
-        return (
-          <Box key={i}>
-            <Text dimColor>  {i + 1}. </Text>
-            <Text color="yellow">{c.type}</Text>
-            <Text dimColor>
-              {detail}
-              {desc}
-            </Text>
-          </Box>
-        );
-      })}
+    <Box flexDirection="column">
+      <Text color={label.startsWith('Entry') ? 'green' : 'magenta'}>{label}:</Text>
+      {gate.conditions.map((c, i) => (
+        <Box key={i} marginLeft={2}>
+          <Text dimColor>{i + 1}. </Text>
+          <Text color="yellow">{conditionLabel(c.type)}</Text>
+          {conditionDetail(c) !== '' && <Text dimColor> {conditionDetail(c)}</Text>}
+          {c.description !== undefined && <Text dimColor> ({c.description})</Text>}
+        </Box>
+      ))}
     </Box>
   );
+}
+
+function conditionLabel(type: string): string {
+  const labels: Record<string, string> = {
+    'artifact-exists': 'File exists',
+    'schema-valid': 'Schema valid',
+    'human-approved': 'Human approved',
+    'predecessor-complete': 'Predecessor done',
+    'command-passes': 'Command passes',
+  };
+  return labels[type] ?? type;
+}
+
+function conditionDetail(c: GateCondition): string {
+  if (c.artifactName) return `→ ${c.artifactName}`;
+  if (c.predecessorType) return `→ ${c.predecessorType}`;
+  if (c.command) return `: ${c.command}`;
+  return '';
 }
 
 function ResourceDetail({ resources }: { resources: StepResources }) {

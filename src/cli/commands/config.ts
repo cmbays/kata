@@ -279,7 +279,7 @@ async function promptFlavorSteps(
   stageCategory: StageCategory,
   ctx: ActionCtx,
 ): Promise<{ stepName: string; stepType: string }[] | null> {
-  const { input, select, Separator } = await import('@inquirer/prompts');
+  const { confirm, input, select, Separator } = await import('@inquirer/prompts');
 
   const stepReg = new StepRegistry(ctx.stepsDir);
   const availableSteps = stepReg.list().filter((s) => s.stageCategory === stageCategory);
@@ -315,7 +315,7 @@ async function promptFlavorSteps(
     if (pick === '_undo') { flavorSteps.pop(); continue; }
 
     if (pick === '_new') {
-      // Inline step creation
+      // Inline step creation — same flow as standalone 'kata step create'
       const newType = (
         await input({ message: '  New step type:', validate: (v) => v.trim().length > 0 || 'Required' })
       ).trim();
@@ -326,8 +326,23 @@ async function promptFlavorSteps(
         input: { type: newType, flavor: newFlavor, stageCategory, description: newDesc, artifacts: [], learningHooks: [] },
       });
       console.log(`  Step "${stepLabel(newType, newFlavor)}" created.`);
-      availableSteps.push(newStep);
-      const defaultName = stepLabel(newType, newFlavor);
+
+      const editNow = await confirm({
+        message: '  Edit further (add artifacts, gates, resources, prompt template)?',
+        default: false,
+      });
+      let finalStep = newStep;
+      if (editNow) {
+        const { step: edited, cancelled } = await editFieldLoop(newStep, ctx.kataDir, false);
+        if (!cancelled) {
+          editStep({ stagesDir: ctx.stepsDir, type: newStep.type, flavor: newStep.flavor, input: edited });
+          finalStep = edited;
+          console.log(`  Step "${stepLabel(edited.type, edited.flavor)}" updated.`);
+        }
+      }
+
+      availableSteps.push(finalStep);
+      const defaultName = stepLabel(finalStep.type, finalStep.flavor);
       const sName = (
         await input({
           message: `  Name for this step in the flavor:`,
@@ -340,7 +355,7 @@ async function promptFlavorSteps(
           },
         })
       ).trim();
-      flavorSteps.push({ stepName: sName, stepType: newType });
+      flavorSteps.push({ stepName: sName, stepType: finalStep.type });
       continue;
     }
 
