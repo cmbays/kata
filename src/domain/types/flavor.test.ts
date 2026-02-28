@@ -158,4 +158,18 @@ describe('FlavorSchema', () => {
       }),
     ).toThrow(/Duplicate stepName/);
   });
+
+  it('accepts a valid uuid kataka field', () => {
+    const k = FlavorSchema.parse({ ...minimalFlavor, kataka: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890' });
+    expect(k.kataka).toBe('a1b2c3d4-e5f6-7890-abcd-ef1234567890');
+  });
+
+  it('allows kataka to be omitted', () => {
+    const k = FlavorSchema.parse(minimalFlavor);
+    expect(k.kataka).toBeUndefined();
+  });
+
+  it('rejects non-uuid kataka', () => {
+    expect(() => FlavorSchema.parse({ ...minimalFlavor, kataka: 'not-a-uuid' })).toThrow();
+  });
 });

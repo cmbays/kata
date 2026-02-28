@@ -82,7 +82,7 @@ export const FlavorSchema = z.object({
    * When set, `kata kiai` will record this kataka on the run so observations
    * are automatically attributed to it. (Wave G)
    */
-  kataka: z.string().optional(),
+  kataka: z.string().uuid().optional(),
 });
 
 export type Flavor = z.infer<typeof FlavorSchema>;

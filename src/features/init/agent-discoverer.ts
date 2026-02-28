@@ -8,6 +8,13 @@ import { KATA_DIRS } from '@shared/constants/paths.js';
 import { logger } from '@shared/lib/logger.js';
 
 // ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+/** Path segments ignored when inferring skills from directory names. */
+const IGNORE_SEGMENT = new Set(['src', 'lib', 'app', 'packages', 'apps', 'services', 'agents', 'kataka']);
+
+// ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
@@ -210,5 +217,3 @@ export function discoverAndRegisterAgents(cwd: string, kataDir: string): AgentDi
     agents: registered,
   };
 }
-
-const IGNORE_SEGMENT = new Set(['src', 'lib', 'app', 'packages', 'apps', 'services', 'agents', 'kataka']);

@@ -55,6 +55,23 @@ describe('RunSchema', () => {
     const result = RunSchema.safeParse({ ...minimal, stageSequence: ['research', 'deploy'] });
     expect(result.success).toBe(false);
   });
+
+  it('accepts a valid uuid katakaId', () => {
+    const result = RunSchema.safeParse({ ...minimal, katakaId: VALID_UUID });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.katakaId).toBe(VALID_UUID);
+  });
+
+  it('allows katakaId to be omitted', () => {
+    const result = RunSchema.safeParse(minimal);
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.katakaId).toBeUndefined();
+  });
+
+  it('rejects non-uuid katakaId', () => {
+    const result = RunSchema.safeParse({ ...minimal, katakaId: 'not-a-uuid' });
+    expect(result.success).toBe(false);
+  });
 });
 
 describe('StageStateSchema', () => {
