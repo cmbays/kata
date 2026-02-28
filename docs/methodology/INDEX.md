@@ -1,7 +1,6 @@
 # Methodology Reference
 
 Source material for kata's built-in stages, prompt templates, and methodology model.
-Ported from the print-4ink project where these patterns were developed and battle-tested.
 
 ## Directory Structure
 
@@ -36,14 +35,13 @@ Markdown scaffolds for methodology artifacts.
 | `shaping-template.md` | Shaping document (Requirements/Shapes/Fit Check/Decisions) |
 | `breadboard-template.md` | Breadboard document (Places/Affordances/Wiring/Slices) |
 
-### `adapt/` — Needs Adaptation (Print-4ink Specifics Not Yet Removed)
+### `adapt/` — Methodology Patterns (Generic)
 
-Useful patterns that still contain print-4ink-specific references (file paths,
-stack-specific commands, named stakeholders). Use as reference but don't consume
-directly — strip project-specific content before incorporating into kata.
+Reusable methodology patterns adapted for general use. All project-specific
+references have been removed.
 
-| File | Pattern Worth Extracting |
-|------|------------------------|
+| File | Pattern |
+|------|---------|
 | `implementation-planning.md` | Wave/manifest model, session prompt design |
 | `build-session-protocol.md` | 7-phase completion protocol (build → review → merge → wrap-up) |
 | `review-orchestration.md` | 6-stage quality gate pipeline, risk scoring, gap detection |
@@ -54,7 +52,6 @@ directly — strip project-specific content before incorporating into kata.
 | `doc-sync.md` | Documentation drift detection pattern |
 | `learnings-synthesis.md` | 5-dimension pattern extraction from build cycles |
 | `how-we-work.md` | Shape Up philosophy, pipeline types, automation levels |
-| `pm.md` | Label taxonomy design, progressive issue creation |
 | `agents-architecture.md` | Agent design principles, orchestration patterns, handoff protocol |
 | `execution-manifest-template.yaml` | YAML manifest structure for build sessions |
 | `impl-plan-template.md` | Implementation plan markdown structure |
