@@ -39,8 +39,11 @@ export class SessionBuilder {
     const html = generateHtml(session);
     const meta = this.deps.sessionStore.save(session, html);
     const htmlPath = this.deps.sessionStore.getHtmlPath(session.id);
+    if (!htmlPath) {
+      throw new Error(`Session HTML not found after save for session "${session.id}".`);
+    }
 
-    return { meta, htmlPath: htmlPath! };
+    return { meta, htmlPath };
   }
 
   private generateTitle(data: DojoDataBundle): string {

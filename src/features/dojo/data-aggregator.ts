@@ -1,15 +1,12 @@
 import type { CycleManager } from '@domain/services/cycle-manager.js';
-import type { IKnowledgeStore } from '@domain/ports/knowledge-store.js';
+import type { IKnowledgeStore, KnowledgeStats } from '@domain/ports/knowledge-store.js';
 import type { Cycle } from '@domain/types/cycle.js';
 import type { Learning } from '@domain/types/learning.js';
 import type { DojoDiaryEntry } from '@domain/types/dojo.js';
-import type { RunSummary, StageDetail } from '@features/cycle-management/types.js';
-import type { DiaryStore } from '@infra/dojo/diary-store.js';
-import type { KnowledgeStats } from '@infra/knowledge/knowledge-store.js';
+import type { RunSummary } from '@features/cycle-management/types.js';
+import type { IDiaryStore } from '@domain/ports/diary-store.js';
 import { analyzeFlavorFrequency, analyzeRecurringGaps } from '@features/cycle-management/cross-run-analyzer.js';
-import { readRun, readStageState, runPaths } from '@infra/persistence/run-store.js';
-import { DecisionEntrySchema, ArtifactIndexEntrySchema } from '@domain/types/run-state.js';
-import { JsonlStore } from '@infra/persistence/jsonl-store.js';
+import { loadRunSummary } from '@features/cycle-management/run-summary-loader.js';
 import { logger } from '@shared/lib/logger.js';
 
 /**
@@ -22,7 +19,7 @@ export interface IDojoKnowledgeStore extends IKnowledgeStore {
 
 export interface DataAggregatorDeps {
   knowledgeStore: IDojoKnowledgeStore;
-  diaryStore: DiaryStore;
+  diaryStore: IDiaryStore;
   cycleManager: CycleManager;
   runsDir: string;
 }
@@ -33,7 +30,7 @@ export interface DojoDataBundle {
     cycles: Cycle[];
     runSummaries: RunSummary[];
     topLearnings: Learning[];
-    recurringGaps: Array<{ description: string; severity: string; betCount: number }>;
+    recurringGaps: Array<{ description: string; severity: 'low' | 'medium' | 'high'; betCount: number }>;
   };
   inward: {
     knowledgeStats: KnowledgeStats;
@@ -93,7 +90,7 @@ export class DataAggregator {
       for (const bet of cycle.bets) {
         if (!bet.runId) continue;
         try {
-          const summary = this.loadRunSummary(bet.id, bet.runId);
+          const summary = loadRunSummary(this.deps.runsDir, bet.id, bet.runId);
           if (summary) summaries.push(summary);
         } catch (err) {
           logger.warn(`DataAggregator: failed to load run "${bet.runId}": ${err instanceof Error ? err.message : String(err)}`);
@@ -101,50 +98,6 @@ export class DataAggregator {
       }
     }
     return summaries;
-  }
-
-  private loadRunSummary(betId: string, runId: string): RunSummary | null {
-    let run: ReturnType<typeof readRun>;
-    try {
-      run = readRun(this.deps.runsDir, runId);
-    } catch {
-      return null;
-    }
-
-    let stagesCompleted = 0;
-    let gapCount = 0;
-    const gapsBySeverity = { low: 0, medium: 0, high: 0 };
-    const stageDetails: StageDetail[] = [];
-
-    for (const category of run.stageSequence) {
-      try {
-        const stageState = readStageState(this.deps.runsDir, runId, category);
-        if (stageState.status === 'completed') stagesCompleted++;
-        for (const gap of stageState.gaps) {
-          gapCount++;
-          gapsBySeverity[gap.severity]++;
-        }
-        stageDetails.push({
-          category,
-          selectedFlavors: stageState.selectedFlavors,
-          gaps: stageState.gaps,
-        });
-      } catch {
-        // Skip missing stage states
-      }
-    }
-
-    const paths = runPaths(this.deps.runsDir, runId);
-    const decisions = JsonlStore.readAll(paths.decisionsJsonl, DecisionEntrySchema);
-    const avgConfidence = decisions.length > 0
-      ? decisions.reduce((sum, d) => sum + d.confidence, 0) / decisions.length
-      : null;
-    const yoloDecisionCount = decisions.filter((d) => d.lowConfidence === true).length;
-
-    const artifacts = JsonlStore.readAll(paths.artifactIndexJsonl, ArtifactIndexEntrySchema);
-    const artifactPaths = artifacts.map((a) => a.filePath);
-
-    return { betId, runId, stagesCompleted, gapCount, gapsBySeverity, avgConfidence, artifactPaths, stageDetails, yoloDecisionCount };
   }
 
   private loadTopLearnings(max: number): Learning[] {

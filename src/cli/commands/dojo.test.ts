@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { registerDojoCommand } from './dojo.js';
+import { registerDojoCommand, validateSessionId, parsePositiveInt } from './dojo.js';
 import type { DojoSessionMeta, DojoDiaryEntry, DojoSource } from '@domain/types/dojo.js';
 import {
   formatDojoSessionTable,
@@ -11,6 +11,65 @@ import {
   formatDojoSourceTable,
   formatDojoSourceTableJson,
 } from '@cli/formatters/dojo-formatter.js';
+
+describe('validateSessionId', () => {
+  it('accepts a valid UUID', () => {
+    const uuid = '11111111-1111-1111-1111-111111111111';
+    expect(validateSessionId(uuid)).toBe(uuid);
+  });
+
+  it('accepts uppercase UUID', () => {
+    const uuid = 'ABCDEF01-2345-6789-ABCD-EF0123456789';
+    expect(validateSessionId(uuid)).toBe(uuid);
+  });
+
+  it('rejects a path traversal string', () => {
+    expect(() => validateSessionId('../../etc/passwd')).toThrow('Invalid session ID');
+  });
+
+  it('rejects an empty string', () => {
+    expect(() => validateSessionId('')).toThrow('Expected a UUID');
+  });
+
+  it('rejects a non-UUID string', () => {
+    expect(() => validateSessionId('not-a-uuid')).toThrow('Invalid session ID');
+  });
+
+  it('rejects a UUID with extra characters', () => {
+    expect(() => validateSessionId('11111111-1111-1111-1111-111111111111-extra')).toThrow('Expected a UUID');
+  });
+});
+
+describe('parsePositiveInt', () => {
+  it('parses a valid positive integer', () => {
+    expect(parsePositiveInt('5')).toBe(5);
+  });
+
+  it('parses "1" as the minimum valid value', () => {
+    expect(parsePositiveInt('1')).toBe(1);
+  });
+
+  it('rejects zero', () => {
+    expect(() => parsePositiveInt('0')).toThrow('Expected a positive integer');
+  });
+
+  it('rejects negative numbers', () => {
+    expect(() => parsePositiveInt('-3')).toThrow('Expected a positive integer');
+  });
+
+  it('rejects non-numeric strings', () => {
+    expect(() => parsePositiveInt('abc')).toThrow('Expected a positive integer, got "abc"');
+  });
+
+  it('rejects empty string', () => {
+    expect(() => parsePositiveInt('')).toThrow('Expected a positive integer');
+  });
+
+  it('rejects floating point strings (parseInt truncates but accepts)', () => {
+    // parseInt('3.5', 10) returns 3, which is valid
+    expect(parsePositiveInt('3.5')).toBe(3);
+  });
+});
 
 describe('registerDojoCommand', () => {
   it('registers dojo command with subcommands', () => {

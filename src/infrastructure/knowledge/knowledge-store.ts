@@ -4,23 +4,9 @@ import type { Learning, LearningFilter } from '@domain/types/learning.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
 import { SubscriptionManager } from './subscription-manager.js';
 
-/**
- * Summary statistics for the knowledge store.
- */
-export interface KnowledgeStats {
-  /** Total number of learnings */
-  total: number;
-  /** Count of learnings per tier */
-  byTier: {
-    stage: number;
-    category: number;
-    agent: number;
-  };
-  /** Top categories ranked by learning count */
-  topCategories: Array<{ category: string; count: number }>;
-  /** Average confidence score across all learnings */
-  averageConfidence: number;
-}
+// Re-export KnowledgeStats from the domain port for backward compatibility
+import type { KnowledgeStats } from '@domain/ports/knowledge-store.js';
+export type { KnowledgeStats } from '@domain/ports/knowledge-store.js';
 
 /**
  * Three-tier learning storage and retrieval system.

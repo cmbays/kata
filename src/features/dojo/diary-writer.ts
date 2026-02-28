@@ -39,6 +39,7 @@ export class DiaryWriter {
       mood,
       tags,
       createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     });
 
     this.store.write(entry);

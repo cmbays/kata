@@ -239,4 +239,53 @@ describe('generateHtml', () => {
     expect(html).toContain('1 topic<');
     expect(html).toContain('1 section<');
   });
+
+  it('sanitizes javascript: URLs in markdown links', () => {
+    const session = makeSession({
+      sections: [
+        {
+          title: 'XSS Link',
+          type: 'narrative',
+          topicTitle: 'Decision quality',
+          content: '[click](javascript:alert(1))',
+          collapsed: false,
+          depth: 0,
+        },
+      ],
+    });
+    const html = generateHtml(session);
+    expect(html).not.toContain('javascript:');
+    expect(html).toContain('href="#"');
+  });
+
+  it('escapes script injection in markdown headings', () => {
+    const session = makeSession({
+      sections: [
+        {
+          title: 'Heading Injection',
+          type: 'narrative',
+          topicTitle: 'Decision quality',
+          content: '# <script>alert(1)</script>',
+          collapsed: false,
+          depth: 0,
+        },
+      ],
+    });
+    const html = generateHtml(session);
+    expect(html).not.toContain('<script>alert(1)</script>');
+    expect(html).toContain('&lt;script&gt;');
+  });
+
+  it('escapes single quotes in title to &#39;', () => {
+    const session = makeSession({ title: "It's a test" });
+    const html = generateHtml(session);
+    expect(html).toContain('It&#39;s a test');
+    expect(html).not.toContain("It's a test");
+  });
+
+  it('includes @supports not fallback styles for Tailwind CDN', () => {
+    const html = generateHtml(makeSession());
+    expect(html).toContain('@supports not (--tw: 1)');
+    expect(html).toContain('font-family: system-ui');
+  });
 });

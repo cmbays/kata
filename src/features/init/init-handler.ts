@@ -285,6 +285,17 @@ export async function handleInit(options: InitOptions): Promise<InitResult> {
     logger.warn(`Skill package not found at "${skillSrcDir}". Skill files were not copied — check your installation.`);
   }
 
+  // Seed default dojo sources
+  const defaultSourcesPath = join(packageRoot, 'dojo', 'default-sources.json');
+  const dojoSourcesPath = join(kataDir, KATA_DIRS.dojo, 'sources.json');
+  if (existsSync(defaultSourcesPath) && !existsSync(dojoSourcesPath)) {
+    try {
+      copyFileSync(defaultSourcesPath, dojoSourcesPath);
+    } catch (err) {
+      logger.warn(`Could not seed default dojo sources: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
   // Load pipeline templates
   const builtinTemplatesDir = join(packageRoot, KATA_DIRS.templates);
   let templatesLoaded = 0;

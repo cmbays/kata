@@ -121,6 +121,21 @@ describe('DojoDiaryEntrySchema', () => {
   it('rejects invalid datetime', () => {
     expect(() => DojoDiaryEntrySchema.parse({ ...validEntry, createdAt: 'yesterday' })).toThrow();
   });
+
+  it('includes updatedAt when provided', () => {
+    const now = new Date().toISOString();
+    const result = DojoDiaryEntrySchema.parse({ ...validEntry, updatedAt: now });
+    expect(result.updatedAt).toBe(now);
+  });
+
+  it('allows missing updatedAt (optional)', () => {
+    const result = DojoDiaryEntrySchema.parse(validEntry);
+    expect(result.updatedAt).toBeUndefined();
+  });
+
+  it('rejects invalid updatedAt datetime', () => {
+    expect(() => DojoDiaryEntrySchema.parse({ ...validEntry, updatedAt: 'not-a-date' })).toThrow();
+  });
 });
 
 // ── DojoTopicSchema ──────────────────────────────────────────────────────────
@@ -299,6 +314,24 @@ describe('DojoSessionSchema', () => {
 
   it('rejects empty title', () => {
     expect(() => DojoSessionSchema.parse({ ...validSession, title: '' })).toThrow();
+  });
+
+  it('rejects section referencing unknown topic', () => {
+    const bad = {
+      ...validSession,
+      sections: [{
+        title: 'Orphan Section',
+        type: 'narrative' as const,
+        topicTitle: 'Nonexistent Topic',
+        content: 'This should fail.',
+      }],
+    };
+    expect(() => DojoSessionSchema.parse(bad)).toThrow(/unknown topic/);
+  });
+
+  it('allows sections that reference valid topics', () => {
+    // validSession already has matching topic/section titles
+    expect(() => DojoSessionSchema.parse(validSession)).not.toThrow();
   });
 });
 

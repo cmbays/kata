@@ -24,6 +24,23 @@ import {
   formatDojoSourceTableJson,
 } from '@cli/formatters/dojo-formatter.js';
 
+/** Validate that a string is a valid UUID v4. Prevents path traversal via CLI ID arguments. */
+export function validateSessionId(id: string): string {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+    throw new Error(`Invalid session ID "${id}". Expected a UUID.`);
+  }
+  return id;
+}
+
+/** Parse a CLI option value as a positive integer. Throws on NaN or non-positive values. */
+export function parsePositiveInt(value: string): number {
+  const n = parseInt(value, 10);
+  if (isNaN(n) || n < 1) {
+    throw new Error(`Expected a positive integer, got "${value}".`);
+  }
+  return n;
+}
+
 export function registerDojoCommand(parent: Command): void {
   const dojo = parent
     .command('dojo')
@@ -54,7 +71,7 @@ export function registerDojoCommand(parent: Command): void {
       const sessionsDir = join(kataDirPath(ctx.kataDir, 'dojo'), 'sessions');
       const store = new SessionStore(sessionsDir);
 
-      const id = sessionId ?? store.latest()?.id;
+      const id = sessionId ? validateSessionId(sessionId) : store.latest()?.id;
       if (!id) {
         console.log('No dojo sessions found. Generate one first with "kata dojo generate".');
         return;
@@ -66,9 +83,13 @@ export function registerDojoCommand(parent: Command): void {
         return;
       }
 
-      const cmd = process.platform === 'darwin' ? 'open' : 'xdg-open';
-      execFileSync(cmd, [htmlPath]);
-      console.log(`Opened session ${id.slice(0, 8)} in browser.`);
+      try {
+        const cmd = process.platform === 'darwin' ? 'open' : 'xdg-open';
+        execFileSync(cmd, [htmlPath]);
+        console.log(`Opened session ${id.slice(0, 8)} in browser.`);
+      } catch {
+        console.log(`Could not open browser. Open manually: ${htmlPath}`);
+      }
     }));
 
   // kata dojo inspect <session-id>
@@ -77,6 +98,7 @@ export function registerDojoCommand(parent: Command): void {
     .description('Show session details in the terminal')
     .argument('<session-id>', 'Session ID')
     .action(withCommandContext((ctx, sessionId: string) => {
+      validateSessionId(sessionId);
       const sessionsDir = join(kataDirPath(ctx.kataDir, 'dojo'), 'sessions');
       const store = new SessionStore(sessionsDir);
       const meta = store.getMeta(sessionId);
@@ -97,7 +119,7 @@ export function registerDojoCommand(parent: Command): void {
   dojo
     .command('diary')
     .description('List recent diary entries')
-    .option('-n, --count <count>', 'Number of entries to show', parseInt)
+    .option('-n, --count <count>', 'Number of entries to show', parsePositiveInt)
     .action(withCommandContext((ctx) => {
       const localOpts = ctx.cmd.opts();
       const diaryDir = join(kataDirPath(ctx.kataDir, 'dojo'), 'diary');
@@ -120,15 +142,30 @@ export function registerDojoCommand(parent: Command): void {
     .option('--narrative <text>', 'Rich LLM-generated narrative')
     .option('--json-stdin', 'Accept full DojoDiaryEntry as JSON from stdin')
     .action(withCommandContext((ctx, cycleId: string) => {
+      validateSessionId(cycleId);
       const localOpts = ctx.cmd.opts();
       const diaryDir = join(kataDirPath(ctx.kataDir, 'dojo'), 'diary');
       const store = new DiaryStore(diaryDir);
 
       if (localOpts.jsonStdin) {
-        const raw = readFileSync(0, 'utf-8');
-        const entry = DojoDiaryEntrySchema.parse(JSON.parse(raw));
-        store.write(entry);
-        console.log(`Diary entry written for cycle ${entry.cycleId.slice(0, 8)}.`);
+        try {
+          const raw = readFileSync(0, 'utf-8');
+          let parsed: unknown;
+          try {
+            parsed = JSON.parse(raw);
+          } catch {
+            console.error('Invalid JSON input from stdin.');
+            process.exitCode = 1;
+            return;
+          }
+          const entry = DojoDiaryEntrySchema.parse(parsed);
+          store.write(entry);
+          console.log(`Diary entry written for cycle ${entry.cycleId.slice(0, 8)}.`);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error(`Invalid diary entry format: ${msg}`);
+          process.exitCode = 1;
+        }
         return;
       }
 
@@ -155,7 +192,7 @@ export function registerDojoCommand(parent: Command): void {
       if (ctx.globalOpts.json) {
         console.log(formatDojoSourceTableJson(sources));
       } else {
-        console.log(formatDojoSourceTable(sources));
+        console.log(formatDojoSourceTable(sources, ctx.globalOpts.plain));
       }
     }));
 
@@ -164,7 +201,7 @@ export function registerDojoCommand(parent: Command): void {
     .command('generate')
     .description('Generate a new training session from recent data')
     .option('--title <title>', 'Custom session title')
-    .option('--cycles <count>', 'Number of recent cycles to include', parseInt)
+    .option('--cycles <count>', 'Number of recent cycles to include', parsePositiveInt)
     .action(withCommandContext((ctx) => {
       const localOpts = ctx.cmd.opts();
       const dojoDir = kataDirPath(ctx.kataDir, 'dojo');

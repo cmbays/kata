@@ -25,6 +25,17 @@ export const DIRECTION_COLORS: Record<string, string> = {
   forward: DOJO_COLORS.murasaki,
 };
 
+// ── SVG Text Escaping ────────────────────────────────────────────────────────
+
+export function escapeSvgText(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 // ── SVG Charts ───────────────────────────────────────────────────────────────
 
 export interface BarChartData {
@@ -52,8 +63,8 @@ export function barChart(data: BarChartData[], opts?: { width?: number; height?:
     const y = chartBottom - barH;
     const color = d.color ?? DOJO_COLORS.sora;
     bars += `<rect x="${x}" y="${y}" width="${barWidth}" height="${barH}" fill="${color}" rx="3" />`;
-    bars += `<text x="${x + barWidth / 2}" y="${chartBottom + 16}" text-anchor="middle" font-size="11" fill="${DOJO_COLORS.stone}">${d.label}</text>`;
-    bars += `<text x="${x + barWidth / 2}" y="${y - 4}" text-anchor="middle" font-size="10" fill="${DOJO_COLORS.ink}">${d.value}</text>`;
+    bars += `<text x="${x + barWidth / 2}" y="${chartBottom + 16}" text-anchor="middle" font-size="11" fill="${DOJO_COLORS.stone}">${escapeSvgText(d.label)}</text>`;
+    bars += `<text x="${x + barWidth / 2}" y="${y - 4}" text-anchor="middle" font-size="10" fill="${DOJO_COLORS.ink}">${escapeSvgText(String(d.value))}</text>`;
   }
 
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">${bars}</svg>`;
@@ -124,11 +135,11 @@ export function horizontalBar(label: string, value: number, max: number, color?:
   const barColor = color ?? DOJO_COLORS.sora;
   const pct = max > 0 ? Math.min(100, (value / max) * 100) : 0;
   return `<div class="flex items-center gap-3 text-sm">
-  <span class="w-24 text-right text-gray-500">${label}</span>
+  <span class="w-24 text-right text-gray-500">${escapeSvgText(label)}</span>
   <div class="flex-1 h-4 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
     <div class="h-full rounded-full" style="width: ${pct.toFixed(1)}%; background: ${barColor};"></div>
   </div>
-  <span class="w-12 text-gray-600 dark:text-gray-400">${value}</span>
+  <span class="w-12 text-gray-600 dark:text-gray-400">${escapeSvgText(String(value))}</span>
 </div>`;
 }
 

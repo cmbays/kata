@@ -16,6 +16,7 @@ export const DojoDiaryEntrySchema = z.object({
   mood: DojoMood.optional(),
   tags: z.array(z.string()).default([]),
   createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime().optional(),
 });
 
 export type DojoDiaryEntry = z.infer<typeof DojoDiaryEntrySchema>;
@@ -96,6 +97,18 @@ export const DojoSessionSchema = z.object({
   tags: z.array(z.string()).default([]),
   createdAt: z.string().datetime(),
   version: z.literal(1),
+}).superRefine((data, ctx) => {
+  const topicTitles = new Set(data.topics.map((t) => t.title));
+  for (let i = 0; i < data.sections.length; i++) {
+    const section = data.sections[i]!;
+    if (!topicTitles.has(section.topicTitle)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['sections', i, 'topicTitle'],
+        message: `Section "${section.title}" references unknown topic "${section.topicTitle}".`,
+      });
+    }
+  }
 });
 
 export type DojoSession = z.infer<typeof DojoSessionSchema>;

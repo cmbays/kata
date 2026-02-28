@@ -90,10 +90,11 @@ export function formatDojoDiaryEntry(entry: DojoDiaryEntry, plain?: boolean): st
   return lines.join('\n').trimEnd();
 }
 
-export function formatDojoSourceTable(sources: DojoSource[]): string {
-  if (sources.length === 0) return 'No sources configured.';
+export function formatDojoSourceTable(sources: DojoSource[], plain?: boolean): string {
+  const lex = getLexicon(plain);
+  if (sources.length === 0) return `No ${lex.dojo} sources configured.`;
   const lines: string[] = [];
-  lines.push('Dojo Sources');
+  lines.push(`${cap(lex.dojo)} Sources`);
   lines.push('─'.repeat(60));
   for (const s of sources) {
     const status = s.active ? '●' : '○';

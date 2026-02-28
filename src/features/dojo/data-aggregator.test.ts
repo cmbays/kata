@@ -1,7 +1,7 @@
 import type { Cycle } from '@domain/types/cycle.js';
 import type { Learning } from '@domain/types/learning.js';
 import type { DojoDiaryEntry } from '@domain/types/dojo.js';
-import type { DiaryStore } from '@infra/dojo/diary-store.js';
+import type { IDiaryStore } from '@domain/ports/diary-store.js';
 import type { CycleManager } from '@domain/services/cycle-manager.js';
 import { DataAggregator, type DataAggregatorDeps, type IDojoKnowledgeStore } from './data-aggregator.js';
 
@@ -82,7 +82,7 @@ function makeMockDeps(overrides: Partial<DataAggregatorDeps> = {}): DataAggregat
     list: vi.fn().mockReturnValue([]),
     write: vi.fn(),
     readByCycleId: vi.fn().mockReturnValue(null),
-  } as unknown as DiaryStore;
+  } as unknown as IDiaryStore;
 
   const cycleManager = {
     list: vi.fn().mockReturnValue([]),

@@ -13,7 +13,17 @@ export function generateHtml(session: DojoSession): string {
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>${escapeHtml(session.title)} — Dojo</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <noscript><!-- Tailwind CDN requires JavaScript --></noscript>
   <script>${tailwindConfig()}</script>
+  <style>
+    /* Fallback styles when Tailwind CDN is unavailable */
+    @supports not (--tw: 1) {
+      body { font-family: system-ui, sans-serif; max-width: 800px; margin: 0 auto; padding: 1rem; }
+      nav { display: none; }
+      .flex { display: block; }
+      details { margin: 1rem 0; }
+    }
+  </style>
   <style>
     body { background-color: ${DOJO_COLORS.washi}; }
     .dark body { background-color: ${DOJO_COLORS.washiDark}; }
@@ -134,6 +144,8 @@ function renderSectionContent(section: DojoContentSection): string {
       return `<pre class="bg-gray-50 dark:bg-gray-900 p-3 rounded text-sm overflow-x-auto"><code>${escapeHtml(section.content)}</code></pre>`;
     case 'checklist':
       return renderChecklist(section.content);
+    case 'chart':
+      return `<div class="overflow-x-auto">${section.content}</div>`;
     default:
       return `<div class="prose prose-sm dark:prose-invert max-w-none">${markdownToHtml(section.content)}</div>`;
   }
@@ -151,15 +163,30 @@ function renderChecklist(content: string): string {
   }).join('')}</ul>`;
 }
 
+function sanitizeUrl(url: string): string {
+  // Only allow http:, https:, and mailto: protocols
+  const trimmed = url.trim();
+  if (/^https?:/i.test(trimmed) || /^mailto:/i.test(trimmed)) {
+    return trimmed;
+  }
+  return '#';
+}
+
 function markdownToHtml(md: string): string {
+  // Pre-escape the entire markdown string to prevent XSS injection
+  const escaped = escapeHtml(md);
+
   // Minimal markdown conversion — headings, bold, italic, links, paragraphs
-  return md
+  return escaped
     .replace(/^### (.+)$/gm, '<h4 class="font-semibold mt-3 mb-1">$1</h4>')
     .replace(/^## (.+)$/gm, '<h3 class="font-semibold mt-4 mb-2">$1</h3>')
     .replace(/^# (.+)$/gm, '<h2 class="font-bold mt-5 mb-2">$1</h2>')
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" class="text-dojo-sora hover:underline" target="_blank" rel="noopener">$1</a>')
+    .replace(/\[(.+?)\]\((.+?)\)/g, (_match, text, href) => {
+      const safeUrl = sanitizeUrl(href);
+      return `<a href="${safeUrl}" class="text-dojo-sora hover:underline" target="_blank" rel="noopener">${text}</a>`;
+    })
     .replace(/^- (.+)$/gm, '<li class="ml-4">$1</li>')
     .replace(/\n\n/g, '</p><p class="mt-2">')
     .replace(/^(?!<)(.+)$/gm, '<p class="mt-2">$1</p>');
@@ -178,7 +205,8 @@ function escapeHtml(str: string): string {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function slugify(str: string): string {

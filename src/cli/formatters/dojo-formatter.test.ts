@@ -148,7 +148,7 @@ describe('formatDojoDiaryEntry', () => {
 
 describe('formatDojoSourceTable', () => {
   it('returns empty message for no sources', () => {
-    expect(formatDojoSourceTable([])).toBe('No sources configured.');
+    expect(formatDojoSourceTable([])).toContain('No dojo sources configured.');
   });
 
   it('formats sources with active indicator, name, reputation, domains, and URL', () => {
@@ -164,6 +164,17 @@ describe('formatDojoSourceTable', () => {
   it('shows inactive indicator for disabled sources', () => {
     const result = formatDojoSourceTable([makeSource({ active: false })]);
     expect(result).toContain('○ TypeScript Handbook');
+  });
+
+  it('uses lexicon header when plain is true', () => {
+    const result = formatDojoSourceTable([makeSource()], true);
+    expect(result).toContain('Dojo Sources');
+    expect(result).toContain('● TypeScript Handbook');
+  });
+
+  it('uses lexicon in empty message when plain is true', () => {
+    const result = formatDojoSourceTable([], true);
+    expect(result).toContain('No dojo sources configured.');
   });
 });
 

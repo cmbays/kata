@@ -6,6 +6,7 @@ import {
   donutChart,
   horizontalBar,
   tailwindConfig,
+  escapeSvgText,
 } from './design-system.js';
 
 // ── DOJO_COLORS ──────────────────────────────────────────────────────────────
@@ -52,6 +53,27 @@ describe('DIRECTION_COLORS', () => {
   });
 });
 
+// ── escapeSvgText ────────────────────────────────────────────────────────────
+
+describe('escapeSvgText', () => {
+  it('escapes ampersands', () => {
+    expect(escapeSvgText('A & B')).toBe('A &amp; B');
+  });
+
+  it('escapes angle brackets', () => {
+    expect(escapeSvgText('<script>')).toBe('&lt;script&gt;');
+  });
+
+  it('escapes quotes', () => {
+    expect(escapeSvgText('"hello"')).toBe('&quot;hello&quot;');
+    expect(escapeSvgText("it's")).toBe('it&#39;s');
+  });
+
+  it('handles combined special characters', () => {
+    expect(escapeSvgText('<b>"A & B"</b>')).toBe('&lt;b&gt;&quot;A &amp; B&quot;&lt;/b&gt;');
+  });
+});
+
 // ── barChart ─────────────────────────────────────────────────────────────────
 
 describe('barChart', () => {
@@ -94,6 +116,12 @@ describe('barChart', () => {
     expect(svg).toContain('viewBox="0 0 600 300"');
     expect(svg).toContain('width="600"');
     expect(svg).toContain('height="300"');
+  });
+
+  it('escapes labels containing HTML to prevent injection', () => {
+    const svg = barChart([{ label: '<script>alert(1)</script>', value: 5 }]);
+    expect(svg).not.toContain('<script>alert(1)</script>');
+    expect(svg).toContain('&lt;script&gt;');
   });
 });
 
@@ -208,6 +236,12 @@ describe('horizontalBar', () => {
   it('uses default sora color when no color specified', () => {
     const html = horizontalBar('Default', 50, 100);
     expect(html).toContain(`background: ${DOJO_COLORS.sora}`);
+  });
+
+  it('escapes labels containing ampersands', () => {
+    const html = horizontalBar('A & B', 50, 100);
+    expect(html).toContain('A &amp; B');
+    expect(html).not.toContain('>A & B<');
   });
 });
 

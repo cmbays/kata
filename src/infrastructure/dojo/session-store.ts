@@ -29,6 +29,7 @@ export class SessionStore {
     });
 
     JsonStore.write(join(sessionDir, 'meta.json'), meta, DojoSessionMetaSchema);
+    JsonStore.write(join(sessionDir, 'session.json'), session, DojoSessionSchema);
     writeFileSync(join(sessionDir, 'session.html'), html, 'utf-8');
 
     this.updateIndex(meta);
@@ -108,7 +109,12 @@ export class SessionStore {
     if (!JsonStore.exists(indexPath)) {
       return { sessions: [], updatedAt: new Date().toISOString() };
     }
-    return JsonStore.read(indexPath, DojoSessionIndexSchema);
+    try {
+      return JsonStore.read(indexPath, DojoSessionIndexSchema);
+    } catch (err) {
+      logger.warn(`Corrupt session index, rebuilding: ${err instanceof Error ? err.message : String(err)}`);
+      return this.rebuildIndex();
+    }
   }
 
   private updateIndex(meta: DojoSessionMeta): void {

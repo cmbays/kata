@@ -1,8 +1,6 @@
 import { mkdtempSync, rmSync, existsSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { JsonStore } from '@infra/persistence/json-store.js';
-import { DojoSessionSchema } from '@domain/types/dojo.js';
 import type { DojoSession } from '@domain/types/dojo.js';
 import { SessionStore } from './session-store.js';
 
@@ -269,27 +267,38 @@ describe('SessionStore', () => {
   });
 
   describe('getSession', () => {
-    it('returns null when session.json does not exist', () => {
-      // save() only creates meta.json + session.html, not session.json
+    it('returns session data after save (session.json is written by save)', () => {
       const session = makeSession();
       store.save(session, '<html></html>');
-
-      const result = store.getSession(session.id);
-      expect(result).toBeNull();
-    });
-
-    it('returns the session when session.json exists', () => {
-      const session = makeSession();
-      store.save(session, '<html></html>');
-
-      // Manually write session.json alongside meta.json
-      const sessionPath = join(tempDir, session.id, 'session.json');
-      JsonStore.write(sessionPath, session, DojoSessionSchema);
-
       const result = store.getSession(session.id);
       expect(result).not.toBeNull();
       expect(result!.id).toBe(session.id);
       expect(result!.title).toBe(session.title);
+    });
+
+    it('creates session.json alongside meta.json and session.html', () => {
+      const session = makeSession();
+      store.save(session, '<html></html>');
+      const sessionDir = join(tempDir, session.id);
+      expect(existsSync(join(sessionDir, 'session.json'))).toBe(true);
+    });
+
+    it('returns null for a non-existent session', () => {
+      const result = store.getSession(crypto.randomUUID());
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('loadIndex corruption recovery', () => {
+    it('auto-rebuilds index when corrupt', () => {
+      const session = makeSession();
+      store.save(session, '<html>ok</html>');
+      // Corrupt the index
+      writeFileSync(join(tempDir, 'index.json'), '{{{invalid', 'utf-8');
+      // list() should recover via rebuildIndex
+      const sessions = store.list();
+      expect(sessions).toHaveLength(1);
+      expect(sessions[0]!.id).toBe(session.id);
     });
   });
 });
