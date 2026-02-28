@@ -1,19 +1,21 @@
 # Unified Roadmap: Kataka + Meta-Learning Integration
 
 > Merges the [Kataka Architecture](kataka-architecture.md) and [Meta-Learning Epic (#136)](https://github.com/cmbays/kata/issues/136) into a single sequenced implementation plan.
+>
+> See also: [Kata System Guide](kata-system-guide.md) for how the system works, [Design Rationale](v1-design-vision.md) for why, [Kataka Architecture](kataka-architecture.md) + [Sensei Orchestration](sensei-orchestration.md) + [Project Setup](project-setup.md) for the agent system.
 
 ---
 
 ## Context
 
-Kata has completed Waves 0–E (1844 tests, 97 files). The core engine is built: orchestration, cooldown, TUI, CLI, skill package. Two major design efforts exist as separate epics:
+Kata has completed Waves 0–E + K (2148 tests, 109 files). The core engine is built: orchestration, cooldown, TUI, CLI, skill package, and the Dojo personal training environment. Two major design efforts remain as the path to v1:
 
 1. **Kataka Architecture** ([PR #154](https://github.com/cmbays/kata/pull/154) merged) — 5-phase agent wrapper system
 2. **Meta-Learning Epic** ([#136](https://github.com/cmbays/kata/issues/136)) — 7-priority learning intelligence system
 
 These two systems are deeply interdependent but were tracked separately with no unified sequencing. This roadmap merges them into a single implementation plan, identifies integration gaps, establishes blocking dependencies, and produces actionable issues.
 
-**Current state**: No meta-learning or kataka code exists yet. Epic #93 (kiai execution) has no child issues but most gaps are already resolved by existing infrastructure.
+**Current state**: No meta-learning or kataka code exists yet. The Dojo (Wave K) is shipped — diary entries, session generation, HTML output, source registry, CLI archive viewer. Wave F is fully groomed and ready for implementation. Epic #93 (kiai execution) has no child issues but most gaps are already resolved by existing infrastructure.
 
 ---
 
@@ -21,11 +23,13 @@ These two systems are deeply interdependent but were tracked separately with no 
 
 ### Wave F: "Foundations" — Shared Data Model
 
-**Addresses**: P1 ([#137](https://github.com/cmbays/kata/issues/137)), P5 permanence fields ([#141](https://github.com/cmbays/kata/issues/141)), P7 hierarchy structure ([#143](https://github.com/cmbays/kata/issues/143)), [#144](https://github.com/cmbays/kata/issues/144) (themed vocab config), [#145](https://github.com/cmbays/kata/issues/145) (experience level), [#153](https://github.com/cmbays/kata/issues/153) (kime alias), Kataka Phase 1 (lexicon + KATA.md)
+**Addresses**: P1 ([#137](https://github.com/cmbays/kata/issues/137)), P5 permanence fields ([#141](https://github.com/cmbays/kata/issues/141)), P7 hierarchy structure ([#143](https://github.com/cmbays/kata/issues/143)), [#144](https://github.com/cmbays/kata/issues/144) (themed vocab config), [#145](https://github.com/cmbays/kata/issues/145) (experience level), Kataka Phase 1 (lexicon + KATA.md)
+
+> **Note**: [#153](https://github.com/cmbays/kata/issues/153) (`kata kime` alias) was already implemented — closed.
 
 **What ships**:
 
-**Domain types** (all new fields optional — zero migration):
+**Domain types** (new fields required with defaults where possible; optional only for fields referencing systems not yet built):
 - `ObservationSchema` — 7-type discriminated union (decision, prediction, friction, gap, outcome, assumption, insight). Every variant includes `katakaId?: string` for future agent attribution
 - `LearningSchema` enrichment — `citations`, `derivedFrom`, `reinforcedBy`, `usageCount`, `lastUsedAt`, `versions`, `archived`, `permanence?`, `source?`, `overrides?`, `refreshBy?`, `expiresAt?`
 - `LearningTier` extension — add `step` and `flavor` to existing `stage | category | agent`
@@ -39,9 +43,8 @@ These two systems are deeply interdependent but were tracked separately with no 
 
 **CLI + Config**:
 - `kata observe record` / `kata observe list` (alias: `kata kansatsu`) — agent-facing observation writer
-- `kata kime` alias for `kata decision` ([#153](https://github.com/cmbays/kata/issues/153))
 - Lexicon extension — add `agent`, `artifact` (maki), `observation` (kansatsu) to both modes
-- Config extension — `display.vocabulary`, `user.experienceLevel`, `cooldown.synthesisDepth`
+- Config extension — `user.experienceLevel`, `cooldown.synthesisDepth` (note: `outputMode` already exists at config root — no new `display.vocabulary` needed)
 - Experience level capture at `kata init`
 
 **Context**:
@@ -215,9 +218,31 @@ These two systems are deeply interdependent but were tracked separately with no 
 
 ---
 
+### Wave K: "Dojo" — Personal Training Environment
+
+**PR**: [#172](https://github.com/cmbays/kata/pull/172) merged (2026-02-28). 2148 tests, 109 files.
+
+**What shipped**:
+
+- `src/domain/types/dojo.ts` — 8 Zod schemas (DiaryEntry, Topic, ContentSection, Source, Session, SessionMeta, SessionIndex, SourceRegistry)
+- `src/infrastructure/dojo/` — DiaryStore, SessionStore, SourceRegistry
+- `src/features/dojo/` — DiaryWriter (cooldown integration), DataAggregator, SessionBuilder, HtmlGenerator, design system with Japanese dojo theme
+- `src/cli/commands/dojo.ts` — `kata dojo list`, `kata dojo open`, `kata dojo inspect`, `kata dojo diary`, `kata dojo diary write`, `kata dojo sources`, `kata dojo generate`
+- `src/cli/formatters/dojo-formatter.ts` — session/diary/source formatting
+- Cooldown integration — diary entries written automatically after each cooldown
+- Init integration — `.kata/dojo/` directory structure created at init
+- Skill files — `skill/dojo.md`, `skill/dojo-research.md`
+- Default curated sources — `dojo/default-sources.json`
+
+**Blocks**: Nothing — Wave K is a consumer of data produced by Waves F–J. It reads whatever data exists and works with the current data model.
+
+---
+
 ## Dependency Graph
 
 ```text
+Wave K ── DONE (no dependencies — reads existing data)
+
 Wave F ──blocks──> Wave G (observation schema needed by skills)
 Wave F ──blocks──> Wave H (observation schema, learning enrichment, run tree paths)
 Wave G ──blocks──> Wave I (kataka registry for attribution, flavor binding)
@@ -258,6 +283,7 @@ Within waves:
 
 - **#137** — Add: "All observation variants include optional `katakaId?: string`" and "Extend runPaths() with observation/reflection paths"
 - **#138** — Add: "`kata predict` CLI command is a deliverable"
+- **#153** — `kata kime` alias (closed, implemented)
 - **#93** — Update body noting resolved gaps; create G-8 as sole child issue; close or defer remaining
 - **#55** — Close (all sub-issues done)
 
@@ -297,4 +323,3 @@ Epic #56 (npm publish) is unblocked by any of this work and can proceed in paral
 ---
 
 *This is a living document. Update it as waves are implemented.*
-*Created: 2026-02-28*
