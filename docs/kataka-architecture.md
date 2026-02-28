@@ -727,7 +727,7 @@ The kataka system is implemented across these unified waves:
 
 ### Dependency Chain
 
-```
+```text
 Wave F → Wave G → Wave I → Wave J
 Wave F → Wave H → Wave I → Wave J
 ```
