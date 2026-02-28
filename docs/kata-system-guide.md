@@ -5,6 +5,8 @@
 > **Companion documents** (deep dives):
 > - [Product Design](v1-product-spec.md) — User stories, interaction breadboards, and agent interface patterns
 > - [Design Rationale](v1-design-vision.md) — Why Kata is built the way it is: architectural trade-offs and decisions
+> - [Meta-Learning Architecture](meta-learning-architecture.md) — Observation system, knowledge graph, self-improvement loop
+> - [Dojo Architecture](dojo-architecture.md) — Personal training environment: diary, sessions, design system
 > - [Kataka Architecture](kataka-architecture.md) — Agent system deep dive: kataka, skills, three-layer model, gap bridging
 > - [Implementation Roadmap](unified-roadmap.md) — Waves, dependencies, and what's left to build
 >
@@ -137,217 +139,33 @@ Kata uses four categories of persistent data:
 
 ## 5. The Observation System *(Wave F)*
 
-> This section describes the observation system designed for Wave F. The schema and infrastructure are not yet implemented.
+> See [Meta-Learning Architecture](meta-learning-architecture.md) for the full deep dive on observations, the knowledge graph, and the self-improvement loop.
 
-Observations are the raw signals captured during execution — the primary input to the entire meta-learning system.
-
-### Seven Observation Types
-
-| Type | What it captures | Example |
-|------|-----------------|---------|
-| **Decision** | A choice made among options | "Selected TDD flavor for build stage (confidence: 0.85)" |
-| **Prediction** | An expected outcome to verify later | "This approach will reduce test failures by 50%" |
-| **Friction** | A contradiction or tension detected | "Style guide says X but codebase uses Y" |
-| **Gap** | A capability or knowledge missing | "No tests for error handling paths" |
-| **Outcome** | What actually happened | "Build completed in 3 minutes, 0 failures" |
-| **Assumption** | Something taken as true without verification | "Assuming the API supports pagination" |
-| **Insight** | A mid-execution realization | "This pattern appears in 3 other modules" |
-
-### Hierarchy
-Observations can be captured at any level of the execution hierarchy:
-- **Run-level**: Cross-stage insights
-- **Stage-level**: Stage-wide patterns
-- **Flavor-level**: Flavor-specific signals
-- **Step-level**: Granular per-step observations
-
-### Immutability
-Observations are **append-only JSONL**. Once written, they are never modified or deleted. This creates an immutable audit trail and ensures the knowledge graph has stable foundations.
+Observations are the raw signals captured during execution — the primary input to the entire meta-learning system. Seven types (decision, prediction, friction, gap, outcome, assumption, insight) are recorded as append-only JSONL at every level of the execution hierarchy (run, stage, flavor, step). Once written, observations are never modified — creating an immutable audit trail that the knowledge graph builds on.
 
 ---
 
 ## 6. The Knowledge Graph *(Waves F–I)*
 
-> The knowledge store exists today (learnings, capture, query, loading). The enrichments described here — citations, reinforcement, versioning, graph index, and LLM synthesis — ship progressively across Waves F through I.
+> See [Meta-Learning Architecture](meta-learning-architecture.md) for the full deep dive including learning schema fields, graph emergence, detection engines, and LLM synthesis.
 
-The knowledge graph is the architectural heart of Kata's meta-learning system. It transforms raw observations into working knowledge that improves agent behavior over time.
-
-### Three Layers
-
-```
-Layer 3: GRAPH INDEX
-  .kata/knowledge/graph-index.json
-  Lightweight connective tissue — IDs and edges only.
-  Makes the graph traversable without loading every learning file.
-      │
-      ▼
-Layer 2: LEARNINGS (mutable, versioned)
-  .kata/knowledge/learnings/{uuid}.json
-  Working knowledge derived from observations.
-  Each learning has citations, lineage, versions, confidence.
-      │
-      ▼
-Layer 1: OBSERVATIONS (immutable, append-only)
-  .kata/runs/{id}/stages/{cat}/observations.jsonl
-  Raw signals captured during execution. Never modified.
-```
-
-### How Knowledge Emerges
-
-The graph is not designed top-down — it emerges from bottom-up evidence accumulation:
-
-**1. Capture** — During execution, observations accumulate as timestamped JSONL entries. No relationships exist yet. Just raw events.
-
-**2. Pattern detection** — During cooldown, the LearningExtractor reads observations across a run. It finds patterns: "friction about test coverage appeared in 3 different stages" or "predictions about build time were consistently off." Each pattern becomes a learning candidate.
-
-**3. Learning creation with citations** — When a learning is created, it carries `citations[]` — direct links back to the raw observations that spawned it. This is the first graph edge. The learning knows exactly what evidence supports it.
-
-```
-Learning: "TDD significantly reduces rework in this codebase"
-  ├── Citation: run-1/build/obs-3 (friction: "had to rewrite without tests")
-  ├── Citation: run-2/build/obs-7 (outcome: "TDD run had 0 rework cycles")
-  └── Citation: run-3/build/obs-2 (insight: "test-first caught design issue early")
-```
-
-**4. Reinforcement** — In subsequent runs, similar observations appear. Instead of creating duplicate learnings, the system finds the existing one and adds to `reinforcedBy[]`. The learning's confidence increases based on real evidence count, not LLM estimation.
-
-**5. Synthesis** — During cooldown (Wave I), LLM synthesis reads multiple related learnings and may consolidate them. "These 4 stage-level learnings about test coverage are really one category-level insight." The synthesized learning gets `derivedFrom[]` — creating parent-child relationships in the graph.
-
-```
-Category Learning: "Test coverage correlates with code stability"
-  ├── derivedFrom: "TDD reduces rework" (stage learning, build)
-  ├── derivedFrom: "Untested modules have 3x more bugs" (stage learning, review)
-  └── derivedFrom: "Coverage gaps predict production issues" (stage learning, review)
-```
-
-**6. Versioning** — If a learning is updated (new evidence contradicts it, user overrides it), the previous state is pushed to `versions[]` with a `citationsDiff` showing what evidence changed. The graph preserves its full history — you can always see how knowledge evolved.
-
-### Learning Schema (key fields)
-
-| Field | Type | Purpose |
-|-------|------|---------|
-| `id` | UUID | Unique identifier |
-| `tier` | enum | Scope: step, flavor, stage, category, agent |
-| `content` | string | The knowledge itself |
-| `confidence` | 0–1 | Computed from evidence count and consistency |
-| `citations` | Citation[] | Links to source observations *(Wave F)* |
-| `derivedFrom` | UUID[] | Parent learnings this was synthesized from *(Wave F)* |
-| `reinforcedBy` | Reinforcement[] | Additional evidence that strengthened this *(Wave F)* |
-| `usageCount` | number | Times injected into agent prompts *(Wave F)* |
-| `lastUsedAt` | datetime | When last used in a prompt *(Wave F)* |
-| `versions` | Version[] | Full mutation history with citation diffs *(Wave F)* |
-| `archived` | boolean | Soft-delete (never hard-deleted — provenance) *(Wave F)* |
-
-### What the Graph Enables
-
-| Capability | How |
-|-----------|-----|
-| **Provenance** | "Why does Kata believe X?" → follow citations to raw observations |
-| **Evidence-based confidence** | More citations + reinforcements = higher confidence (quantitative, not hallucinated) |
-| **Contradiction detection** | Two learnings with conflicting content + overlapping citations = friction signal |
-| **Knowledge decay** | Learnings without recent reinforcement lose relevance over time |
-| **Impact analysis** | "If I archive this observation, which learnings lose evidence?" |
-| **Synthesis quality** | LLM sees full evidence chains when consolidating — better reasoning |
-| **Agent context** | Kataka agents receive learnings with provenance, can assess trustworthiness |
-| **Resurrection** | Archived learning matching new observations → unarchive with fresh citations |
-
-### How Agents Use the Graph
-
-When a kataka agent starts a stage, the ManifestBuilder injects relevant learnings into its prompt. With the graph, those learnings come with provenance:
-
-```
-Learning: "TDD approach reduces rework by ~40% in this codebase"
-  Confidence: 0.85 (based on 6 observations across 3 runs)
-  Reinforced: 2 times in the last cycle
-  Derived from: 2 stage-level learnings about test coverage
-```
-
-The agent can make informed decisions about how much to trust each learning. A learning with 6 citations across 3 runs is more trustworthy than one with 1 citation from 1 run. This is **quantitative trust from structure** — not hallucinated confidence scores.
+The knowledge graph transforms raw observations into working knowledge. It has three layers: **observations** (immutable JSONL), **learnings** (versioned JSON with citations, confidence, lineage), and a **graph index** (lightweight edges making the graph traversable). Knowledge emerges bottom-up — observations accumulate, pattern detection creates learnings with citations, reinforcement strengthens them, and LLM synthesis consolidates them into higher-order insights. The basic knowledge store (learnings, capture, query, loading) is shipped. Graph enrichments — citations, reinforcement, versioning, permanence, detection engines, LLM synthesis — ship progressively across Waves F through I.
 
 ---
 
 ## 7. The Self-Improvement Loop
 
-The complete loop that makes Kata compound over time:
+> See [Meta-Learning Architecture](meta-learning-architecture.md) for the full loop diagram and detailed walkthrough of each phase.
 
-```
-                    ┌─────────────────────┐
-                    │   EXECUTION         │
-                    │   Agent runs stages  │
-                    │   Observations pile  │
-                    │   up as JSONL        │
-                    └─────────┬───────────┘
-                              │
-                              ▼
-                    ┌─────────────────────┐
-                    │   COOLDOWN          │
-                    │   Pattern detection  │
-                    │   Learning creation  │
-                    │   Synthesis          │
-                    │   Graph updates      │
-                    └─────────┬───────────┘
-                              │
-                              ▼
-                    ┌─────────────────────┐
-                    │   KNOWLEDGE STORE   │
-                    │   Learnings + graph  │
-                    │   Citations + edges  │
-                    │   Confidence scores  │
-                    └─────────┬───────────┘
-                              │
-                              ▼
-                    ┌─────────────────────┐
-                    │   MANIFEST BUILDER  │
-                    │   Reads learnings    │
-                    │   Injects into       │
-                    │   agent prompts      │
-                    └─────────┬───────────┘
-                              │
-                              ▼
-                    ┌─────────────────────┐
-                    │   NEXT EXECUTION    │
-                    │   Agent has better   │
-                    │   context from       │
-                    │   accumulated        │
-                    │   knowledge          │
-                    └─────────────────────┘
-```
-
-Each cycle through the loop adds observations, strengthens or creates learnings, updates the graph, and produces better prompts for the next run. The system gets better through use — not through manual configuration.
-
-### Observation Capture → Learning Extraction
-
-The LearningExtractor detects patterns across observations:
-- **Frequency patterns**: Same observation type appearing 3+ times → potential learning
-- **Prediction calibration**: Predictions checked against outcomes → confidence adjustment
-- **Friction clustering**: Related frictions across stages → systemic issue
-- **Gap recurrence**: Same gap appearing across runs → unaddressed problem
-
-### Learning Injection → Better Decisions
-
-The ManifestBuilder reads learnings relevant to the upcoming stage and injects them into the agent's prompt context. The agent then has accumulated project knowledge — not just the current task description — when making decisions.
-
-### Decision Tracking → Outcome Measurement
-
-Every decision is logged with context, options, reasoning, and confidence. Later, outcomes are recorded against those decisions. Over time, this reveals which types of decisions lead to good outcomes and which don't — enabling the system to adjust confidence thresholds and rule weights.
+The self-improvement loop is the mechanism that makes Kata compound over time: **Execution** (agents run stages, observations pile up) → **Cooldown** (pattern detection, learning creation, synthesis) → **Knowledge Store** (learnings with citations, confidence scores, graph edges) → **Manifest Builder** (reads learnings, injects into agent prompts) → **Next Execution** (agent has better context). Each cycle adds observations, strengthens learnings, and produces better prompts. The system gets better through use — not through manual configuration.
 
 ---
 
 ## 8. The Dojo — Personal Training Environment *(Wave K — Shipped)*
 
-The Dojo transforms Kata's execution data into an interactive training experience for the developer. It has four knowledge directions:
+> See [Dojo Architecture](dojo-architecture.md) for the full deep dive on diary entries, session generation, the design system, and the source registry.
 
-| Direction | What it covers | Data sources |
-|-----------|---------------|-------------|
-| **Backward** | What happened, what worked, what didn't | Diary entries, run summaries, decision outcomes |
-| **Inward** | Current project state, personal focus areas | Knowledge stats, flavor frequency, user reflections |
-| **Outward** | Industry best practices for your stack | Curated external sources, research agents |
-| **Forward** | What's next, what to prepare for | Proposals, roadmap items, open questions |
-
-### Diary Entries
-After each cooldown, a diary entry captures the narrative of the cycle — wins, pain points, open questions, mood. This bridges structured data and the conversational Dojo experience.
-
-### Sessions
-Each Dojo session is a self-contained HTML experience generated through conversation with Claude. Sessions are saved for later review, building up a personal training archive.
+The Dojo transforms Kata's execution data into an interactive training experience for the developer. Each session covers four knowledge directions: **backward** (what happened), **inward** (current state + personal focus), **outward** (industry best practices), and **forward** (what's next). After each cooldown, a diary entry captures the cycle's narrative. Sessions are self-contained HTML experiences with a Japanese dojo theme, generated through conversation with Claude and saved as a personal training archive.
 
 ---
 
