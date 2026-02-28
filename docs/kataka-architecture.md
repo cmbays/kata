@@ -3,6 +3,9 @@
 > A living architectural document for how Kata integrates with AI coding agents.
 > This document defines the kataka system, naming conventions, composability model,
 > and the philosophy of meeting projects where they are.
+>
+> **Implementation status**: The kataka system is fully designed but not yet built. Implementation begins in Wave G. See [Implementation Roadmap](unified-roadmap.md) for sequencing.
+> For how Kata's current system works, see [Kata System Guide](kata-system-guide.md).
 
 ---
 
@@ -38,7 +41,7 @@ The complete vocabulary, extended with kataka-related terms.
 | Cooldown  | Ma (間)       | `kata cooldown`  | `kata ma`      | Reflection period after a cycle                    |
 | Execute   | Kiai (気合)   | `kata execute`   | `kata kiai`    | Run stage orchestration                            |
 
-> **Note:** The `kata kime` alias is tracked in [#153](https://github.com/cmbays/kata/issues/153) for implementation.
+> **Note:** The `kata kime` alias is implemented (shipped in Wave A, [#153](https://github.com/cmbays/kata/issues/153) closed).
 
 ### New Lexicon (Kataka System)
 
@@ -75,7 +78,9 @@ For a deeper interactive experience, a dedicated `kata lexicon` command (alias: 
 
 ---
 
-## 3. The Three-Layer Model
+## 3. The Three-Layer Model *(Wave G)*
+
+> This three-layer model is the target architecture for Wave G. Today's skill package (shipped in Wave B) provides the foundation; the kataka identity system, KATA.md context file, and init scanning add the remaining layers.
 
 Every AI coding project has three layers of customization. Kata should understand and work within all three.
 
@@ -156,7 +161,7 @@ Main session acting as Sensei (orchestrator)
 
 ---
 
-## 4. Kataka Anatomy
+## 4. Kataka Anatomy *(Wave G)*
 
 ### Definition Format
 
@@ -387,7 +392,7 @@ For v1, each flavor has exactly one assigned kataka. If we later find cases wher
 
 ---
 
-## 7. KATA.md — Project Context File
+## 7. KATA.md — Project Context File *(Wave F)*
 
 A new file at `.kata/KATA.md` that functions as CLAUDE.md for Kata specifically. Every kataka and sensei session is preloaded with this context.
 
@@ -439,7 +444,9 @@ Every kataka definition includes `kata-orchestration` in its `skills:` field. Th
 
 ---
 
-## 8. Init Scanning Flow
+## 8. Init Scanning Flow *(Wave G)*
+
+> Basic init scanning (`kata init --scan basic|full`) shipped in Wave D. The kataka-aware scanning described here — wrapping, classification, and orphan detection — ships in Wave G.
 
 `kata init --scan` does more than create kataka. It performs a full project capability assessment: detecting existing agents, skills, project type, framework conventions, and methodology fit. The kataka creation is one output of that broader scan.
 
@@ -599,7 +606,9 @@ In interactive `--bridge-gaps` mode (without `--yolo`), the skill presents its a
 
 ---
 
-## 10. Observability and Attribution
+## 10. Observability and Attribution *(Wave I)*
+
+> Agent attribution becomes functional in Wave I after the observation system (Wave F) and kataka registry (Wave G) are in place.
 
 ### Kataka as Trackable Entities
 

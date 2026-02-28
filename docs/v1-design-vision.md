@@ -1,15 +1,19 @@
-# Kata v1 Design Vision
+# Kata v1 Design Rationale
 
-Brainstormed 2026-02-23. This captures the agreed-upon architectural direction for Kata v1.
+> Why Kata is built the way it is — the architectural trade-offs and decisions that shaped the system.
+> Originally brainstormed 2026-02-23, maintained as a living rationale document.
+>
+> For *how* the system works, see [Kata System Guide](kata-system-guide.md).
+> For *what's left to build*, see [Implementation Roadmap](unified-roadmap.md).
 
 ## Core Thesis
 
 Kata separates **deterministic structure** (steps, gates, artifacts, configs) from **non-deterministic judgment** (orchestrators deciding how to compose and sequence that structure). The Decision log bridges them — making non-deterministic choices visible, measurable, and learnable.
 
-## Three-Tier Execution Hierarchy
+## Three-Tier Execution Hierarchy ✅ *Implemented*
 
 ### Stage (fixed enum, not user-editable)
-- **Research, Plan, Build, Review, Wrap-up** (5 core stages)
+- **Research, Plan, Build, Review** (4 core categories in v1; wrap-up deferred to v2)
 - Each has a specific orchestrator type (research engine, planning engine, etc.)
 - Entry/exit gates govern macro flow between modes of work
 - Produces a synthesis artifact as one-to-one handoff to next stage
@@ -24,12 +28,12 @@ Kata separates **deterministic structure** (steps, gates, artifacts, configs) fr
 - Users can **pin** always-run flavors or **exclude** flavors per stage per project
 - Examples: "UI feature planning" flavor = [shaping, breadboarding, impl-planning]. "Data model planning" = [schema-design, migration-planning, impl-planning]
 
-### Step (user-configurable, reusable — what we call "Stage" today)
+### Step (user-configurable, reusable — renamed from "Stage" in the codebase)
 - Atomic unit of work with entry gates, exit gates, artifacts, human approval, resources
 - Reusable across flavors
 - One-to-one handoff between steps within a flavor
 - All existing gate evaluation, artifact validation, hooks, YOLO mode, confidence tracking stays here
-- Current Stage schema, CLI commands (create, edit, delete, rename) carry over as Step layer
+- Rename completed: Stage→Step throughout codebase (merged as part of orchestration engine PR)
 
 ## Artifact Scoping Rules
 - Within a flavor, a step can reference artifacts from **preceding steps in that flavor**
@@ -41,7 +45,7 @@ Kata separates **deterministic structure** (steps, gates, artifacts, configs) fr
 - DAG validation on save: each step's entry gate requirements must be satisfiable by exit gates of preceding steps or stage-level input
 - Clear error messages: "Step X requires artifact Y which is produced by step Z, but Z is not included or is ordered after X in this flavor"
 
-## Stage Orchestrator
+## Stage Orchestrator ✅ *Implemented*
 - Not just a flavor selector — the intelligence layer that makes decisions
 - Built-in orchestrator prompt per stage type that:
   1. Receives incoming context (bet, prior stage artifacts, project metadata)
@@ -58,7 +62,7 @@ Kata separates **deterministic structure** (steps, gates, artifacts, configs) fr
 - Synthesis step checks: count of artifacts matches count of launched flavors
 - Users don't need to configure or be aware of synthesis mechanics
 
-## Decision as First-Class Domain Concept
+## Decision as First-Class Domain Concept ✅ *Implemented*
 - Logged at orchestrator level (and potentially at step level for non-trivial choices)
 - Decision record captures:
   - **Context**: what information was available (bet, artifacts, project type)
@@ -70,7 +74,7 @@ Kata separates **deterministic structure** (steps, gates, artifacts, configs) fr
 - Enables observability: dashboard shows decisions, confidence levels, flagged items
 - Learning extraction analyzes decision quality over time, not just pass/fail
 
-## Cooldown as Pipeline
+## Cooldown as Pipeline *(partially implemented — cooldown is a feature, not a pipeline kind)*
 - Pipeline gets a `kind` field: `execution` vs `cooldown`
 - Cooldown pipeline's entry gate: new `cycle-complete` condition (all execution pipelines in cycle are done)
 - Two stages in cooldown pipeline:
@@ -86,14 +90,17 @@ Kata separates **deterministic structure** (steps, gates, artifacts, configs) fr
 - Budget constraints (token/time) would govern how many cycles are allowed
 - v1: linear flows only, but data model supports DAG
 
-## Mapping from Current Codebase
-- Current `Stage` schema → becomes **Step**
-- Current `StageType` enum → may need expansion or opening (relates to issue #17)
-- Current flavor concept (informal variant JSONs) → becomes first-class **Flavor** entity (ordered composition of steps)
-- Current `Pipeline` → add `kind` field, stages become the new macro Stage enum
-- Current `CooldownSession` → refactored as a cooldown pipeline with stages
-- New schemas needed: **Stage** (enum + orchestrator config), **Flavor** (step composition + overrides), **Decision** (context, options, selection, confidence, outcome)
-- New gate condition: `cycle-complete`
+## Mapping from Original Codebase ✅ *Completed*
+
+These mappings were executed during the Stage→Step rename and orchestration engine work:
+
+- `Stage` schema → **Step** (complete rename across codebase)
+- `StageType` enum → kept as `StageCategory` (4 fixed: research, plan, build, review)
+- Flavor concept → first-class **Flavor** entity with ordered steps, overrides, resources
+- `Pipeline` → retained internally for infrastructure; CLI uses `kata execute` with stage sequences
+- `CooldownSession` → full feature with 8-step orchestration, run data loading, diary writing
+- **Decision** schema → `DecisionEntrySchema` in `run-state.ts` (context, options, selection, confidence, outcome)
+- `cycle-complete` gate condition → not implemented as gate; cooldown triggered via CLI command
 
 ## Build Stage Philosophy
 - Lightest-touch stage — Kata's primary value is in research, planning, and review
@@ -103,7 +110,7 @@ Kata separates **deterministic structure** (steps, gates, artifacts, configs) fr
 - Mini-reviews within build waves before proceeding
 - Final holistic review is a separate Review stage, not part of Build
 
-## Self-Improvement Loop
+## Self-Improvement Loop ✅ *Implemented (basic); enhanced in Waves F–I*
 - Decision logs are the primary input (richer than just execution history)
 - Orchestrator flavor selection improves over time based on decision-outcome analysis
 - Learnings feed back into orchestrator prompts for future decisions

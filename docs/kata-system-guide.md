@@ -2,11 +2,13 @@
 
 > Living reference for how Kata works — its primitives, data flows, and the meta-learning loop that makes the system compound over time. Written for humans.
 >
-> Companion documents:
-> - `docs/v1-product-spec.md` — Product specification and user stories
-> - `docs/v1-design-vision.md` — Architectural decisions (three-tier hierarchy, gates, artifacts)
-> - `docs/kataka-architecture.md` — Agent system (kataka), skills, and methodology-aware AI
-> - `docs/unified-roadmap.md` — Implementation roadmap (Waves F–J)
+> **Companion documents** (deep dives):
+> - [Product Design](v1-product-spec.md) — User stories, interaction breadboards, and agent interface patterns
+> - [Design Rationale](v1-design-vision.md) — Why Kata is built the way it is: architectural trade-offs and decisions
+> - [Kataka Architecture](kataka-architecture.md) — Agent system deep dive: kataka, skills, three-layer model, gap bridging
+> - [Implementation Roadmap](unified-roadmap.md) — Waves, dependencies, and what's left to build
+>
+> **Implementation status key**: Features marked with a wave label like *(Wave F)* are designed but not yet implemented. Unmarked features are shipped and tested.
 
 ---
 
@@ -20,8 +22,8 @@ Kata is the railroad tracks. The AI agent is the train. Different trains (Claude
 - Defines methodology as composable stages, flavors, and steps
 - Tracks execution state through structured run files
 - Captures every non-deterministic decision with full context
-- Observes patterns, frictions, and outcomes during execution
-- Builds a knowledge graph that improves agents over time
+- Observes patterns, frictions, and outcomes during execution *(observation system ships in Wave F)*
+- Builds a knowledge graph that improves agents over time *(knowledge graph enrichment ships in Waves F–I)*
 - Reflects during cooldown to extract and consolidate learnings
 
 **What Kata does NOT do:**
@@ -93,6 +95,8 @@ When a bet starts execution, it creates a **run** — a directory tree that trac
 
 Every file in the run tree is append-only or write-once. Nothing is deleted during execution. This creates a complete, auditable record of what happened.
 
+> **Status**: Run tree, state files, decisions, artifacts, and decision-outcomes are implemented and tested. Observation and reflection JSONL files at stage/flavor/step levels ship in Wave F.
+
 ### Cooldown
 After all bets complete, the cycle enters **cooldown** — a structured reflection phase:
 
@@ -126,12 +130,14 @@ Kata uses four categories of persistent data:
 - `.kata/dojo/diary/` — Narrative reflections per cycle
 - `.kata/dojo/sessions/` — Generated Dojo training sessions
 
-### Context (write-at-init, refresh-at-cooldown)
-- `.kata/KATA.md` — Project context file for all agents and skills (Wave F)
+### Context *(Wave F)* (write-at-init, refresh-at-cooldown)
+- `.kata/KATA.md` — Project context file for all agents and skills
 
 ---
 
-## 5. The Observation System
+## 5. The Observation System *(Wave F)*
+
+> This section describes the observation system designed for Wave F. The schema and infrastructure are not yet implemented.
 
 Observations are the raw signals captured during execution — the primary input to the entire meta-learning system.
 
@@ -159,7 +165,9 @@ Observations are **append-only JSONL**. Once written, they are never modified or
 
 ---
 
-## 6. The Knowledge Graph
+## 6. The Knowledge Graph *(Waves F–I)*
+
+> The knowledge store exists today (learnings, capture, query, loading). The enrichments described here — citations, reinforcement, versioning, graph index, and LLM synthesis — ship progressively across Waves F through I.
 
 The knowledge graph is the architectural heart of Kata's meta-learning system. It transforms raw observations into working knowledge that improves agent behavior over time.
 
@@ -221,13 +229,13 @@ Category Learning: "Test coverage correlates with code stability"
 | `tier` | enum | Scope: step, flavor, stage, category, agent |
 | `content` | string | The knowledge itself |
 | `confidence` | 0–1 | Computed from evidence count and consistency |
-| `citations` | Citation[] | Links to source observations |
-| `derivedFrom` | UUID[] | Parent learnings this was synthesized from |
-| `reinforcedBy` | Reinforcement[] | Additional evidence that strengthened this |
-| `usageCount` | number | Times injected into agent prompts |
-| `lastUsedAt` | datetime | When last used in a prompt |
-| `versions` | Version[] | Full mutation history with citation diffs |
-| `archived` | boolean | Soft-delete (never hard-deleted — provenance) |
+| `citations` | Citation[] | Links to source observations *(Wave F)* |
+| `derivedFrom` | UUID[] | Parent learnings this was synthesized from *(Wave F)* |
+| `reinforcedBy` | Reinforcement[] | Additional evidence that strengthened this *(Wave F)* |
+| `usageCount` | number | Times injected into agent prompts *(Wave F)* |
+| `lastUsedAt` | datetime | When last used in a prompt *(Wave F)* |
+| `versions` | Version[] | Full mutation history with citation diffs *(Wave F)* |
+| `archived` | boolean | Soft-delete (never hard-deleted — provenance) *(Wave F)* |
 
 ### What the Graph Enables
 
@@ -324,7 +332,7 @@ Every decision is logged with context, options, reasoning, and confidence. Later
 
 ---
 
-## 8. The Dojo — Personal Training Environment
+## 8. The Dojo — Personal Training Environment *(Wave K — Shipped)*
 
 The Dojo transforms Kata's execution data into an interactive training experience for the developer. It has four knowledge directions:
 
@@ -343,7 +351,9 @@ Each Dojo session is a self-contained HTML experience generated through conversa
 
 ---
 
-## 9. The Kataka System — Methodology-Aware Agents
+## 9. The Kataka System — Methodology-Aware Agents *(Wave G)*
+
+> The kataka system is designed and architected. Implementation ships in Wave G. See [Kataka Architecture](kataka-architecture.md) for the full deep dive.
 
 Kataka (型家, "kata practitioner") is the Kata-native AI agent wrapper. The `-ka` suffix signals a methodology-aware agent.
 
@@ -388,23 +398,28 @@ Every observation, decision, and artifact can be attributed to a specific kataka
 
 ## 11. CLI Command Map
 
-| Domain | Command | Alias | Purpose |
-|--------|---------|-------|---------|
-| Init | `kata init` | `kata rei` | Initialize a project |
-| Stage | `kata stage` | `kata gyo` | Manage the 4 stage categories |
-| Step | `kata step` | `kata waza` | CRUD for atomic work units |
-| Flavor | `kata flavor` | `kata ryu` | Manage step compositions |
-| Cycle | `kata cycle` | `kata keiko` | Time-boxed work periods |
-| Execute | `kata execute` | `kata kiai` | Run stage orchestration |
-| Decision | `kata decision` | `kata kime` | Record and review decisions |
-| Observe | `kata observe` | `kata kansatsu` | Record runtime observations |
-| Knowledge | `kata knowledge` | `kata bunkai` | Query and manage learnings |
-| Cooldown | `kata cooldown` | `kata ma` | Cycle reflection |
-| Config | `kata config` | `kata seido` | Interactive methodology editor |
-| Dojo | `kata dojo` | — | Personal training environment |
-| Status | `kata status` | — | Project overview |
-| Stats | `kata stats` | — | Aggregate analytics |
-| Watch | `kata watch` | `kata kanshi` | Live execution TUI |
+| Domain | Command | Alias | Purpose | Status |
+|--------|---------|-------|---------|--------|
+| Init | `kata init` | `kata rei` | Initialize a project | Shipped |
+| Stage | `kata stage` | `kata gyo` | Manage the 4 stage categories | Shipped |
+| Step | `kata step` | `kata waza` | CRUD for atomic work units | Shipped |
+| Flavor | `kata flavor` | `kata ryu` | Manage step compositions | Shipped |
+| Cycle | `kata cycle` | `kata keiko` | Time-boxed work periods | Shipped |
+| Execute | `kata execute` | `kata kiai` | Run stage orchestration | Shipped |
+| Decision | `kata decision` | `kata kime` | Record and review decisions | Shipped |
+| Knowledge | `kata knowledge` | `kata bunkai` | Query and manage learnings | Shipped |
+| Cooldown | `kata cooldown` | `kata ma` | Cycle reflection | Shipped |
+| Config | `kata config` | `kata seido` | Interactive methodology editor | Shipped |
+| Dojo | `kata dojo` | — | Personal training environment | Shipped |
+| Status | `kata status` | — | Project overview | Shipped |
+| Stats | `kata stats` | — | Aggregate analytics | Shipped |
+| Watch | `kata watch` | `kata kanshi` | Live execution TUI | Shipped |
+| Approve | `kata approve` | — | Approve pending human gates | Shipped |
+| Artifact | `kata artifact` | — | Record artifacts with provenance | Shipped |
+| Rule | `kata rule` | — | Accept/reject rule suggestions | Shipped |
+| Observe | `kata observe` | `kata kansatsu` | Record runtime observations | Wave F |
+| Agent | `kata agent` | `kata kataka` | Manage kataka agents | Wave G |
+| Lexicon | `kata lexicon` | `kata kotoba` | Interactive vocabulary table | Wave G |
 
 ---
 
@@ -426,4 +441,4 @@ Every observation, decision, and artifact can be attributed to a specific kataka
 
 ---
 
-*Last updated: 2026-02-28. This is a living document — updated as new waves ship.*
+*Last updated: 2026-02-28. Waves 0–E + K shipped (2148 tests, 109 files). This is a living document — updated as new waves ship.*

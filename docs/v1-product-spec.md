@@ -1,8 +1,14 @@
-# Kata v1 Product Specification
+# Kata v1 Product Design
 
-> Authored 2026-02-24. Discovery interview between Christopher Bays and Claude.
-> This document captures the complete product specification for Kata v1: user stories, architecture, breadboards, gap analysis, and work breakdown.
-> Companion to: `docs/v1-design-vision.md` (architectural decisions), issue #93 (epic).
+> Product specification for Kata v1: user stories, interaction breadboards, and agent interface patterns. This is the *what should the user experience be?* document — product design decisions and interaction flows.
+>
+> Originally authored 2026-02-24 as a discovery interview between Christopher Bays and Claude. Maintained as a living product design reference.
+>
+> **Companion documents**:
+> - [Kata System Guide](kata-system-guide.md) — How the system works (the overview hub)
+> - [Design Rationale](v1-design-vision.md) — Why we built it this way
+> - [Kataka Architecture](kataka-architecture.md) — Agent system deep dive
+> - [Implementation Roadmap](unified-roadmap.md) — What's done, what's next
 
 ---
 
@@ -93,6 +99,8 @@ Kata is a **development methodology engine** — a framework that encodes how AI
 
 ## 3. Architecture Overview
 
+> For the full technical description of how the system works, see [Kata System Guide](kata-system-guide.md). For *why* it's built this way, see [Design Rationale](v1-design-vision.md). This section captures the product-level view.
+
 ### 3.1 Philosophy: Methodology Framework, Not Agent Runtime
 
 Kata is a **structured journal + checklist system** that an intelligent agent follows. It provides:
@@ -106,10 +114,10 @@ Kata is a **structured journal + checklist system** that an intelligent agent fo
 | CLI commands for structured operations | Agent-specific integrations |
 
 The agent layer is pluggable via skill/adapter packages:
-- **v1**: Claude Code skill package (the proof of concept)
+- **v1**: Claude Code skill package (shipped in Wave B)
 - **Future**: Composio adapter, other agent platforms
 
-### 3.2 Three-Tier Hierarchy
+### 3.2 Three-Tier Hierarchy ✅ *Implemented*
 
 ```
 Stage (gyo) — 4 fixed categories: research, plan, build, review
@@ -554,37 +562,24 @@ Claude:
 
 ---
 
-## 5. Command Surface
+## 5. Command Surface ✅ *Implemented*
 
-### Existing Commands
+> See [Kata System Guide — CLI Command Map](kata-system-guide.md#11-cli-command-map) for the complete, current command table with implementation status.
 
-| Command | Alias | Sub-commands | Description |
-|---------|-------|-------------|-------------|
-| `kata init` | `rei` | — | Initialize project (basic/full scan) |
-| `kata stage` | `gyo` | `list`, `inspect` | View fixed stage categories |
-| `kata step` | `waza` | `list`, `inspect`, `create`, `edit`, `delete` (`wasure`), `rename` | CRUD for atomic methodology steps |
-| `kata flavor` | `ryu` | `list`, `inspect`, `create`, `delete` (`wasure`), `validate` | CRUD for step compositions |
-| `kata cycle` | `keiko` | `new`, `status`, `focus` | Cycle and bet management |
-| `kata cooldown` | `ma` | — | Reflection session |
-| `kata knowledge` | `bunkai` | `query`, `stats`, `rules`, `review` | Learning system |
-| `kata execute` | `kiai` | (categories), `status`, `stats` | Stage orchestration |
-| `kata status` | — | — | Project overview |
-| `kata stats` | — | — | Aggregate analytics |
+All commands from the original spec are implemented. The "New Commands Needed" section from the original discovery is now complete:
 
-### New Commands Needed for v1
-
-| Command | Alias (TBD) | Description |
-|---------|-------------|-------------|
-| `kata cycle add-bet` | — | Add a bet with assigned kata to a cycle |
-| `kata cycle update-bet` | — | Update bet metadata (kata assignment, description) |
-| `kata cycle start` | — | Validate bets, create runs, begin execution |
-| `kata approve [gate-id]` | TBD (2-4 char) | Approve a pending human gate (interactive selector if no ID) |
-| `kata watch` | TBD (2-4 char) | Launch execution monitor TUI |
-| `kata config` | TBD (2-4 char) | Launch configuration TUI |
-| `kata artifact record` | — | Record an artifact with full provenance |
-| `kata decision record` | — | Record a decision with metadata |
-| `kata step next <run-id>` | — | Query what to work on next (returns step + context) |
-| `kata run status <run-id>` | — | Detailed status of a single pipeline run |
+| Originally proposed | Status | Shipped in |
+|---------------------|--------|-----------|
+| `kata cycle add-bet` | ✅ | Wave A |
+| `kata cycle update-bet` | ✅ | Wave A |
+| `kata cycle start` | ✅ | Wave A |
+| `kata approve` | ✅ | Wave A |
+| `kata watch` (alias: `kanshi`) | ✅ | Wave D |
+| `kata config` (alias: `seido`) | ✅ | Wave D |
+| `kata artifact record` | ✅ | Wave A |
+| `kata decision record` | ✅ | Wave A |
+| `kata step next` | ✅ | Wave A |
+| `kata dojo` | ✅ | Wave K |
 
 ### Alias Design Rules
 
@@ -592,7 +587,6 @@ Claude:
 - **2-4 characters** for frequent commands
 - **5-6 characters** max for less common commands
 - Thematically coherent with the karate/dojo metaphor
-- Final alias validation after full command surface is locked in
 
 ### Flag Conventions
 
@@ -837,177 +831,114 @@ Sources: `auto-detected` (from reflection) | `user-created` (manual) | `imported
 
 ---
 
-## 9. Gap Analysis: Current State vs. Needed
+## 9. Gap Analysis: Current State
 
-### What Exists and is Solid
+> Updated 2026-02-28. The original gap analysis from discovery is replaced with current status.
 
-| Area | Status | Notes |
-|------|--------|-------|
-| Three-tier hierarchy (Stage/Flavor/Step) | ✅ Complete | Schemas, registries, CLI CRUD |
-| 6-phase orchestration loop | ✅ Complete | BaseStageOrchestrator, 6 phases |
-| Vocabulary-driven scoring | ✅ Complete | 4 vocabularies, keyword matching |
-| Decision recording + outcomes | ✅ Complete | DecisionRegistry with full schema |
-| Rule registry + suggestion workflow | ✅ Complete | CRUD + accept/reject flow |
-| Step resources (tools, agents, skills) | ✅ Complete | Schema defined on Step |
-| Meta-orchestrator (stage sequencing) | ✅ Complete | Linear stage sequence with handoff |
-| Flavor validation (DAG check) | ✅ Complete | Validates artifact dependencies |
-| CLI for step/flavor/cycle management | ✅ Complete | Full CRUD with aliases |
-| Saved kata patterns | ✅ Complete | In config.json, --kata/--gyo flags |
-| Knowledge store + learnings | ✅ Complete | Capture, query, load |
-| 1348 tests passing | ✅ Complete | 74 test files |
+### Core Engine ✅ Complete (Waves 0–E)
 
-### What's Stubbed / Partially Built
+All items from the original "What Exists and is Solid" section are still complete, plus everything from the original "What's Stubbed" and "What Needs to Be Built (P0/P1)" sections has been implemented:
 
-| Area | Status | Gap |
-|------|--------|-----|
-| Rule adjustments in matching | 🟡 Stubbed | Infrastructure ready, returns 0. Need to wire rule effects into flavor scoring. |
-| Gap analysis | 🟡 Schema exists | GapReport + ExecutionPlan.gaps defined but not populated in plan phase. Need actual gap detection logic. |
-| Rule suggestion generation | 🟡 Scaffolded | Reflect phase has structure, marked "no-op". Need to generate suggestions from decision outcomes. |
-| Step resources in prompts | 🟡 Types defined | Not serialized into manifests by ManifestBuilder. Need to include in agent context. |
-| Confidence-gate user interaction | 🟡 Threshold exists | OrchestratorConfig has confidenceThreshold. Not wired to pause execution or log for cooldown. |
+| Area | Wave | Notes |
+|------|------|-------|
+| Three-tier hierarchy (Stage/Flavor/Step) | 0–1 | Schemas, registries, CLI CRUD |
+| 6-phase orchestration loop | v1 Orch | BaseStageOrchestrator, 6 phases, rule wiring, gap analysis, reflect phase |
+| Run state files | A | Full `.kata/runs/` tree: run.json, decisions.jsonl, stages/*/state.json, flavors/*/state.json |
+| Agent CLI commands | A | `kata cycle start`, `kata cycle add-bet`, `kata artifact record`, `kata decision record`, `kata approve`, `kata step next` |
+| Skill package | B | 9 skill files, shipped + iterated via POC run |
+| Orchestration wiring | C | Rules, gap analysis, resources, reflect, cooldown integration, cross-run analysis |
+| TUI | D | `kata watch` (execution monitor), `kata config` (methodology editor), init scanning |
+| Dojo | K | Diary entries, session generation, HTML output, source registry, CLI archive viewer |
+| 2148 tests passing | — | 109 test files |
 
-### What Needs to Be Built
+### Remaining — Meta-Learning + Kataka (Waves F–J)
 
-| Area | Priority | Effort | Description |
-|------|----------|--------|-------------|
-| **Run state files** | P0 | Medium | `.kata/runs/` directory structure with state.json at each level |
-| **`kata cycle start`** | P0 | Medium | Validate bets, create runs, initialize state |
-| **`kata cycle add-bet`** | P0 | Small | Add bet with kata assignment to cycle |
-| **`kata artifact record`** | P0 | Small | CLI to record artifacts with provenance |
-| **`kata decision record`** | P0 | Small | CLI to record decisions with stage/flavor/step metadata |
-| **`kata approve`** | P0 | Small | Gate approval command with interactive selector |
-| **`kata step next`** | P0 | Small | Query next step to work on + context |
-| **Skill package** | P0 | Large | skill.md + reference docs + CLI reference (the primary agent interface) |
-| **Execution monitor TUI** | P1 | Large | `kata watch` — global + detail views with gate approval |
-| **Configuration TUI** | P1 | Large | `kata config` — interactive methodology editor |
-| **Init repo scanning** | P1 | Medium | `kata init --scan` basic + full modes |
-| **Wire gap analysis** | P1 | Medium | Populate GapReport during plan phase |
-| **Wire rule adjustments** | P1 | Small | Apply rule effects to flavor scoring in match phase |
-| **Wire rule suggestion generation** | P1 | Medium | Generate suggestions during reflect phase |
-| **Wire confidence-gate interaction** | P1 | Medium | Pause on low confidence, log for cooldown, capture user input |
-| **Bet-to-kata data model** | P1 | Small | Add `kata` field to Bet schema |
+See [Implementation Roadmap](unified-roadmap.md) for full details. Summary:
+
+| Area | Wave | Description |
+|------|------|-------------|
+| Observation system | F | 7-type observation schema, JSONL capture at all hierarchy levels |
+| Knowledge graph enrichment | F | Citations, reinforcement, versioning, graph index on learnings |
+| KATA.md context file | F | Project context for all agents and skills |
+| Kataka identity system | G | KatakaRegistry, agent CLI, init scanning with wrapping |
+| Skill files for kataka | G | 6 built-in skills for methodology-aware agents |
+| Prediction + friction engines | H | Calibration detection, friction taxonomy, resolution paths |
+| Learning permanence | H | TTL, confidence decay, constitutional learning packs |
+| LLM synthesis | I | Three-step pipeline, synthesis proposals, cooldown integration |
+| Domain confidence | I | 4-axis tag vocabulary, composite confidence scores |
+| Agent attribution | I | katakaId end-to-end, per-kataka learning |
+| Belt system | J | Kyū/dan progression, cooldown computation |
 | **Batch config creation** | P2 | Small | `--json` input mode for step/flavor create (for init) |
 | **Alias final pass** | P2 | Small | Validate all aliases against full command surface |
 | **TUI aesthetics** | P2 | Medium | Nerd Font icons, bet avatars, stage-state poses, color palette |
 | **Cooldown ↔ run data integration** | P2 | Medium | Read all run data, aggregate patterns, surface suggestions |
-| **Vocabulary seeding from init** | P2 | Small | Add keywords based on repo scan findings |
-
 ---
 
 ## 10. Work Items (Implementation Order)
 
-### Wave A: Foundation (Run State + Agent API)
+> Waves A–E and K are complete. For the remaining work (Waves F–J), see [Implementation Roadmap](unified-roadmap.md).
 
-Everything needed for a single `kata kiai` run to work end-to-end with an agent:
+### Completed Waves
 
-1. Run state file structure (`.kata/runs/` with state.json at each level)
-2. `kata cycle add-bet` (assign kata to bet)
-3. `kata cycle start` (validate, create runs, initialize state)
-4. `kata artifact record` (record with provenance)
-5. `kata decision record` (record with stage/flavor/step metadata)
-6. `kata approve` (gate approval)
-7. `kata step next` (query next step + context)
-8. `kata run status` (single run detail)
-9. Wire confidence-gate interaction (pause or log)
-10. Bet schema update (add kata field)
+| Wave | Name | Status | Tests |
+|------|------|--------|-------|
+| A | Foundation (Run State + Agent API) | ✅ Complete | 1478 |
+| B | Skill Package + POC | ✅ Complete | 1484 |
+| C | Orchestration Wiring | ✅ Complete | 1622 |
+| D | TUI + Init | ✅ Complete | 1816 |
+| E | Polish + Aliases | ✅ Complete | 1835 |
+| K | Dojo (Personal Training) | ✅ Complete | 2148 |
 
-### Wave B: Skill Package + Proof of Concept
+### Remaining Waves
 
-The skill package and first end-to-end test with Claude Code:
-
-1. Write skill.md (methodology overview, workflow guidelines)
-2. Write cli-reference.md (all commands with examples)
-3. Write file-structure.md (how to read .kata/ state)
-4. Write orchestration.md (mapping to Claude Code teams/tasks)
-5. Write context-flow.md (bet → stage → flavor → step context)
-6. End-to-end proof of concept: load skill in Claude Code, run a single bet through full-feature kata
-7. Iterate on skill package based on POC findings
-
-### Wave C: Orchestration Wiring
-
-Complete the stubbed orchestration features:
-
-1. Wire rule adjustments into match phase scoring
-2. Implement gap analysis in plan phase
-3. Wire rule suggestion generation in reflect phase
-4. Serialize step resources into agent context/prompts
-5. Aggregate run data for cooldown integration
-
-### Wave D: TUI + Init
-
-The interactive surfaces:
-
-1. Execution monitor TUI (`kata watch`) — global view
-2. Execution monitor TUI — pipeline detail view
-3. Execution monitor TUI — gate approval interactivity
-4. Configuration TUI (`kata config`) — step/flavor editor
-5. Init repo scanning — basic mode
-6. Init repo scanning — full mode
-7. TUI aesthetics (Nerd Fonts, avatars, color)
-
-### Wave E: Polish + Aliases
-
-1. Final alias validation against full command surface
-2. Batch config creation for init
-3. Vocabulary seeding from init scan
-4. Documentation updates
+| Wave | Name | Focus | Details |
+|------|------|-------|---------|
+| F | Foundations | Observation system, knowledge graph, KATA.md | [Roadmap](unified-roadmap.md#wave-f-foundations--shared-data-model) |
+| G | Practitioners | Kataka identity, skills, agent CLI | [Roadmap](unified-roadmap.md#wave-g-practitioners--kataka-identity--execution) |
+| H | Intelligence | Predictions, friction, permanence | [Roadmap](unified-roadmap.md#wave-h-intelligence--detection-engines) |
+| I | Synthesis | LLM synthesis, domain confidence, attribution | [Roadmap](unified-roadmap.md#wave-i-synthesis--llm-intelligence--observability) |
+| J | Mastery | Belt system, gap bridging, per-kataka confidence | [Roadmap](unified-roadmap.md#wave-j-mastery--belt-system--gap-bridging) |
 
 ---
 
 ## 11. Open Questions
 
-### Deferred to Implementation
+### Resolved During Implementation
 
-1. **TUI technology choice**: Ink (React for CLI), blessed, bubbletea (Go), or custom? Depends on ecosystem fit and contributor familiarity.
-
-2. **Exact Nerd Font glyphs**: The specific icons for stages, states, and avatars. Refined during TUI build.
-
-3. **Pipeline prep**: The original `kata pipeline prep` was for pre-execution context loading. With the bet prompt as persistent context, this may be unnecessary. Leave unresolved until kiai implementation surfaces a need.
-
-4. **Agent skill packaging format**: `.claude/commands/` custom command? MCP server? Directory with multiple files? Depends on what Claude Code supports best for rich skill packages.
-
-5. **Composio adapter**: Deferred to post-v1 fast-follow. v1 targets Claude Code only.
+1. **TUI technology choice**: Resolved — Ink (React for CLI) for `kata watch`, Inquirer.js for `kata config`.
+2. **Exact Nerd Font glyphs**: Resolved — opt-in via `KATA_NERD_FONTS=1`, emoji defaults.
+3. **Pipeline prep**: Resolved — not needed. Bet prompt + state files provide sufficient context.
+4. **Agent skill packaging format**: Resolved — directory with multiple `.md` files in `.kata/skill/`, copied during `kata init`.
+5. **Composio adapter**: Still deferred to post-v1.
 
 ### Deferred to v2/v3
 
 1. **Strict state machine enforcement**: Runtime validation that artifacts exist before gate passage, hard-blocking agents from skipping steps.
-
 2. **MetaOrchestrator-driven kata selection**: LLM selecting which kata pattern fits a bet (currently user/agent picks manually).
-
 3. **Pipeline DAG**: Non-linear stage flows (e.g., plan → research → plan → build). v1 is linear only.
-
-4. **wrap-up stage**: A 5th stage after review. Currently 4 fixed categories; wrap-up was in the original design vision but not included in v1 command surface.
-
-5. **Multi-user / team coordination**: v1 is single-developer. Team workflows with shared methodology and role-based gate approvals are future.
+4. **Wrap-up stage**: A 5th stage after review. Currently 4 fixed categories.
+5. **Multi-user / team coordination**: v1 is single-developer.
 
 ---
 
-## 12. Alias Table
+## 12. Alias Table ✅ *Implemented*
 
-### Existing Aliases (from PR #90)
+> See [Kata System Guide — CLI Command Map](kata-system-guide.md#11-cli-command-map) for the complete, current command/alias table.
 
-| Command | Alias | Chars | Notes |
-|---------|-------|-------|-------|
-| `kata init` | `rei` | 3 | Bow / greeting |
-| `kata stage` | `gyo` | 3 | Practice / discipline |
-| `kata step` | `waza` | 4 | Technique |
-| `kata flavor` | `ryu` | 3 | Style / school |
-| `kata cycle` | `keiko` | 5 | Training session |
-| `kata cooldown` | `ma` | 2 | Interval / space |
-| `kata knowledge` | `bunkai` | 6 | Analysis / breakdown |
-| `kata execute` | `kiai` | 4 | Spirit shout / power |
-| step/flavor delete | `wasure` | 6 | Forget |
-
-### New Aliases Needed
-
-| Command | Proposed Alias | Chars | Theme Reasoning |
-|---------|---------------|-------|-----------------|
-| `kata approve` | TBD | 2-4 | Granting passage |
-| `kata watch` | TBD | 2-4 | Observation / awareness |
-| `kata config` | TBD | 2-4 | Dojo setup / arrangement |
-| `kata scan` | TBD | 2-4 | Perception / sensing |
-
-**Final alias assignment deferred** until full command surface is locked in. Will be done as a dedicated pass to ensure thematic coherence and no conflicts.
+| Command | Alias | Notes |
+|---------|-------|-------|
+| `kata init` | `kata rei` | Bow / greeting |
+| `kata stage` | `kata gyo` | Practice / discipline |
+| `kata step` | `kata waza` | Technique |
+| `kata flavor` | `kata ryu` | Style / school |
+| `kata cycle` | `kata keiko` | Training session |
+| `kata cooldown` | `kata ma` | Interval / space |
+| `kata knowledge` | `kata bunkai` | Analysis / breakdown |
+| `kata execute` | `kata kiai` | Spirit shout / power |
+| `kata decision` | `kata kime` | Focus / decisiveness |
+| `kata watch` | `kata kanshi` | Monitoring |
+| `kata config` | `kata seido` | System / regulation |
+| step/flavor delete | `wasure` | Forget |
 
 ---
 
