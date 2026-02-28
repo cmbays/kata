@@ -29,7 +29,7 @@
       {
         "group": "Getting Started",
         "pages": [
-          "README",
+          "docs/introduction",
           "docs/project-setup"
         ]
       },
