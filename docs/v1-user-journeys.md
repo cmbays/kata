@@ -113,7 +113,7 @@
 
 ### Flow 1: First-Time Setup → First Keiko
 
-```
+```text
 kata rei --scan basic
   → Project detected, defaults proposed
 kata seido
@@ -132,7 +132,7 @@ kata ma
 
 ### Flow 2: Mature Project — Autonomous Keiko
 
-```
+```text
 kata keiko new "Sprint 8"
   → (system has 7 keiko of accumulated bunkai)
 kata keiko add-bet <id> "..." --kata full-feature  (×3)
@@ -151,7 +151,7 @@ kata dojo
 
 ### Flow 3: Ma → Next Keiko Bridge
 
-```
+```text
 kata ma
   → Bet outcomes recorded (complete/partial/abandoned)
   → Rule suggestions reviewed (accept/reject)

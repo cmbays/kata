@@ -89,7 +89,7 @@ Execution identities with their own context window, tools, and persona.
 
 ### How They Compose
 
-```
+```text
 Context (KATA.md, CLAUDE.md)
   ↓ loaded into
 Skills (kata-sensei, kata-create-agent, tdd-workflow)

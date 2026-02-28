@@ -66,7 +66,7 @@ Every kataka definition includes `kata-orchestration` in its `skills:` field. Th
 
 ### The Full Flow
 
-```
+```text
 $ kata rei --scan full
 
   Scanning project capabilities...
@@ -114,7 +114,7 @@ $ kata rei --scan full
 
 During `--scan resync` and `--scan full`, the scanner checks for **orphaned kataka** — wrapper agents whose source has been removed:
 
-```
+```text
   Orphaned kataka detected:
     frontend-ka       → wraps: frontend-builder (agent file deleted)
     api-ka            → wraps: api-designer (agent file deleted)

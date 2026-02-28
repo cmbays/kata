@@ -55,7 +55,7 @@ The uchi direction is deliberately interactive — Claude actively asks the user
 
 Outside Claude, the CLI is an archive viewer for revisiting past sessions:
 
-```
+```bash
 kata dojo list                   # Session archive table
 kata dojo open [session-id]      # Open in browser (latest if omitted)
 kata dojo inspect <session-id>   # Session details in terminal
@@ -144,7 +144,7 @@ Sections support progressive disclosure (`collapsed: boolean`) and nesting (`dep
 
 ### Generation Pipeline
 
-```
+```text
 DataAggregator ──> SessionBuilder ──> HtmlGenerator ──> SessionStore
      │                   │                  │                │
   Gathers data     Orchestrates       Pure function:     Saves meta.json
@@ -256,7 +256,7 @@ The DiaryWriter receives: keiko ID and name, narrative, bet outcomes, proposals,
 
 ## 8. Directory Structure
 
-```
+```text
 .kata/dojo/
   diary/                           # One JSON file per ma (cooldown)
     {keiko-id}.json                # DojoDiaryEntry

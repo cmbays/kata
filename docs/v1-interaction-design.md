@@ -14,7 +14,7 @@
 
 Each gyo (stage) runs a 6-phase orchestration loop:
 
-```
+```text
 ┌─────────────────────────────────────────────────┐
 │ 1. ANALYZE                                       │
 │    Build CapabilityProfile from:                 │
@@ -115,7 +115,7 @@ The agent interacts with Kata through three channels:
 
 ### 3.1 Init / Onboarding
 
-```
+```text
 BASIC SCAN (kata rei --scan basic)
 ──────────────────────────────────
 User: "kata rei" or tells Claude "set up kata for this project"
@@ -143,7 +143,7 @@ Everything in basic, plus:
 
 ### 3.2 Keiko Setup (Betting Phase)
 
-```
+```text
 User: "Let's set up our next keiko."
 
 Claude (with kata skill):
@@ -172,7 +172,7 @@ Claude:
 
 **Agent hierarchy during execution:**
 
-```
+```text
 Main Claude (user-facing orchestrator)
 ├── Bet-1 teammate (AUTH-42, full-feature)
 │   ├── Gyo: RESEARCH
@@ -195,7 +195,7 @@ Two complementary interfaces reading the same `.kata/` state:
 
 **`kata kanshi` (watch) — Execution Monitor TUI:**
 
-```
+```text
 ┌──────────────────────────────────────────────────────────────┐
 │ 󰓏  KATA WATCH    Keiko: Q1 Sprint 3     3 pipelines         │
 ├──────────────────────────────────────────────────────────────┤
@@ -217,7 +217,7 @@ Two complementary interfaces reading the same `.kata/` state:
 
 ### 3.5 Ma & Reflection
 
-```
+```text
 (All bet pipelines complete)
 
 Claude:
@@ -247,7 +247,7 @@ Claude:
 
 ### 3.6 Self-Improvement Cycle
 
-```
+```text
                      ┌──────────────┐
                      │  KIAI        │
                      │  (execution) │
@@ -285,7 +285,7 @@ Claude:
 
 ### 4.1 Directory Structure
 
-```
+```text
 .kata/
   config.json                     # Project config, saved kata patterns
   KATA.md                         # Project context for all agents (Wave F)
@@ -361,7 +361,7 @@ Claude:
 
 ### 4.3 Maki Tree (Progressive Summarization)
 
-```
+```text
 Context available to any waza:
 
 1. BET PROMPT (always, top-level)
@@ -408,7 +408,7 @@ Effects: `boost` | `penalize` | `require` | `exclude`
 
 ## 5. Skill Package Design
 
-```
+```text
 .kata/skill/
   skill.md                # Main instructions: methodology overview, workflow guidelines
   cli-reference.md        # Every kata CLI command the agent should use

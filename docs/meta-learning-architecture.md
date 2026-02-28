@@ -18,7 +18,7 @@ Kata separates **deterministic structure** (waza (steps), mon (gates), artifacts
 
 The system has three layers that build on each other:
 
-```
+```text
 Layer 1: OBSERVATIONS    Raw signals captured during execution (immutable)
 Layer 2: LEARNINGS       Working knowledge derived from observations (versioned)
 Layer 3: GRAPH INDEX     Connective tissue linking learnings to evidence (traversable)
@@ -58,7 +58,7 @@ Type-specific fields:
 
 Kansatsu capture at any level of the execution tree:
 
-```
+```text
 .kata/runs/{run-id}/
   observations.jsonl                          # Run-level (cross-gyo insights)
   stages/{category}/
@@ -89,7 +89,7 @@ The bunkai graph transforms raw kansatsu into working knowledge. It is not desig
 
 ### Three Layers
 
-```
+```text
 Layer 3: GRAPH INDEX
   .kata/knowledge/graph-index.json
   Lightweight connective tissue — IDs and edges only.
@@ -115,7 +115,7 @@ Layer 1: OBSERVATIONS (immutable, append-only)
 
 **3. Learning creation with citations** — When a learning is created, it carries `citations[]` — direct links back to the raw kansatsu that spawned it. This is the first graph edge.
 
-```
+```text
 Learning: "TDD significantly reduces rework in this codebase"
   ├── Citation: run-1/build/obs-3 (friction: "had to rewrite without tests")
   ├── Citation: run-2/build/obs-7 (outcome: "TDD run had 0 rework cycles")
@@ -126,7 +126,7 @@ Learning: "TDD significantly reduces rework in this codebase"
 
 **5. Synthesis** — During ma, LLM synthesis reads multiple related learnings and may consolidate them. "These 4 gyo-level learnings about test coverage are really one category-level insight." The synthesized learning gets `derivedFrom[]` — creating parent-child relationships in the graph.
 
-```
+```text
 Category Learning: "Test coverage correlates with code stability"
   ├── derivedFrom: "TDD reduces rework" (stage learning, build)
   ├── derivedFrom: "Untested modules have 3x more bugs" (stage learning, review)
@@ -191,7 +191,7 @@ Promotion happens when waza-level patterns appear 3+ times: they become ryu or g
 
 The complete loop that makes Kata compound over time:
 
-```
+```text
                     ┌─────────────────────┐
                     │   KIAI (execution)   │
                     │   Kataka run gyo     │
@@ -252,7 +252,7 @@ During ma, the LearningExtractor detects patterns across a run's kansatsu:
 
 The ManifestBuilder reads learnings relevant to the upcoming gyo and injects them into the kataka's prompt context. Learnings come with provenance:
 
-```
+```text
 Learning: "TDD approach reduces rework by ~40% in this codebase"
   Confidence: 0.85 (based on 6 kansatsu across 3 runs)
   Reinforced: 2 times in the last keiko
@@ -342,7 +342,7 @@ The synthesis pipeline is where raw kansatsu and pattern-detected learnings are 
 
 ### Three-Step Pipeline
 
-```
+```text
 Step 1: FILTER (rules-based)
   Select kansatsu + learnings eligible for synthesis
   Skip: too few citations, already synthesized this keiko, archived
@@ -439,7 +439,7 @@ Hierarchy-aware methods:
 
 When a kataka starts a gyo, the ManifestBuilder injects relevant learnings into its prompt. With the full bunkai graph, those learnings carry rich context:
 
-```
+```markdown
 ## Project Bunkai (injected by Kata)
 
 ### High Confidence (0.85+)

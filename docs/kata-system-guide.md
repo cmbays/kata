@@ -41,14 +41,14 @@ Kata is the railroad tracks. The AI agent is the train. Different trains (Claude
 
 Kata organizes work into three tiers:
 
-```
-Gyo (stage — mode of work: research, plan, build, review, wrap-up)
+```text
+Gyo (stage — mode of work: research, plan, build, review)
   └─ Ryu (flavor — named composition of steps: "tdd-build", "pair-review")
        └─ Waza (step — atomic unit: mon, artifacts, prompts)
 ```
 
 ### Gyo (Stages)
-Five fixed categories representing fundamentally different modes of work. Each gyo has an orchestrator that selects ryu, manages execution, and produces a synthesis artifact as handoff to the next gyo.
+Four fixed categories representing fundamentally different modes of work. Each gyo has an orchestrator that selects ryu, manages execution, and produces a synthesis artifact as handoff to the next gyo.
 
 ### Ryu (Flavors)
 User-configurable compositions of waza. A build gyo might run a "tdd" ryu (write-tests → implement → refactor) alongside a "pair-review" ryu. Multiple ryu can run within a gyo, parallel or sequential.
@@ -62,7 +62,7 @@ Atomic work units. Each waza has iri-mon / de-mon (entry/exit gates), produces a
 
 A single kiai (execution) flows through this lifecycle:
 
-```
+```text
 Keiko (cycle — time-boxed work period with budget)
   └─ Bet (scoped unit of work — "Build user auth")
        └─ Run (execution of a bet through its gyo sequence)
@@ -77,7 +77,7 @@ A **keiko** (cycle) is a time-boxed work period (inspired by Shape Up's 6-week c
 ### Runs
 When a bet starts execution, it creates a **run** — a directory tree that tracks everything that happens:
 
-```
+```text
 .kata/runs/{run-id}/
   run.json                          # Run metadata, status, gyo sequence
   decisions.jsonl                   # Every kime made during the run
@@ -187,7 +187,7 @@ Kataka (型家, "kata practitioner") is the Kata-native AI agent wrapper. The `-
 
 ### Three-Layer Agent Model
 
-```
+```text
 Context Layer    KATA.md — project-wide context, always loaded
                  ↕
 Skill Layer      verb-object naming (e.g., run-stage, review-code)

@@ -25,7 +25,7 @@ Claude Code subagents cannot spawn other subagents. The orchestrator MUST be the
 
 ### What Sensei Provides
 
-```
+```text
 .claude/skills/kata-sensei/SKILL.md
 ```
 
@@ -47,7 +47,7 @@ The sensei skill instructs the session to:
 
 Within a gyo, the sensei selects which ryu to apply. Each selected ryu has an assigned kataka. The sensei spawns all required kataka as **Claude Code team agents** running in parallel.
 
-```
+```text
 Gyo: build
   ↓ sensei selects 3 ryu
   ├─ ryu: build.tdd-typescript  → spawns implementer-ka (teammate)
@@ -99,7 +99,7 @@ For interactive runs, omit both flags — the sensei pauses at mon and notes gap
 
 When Kata identifies a gap (missing skill, missing agent, unfamiliar technology), the `kata-bridge-gap` skill handles the full end-to-end resolution:
 
-```
+```text
 Gap detected (GapReport from orchestration engine)
   ↓
 kata-bridge-gap skill activated
