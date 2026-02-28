@@ -1,8 +1,8 @@
 # How We Work
 
 > Living doc. Describes our methodology, tooling philosophy, and automation trajectory.
-> Complement to ROADMAP.md (where we're going) and PM.md (how we track work).
-> Last verified: 2026-02-16
+> Complement to ROADMAP.md (where we're going).
+> Last verified: 2026-02-28
 
 ---
 
@@ -24,11 +24,11 @@ We use Basecamp's [Shape Up](https://basecamp.com/shapeup) methodology, adapted 
 | -------------- | -------------- | ------------------------------------------------------------------------ |
 | **Bet**        | Between cycles | Decide what to build next, based on appetite and strategic value         |
 | **Interview**  | During shaping | Provide domain knowledge, validate requirements, make business decisions |
-| **Smoke Test** | After build    | QA on preview deployment, verify the built thing matches intent          |
+| **Smoke Test** | After build    | Verify the built thing matches intent                                    |
 
 Everything between these touchpoints — research, shaping, breadboarding, planning, building, reviewing — is agent-executable.
 
-**Why this matters:** Most PM tools assume human teams coordinating across time and context. We need PM infrastructure that agents can read, write, and navigate programmatically. Labels are queryable via `gh issue list -l`. Templates enforce structure via YAML forms. Board fields are machine-readable via GraphQL. The system is designed for `gh` CLI consumption, not just human eyeballs on a web UI.
+**Why this matters:** PM infrastructure isn't just tracking — it's the coordination layer that enables agent autonomy. Labels are queryable via `gh issue list -l`. Templates enforce structure. The system is designed for `gh` CLI consumption, not just human eyeballs on a web UI.
 
 ---
 
@@ -40,34 +40,9 @@ Every significant piece of work flows through a pipeline of stages. Not every pi
 Research → Interview → Shape → Breadboard → Plan → Build → Review → Wrap-up
 ```
 
-### Mapping to Shape Up Phases
-
-| Shape Up Phase | Pipeline Stages                        | What Happens                                                           |
-| -------------- | -------------------------------------- | ---------------------------------------------------------------------- |
-| **Shaping**    | Research, Interview, Shape, Breadboard | Define the problem, explore solutions, map affordances, set boundaries |
-| **Betting**    | Plan                                   | Decide what to build, design execution waves, produce manifests        |
-| **Building**   | Build, Review                          | Execute implementation across waves, quality gate, PR review           |
-| **Cool-down**  | Wrap-up                                | Retrospective, KB docs, progress updates, forward planning             |
-
-### Pipeline Types
-
-| Type           | Description                                                         | Stages Used                       |
-| -------------- | ------------------------------------------------------------------- | --------------------------------- |
-| **Vertical**   | Full product feature build (e.g., Quoting, Garments)                | All 8 stages                      |
-| **Horizontal** | Cross-cutting infrastructure (e.g., PM Overhaul, Mobile Foundation) | Research → Plan → Build → Wrap-up |
-| **Polish**     | The other 20% — UX refinements, smoke test fixes                    | Build → Review → Wrap-up          |
-| **Bug-fix**    | Quick cycle for identified defects                                  | Build → Review                    |
-
-### Pipeline IDs
-
-Every pipeline gets a unique ID: `YYYYMMDD-topic` (e.g., `20260215-pm-overhaul`). This ID is:
-
-- Set on the project board's Pipeline ID text field
-- Used in KB session doc filenames
-- Referenced in implementation plan manifests
-- The unit of tracked work across the system
-
 ### Skills That Encode Each Step
+
+> This mapping is a working baseline. Skills will be refined as kata's built-in stage templates mature.
 
 | Stage      | Skill                                     | Output                                            |
 | ---------- | ----------------------------------------- | ------------------------------------------------- |
@@ -94,173 +69,60 @@ We chose GitHub Issues over Linear, Jira, and Notion. The reasoning:
 - **No sync tax** — one source of truth. Linear/Jira require bidirectional sync with GitHub, which always drifts.
 - **Lower lock-in** — issues are Markdown. Exportable, readable, version-controlled.
 
-### The 5-Dimension Label Taxonomy
+### Label Taxonomy
 
-Labels are the organizational backbone. Every issue needs three: `type/*` + `priority/*` + one scope label (`product/*`, `domain/*`, or `tool/*`).
+Labels are the organizational backbone. Every issue should have a `type` label + `priority` label + at least one domain label.
 
-| Dimension               | Purpose             | Examples                                             |
-| ----------------------- | ------------------- | ---------------------------------------------------- |
-| `type/*`                | What kind of work   | feature, bug, research, tech-debt, refactor, tooling |
-| `priority/*`            | When to do it       | now, next, later, low, icebox                        |
-| `product/*`             | Things users DO     | quotes, jobs, customers, invoices, dashboard         |
-| `domain/*`              | Things products USE | garments, pricing, colors, dtf, screens              |
-| `tool/*`                | How we BUILD        | work-orchestrator, ci-pipeline, pm-system            |
-| `pipeline/*` (optional) | Pipeline type       | vertical, horizontal, polish, bug-fix                |
-| `phase/*` (optional)    | Which project phase | 1, 2, 3                                              |
-| `source/*` (optional)   | How we found it     | interview, testing, review, cool-down                |
+| Dimension    | Purpose           | Examples                                                    |
+| ------------ | ----------------- | ----------------------------------------------------------- |
+| `type`       | What kind of work | `bug`, `enhancement`, `documentation`, `tech-debt`, `refactor` |
+| `priority`   | When to do it     | `priority: now`, `priority: next`, `priority: later`, `priority: icebox` |
+| `domain`     | What area of kata | `cli`, `ux`, `architecture`, `dojo`, `meta-learning`, `testing`, `infrastructure` |
+| `source`     | How we found it   | (aspiration) `interview`, `testing`, `review`, `cool-down`  |
 
-Labels encode stable categorical metadata. Runtime state (status, effort, pipeline stage) lives on board fields.
-
-### Projects v2 Board
-
-The [Screen Print Pro board](https://github.com/users/cmbays/projects/4) is the visual layer for humans:
-
-| View             | Layout                          | Purpose                        |
-| ---------------- | ------------------------------- | ------------------------------ |
-| Board            | Kanban by Status                | See workflow state at a glance |
-| By Product       | Table grouped by Product        | Scope per product area         |
-| Pipeline Tracker | Table grouped by Pipeline Stage | Track active pipelines         |
-| Roadmap          | Timeline                        | Visual planning                |
-
-The board has 8 custom fields: Status, Priority, Product, Tool, Pipeline ID, Pipeline Stage, Effort, Phase.
+Labels encode stable categorical metadata. Status and wave tracking live on labels too (`wave-f`, `epic`, `cross-cutting`).
 
 ### Issue Templates
 
-Four YAML issue forms enforce consistent structure:
+> Not yet created for kata. The following are the templates worth adding.
 
-| Template        | Auto-Label      | Purpose                                    |
-| --------------- | --------------- | ------------------------------------------ |
-| Feature Request | `type/feature`  | New functionality with acceptance criteria |
-| Bug Report      | `type/bug`      | Something broken, with reproduction steps  |
-| Research Task   | `type/research` | Investigation with specific questions      |
-| Tracking Issue  | `type/tooling`  | Multi-part coordination with sub-issues    |
-
-Blank issues are disabled. All issues go through a template.
+| Template        | Purpose                                    |
+| --------------- | ------------------------------------------ |
+| Feature Request | New functionality with acceptance criteria |
+| Bug Report      | Something broken, with reproduction steps  |
+| Research Task   | Investigation with specific questions      |
 
 ### Milestones
 
-Milestones represent deadline-scoped batches — the "D-Day" pattern. A milestone groups the issues that must ship together for a specific goal (demo prep, release, deadline).
+Milestones group issues that must ship together for a specific goal — a release, a public launch, or a significant capability threshold. Kata hasn't yet established a milestone cadence; this is an area to develop as the project approaches v1 release.
 
 ### GitHub Actions
 
-Three automated layers:
+One workflow today:
 
-| Action              | Trigger                | Effect                                                          |
-| ------------------- | ---------------------- | --------------------------------------------------------------- |
-| Auto-add to project | Issue/PR opened        | Every new item appears on the board                             |
-| PR Labeler          | PR opened/synced       | `product/*` / `domain/*` / `tool/*` labels applied by file path |
-| Template labels     | Issue created via form | `type/*` label from template config                             |
+| Action          | Trigger                          | Effect                          |
+| --------------- | -------------------------------- | ------------------------------- |
+| Lint, Test & Build | Push/PR to `main`             | `lint` + `typecheck` + `test` + `build` |
 
-### `work progress`
-
-The bridge between GitHub API state and human-readable status. Queries milestones, priorities, sub-issues, recent PRs, and stale items. Writes a gitignored `PROGRESS.md` — always fresh, never a merge conflict.
+The PR labeler and auto-add-to-project automations from the print4ink playbook are aspirational additions once a project board is in place.
 
 ---
 
 ## 4. The Automation Trajectory
 
+> **For discussion:** This level model was designed for the print4ink project but captures something real about agent autonomy. The question for kata: how does kata *itself* embody or enable these levels? Is kata the tool that makes L3–L5 possible for other projects?
+
 Where we've been, where we are, and where we're going — framed as increasing agent autonomy:
 
-| Level                   | Description                                                                                                                                                 | Status                 | Human Role                           |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | ------------------------------------ |
-| **L0: Manual**          | Human creates issues, assigns work, manages board                                                                                                           | Pre-Feb 2026           | Everything                           |
-| **L1: Structured**      | Label taxonomy, issue templates, standardized pipeline stages                                                                                               | Feb 14, 2026           | Shape, bet, interview, smoke test    |
-| **L2: Instrumented**    | Project board, auto-add, auto-label, `work progress`, groomed backlog                                                                                       | Feb 16, 2026 (current) | Bet, interview, smoke test, grooming |
-| **L3: Self-Orienting**  | Agents read board state to find work. Pipeline stages tracked via custom fields. `work progress` + grooming become scheduled/semi-automated.                | Next                   | Bet, interview, smoke test           |
-| **L4: Self-Organizing** | Agents propose pipeline stages, auto-create sub-issues, auto-update board status. Human approves bets and reviews output.                                   | Future                 | Bet, review                          |
-| **L5: Autonomous**      | Agents detect when work is needed (stale issues, user feedback, dependency resolution), self-shape, self-plan, execute. Human gates only at Bet and Review. | Vision                 | Strategic direction                  |
+| Level                   | Description                                                                                                                                                 |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **L0: Manual**          | Human creates issues, assigns work, manages everything                                                                                                      |
+| **L1: Structured**      | Label taxonomy, issue templates, standardized pipeline stages                                                                                               |
+| **L2: Instrumented**    | Project board, auto-add, auto-label, groomed backlog                                                                                                        |
+| **L3: Self-Orienting**  | Agents read board state to find work. Pipeline stages tracked. Grooming becomes scheduled/semi-automated.                                                   |
+| **L4: Self-Organizing** | Agents propose pipeline stages, auto-create sub-issues, auto-update board status. Human approves bets and reviews output.                                   |
+| **L5: Autonomous**      | Agents detect when work is needed (stale issues, user feedback, dependency resolution), self-shape, self-plan, execute. Human gates only at Bet and Review. |
 
-**The key insight:** PM infrastructure isn't just tracking — it's the **coordination layer that enables agent autonomy**. Clean taxonomy + structured templates + automated sync = agents that can self-orient without human hand-holding.
+**The key insight:** PM infrastructure isn't just tracking — it's the coordination layer that enables agent autonomy. Clean taxonomy + structured templates + automated sync = agents that can self-orient without human hand-holding.
 
-Each level builds on the previous. We don't skip levels — each one validates the foundation for the next.
-
----
-
-## 5. Tool Ecosystem
-
-How the tools work together:
-
-| Tool                  | Location                    | Purpose                                                                   |
-| --------------------- | --------------------------- | ------------------------------------------------------------------------- |
-| **Work Orchestrator** | `scripts/work.sh`           | Session lifecycle — worktrees, Zellij, Claude launch, progress reporting  |
-| **Skills Framework**  | `.claude/skills/`           | Domain expertise containers — shaping, breadboarding, quality gates       |
-| **Agent System**      | `.claude/agents/`           | Specialized AI assistants with own context windows                        |
-| **Knowledge Base**    | `knowledge-base/`           | Astro-powered institutional memory — pipelines, tools, products, strategy |
-| **CI Pipeline**       | `.github/workflows/`        | Auto-add, auto-label, CI checks                                           |
-| **PM System**         | GitHub Issues + Projects v2 | Labels, board, milestones, templates — the coordination backbone          |
-
-The Work Orchestrator creates the execution environment. Skills and agents provide domain expertise. The Knowledge Base provides institutional memory. The CI Pipeline automates sync. The PM System provides the coordination layer. Each tool has its own KB docs in `knowledge-base/src/content/tools/`.
-
----
-
-## 6. Deployment — Two-Branch Model
-
-We use a two-branch deployment model to control Vercel build frequency on the Hobby plan (100 deploys/day, 32 builds/hour).
-
-### Branch Model
-
-```
-feature/session ──PR──→ main ──merge──→ production
-                          │                  │
-                    Preview builds      Production builds
-                  (Gary demo URL)      (4ink live domain)
-```
-
-| Branch          | Vercel Role | Build Trigger               | Purpose                          |
-| --------------- | ----------- | --------------------------- | -------------------------------- |
-| `main`          | Preview     | Every merge from PR         | Integration + stakeholder review |
-| `production`    | Production  | Manual merge from `main`    | Live app for end users           |
-| Feature/session | Skipped     | Never (via `ignoreCommand`) | Development work                 |
-
-### How It Works
-
-1. **`vercel.json`** contains an `ignoreCommand` that only allows `main` and `production` to build. All other branches exit early (build skipped).
-2. **`main`** receives all PR merges. Vercel generates a stable preview URL for each build — this is the stakeholder demo link.
-3. **`production`** is updated manually when the team is satisfied with `main`. Vercel builds this as the production deployment with the live domain.
-
-### Promotion Workflow
-
-When `main` is validated and ready for release:
-
-```bash
-# Option A: PR-based promotion (auditable, recommended)
-gh pr create --base production --head main --title "Release: <description>"
-
-# Option B: Direct fast-forward (quicker, no branch checkout needed)
-git -C ~/Github/<your-project> fetch origin
-git -C ~/Github/<your-project> push origin origin/main:production
-```
-
-### Deployment Math
-
-- **Before**: ~50+ builds/day (every PR push + every main merge)
-- **After**: ~7-12 builds/day (merges to main + occasional production promotions)
-
-Well within Hobby plan limits.
-
-### Environment Variables
-
-`DEMO_ACCESS_CODE` must be set in Vercel for both Preview and Production environments. The demo login system (`/api/demo-login`) validates against this env var. In local development, it falls back to a default value.
-
-### What Doesn't Change
-
-- Worktree workflow — identical
-- PR process — identical (still merge to `main`)
-- `work.sh` orchestrator — no changes needed
-- Stacked PRs — still work the same
-
-The ONLY new step: when you want to update the live app, merge `main` into `production`.
-
-### Future: Three-Branch (Phase 2+)
-
-When real users are on the app, extend to `dev` / `staging` / `production` with dedicated environment URLs. Requires Vercel Pro ($20/mo) for Custom Environments.
-
----
-
-## 7. Open Questions
-
-- **When does L3 (self-orienting agents) justify its own build cycle?** Current priority is product features (D-Day), not PM infrastructure. L3 is valuable but not urgent.
-- **Should `work progress` evolve into a real-time dashboard or stay a CLI command?** CLI fits the current workflow. A dashboard adds hosting/maintenance complexity for marginal benefit in a solo-dev context.
-- **How do multi-agent sessions coordinate via the project board?** Today: parallel worktrees with issue-per-agent. Future: board-driven task claiming where agents check the board for available work.
-- **What's the right human approval surface for L4?** Today: PR review. Future: bet approval UI? Or is the current "human selects issues from backlog" pattern sufficient?
-- **How do we measure whether automation levels are actually improving velocity?** Pipeline completion time? Issues resolved per cycle? Agent self-orientation success rate?
+Kata is being built to make L3–L5 accessible: the pipeline engine, stage gates, manifest execution, and learning system are all infrastructure for autonomous agent operation.
