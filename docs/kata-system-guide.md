@@ -3,14 +3,16 @@
 > Living reference for how Kata works — its primitives, data flows, and the meta-learning loop that makes the system compound over time. Written for humans.
 >
 > **Companion documents** (deep dives):
-> - [Product Design](v1-product-spec.md) — User stories, interaction breadboards, and agent interface patterns
+> - [Product Design](v1-product-design.md) — Problem, scope, and success criteria
 > - [Design Rationale](v1-design-vision.md) — Why Kata is built the way it is: architectural trade-offs and decisions
+> - [User Journeys](v1-user-journeys.md) — What users can accomplish (stories + story mapping)
+> - [Interaction Design](v1-interaction-design.md) — Orchestration flows, CLI patterns, data model
 > - [Meta-Learning Architecture](meta-learning-architecture.md) — Observation system, knowledge graph, self-improvement loop
 > - [Dojo Architecture](dojo-architecture.md) — Personal training environment: diary, sessions, design system
-> - [Kataka Architecture](kataka-architecture.md) — Agent system deep dive: kataka, skills, three-layer model, gap bridging
+> - [Kataka Architecture](kataka-architecture.md) — Agent system: kataka, skills, three-layer model
+> - [Sensei Orchestration](sensei-orchestration.md) — Pipeline execution, gap bridging, execution modes
+> - [Project Setup](project-setup.md) — KATA.md, init scanning, project context lifecycle
 > - [Implementation Roadmap](unified-roadmap.md) — Waves, dependencies, and what's left to build
->
-> **Implementation status key**: Features marked with a wave label like *(Wave F)* are designed but not yet implemented. Unmarked features are shipped and tested.
 
 ---
 
@@ -24,8 +26,8 @@ Kata is the railroad tracks. The AI agent is the train. Different trains (Claude
 - Defines methodology as composable gyo (stages), ryu (flavors), and waza (steps)
 - Tracks execution state through structured run files
 - Captures every non-deterministic kime (decision) with full context
-- Observes patterns, frictions, and outcomes during execution *(kansatsu observation system ships in Wave F)*
-- Builds a bunkai (knowledge) graph that improves agents over time *(enrichment ships in Waves F–I)*
+- Observes patterns, frictions, and outcomes during execution — see [Roadmap, Wave F](unified-roadmap.md)
+- Builds a bunkai (knowledge) graph that improves agents over time — see [Roadmap, Waves F–I](unified-roadmap.md)
 - Reflects during ma (cooldown) to extract and consolidate learnings
 
 **What Kata does NOT do:**
@@ -95,9 +97,17 @@ When a bet starts execution, it creates a **run** — a directory tree that trac
     synthesis.md                    # Gyo synthesis (handoff to next gyo)
 ```
 
-Every file in the run tree is append-only or write-once. Nothing is deleted during execution. This creates a complete, auditable record of what happened.
+Every file in the run tree is append-only or write-once. Nothing is deleted during execution.
 
-> **Status**: Run tree, state files, kime, artifacts, and kime outcomes are implemented and tested. Kansatsu (observation) and reflection JSONL files at gyo/ryu/waza levels ship in Wave F.
+### Execution Modes
+
+| Mode | Flags | Behavior |
+|------|-------|----------|
+| **Interactive** | (none) | Pause at mon, ask user on low-confidence kime |
+| **Autonomous** | `--yolo` | Skip human-approval mon, log confidence for post-hoc review |
+| **Self-healing** | `--yolo --bridge-gaps` | Full autonomous + create missing resources mid-run |
+
+See [Sensei Orchestration](sensei-orchestration.md) for the full execution model.
 
 ### Ma (Cooldown)
 After all bets complete, the keiko enters **ma** (cooldown) — a structured reflection phase:
@@ -132,24 +142,24 @@ Kata uses four categories of persistent data:
 - `.kata/dojo/diary/` — Narrative reflections per keiko
 - `.kata/dojo/sessions/` — Generated Dojo training sessions
 
-### Context *(Wave F)* (write-at-init, refresh-at-cooldown)
-- `.kata/KATA.md` — Project context file for all agents and skills
+### Context — write-at-init, refresh-at-ma
+- `.kata/KATA.md` — Project context file for all agents and skills — see [Project Setup](project-setup.md) and [Roadmap](unified-roadmap.md)
 
 ---
 
-## 5. The Kansatsu (Observation) System *(Wave F)*
+## 5. The Kansatsu (Observation) System
 
-> See [Meta-Learning Architecture](meta-learning-architecture.md) for the full deep dive on kansatsu, the knowledge graph, and the self-improvement loop.
+> See [Meta-Learning Architecture](meta-learning-architecture.md) for the full deep dive on kansatsu, the knowledge graph, and the self-improvement loop. Ships in [Wave F](unified-roadmap.md).
 
 Kansatsu (observations) are the raw signals captured during kiai — the primary input to the entire meta-learning system. Seven types (kime, prediction, friction, gap, outcome, assumption, insight) are recorded as append-only JSONL at every level of the execution hierarchy (run, gyo, ryu, waza). Once written, kansatsu are never modified — creating an immutable audit trail that the bunkai graph builds on.
 
 ---
 
-## 6. The Bunkai (Knowledge) Graph *(Waves F–I)*
+## 6. The Bunkai (Knowledge) Graph
 
-> See [Meta-Learning Architecture](meta-learning-architecture.md) for the full deep dive including learning schema fields, graph emergence, detection engines, and LLM synthesis.
+> See [Meta-Learning Architecture](meta-learning-architecture.md) for the full deep dive including learning schema fields, graph emergence, detection engines, and LLM synthesis. Ships progressively across [Waves F–I](unified-roadmap.md).
 
-The bunkai graph transforms raw kansatsu into working knowledge. It has three layers: **kansatsu** (immutable JSONL), **learnings** (versioned JSON with citations, confidence, lineage), and a **graph index** (lightweight edges making the graph traversable). Knowledge emerges bottom-up — kansatsu accumulate, pattern detection creates learnings with citations, reinforcement strengthens them, and LLM synthesis consolidates them into higher-order insights. The basic bunkai store (learnings, capture, query, loading) is shipped. Graph enrichments — citations, reinforcement, versioning, permanence, detection engines, LLM synthesis — ship progressively across Waves F through I.
+The bunkai graph transforms raw kansatsu into working knowledge. It has three layers: **kansatsu** (immutable JSONL), **learnings** (versioned JSON with citations, confidence, lineage), and a **graph index** (lightweight edges making the graph traversable). Knowledge emerges bottom-up — kansatsu accumulate, pattern detection creates learnings with citations, reinforcement strengthens them, and LLM synthesis consolidates them into higher-order insights. The basic bunkai store (learnings, capture, query, loading) is shipped. Graph enrichments — citations, reinforcement, versioning, permanence, detection engines, LLM synthesis — ship progressively.
 
 ---
 
@@ -161,7 +171,7 @@ The self-improvement loop is the mechanism that makes Kata compound over time: *
 
 ---
 
-## 8. The Dojo — Personal Training Environment *(Wave K — Shipped)*
+## 8. The Dojo — Personal Training Environment
 
 > See [Dojo Architecture](dojo-architecture.md) for the full deep dive on diary entries, session generation, the design system, and the source registry.
 
@@ -169,9 +179,9 @@ The Dojo transforms Kata's kiai (execution) data into an interactive training ex
 
 ---
 
-## 9. The Kataka System — Methodology-Aware Agents *(Wave G)*
+## 9. The Kataka System — Methodology-Aware Agents
 
-> The kataka system is designed and architected. Implementation ships in Wave G. See [Kataka Architecture](kataka-architecture.md) for the full deep dive.
+> See [Kataka Architecture](kataka-architecture.md) for the full deep dive. Ships in [Wave G](unified-roadmap.md).
 
 Kataka (型家, "kata practitioner") is the Kata-native AI agent wrapper. The `-ka` suffix signals a methodology-aware agent.
 
@@ -188,7 +198,7 @@ Agent Layer      noun-ka naming (e.g., scout-ka, architect-ka)
 ```
 
 ### Agent Attribution
-Every kansatsu, kime, and artifact can be attributed to a specific kataka via `katakaId`. This enables per-agent performance analysis: which kataka make good kime? Which ones produce frictions?
+Every kansatsu, kime, and maki can be attributed to a specific kataka via `katakaId`. This enables per-agent performance analysis: which kataka make good kime? Which ones produce frictions?
 
 ---
 
@@ -214,32 +224,63 @@ Every kansatsu, kime, and artifact can be attributed to a specific kataka via `k
 
 ---
 
-## 11. CLI Command Map
+## 11. The Kata Lexicon
 
 Themed aliases are the default experience. Use `--plain` to see English equivalents.
 
-| Themed | English | Purpose | Status |
-|--------|---------|---------|--------|
-| `kata rei` | `kata init` | Initialize a project | Shipped |
-| `kata gyo` | `kata stage` | Manage the 4 gyo (stage categories) | Shipped |
-| `kata waza` | `kata step` | CRUD for atomic waza (work units) | Shipped |
-| `kata ryu` | `kata flavor` | Manage ryu (step compositions) | Shipped |
-| `kata keiko` | `kata cycle` | Time-boxed keiko (work periods) | Shipped |
-| `kata kiai` | `kata execute` | Run gyo orchestration | Shipped |
-| `kata kime` | `kata decision` | Record and review kime (decisions) | Shipped |
-| `kata bunkai` | `kata knowledge` | Query and manage learnings | Shipped |
-| `kata ma` | `kata cooldown` | Keiko reflection | Shipped |
-| `kata seido` | `kata config` | Interactive methodology editor | Shipped |
-| `kata dojo` | `kata dojo` | Personal training environment | Shipped |
-| `kata status` | `kata status` | Project overview | Shipped |
-| `kata stats` | `kata stats` | Aggregate analytics | Shipped |
-| `kata kanshi` | `kata watch` | Live kiai TUI | Shipped |
-| `kata approve` | `kata approve` | Approve pending mon (human gates) | Shipped |
-| `kata artifact` | `kata artifact` | Record artifacts with provenance | Shipped |
-| `kata rule` | `kata rule` | Accept/reject rule suggestions | Shipped |
-| `kata kansatsu` | `kata observe` | Record runtime kansatsu (observations) | Wave F |
-| `kata kataka` | `kata agent` | Manage kataka (agents) | Wave G |
-| `kata kotoba` | `kata lexicon` | Interactive vocabulary table | Wave G |
+### CLI Commands
+
+| Themed | English | Purpose |
+|--------|---------|---------|
+| `kata rei` | `kata init` | Initialize a project |
+| `kata gyo` | `kata stage` | Manage the 4 gyo (stage categories) |
+| `kata waza` | `kata step` | CRUD for atomic waza (work units) |
+| `kata ryu` | `kata flavor` | Manage ryu (step compositions) |
+| `kata keiko` | `kata cycle` | Time-boxed keiko (work periods) |
+| `kata kiai` | `kata execute` | Run gyo orchestration |
+| `kata kime` | `kata decision` | Record and review kime (decisions) |
+| `kata bunkai` | `kata knowledge` | Query and manage learnings |
+| `kata ma` | `kata cooldown` | Keiko reflection |
+| `kata seido` | `kata config` | Interactive methodology editor |
+| `kata dojo` | `kata dojo` | Personal training environment |
+| `kata status` | `kata status` | Project overview |
+| `kata stats` | `kata stats` | Aggregate analytics |
+| `kata kanshi` | `kata watch` | Live kiai TUI |
+| `kata hai` | `kata approve` | Approve pending mon (human gates) — [#181](https://github.com/cmbays/kata/issues/181) |
+| `kata maki` | `kata artifact` | Record maki with provenance — [#181](https://github.com/cmbays/kata/issues/181) |
+| `kata okite` | `kata rule` | Accept/reject rule suggestions — [#181](https://github.com/cmbays/kata/issues/181) |
+| `kata kansatsu` | `kata observe` | Record runtime kansatsu (observations) — [Roadmap](unified-roadmap.md) |
+| `kata kataka` | `kata agent` | Manage kataka (agents) — [Roadmap](unified-roadmap.md) |
+| `kata kotoba` | `kata lexicon` | Interactive vocabulary table — [Roadmap](unified-roadmap.md) |
+
+### Domain Terms
+
+Non-CLI vocabulary used throughout documentation and the domain model.
+
+| English | Japanese | Kanji | Meaning |
+|---------|----------|-------|---------|
+| Stage | Gyo | 行 | Path/practice — fixed methodology categories |
+| Step | Waza | 技 | Technique — atomic units of work |
+| Flavor | Ryu | 流 | School/style — compositions of steps |
+| Cycle | Keiko | 稽古 | Practice session — time-boxed work periods |
+| Gate | Mon | 門 | Gate/door — entry (iri-mon) / exit (de-mon) conditions |
+| Decision | Kime | 決め | Focus/decisiveness — orchestration judgments |
+| Knowledge | Bunkai | 分解 | Analysis/breakdown — extracted learnings |
+| Cooldown | Ma | 間 | Pause/space — reflection periods |
+| Execute | Kiai | 気合 | Spirit shout — running orchestration |
+| Agent | Kataka | 型家 | Form practitioner — Kata-native AI agents |
+| Artifact | Maki | 巻 | Scroll — named step outputs |
+| Orchestrator | Sensei | 先生 | Teacher — pipeline orchestration skill |
+| Observation | Kansatsu | 観察 | Observation — runtime signals for learning |
+| Init | Rei | 礼 | Bow/respect — project initialization |
+| Watch | Kanshi | 監視 | Monitoring — real-time run observation |
+| Config | Seido | 制度 | System/regulation — methodology configuration |
+| Approve | Hai | はい | Yes/affirmation — gate approval |
+| Rule | Okite | 掟 | Code/rules — dojo rules |
+| Backward | Ushiro | 後ろ | Behind — Dojo direction: what happened |
+| Inward | Uchi | 内 | Inside — Dojo direction: current state |
+| Outward | Soto | 外 | Outside — Dojo direction: industry practices |
+| Forward | Mae | 前 | Front — Dojo direction: what's next |
 
 ---
 
@@ -247,7 +288,7 @@ Themed aliases are the default experience. Use `--plain` to see English equivale
 
 1. **Schema-first types.** All types are Zod schemas. Schemas are the source of truth — no separate interface definitions.
 
-2. **Append-only kiai data.** Run files (kime, kansatsu, artifacts) are never modified after writing. This ensures auditability and stable graph foundations.
+2. **Append-only kiai data.** Run files (kime, kansatsu, maki) are never modified after writing. This ensures auditability and stable graph foundations.
 
 3. **Quantitative from structure, qualitative from LLM.** Confidence scores come from citation counts and evidence consistency — not from asking an LLM "how confident are you?" LLMs provide the qualitative synthesis; structure provides the numbers.
 
@@ -261,4 +302,4 @@ Themed aliases are the default experience. Use `--plain` to see English equivale
 
 ---
 
-*Last updated: 2026-02-28. Waves 0–E + K shipped (2148 tests, 109 files). This is a living document — updated as new waves ship.*
+*This is a living document. See [Implementation Roadmap](unified-roadmap.md) for what's shipped and what's next.*

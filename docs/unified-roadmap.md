@@ -2,7 +2,7 @@
 
 > Merges the [Kataka Architecture](kataka-architecture.md) and [Meta-Learning Epic (#136)](https://github.com/cmbays/kata/issues/136) into a single sequenced implementation plan.
 >
-> See also: [Kata System Guide](kata-system-guide.md) for how the system works, [Design Rationale](v1-design-vision.md) for why.
+> See also: [Kata System Guide](kata-system-guide.md) for how the system works, [Design Rationale](v1-design-vision.md) for why, [Kataka Architecture](kataka-architecture.md) + [Sensei Orchestration](sensei-orchestration.md) + [Project Setup](project-setup.md) for the agent system.
 
 ---
 
@@ -218,7 +218,7 @@ These two systems are deeply interdependent but were tracked separately with no 
 
 ---
 
-### Wave K: "Dojo" — Personal Training Environment ✅ *Shipped*
+### Wave K: "Dojo" — Personal Training Environment
 
 **PR**: [#172](https://github.com/cmbays/kata/pull/172) merged (2026-02-28). 2148 tests, 109 files.
 
@@ -283,7 +283,7 @@ Within waves:
 
 - **#137** — Add: "All observation variants include optional `katakaId?: string`" and "Extend runPaths() with observation/reflection paths"
 - **#138** — Add: "`kata predict` CLI command is a deliverable"
-- **#153** — ~~Add `kata kime` alias~~ Already implemented and closed
+- **#153** — `kata kime` alias (closed, implemented)
 - **#93** — Update body noting resolved gaps; create G-8 as sole child issue; close or defer remaining
 - **#55** — Close (all sub-issues done)
 
@@ -323,4 +323,3 @@ Epic #56 (npm publish) is unblocked by any of this work and can proceed in paral
 ---
 
 *This is a living document. Update it as waves are implemented.*
-*Created: 2026-02-28. Last updated: 2026-02-28 (Wave K shipped, Wave F groomed).*

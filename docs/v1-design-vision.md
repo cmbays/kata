@@ -1,118 +1,104 @@
-# Kata v1 Design Rationale
+# Kata v1 Design Rationale — ADR Decision Log
 
-> Why Kata is built the way it is — the architectural trade-offs and decisions that shaped the system.
-> Originally brainstormed 2026-02-23, maintained as a living rationale document.
+> Why Kata is built the way it is — architectural trade-offs and decisions that shaped the system, in ADR format (Context → Decision → Consequences).
 >
 > For *how* the system works, see [Kata System Guide](kata-system-guide.md).
 > For *what's left to build*, see [Implementation Roadmap](unified-roadmap.md).
 
 ## Core Thesis
 
-Kata separates **deterministic structure** (steps, gates, artifacts, configs) from **non-deterministic judgment** (orchestrators deciding how to compose and sequence that structure). The Decision log bridges them — making non-deterministic choices visible, measurable, and learnable.
+Kata separates **deterministic structure** (waza, mon, maki, seido) from **non-deterministic judgment** (orchestrators deciding how to compose and sequence that structure). The kime (decision) log bridges them — making non-deterministic choices visible, measurable, and learnable.
 
-## Three-Tier Execution Hierarchy ✅ *Implemented*
+---
 
-### Stage (fixed enum, not user-editable)
-- **Research, Plan, Build, Review** (4 core categories in v1; wrap-up deferred to v2)
-- Each has a specific orchestrator type (research engine, planning engine, etc.)
-- Entry/exit gates govern macro flow between modes of work
-- Produces a synthesis artifact as one-to-one handoff to next stage
-- A stage is a **mode of work** — fundamentally different type of activity
+## ADR-1: Three-Tier Execution Hierarchy
 
-### Flavor (user-configurable, composable)
-- Named composition of steps in a defined order within a stage
-- Users create, edit, share flavors
-- Multiple flavors can run within a single stage (parallel or sequential, per orchestrator)
-- Steps can be reused across multiple flavors (many-to-many)
-- Supports **hierarchical overrides**: step defines defaults, flavor can override a scoped set of properties (human approval, confidence thresholds, timeouts). Gate conditions and artifact requirements are NOT overridable.
-- Users can **pin** always-run flavors or **exclude** flavors per stage per project
-- Examples: "UI feature planning" flavor = [shaping, breadboarding, impl-planning]. "Data model planning" = [schema-design, migration-planning, impl-planning]
+**Context**: The original codebase had a flat "Stage" concept that conflated modes of work with atomic tasks. Users needed both fixed methodology categories and flexible, user-configurable workflows.
 
-### Step (user-configurable, reusable — renamed from "Stage" in the codebase)
-- Atomic unit of work with entry gates, exit gates, artifacts, human approval, resources
-- Reusable across flavors
-- One-to-one handoff between steps within a flavor
-- All existing gate evaluation, artifact validation, hooks, YOLO mode, confidence tracking stays here
-- Rename completed: Stage→Step throughout codebase (merged as part of orchestration engine PR)
+**Decision**: Three tiers — gyo (fixed enum: research/plan/build/review) → ryu (user-configurable compositions) → waza (atomic reusable units). Gyo are modes of work; ryu are workflows; waza are the building blocks.
 
-## Artifact Scoping Rules
-- Within a flavor, a step can reference artifacts from **preceding steps in that flavor**
-- A step can reference the **stage-level input artifact** (handoff from prior stage)
-- A step **cannot** reference artifacts from other flavors running in parallel
-- Flavors are independent; cross-flavor aggregation happens only at synthesis
+**Consequences**: Clean separation of concerns. Users can customize ryu and waza without touching the fixed gyo structure. Multiple ryu can run within a single gyo (parallel or sequential). Waza are reusable across ryu (many-to-many). Hierarchical overrides allow ryu to override scoped waza properties while keeping mon conditions and maki requirements immutable.
 
-## Flavor Validation
-- DAG validation on save: each step's entry gate requirements must be satisfiable by exit gates of preceding steps or stage-level input
-- Clear error messages: "Step X requires artifact Y which is produced by step Z, but Z is not included or is ordered after X in this flavor"
+---
 
-## Stage Orchestrator ✅ *Implemented*
-- Not just a flavor selector — the intelligence layer that makes decisions
-- Built-in orchestrator prompt per stage type that:
-  1. Receives incoming context (bet, prior stage artifacts, project metadata)
-  2. Reviews available flavors and descriptions
-  3. Reviews past decisions and outcomes for similar contexts (from learning system)
-  4. Makes and logs flavor selection decisions with reasoning and confidence
-  5. Determines parallel vs sequential via step dependency analysis
-  6. After flavors complete, drives synthesis
-- v1: LLM-driven decisions, minimal config (available flavors, pins/exclusions, confidence threshold for human intervention)
+## ADR-2: Kime as First-Class Domain Concept
 
-## Synthesis (Automatic, Not User-Configured)
-- After orchestrator launches N flavors, each flavor's final step must produce a synthesis-ready artifact (enforced by exit gate)
-- Stage synthesis is built-in: collects N flavor artifacts, produces stage-level handoff
-- Synthesis step checks: count of artifacts matches count of launched flavors
-- Users don't need to configure or be aware of synthesis mechanics
+**Context**: Existing agent frameworks don't capture decision reasoning. When an agent picks one approach over another, the reasoning and alternatives are lost.
 
-## Decision as First-Class Domain Concept ✅ *Implemented*
-- Logged at orchestrator level (and potentially at step level for non-trivial choices)
-- Decision record captures:
-  - **Context**: what information was available (bet, artifacts, project type)
-  - **Options**: what choices were possible (available flavors, parallel vs sequential)
-  - **Selection**: what was chosen and reasoning
-  - **Confidence**: system's confidence in the choice
-  - **Outcome**: how it turned out (filled in post-facto — artifact quality, gate results, rework)
-- Primary input to the self-improvement / learning system
-- Enables observability: dashboard shows decisions, confidence levels, flagged items
-- Learning extraction analyzes decision quality over time, not just pass/fail
+**Decision**: Every orchestrator kime is logged with context, options, selection, confidence, and post-facto outcome. Kime are the primary input to the self-improvement system.
 
-## Cooldown as Pipeline *(partially implemented — cooldown is a feature, not a pipeline kind)*
-- Pipeline gets a `kind` field: `execution` vs `cooldown`
-- Cooldown pipeline's entry gate: new `cycle-complete` condition (all execution pipelines in cycle are done)
-- Two stages in cooldown pipeline:
-  1. **Reflection / Wrap-up**: bet outcomes, learnings, artifact review
-  2. **Epic Crafting / Betting**: shapes bets for next cycle, produces bet artifacts
-- Cooldown output = N bet artifacts → each bet seeds a pipeline in the next cycle (1:1 mapping)
-- Cooldown bridges cycles rather than belonging to one
+**Consequences**: Full observability into agent reasoning. Bunkai (learning) extraction analyzes kime quality over time. Low-confidence kime surface in ma (cooldown) for human review. `--yolo` mode bypasses human approval but preserves the kime trail for post-hoc review.
 
-## Pipeline as DAG (Design For, Not v1 Implementation)
-- Default stage ordering: research → plan → build → review → wrap-up (linear)
-- Model as a DAG from the start to enable future stage cycling (e.g., plan → research → plan → build)
-- Future: pipeline-level orchestrator can rearrange stage DAG based on epic needs
-- Budget constraints (token/time) would govern how many cycles are allowed
-- v1: linear flows only, but data model supports DAG
+---
 
-## Mapping from Original Codebase ✅ *Completed*
+## ADR-3: Gyo Orchestrator as Intelligence Layer
 
-These mappings were executed during the Stage→Step rename and orchestration engine work:
+**Context**: A simple ryu selector would be insufficient. The orchestrator needs to receive context, review available ryu, consult past kime and outcomes, and make reasoned selections.
 
-- `Stage` schema → **Step** (complete rename across codebase)
-- `StageType` enum → kept as `StageCategory` (4 fixed: research, plan, build, review)
-- Flavor concept → first-class **Flavor** entity with ordered steps, overrides, resources
-- `Pipeline` → retained internally for infrastructure; CLI uses `kata execute` with stage sequences
-- `CooldownSession` → full feature with 8-step orchestration, run data loading, diary writing
-- **Decision** schema → `DecisionEntrySchema` in `run-state.ts` (context, options, selection, confidence, outcome)
-- `cycle-complete` gate condition → not implemented as gate; cooldown triggered via CLI command
+**Decision**: Built-in orchestrator prompt per gyo type that runs a 6-phase loop: analyze → match → plan → execute → synthesize → reflect. LLM-driven kime with minimal required configuration.
 
-## Build Stage Philosophy
-- Lightest-touch stage — Kata's primary value is in research, planning, and review
-- Entry gate: solid implementation plan from planning stage
-- Exit gate: PR-ready state with passing tests
-- Internal orchestration is mostly "hand this to Claude Code / build tools"
-- Mini-reviews within build waves before proceeding
-- Final holistic review is a separate Review stage, not part of Build
+**Consequences**: Orchestration improves through accumulated bunkai and rules. Gap analysis identifies uncovered areas. Synthesis is automatic (not user-configured). The reflect phase feeds rule suggestions back into the system.
 
-## Self-Improvement Loop ✅ *Implemented (basic); enhanced in Waves F–I*
-- Decision logs are the primary input (richer than just execution history)
-- Orchestrator flavor selection improves over time based on decision-outcome analysis
-- Learnings feed back into orchestrator prompts for future decisions
-- Low-confidence decisions and below-threshold items get surfaced in wrap-up for human review
-- YOLO mode: bypasses human approval but logs confidence levels for post-hoc review
+---
+
+## ADR-4: Maki Scoping Rules
+
+**Context**: When multiple ryu run in parallel within a gyo, artifact visibility needs clear boundaries to prevent cross-contamination and ordering issues.
+
+**Decision**: Within a ryu, a waza can reference maki from preceding waza. A waza can reference the gyo-level input maki (handoff from prior gyo). A waza **cannot** reference maki from other ryu running in parallel. Cross-ryu aggregation happens only at synthesis.
+
+**Consequences**: Ryu are independent and parallelizable. DAG validation on save ensures each waza's iri-mon (entry gate) requirements are satisfiable. Clear error messages when ordering violates dependencies.
+
+---
+
+## ADR-5: Optimistic Trust in v1
+
+**Context**: Runtime enforcement (hard-blocking agents from skipping waza) adds significant complexity and limits agent flexibility.
+
+**Decision**: Mon are checklists with cues, not hard blocks. Confidence thresholds are cues, not enforcement. All tracing happens regardless. Strict enforcement deferred to v2/v3.
+
+**Consequences**: Simpler implementation. Agents can work around methodology limitations when needed. Complete audit trail still captured for ma review. Risk: agents may skip steps, but the kime/maki/kansatsu trail reveals it.
+
+---
+
+## ADR-6: Ma as Structured Reflection
+
+**Context**: Cooldown needs to bridge keiko — reading all run data, generating proposals, and feeding improvements forward.
+
+**Decision**: Ma (cooldown) is a structured feature with an 8-step orchestration: bet outcomes → token enrichment → run summaries → proposals → rule suggestions → bunkai capture → diary entry → transition. Not a pipeline kind — a dedicated feature.
+
+**Consequences**: Rich reflection without requiring pipeline infrastructure. Output (proposals, bunkai, rules) directly improves the next keiko. Diary entries feed the Dojo training environment.
+
+---
+
+## ADR-7: Pipeline as DAG (Design For, Not Implement)
+
+**Context**: v1 uses linear gyo flows (research → plan → build → review). Future versions may need non-linear flows.
+
+**Decision**: Model the data as a DAG from the start. v1 only uses linear flows. Budget constraints (token/time) would govern cycle count in future DAG mode.
+
+**Consequences**: No data model migration needed when DAG flows ship. v1 stays simple while preserving future flexibility.
+
+---
+
+## ADR-8: Build Gyo Philosophy
+
+**Context**: Kata's primary value is in research, planning, and review — structuring the thinking around work. Build is where agents do what they already do well.
+
+**Decision**: Build gyo is lightest-touch. Iri-mon: solid implementation plan from plan gyo. De-mon: PR-ready state with passing tests. Internal orchestration is mostly "hand this to the build agent." Mini-reviews within build waves; final holistic review is a separate review gyo.
+
+**Consequences**: Kata adds value where agents need it most (methodology) without over-structuring what they already do well (coding). Review as a separate gyo ensures quality assessment isn't rushed.
+
+---
+
+## ADR-9: Self-Improvement Through Structure
+
+**Context**: AI agents need to get better over time, but "how confident are you?" produces hallucinated confidence scores.
+
+**Decision**: Quantitative confidence from structure (citation counts, evidence consistency, reinforcement history). Qualitative synthesis from LLM. Bunkai is never hard-deleted — archived with provenance. The system improves through accumulated kansatsu and evidence-based bunkai, not through manual tuning.
+
+**Consequences**: Confidence scores you can trust. Progressive improvement through use. Full provenance trail. The bunkai graph grows more valuable with each keiko.
+
+---
+
+*For the full meta-learning system, see [Meta-Learning Architecture](meta-learning-architecture.md). For implementation status, see [Roadmap](unified-roadmap.md).*
