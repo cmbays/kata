@@ -108,6 +108,13 @@ export function donutChart(data: DonutChartData[], opts?: { size?: number; thick
   const total = data.reduce((sum, d) => sum + d.value, 0);
   if (total === 0) return '';
 
+  // Single segment: full circle would degenerate (start point === end point),
+  // so render a <circle> instead of an arc path.
+  if (data.length === 1) {
+    const strokeWidth = thickness;
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}"><circle cx="${cx}" cy="${cy}" r="${radius}" fill="none" stroke="${data[0]!.color}" stroke-width="${strokeWidth}"/></svg>`;
+  }
+
   let currentAngle = -90;
   let paths = '';
 

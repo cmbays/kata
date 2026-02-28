@@ -32,10 +32,13 @@ export function validateSessionId(id: string): string {
   return id;
 }
 
-/** Parse a CLI option value as a positive integer. Throws on NaN or non-positive values. */
+/** Parse a CLI option value as a positive integer. Throws on non-digit strings or non-positive values. */
 export function parsePositiveInt(value: string): number {
-  const n = parseInt(value, 10);
-  if (isNaN(n) || n < 1) {
+  if (!/^\d+$/.test(value.trim())) {
+    throw new Error(`Expected a positive integer, got "${value}".`);
+  }
+  const n = Number(value.trim());
+  if (n < 1) {
     throw new Error(`Expected a positive integer, got "${value}".`);
   }
   return n;
@@ -84,8 +87,19 @@ export function registerDojoCommand(parent: Command): void {
       }
 
       try {
-        const cmd = process.platform === 'darwin' ? 'open' : 'xdg-open';
-        execFileSync(cmd, [htmlPath]);
+        let cmd: string;
+        let args: string[];
+        if (process.platform === 'darwin') {
+          cmd = 'open';
+          args = [htmlPath];
+        } else if (process.platform === 'win32') {
+          cmd = 'cmd';
+          args = ['/c', 'start', '', htmlPath];
+        } else {
+          cmd = 'xdg-open';
+          args = [htmlPath];
+        }
+        execFileSync(cmd, args);
         console.log(`Opened session ${id.slice(0, 8)} in browser.`);
       } catch {
         console.log(`Could not open browser. Open manually: ${htmlPath}`);

@@ -149,10 +149,15 @@ export class CooldownSession {
 
       // 8.5. Write dojo diary entry (non-critical — failure never aborts cooldown)
       if (this.deps.dojoDir) {
+        const effectiveBetOutcomes: BetOutcomeRecord[] = betOutcomes.length > 0
+          ? betOutcomes
+          : cycle.bets
+              .filter((b) => b.outcome !== 'pending')
+              .map((b) => ({ betId: b.id, outcome: b.outcome as BetOutcomeRecord['outcome'], notes: b.outcomeNotes }));
         this.writeDiaryEntry({
           cycleId,
           cycleName: cycle.name,
-          betOutcomes,
+          betOutcomes: effectiveBetOutcomes,
           proposals,
           runSummaries,
           learningsCaptured,

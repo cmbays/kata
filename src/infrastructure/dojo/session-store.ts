@@ -30,7 +30,12 @@ export class SessionStore {
 
     JsonStore.write(join(sessionDir, 'meta.json'), meta, DojoSessionMetaSchema);
     JsonStore.write(join(sessionDir, 'session.json'), session, DojoSessionSchema);
-    writeFileSync(join(sessionDir, 'session.html'), html, 'utf-8');
+    const htmlPath = join(sessionDir, 'session.html');
+    try {
+      writeFileSync(htmlPath, html, 'utf-8');
+    } catch (err) {
+      throw new Error(`Failed to write session HTML to ${htmlPath}: ${err instanceof Error ? err.message : String(err)}`, { cause: err });
+    }
 
     this.updateIndex(meta);
     return meta;

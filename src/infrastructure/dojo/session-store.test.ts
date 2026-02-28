@@ -178,20 +178,19 @@ describe('SessionStore', () => {
   });
 
   describe('latest', () => {
-    it('returns the most recent session from the index', () => {
+    it('returns the most recently saved session from the index', () => {
       const older = makeSession({ createdAt: '2026-01-01T00:00:00.000Z', title: 'Older' });
       const newer = makeSession({ createdAt: '2026-03-01T00:00:00.000Z', title: 'Newer' });
 
-      // Save newer first, then older — index prepends, so older will be first
-      // But latest() returns index[0], which is the last saved (older)
-      // Actually, updateIndex uses unshift, so last saved is first in list
-      store.save(newer, '<html>newer</html>');
+      // Save older first, then newer — updateIndex uses unshift, so
+      // the last saved (newer) ends up at index[0]. This also matches
+      // rebuildIndex() which sorts by createdAt descending.
       store.save(older, '<html>older</html>');
+      store.save(newer, '<html>newer</html>');
 
       const result = store.latest();
       expect(result).not.toBeNull();
-      // The last saved session is prepended to the index
-      expect(result!.title).toBe('Older');
+      expect(result!.title).toBe('Newer');
     });
 
     it('returns null when no sessions exist', () => {

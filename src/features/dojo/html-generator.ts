@@ -145,7 +145,7 @@ function renderSectionContent(section: DojoContentSection): string {
     case 'checklist':
       return renderChecklist(section.content);
     case 'chart':
-      return `<div class="overflow-x-auto">${section.content}</div>`;
+      return `<div class="overflow-x-auto">${sanitizeChartContent(section.content)}</div>`;
     default:
       return `<div class="prose prose-sm dark:prose-invert max-w-none">${markdownToHtml(section.content)}</div>`;
   }
@@ -161,6 +161,13 @@ function renderChecklist(content: string): string {
       <span${checked ? ' class="line-through text-gray-400"' : ''}>${escapeHtml(text)}</span>
     </li>`;
   }).join('')}</ul>`;
+}
+
+export function sanitizeChartContent(html: string): string {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/\bon\w+\s*=\s*["'][^"']*["']/gi, '')
+    .replace(/href\s*=\s*["']javascript:[^"']*["']/gi, '');
 }
 
 function sanitizeUrl(url: string): string {
@@ -210,5 +217,9 @@ function escapeHtml(str: string): string {
 }
 
 function slugify(str: string): string {
-  return str.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  return str
+    .normalize('NFKD')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, '-')
+    .replace(/^-+|-+$/g, '');
 }

@@ -172,7 +172,7 @@ describe('donutChart', () => {
   it('handles single segment', () => {
     const svg = donutChart([{ label: 'Only', value: 100, color: '#3182ce' }]);
     expect(svg).toContain('<svg');
-    expect(svg).toContain('<path');
+    expect(svg).toContain('<circle');
     expect(svg).toContain('stroke="#3182ce"');
   });
 
@@ -205,6 +205,13 @@ describe('donutChart', () => {
     expect(svg).toContain('width="200"');
     expect(svg).toContain('height="200"');
     expect(svg).toContain('stroke-width="30"');
+  });
+
+  it('renders a circle element for a single segment', () => {
+    const svg = donutChart([{ label: 'Only', value: 100, color: '#3182ce' }]);
+    expect(svg).toContain('<circle');
+    expect(svg).toContain('stroke="#3182ce"');
+    expect(svg).not.toContain('<path');
   });
 });
 

@@ -288,7 +288,9 @@ export async function handleInit(options: InitOptions): Promise<InitResult> {
   // Seed default dojo sources
   const defaultSourcesPath = join(packageRoot, 'dojo', 'default-sources.json');
   const dojoSourcesPath = join(kataDir, KATA_DIRS.dojo, 'sources.json');
-  if (existsSync(defaultSourcesPath) && !existsSync(dojoSourcesPath)) {
+  if (!existsSync(defaultSourcesPath)) {
+    logger.warn('Default dojo sources not found in package — skipping source seeding.');
+  } else if (!existsSync(dojoSourcesPath)) {
     try {
       copyFileSync(defaultSourcesPath, dojoSourcesPath);
     } catch (err) {

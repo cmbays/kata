@@ -236,5 +236,19 @@ describe('SourceRegistry', () => {
       const added = registry.seedDefaults(defaults);
       expect(added).toBe(0);
     });
+
+    it('skips source with matching id even if name/url differ', () => {
+      const registry = new SourceRegistry(registryPath);
+      const id = crypto.randomUUID();
+      const existing = makeSource({ id, name: 'Original Name', url: 'https://original.example.com' });
+      registry.add(existing);
+
+      const defaults = [makeSource({ id, name: 'Different Name', url: 'https://different.example.com' })];
+      const added = registry.seedDefaults(defaults);
+      expect(added).toBe(0);
+      expect(registry.list()).toHaveLength(1);
+      // Original is preserved, not overwritten
+      expect(registry.list()[0]!.name).toBe('Original Name');
+    });
   });
 });

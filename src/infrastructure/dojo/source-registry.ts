@@ -78,7 +78,9 @@ export class SourceRegistry {
   seedDefaults(defaults: DojoSource[]): number {
     let added = 0;
     for (const source of defaults) {
-      const exists = this.registry.sources.some((s) => s.name === source.name && s.url === source.url);
+      const exists = this.registry.sources.some(
+        (s) => s.id === source.id || (s.name === source.name && s.url === source.url),
+      );
       if (!exists) {
         this.registry.sources.push(DojoSourceSchema.parse(source));
         added++;

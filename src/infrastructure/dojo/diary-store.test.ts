@@ -77,6 +77,11 @@ describe('DiaryStore', () => {
       expect(result).toBeNull();
     });
 
+    it('returns null for a path traversal string', () => {
+      const result = store.readByCycleId('../../etc/passwd');
+      expect(result).toBeNull();
+    });
+
     it('preserves optional fields', () => {
       const entry = makeDiaryEntry({
         cycleName: 'Sprint Alpha',
@@ -163,6 +168,12 @@ describe('DiaryStore', () => {
 
     it('returns empty array when no entries exist', () => {
       const result = store.recent(5);
+      expect(result).toEqual([]);
+    });
+
+    it('returns empty array for negative count', () => {
+      store.write(makeDiaryEntry());
+      const result = store.recent(-1);
       expect(result).toEqual([]);
     });
   });

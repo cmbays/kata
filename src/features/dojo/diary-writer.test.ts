@@ -325,7 +325,7 @@ describe('DiaryWriter', () => {
       expect(entry.mood).toBe('reflective');
     });
 
-    it('returns energized at exactly 81% (boundary)', () => {
+    it('returns energized when above 80% completion', () => {
       // 5 out of 6 = 83.3% > 80%
       const input = makeInput({
         betOutcomes: [

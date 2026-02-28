@@ -1,5 +1,5 @@
 import type { DojoSession } from '@domain/types/dojo.js';
-import { generateHtml } from './html-generator.js';
+import { generateHtml, sanitizeChartContent } from './html-generator.js';
 import { DOJO_COLORS, DIRECTION_COLORS } from './design-system.js';
 
 function makeSession(overrides: Partial<DojoSession> = {}): DojoSession {
@@ -287,5 +287,34 @@ describe('generateHtml', () => {
     const html = generateHtml(makeSession());
     expect(html).toContain('@supports not (--tw: 1)');
     expect(html).toContain('font-family: system-ui');
+  });
+
+  it('strips <script> tags from chart content', () => {
+    const input = '<svg><rect/></svg><script>alert("xss")</script><svg><circle/></svg>';
+    const result = sanitizeChartContent(input);
+    expect(result).not.toContain('<script>');
+    expect(result).toContain('<svg><rect/></svg>');
+    expect(result).toContain('<svg><circle/></svg>');
+  });
+
+  it('strips onclick handlers from chart content', () => {
+    const input = '<svg><rect onclick="alert(1)" width="100"/></svg>';
+    const result = sanitizeChartContent(input);
+    expect(result).not.toContain('onclick=');
+    expect(result).toContain('<svg><rect  width="100"/></svg>');
+  });
+
+  it('slugifies non-ASCII topic titles correctly', () => {
+    const session = makeSession({
+      topics: [
+        { title: 'Kaizen 改善', direction: 'forward', description: 'Continuous improvement', priority: 'high', tags: [] },
+      ],
+      sections: [
+        { title: 'Details', type: 'narrative', topicTitle: 'Kaizen 改善', content: 'Content here.', collapsed: false, depth: 0 },
+      ],
+    });
+    const html = generateHtml(session);
+    // The slug should preserve the non-ASCII characters rather than stripping them
+    expect(html).toContain('id="topic-kaizen-改善"');
   });
 });

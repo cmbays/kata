@@ -65,9 +65,8 @@ describe('parsePositiveInt', () => {
     expect(() => parsePositiveInt('')).toThrow('Expected a positive integer');
   });
 
-  it('rejects floating point strings (parseInt truncates but accepts)', () => {
-    // parseInt('3.5', 10) returns 3, which is valid
-    expect(parsePositiveInt('3.5')).toBe(3);
+  it('rejects floating point strings', () => {
+    expect(() => parsePositiveInt('3.5')).toThrow('Expected a positive integer, got "3.5"');
   });
 });
 
