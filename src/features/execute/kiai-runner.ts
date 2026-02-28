@@ -30,6 +30,8 @@ export interface KiaiRunOptions {
   bet?: Record<string, unknown>;
   pin?: string[];
   dryRun?: boolean;
+  /** ID of the kataka driving this run — stored in artifact metadata. (Wave G) */
+  katakaId?: string;
 }
 
 export interface ArtifactEntry {
@@ -104,7 +106,7 @@ export class KiaiRunner {
     // Persist stage artifact
     if (!options.dryRun) {
       try {
-        this.persistArtifact(stageCategory, result);
+        this.persistArtifact(stageCategory, result, options);
       } catch (err) {
         logger.warn('Failed to persist stage artifact — result is still valid.', {
           stageCategory,
@@ -151,7 +153,7 @@ export class KiaiRunner {
     for (const stageResult of result.stageResults) {
       if (!options.dryRun) {
         try {
-          this.persistArtifact(stageResult.stageCategory, stageResult);
+          this.persistArtifact(stageResult.stageCategory, stageResult, options);
         } catch (err) {
           logger.warn('Failed to persist stage artifact — result is still valid.', {
             stageCategory: stageResult.stageCategory,
@@ -197,7 +199,7 @@ export class KiaiRunner {
   /**
    * Persist the stage artifact to .kata/artifacts/{category}-{timestamp}.json
    */
-  private persistArtifact(stageCategory: StageCategory, result: OrchestratorResult): void {
+  private persistArtifact(stageCategory: StageCategory, result: OrchestratorResult, options?: KiaiRunOptions): void {
     const artifactsDir = join(this.deps.kataDir, KATA_DIRS.artifacts);
     if (!existsSync(artifactsDir)) {
       mkdirSync(artifactsDir, { recursive: true });
@@ -214,6 +216,7 @@ export class KiaiRunner {
       executionMode: result.executionMode,
       value: result.stageArtifact.value,
       timestamp: new Date().toISOString(),
+      ...(options?.katakaId ? { katakaId: options.katakaId } : {}),
     };
 
     writeFileSync(filePath, JSON.stringify(payload, null, 2));

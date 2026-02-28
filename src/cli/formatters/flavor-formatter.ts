@@ -35,6 +35,9 @@ export function formatFlavorDetail(flavor: Flavor, plain?: boolean): string {
     lines.push(`Description: ${flavor.description}`);
   }
   lines.push(`Synthesis Artifact: ${flavor.synthesisArtifact}`);
+  if (flavor.kataka) {
+    lines.push(`${cap(lex.agent)}: ${flavor.kataka}`);
+  }
   lines.push('');
 
   // Steps

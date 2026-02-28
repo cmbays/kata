@@ -77,6 +77,12 @@ export const FlavorSchema = z.object({
    * Must be produced by one of the steps in this flavor.
    */
   synthesisArtifact: z.string().min(1),
+  /**
+   * ID of the kataka (agent) responsible for executing this flavor.
+   * When set, `kata kiai` will record this kataka on the run so observations
+   * are automatically attributed to it. (Wave G)
+   */
+  kataka: z.string().optional(),
 });
 
 export type Flavor = z.infer<typeof FlavorSchema>;
