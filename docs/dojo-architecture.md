@@ -92,17 +92,22 @@ Diary entries are the bridge between Kata's structured data and the conversation
 | `tags` | string[] | Topic indexing |
 | `createdAt` | datetime | |
 
-### Two Writing Paths
+### Three Writing Tiers
 
-**Rich path (default):** Claude writes the narrative during cooldown via `kata dojo diary write`. The cooldown skill instructs Claude to reflect on the cycle and produce a rich narrative — capturing the emotional texture, surprises, and breakthroughs that structured data alone can't convey.
+Diary quality scales with the level of interaction available. All three tiers produce valid diary entries — the difference is narrative richness.
 
-**Fallback path (automated):** When cooldown runs with `--auto` (no Claude session), the DiaryWriter generates a deterministic narrative from structured data:
+**Interactive (default):** Claude writes the narrative during cooldown with the user present. The cooldown skill instructs Claude to reflect on the cycle and produce a rich narrative — capturing the emotional texture, surprises, and breakthroughs that structured data alone can't convey. Claude can ask the user directly: "What surprised you?", "What are you worried about?", "What felt like a breakthrough?" The user's voice is the richest input.
+
+**Autonomous (`--auto`):** Claude runs cooldown without user interaction. Claude still has full LLM capability — it can read run data, infer patterns, identify what went well and what didn't, assess mood from structured signals, and write a qualitative narrative. What's missing is the user's personal perspective: their emotional state, their concerns, what felt important to *them* vs. what the data shows. Claude should still make judgment calls — inferring mood from outcome patterns, identifying likely pain points from gap severity, surfacing open questions from unfinished work — it just can't validate those inferences with the user.
+
+**Deterministic (no Claude):** Pure template-based generation from structured data when no LLM is available at all (e.g., offline environments, CI pipelines). This is the true fallback:
 - Narrative: "Cycle '{name}' completed with X/Y bets..."
 - Wins: From complete bet outcomes
 - Pain points: From partial/abandoned bets + high-severity gaps
 - Open questions: From proposals
+- Mood: Heuristic (>80% bets complete = energized, 50-80% = steady, <50% = frustrated)
 
-**Mood heuristic:** >80% bets complete = energized, 50-80% = steady, <50% = frustrated.
+> **Current state**: The interactive and deterministic tiers are implemented. The autonomous tier currently falls through to deterministic — enhancing `--auto` to use Claude's inference capability for richer unattended diary entries is tracked as a follow-up.
 
 ---
 
@@ -192,10 +197,10 @@ Sessions render as self-contained HTML files with a cohesive Japanese dojo aesth
 | **Ink** | Deep indigo/sumi-ink | Primary text |
 | **Washi** | Warm off-white | Paper-texture backgrounds |
 | **Aka** | Torii gate red | Emphasis, alerts |
-| **Matcha** | Green | Success, growth, outward direction |
-| **Sora** | Sky blue | Info, inward direction |
-| **Kitsune** | Amber/gold | Backward direction |
-| **Murasaki** | Purple | Forward direction |
+| **Matcha** | Green | Success, growth, soto (outward) direction |
+| **Sora** | Sky blue | Info, uchi (inward) direction |
+| **Kitsune** | Amber/gold | Ushiro (backward) direction |
+| **Murasaki** | Purple | Mae (forward) direction |
 
 Dark mode: deep sumi-ink backgrounds with muted versions of the palette.
 
@@ -307,7 +312,9 @@ The Dojo is a **consumer** of meta-learning data — it reads whatever exists an
 
 ## v1 Scope Boundary
 
-**Shipped**: Diary entries (LLM-rich + deterministic fallback), data aggregation, session building with all four directions, self-contained HTML with Tailwind CSS + Japanese dojo theme + inline SVG charts, CLI archive viewer, skill files, curated source registry, dark/light mode, progressive disclosure.
+**Shipped**: Diary entries (interactive + deterministic tiers), data aggregation, session building with all four directions, self-contained HTML with Tailwind CSS + Japanese dojo theme + inline SVG charts, CLI archive viewer, skill files, curated source registry, dark/light mode, progressive disclosure.
+
+**Follow-up**: Autonomous diary tier (`--auto` with LLM inference) — currently falls through to deterministic.
 
 **v2+**: Spaced repetition scheduling, active recall quizzing, review/synthesis sessions across multiple past sessions, Mermaid pre-rendering to SVG, contextual injection into regular workflow, rich app experience (dev server/React), belt progression integration, session search/filtering, session diffing.
 
