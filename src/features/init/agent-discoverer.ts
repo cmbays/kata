@@ -1,4 +1,4 @@
-import { join } from 'node:path';
+import { join, basename as pathBasename, relative, sep } from 'node:path';
 import { readdirSync, readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { KatakaSchema, type Kataka } from '@domain/types/kataka.js';
@@ -56,11 +56,11 @@ function walkDir(dir: string, patterns: RegExp[], maxDepth = 5): string[] {
     }
 
     for (const entry of entries) {
-      if (entry.isDirectory()) {
+      if (entry.isDirectory() && !entry.isSymbolicLink()) {
         if (!IGNORE_DIRS.has(entry.name)) {
           recurse(join(current, entry.name), depth + 1);
         }
-      } else if (entry.isFile()) {
+      } else if (entry.isFile() && !entry.isSymbolicLink()) {
         if (patterns.some((p) => p.test(entry.name))) {
           results.push(join(current, entry.name));
         }
@@ -150,12 +150,11 @@ export function discoverAndRegisterAgents(cwd: string, kataDir: string): AgentDi
   const agentFiles = walkDir(cwd, agentFilePatterns);
 
   for (const filePath of agentFiles) {
-    const basename = filePath.split('/').pop() ?? filePath;
-    const name = nameFromFile(basename);
+    const name = nameFromFile(pathBasename(filePath));
     const skills: string[] = [];
 
     // Infer skills from path segments (e.g. "frontend" directory → "frontend" skill)
-    const pathParts = filePath.replace(cwd, '').split('/').filter(Boolean);
+    const pathParts = relative(cwd, filePath).split(sep).filter(Boolean);
     for (const part of pathParts.slice(0, -1)) {
       if (!IGNORE_SEGMENT.has(part)) {
         skills.push(part);
