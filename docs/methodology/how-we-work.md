@@ -57,7 +57,45 @@ Research → Interview → Shape → Breadboard → Plan → Build → Review �
 
 ---
 
-## 3. GitHub as the PM Platform
+## 3. Keiko (Cycles) and Kadai (Bets)
+
+A **keiko** (`kata cycle` / `kata keiko`) is a time-boxed work period with a token budget and a set of bets you've committed to. A **kadai** (課題 — challenge/assignment) is the kata lexicon term for a bet: a scoped piece of work you take on within a cycle.
+
+### GitHub as the Bridge
+
+For projects using GitHub, the simplest way to connect planning to execution is:
+
+1. **Create a milestone** for the cycle — e.g., `Wave G`, `v1.1`, `Q2 Sprint`
+2. **Label bets** with `kadai`
+3. **Assign them to the milestone**
+
+Surface all kadai for a cycle:
+
+```bash
+gh issue list --milestone "Wave G" --label "kadai"
+```
+
+No other infrastructure needed. Kata stays methodology-agnostic — the milestone + label convention is a lightweight GitHub bridge, not a hard dependency.
+
+### Cycle Naming
+
+Name cycles after the milestone or version they're working toward, not after a date or internal ID. Examples:
+
+- `Wave G` — for kata's own wave-based development
+- `v1.0` — for a release-scoped cycle
+- `Auth Overhaul` — for a feature-scoped cycle
+
+Avoid date-based IDs like `20260301-wave-g` — they're clunky as GitHub labels and don't communicate intent.
+
+### What Kata Tracks
+
+Internally, kata's `keiko` records which kadai are associated with a cycle, budget consumption, and run history. When the bets in a cycle are substantially complete and the budget is approaching, kata can signal it's time for a `kata ma` (cooldown).
+
+> **Future**: if a GitHub milestone name is stored on the cycle config, `kata cycle kadai list` will query `gh` to surface linked issues alongside kata's run history for each bet.
+
+---
+
+## 4. GitHub as the PM Platform
 
 ### Why GitHub Issues
 
@@ -108,7 +146,7 @@ The PR labeler and auto-add-to-project automations from the print4ink playbook a
 
 ---
 
-## 4. The Automation Trajectory
+## 5. The Automation Trajectory
 
 > **For discussion:** This level model was designed for the print4ink project but captures something real about agent autonomy. The question for kata: how does kata *itself* embody or enable these levels? Is kata the tool that makes L3–L5 possible for other projects?
 
