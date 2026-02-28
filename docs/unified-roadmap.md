@@ -217,7 +217,7 @@ These two systems are deeply interdependent but were tracked separately with no 
 
 ## Dependency Graph
 
-```
+```text
 Wave F ──blocks──> Wave G (observation schema needed by skills)
 Wave F ──blocks──> Wave H (observation schema, learning enrichment, run tree paths)
 Wave G ──blocks──> Wave I (kataka registry for attribution, flavor binding)
