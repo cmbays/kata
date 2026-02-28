@@ -1,0 +1,113 @@
+{
+  "sources": [
+    {
+      "id": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+      "name": "MDN Web Docs",
+      "url": "https://developer.mozilla.org",
+      "domains": ["javascript", "typescript", "css", "html", "web"],
+      "reputation": "official",
+      "description": "Comprehensive documentation for web standards, JavaScript, CSS, and HTML maintained by Mozilla and the community.",
+      "active": true
+    },
+    {
+      "id": "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e",
+      "name": "TypeScript Documentation",
+      "url": "https://www.typescriptlang.org/docs",
+      "domains": ["typescript"],
+      "reputation": "official",
+      "description": "Official TypeScript language documentation including handbook, reference, and release notes.",
+      "active": true
+    },
+    {
+      "id": "c3d4e5f6-a7b8-4c9d-0e1f-2a3b4c5d6e7f",
+      "name": "Node.js Documentation",
+      "url": "https://nodejs.org/docs",
+      "domains": ["nodejs", "javascript"],
+      "reputation": "official",
+      "description": "Official Node.js API documentation and guides for server-side JavaScript runtime.",
+      "active": true
+    },
+    {
+      "id": "d4e5f6a7-b8c9-4d0e-1f2a-3b4c5d6e7f80",
+      "name": "OWASP",
+      "url": "https://owasp.org",
+      "domains": ["security"],
+      "reputation": "authoritative",
+      "description": "Open Worldwide Application Security Project providing security best practices, vulnerability classifications, and testing guides.",
+      "active": true
+    },
+    {
+      "id": "e5f6a7b8-c9d0-4e1f-2a3b-4c5d6e7f8091",
+      "name": "React Documentation",
+      "url": "https://react.dev",
+      "domains": ["react", "javascript"],
+      "reputation": "official",
+      "description": "Official React documentation with guides, API reference, and interactive tutorials.",
+      "active": true
+    },
+    {
+      "id": "f6a7b8c9-d0e1-4f2a-3b4c-5d6e7f8091a2",
+      "name": "Rust Documentation",
+      "url": "https://doc.rust-lang.org",
+      "domains": ["rust"],
+      "reputation": "official",
+      "description": "Official Rust programming language documentation including The Rust Book, standard library reference, and edition guides.",
+      "active": true
+    },
+    {
+      "id": "07b8c9d0-e1f2-4a3b-4c5d-6e7f8091a2b3",
+      "name": "Go Documentation",
+      "url": "https://go.dev/doc",
+      "domains": ["go"],
+      "reputation": "official",
+      "description": "Official Go programming language documentation with tutorials, effective Go guide, and standard library reference.",
+      "active": true
+    },
+    {
+      "id": "18c9d0e1-f2a3-4b4c-5d6e-7f8091a2b3c4",
+      "name": "Python Documentation",
+      "url": "https://docs.python.org",
+      "domains": ["python"],
+      "reputation": "official",
+      "description": "Official Python language and standard library documentation with tutorials and how-to guides.",
+      "active": true
+    },
+    {
+      "id": "29d0e1f2-a3b4-4c5d-6e7f-8091a2b3c4d5",
+      "name": "PostgreSQL Documentation",
+      "url": "https://www.postgresql.org/docs",
+      "domains": ["postgresql", "database"],
+      "reputation": "official",
+      "description": "Official PostgreSQL relational database documentation covering SQL reference, administration, and extensions.",
+      "active": true
+    },
+    {
+      "id": "3ae1f2a3-b4c5-4d6e-7f80-91a2b3c4d5e6",
+      "name": "Docker Documentation",
+      "url": "https://docs.docker.com",
+      "domains": ["docker", "containers"],
+      "reputation": "official",
+      "description": "Official Docker documentation for container building, orchestration, and deployment.",
+      "active": true
+    },
+    {
+      "id": "4bf2a3b4-c5d6-4e7f-8091-a2b3c4d5e6f7",
+      "name": "Kubernetes Documentation",
+      "url": "https://kubernetes.io/docs",
+      "domains": ["kubernetes", "containers"],
+      "reputation": "official",
+      "description": "Official Kubernetes documentation covering concepts, tasks, tutorials, and API reference for container orchestration.",
+      "active": true
+    },
+    {
+      "id": "5ca3b4c5-d6e7-4f80-91a2-b3c4d5e6f708",
+      "name": "AWS Documentation",
+      "url": "https://docs.aws.amazon.com",
+      "domains": ["aws", "cloud"],
+      "reputation": "official",
+      "description": "Official Amazon Web Services documentation spanning compute, storage, networking, and managed services.",
+      "active": true
+    }
+  ],
+  "updatedAt": "2026-02-28T00:00:00.000Z"
+}
