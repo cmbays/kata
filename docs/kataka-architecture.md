@@ -713,42 +713,28 @@ The `kata-create-agent` and `kata-create-skill` skills include this naming conve
 
 ## 12. Implementation Roadmap
 
-### Phase 1: Foundation (Build First)
+> **This section has been superseded by the [Unified Roadmap](unified-roadmap.md)**, which merges the Kataka architecture and Meta-Learning Epic ([#136](https://github.com/cmbays/kata/issues/136)) into a single sequenced implementation plan (Waves F–J).
 
-1. **Extend the Lexicon** — Add `kataka`, `maki`, `sensei`, `kansatsu` to `lexicon.ts`; add `kime` alias ([#153](https://github.com/cmbays/kata/issues/153))
-2. **KATA.md generation** — Add `.kata/KATA.md` creation to init handler
-3. **Kataka schema** — Extend agent-related schemas with `metadata.kata` fields
-4. **`kata agent list/inspect`** — CLI commands for kataka management
-5. **Enhance `kata --help`** — Append lexicon table via `addHelpText`; add `kata lexicon` TUI command
+The kataka system is implemented across these unified waves:
 
-### Phase 2: Init Scanning
+| Wave | Name | Kataka Deliverables |
+|------|------|---------------------|
+| F | Foundations | Lexicon extensions (`kataka`, `maki`, `sensei`, `kansatsu`), `kime` alias ([#153](https://github.com/cmbays/kata/issues/153)), KATA.md generation at init, observation schema with `katakaId?` field |
+| G | Practitioners | KatakaRegistry, `kata agent list/inspect`, FlavorSchema `kataka?` field, init scanning (`--scan basic/full/resync`), 6 built-in skill files, `kata lexicon` TUI, `kata kiai` flags |
+| H | Intelligence | Hierarchical observation capture at step/flavor/stage/cycle levels, `KnowledgeStore` upgrades (`loadForStep`, `loadForFlavor`) |
+| I | Synthesis | Agent attribution (katakaId populated end-to-end), cooldown aggregation by kataka, agent-level learnings, KATA.md cooldown refresh |
+| J | Mastery | Per-kataka domain confidence, kataka performance in belt criteria, gap bridging enhancement |
 
-6. **Agent/skill scanner** — Scan `.claude/agents/` and `.claude/skills/` during `kata init --scan`
-7. **LLM classification** — Classify existing agents/skills by stage
-8. **Wrapper generation** — Create `-ka` agent definitions from existing agents
-9. **Re-sync + orphan detection** — `--scan resync` for updates, orphan prompts for removed agents
-10. **Built-in skill copy** — Copy `kata-*` skills to `.claude/skills/` during init
+### Dependency Chain
 
-### Phase 3: Creation Tooling
+```
+Wave F → Wave G → Wave I → Wave J
+Wave F → Wave H → Wave I → Wave J
+```
 
-11. **`kata-create-agent` skill** — Knowledge + templates for creating new kataka
-12. **`kata-create-skill` skill** — Knowledge + templates for creating new skills
-13. **`kata-bridge-gap` skill** — Gap analysis → creation → integration pipeline (full E2E)
-14. **Quality gates** — Spec validation, security scan, naming check
+Wave F provides the shared data model (observation schema, learning enrichment, KATA.md template). Wave G builds the kataka identity and execution system on top. Waves H and I add intelligence. Wave J adds mastery tracking.
 
-### Phase 4: Observability
-
-15. **Agent attribution** — Link observations/decisions/artifacts to kataka
-16. **Agent view TUI** — Interactive `kata agent list/inspect` with drill-down
-17. **Agent-level learning** — Cooldown generates kataka-specific learnings
-18. **Learning injection** — Feed learnings back into KATA.md and kataka skills
-
-### Phase 5: Integration with Meta-Learning Epic
-
-19. **Observation types for kataka** — New observation discriminated union variants
-20. **Kataka in learning graph** — Agents as nodes in the learning graph
-21. **Belt progression tracking** — Kataka performance contributes to project belt level
-22. **Domain confidence per kataka** — Each kataka develops domain-specific confidence scores
+See [docs/unified-roadmap.md](unified-roadmap.md) for the full wave details, dependency graph, parallel agent strategy, and belt integration points.
 
 ---
 
