@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import type { CycleManager, CooldownReport } from '@domain/services/cycle-manager.js';
 import type { IKnowledgeStore } from '@domain/ports/knowledge-store.js';
 import type { IPersistence } from '@domain/ports/persistence.js';
@@ -6,12 +7,12 @@ import type { ExecutionHistoryEntry } from '@domain/types/history.js';
 import type { BudgetAlertLevel, Cycle } from '@domain/types/cycle.js';
 import type { RuleSuggestion } from '@domain/types/rule.js';
 import { ExecutionHistoryEntrySchema } from '@domain/types/history.js';
-import { DecisionEntrySchema, ArtifactIndexEntrySchema } from '@domain/types/run-state.js';
-import { readRun, readStageState, runPaths } from '@infra/persistence/run-store.js';
-import { JsonlStore } from '@infra/persistence/jsonl-store.js';
+import { DiaryWriter } from '@features/dojo/diary-writer.js';
+import { DiaryStore } from '@infra/dojo/diary-store.js';
 import { logger } from '@shared/lib/logger.js';
+import { loadRunSummary } from './run-summary-loader.js';
 import { ProposalGenerator, type CycleProposal, type ProposalGeneratorDeps } from './proposal-generator.js';
-import type { RunSummary, StageDetail } from './types.js';
+import type { RunSummary } from './types.js';
 
 /**
  * Dependencies injected into CooldownSession for testability.
@@ -35,6 +36,11 @@ export interface CooldownSessionDeps {
    * Backward compatible — omitting this field leaves existing behavior unchanged.
    */
   ruleRegistry?: IStageRuleRegistry;
+  /**
+   * Optional path to .kata/dojo/ directory. When provided, CooldownSession writes
+   * a diary entry during cooldown. Backward compatible — omitting this field skips diary writing.
+   */
+  dojoDir?: string;
 }
 
 /**
@@ -140,6 +146,24 @@ export class CooldownSession {
 
       // 8. Capture cooldown learnings (non-critical — errors should not abort)
       const learningsCaptured = this.captureCooldownLearnings(report);
+
+      // 8.5. Write dojo diary entry (non-critical — failure never aborts cooldown)
+      if (this.deps.dojoDir) {
+        const effectiveBetOutcomes: BetOutcomeRecord[] = betOutcomes.length > 0
+          ? betOutcomes
+          : cycle.bets
+              .filter((b) => b.outcome !== 'pending')
+              .map((b) => ({ betId: b.id, outcome: b.outcome as BetOutcomeRecord['outcome'], notes: b.outcomeNotes }));
+        this.writeDiaryEntry({
+          cycleId,
+          cycleName: cycle.name,
+          betOutcomes: effectiveBetOutcomes,
+          proposals,
+          runSummaries,
+          learningsCaptured,
+          ruleSuggestions,
+        });
+      }
 
       // 9. Transition to complete
       this.deps.cycleManager.updateState(cycleId, 'complete');
@@ -313,53 +337,8 @@ export class CooldownSession {
 
     for (const bet of cycle.bets) {
       if (!bet.runId) continue;
-
-      const runId = bet.runId;
-      let run: ReturnType<typeof readRun>;
-      try {
-        run = readRun(runsDir, runId);
-      } catch {
-        logger.warn(`CooldownSession: run file not found for bet "${bet.id}" (runId: "${runId}") — skipping`);
-        continue;
-      }
-
-      let stagesCompleted = 0;
-      let gapCount = 0;
-      const gapsBySeverity = { low: 0, medium: 0, high: 0 };
-      const stageDetails: StageDetail[] = [];
-
-      for (const category of run.stageSequence) {
-        let stageState: ReturnType<typeof readStageState>;
-        try {
-          stageState = readStageState(runsDir, runId, category);
-        } catch {
-          logger.warn(`CooldownSession: missing stage state for run "${runId}" stage "${category}" — skipping`);
-          continue;
-        }
-        if (stageState.status === 'completed') stagesCompleted++;
-        for (const gap of stageState.gaps) {
-          gapCount++;
-          gapsBySeverity[gap.severity]++;
-        }
-        stageDetails.push({
-          category,
-          selectedFlavors: stageState.selectedFlavors,
-          gaps: stageState.gaps,
-        });
-      }
-
-      const paths = runPaths(runsDir, runId);
-
-      const decisions = JsonlStore.readAll(paths.decisionsJsonl, DecisionEntrySchema);
-      const avgConfidence = decisions.length > 0
-        ? decisions.reduce((sum, d) => sum + d.confidence, 0) / decisions.length
-        : null;
-      const yoloDecisionCount = decisions.filter((d) => d.lowConfidence === true).length;
-
-      const artifacts = JsonlStore.readAll(paths.artifactIndexJsonl, ArtifactIndexEntrySchema);
-      const artifactPaths = artifacts.map((a) => a.filePath);
-
-      summaries.push({ betId: bet.id, runId, stagesCompleted, gapCount, gapsBySeverity, avgConfidence, artifactPaths, stageDetails, yoloDecisionCount });
+      const summary = loadRunSummary(runsDir, bet.id, bet.runId);
+      if (summary) summaries.push(summary);
     }
 
     return summaries;
@@ -371,5 +350,24 @@ export class CooldownSession {
   private loadCycleHistory(cycleId: string): ExecutionHistoryEntry[] {
     const allEntries = this.deps.persistence.list(this.deps.historyDir, ExecutionHistoryEntrySchema);
     return allEntries.filter((entry) => entry.cycleId === cycleId);
+  }
+
+  private writeDiaryEntry(input: {
+    cycleId: string;
+    cycleName?: string;
+    betOutcomes: BetOutcomeRecord[];
+    proposals: CycleProposal[];
+    runSummaries?: RunSummary[];
+    learningsCaptured: number;
+    ruleSuggestions?: RuleSuggestion[];
+  }): void {
+    try {
+      const diaryDir = join(this.deps.dojoDir!, 'diary');
+      const store = new DiaryStore(diaryDir);
+      const writer = new DiaryWriter(store);
+      writer.write(input);
+    } catch (err) {
+      logger.warn(`Failed to write dojo diary entry: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 }

@@ -28,6 +28,10 @@ export interface Lexicon {
   cooldown: string;
   /** execute — run stage orchestration */
   execute: string;
+  /** dojo — personal training environment */
+  dojo: string;
+  /** config — methodology editor */
+  config: string;
 }
 
 /** Thematic lexicon (default): Japanese karate-inspired terms. */
@@ -43,6 +47,8 @@ export const THEMATIC: Lexicon = {
   knowledge: 'bunkai',
   cooldown: 'ma',
   execute: 'kiai',
+  dojo: 'dojo',
+  config: 'seido',
 };
 
 /** Plain lexicon: standard English equivalents. */
@@ -58,6 +64,8 @@ export const PLAIN: Lexicon = {
   knowledge: 'knowledge',
   cooldown: 'cooldown',
   execute: 'execute',
+  dojo: 'dojo',
+  config: 'config',
 };
 
 /**

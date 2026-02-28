@@ -7,10 +7,10 @@ describe('kata config command', () => {
     expect(commandNames).toContain('config');
   });
 
-  it('has alias "dojo"', () => {
+  it('has alias "seido"', () => {
     const program = createProgram();
     const configCmd = program.commands.find((c) => c.name() === 'config');
-    expect(configCmd?.alias()).toBe('dojo');
+    expect(configCmd?.alias()).toBe('seido');
   });
 
   it('description mentions methodology editor and TUI', () => {

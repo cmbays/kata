@@ -17,6 +17,9 @@ export const KATA_DIRS = {
   config: 'config.json',
   builtin: 'builtin',
   katas: 'katas',
+  dojo: 'dojo',
+  diary: 'diary',
+  sessions: 'sessions',
 } as const;
 
 export type KataDirKey = keyof typeof KATA_DIRS;

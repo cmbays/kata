@@ -29,7 +29,7 @@ interface RelaunchState {
 export function registerConfigCommand(parent: Command): void {
   parent
     .command('config')
-    .alias('dojo')
+    .alias('seido')
     .description('Interactive methodology editor TUI — steps, flavors, kata patterns (dojo setup)')
     .action(
       withCommandContext(async (ctx) => {

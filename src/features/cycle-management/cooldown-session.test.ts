@@ -643,6 +643,132 @@ describe('CooldownSession', () => {
     });
   });
 
+  describe('run with dojoDir (diary writing)', () => {
+    const dojoDir = join(baseDir, 'dojo');
+    const diaryDir = join(dojoDir, 'diary');
+
+    beforeEach(() => {
+      mkdirSync(diaryDir, { recursive: true });
+    });
+
+    it('writes a diary entry when dojoDir is provided', async () => {
+      const cycle = cycleManager.create({ tokenBudget: 50000 }, 'Diary Test Cycle');
+      cycleManager.addBet(cycle.id, {
+        description: 'Auth feature',
+        appetite: 40,
+        outcome: 'pending',
+        issueRefs: [],
+      });
+
+      const updatedCycle = cycleManager.get(cycle.id);
+      const outcomes: BetOutcomeRecord[] = [
+        { betId: updatedCycle.bets[0]!.id, outcome: 'complete', notes: 'Shipped!' },
+      ];
+
+      const sessionWithDojo = new CooldownSession({
+        cycleManager,
+        knowledgeStore,
+        persistence: JsonStore,
+        pipelineDir,
+        historyDir,
+        dojoDir,
+      });
+
+      const result = await sessionWithDojo.run(cycle.id, outcomes);
+
+      // Session should complete normally
+      expect(result.report).toBeDefined();
+      expect(cycleManager.get(cycle.id).state).toBe('complete');
+
+      // Diary entry should exist on disk
+      const { DiaryStore } = await import('@infra/dojo/diary-store.js');
+      const store = new DiaryStore(diaryDir);
+      const entry = store.readByCycleId(cycle.id);
+      expect(entry).not.toBeNull();
+      expect(entry!.cycleId).toBe(cycle.id);
+      expect(entry!.cycleName).toBe('Diary Test Cycle');
+      expect(entry!.narrative).toBeTruthy();
+      expect(entry!.mood).toBeDefined();
+    });
+
+    it('does not write diary when dojoDir is omitted (backward compat)', async () => {
+      const cycle = cycleManager.create({ tokenBudget: 50000 }, 'No Diary');
+
+      // Default session has no dojoDir
+      const result = await session.run(cycle.id);
+      expect(result.report).toBeDefined();
+
+      // Diary dir should be empty (or not created)
+      const { DiaryStore } = await import('@infra/dojo/diary-store.js');
+      const store = new DiaryStore(diaryDir);
+      expect(store.list()).toEqual([]);
+    });
+
+    it('does not abort cooldown when diary write fails', async () => {
+      const cycle = cycleManager.create({ tokenBudget: 50000 }, 'Diary Fail');
+
+      // Use a non-writable dojoDir path to force a write failure
+      const badDojoDir = '/nonexistent/deeply/nested/invalid/path/dojo';
+      const sessionWithBadDojo = new CooldownSession({
+        cycleManager,
+        knowledgeStore,
+        persistence: JsonStore,
+        pipelineDir,
+        historyDir,
+        dojoDir: badDojoDir,
+      });
+
+      // Should not throw — diary failure is non-critical
+      const result = await sessionWithBadDojo.run(cycle.id);
+      expect(result.report).toBeDefined();
+      expect(cycleManager.get(cycle.id).state).toBe('complete');
+    });
+
+    it('diary entry contains bet outcome data', async () => {
+      const cycle = cycleManager.create({ tokenBudget: 50000 }, 'Outcomes Diary');
+      cycleManager.addBet(cycle.id, {
+        description: 'Feature X',
+        appetite: 30,
+        outcome: 'pending',
+        issueRefs: [],
+      });
+      cycleManager.addBet(cycle.id, {
+        description: 'Feature Y',
+        appetite: 20,
+        outcome: 'pending',
+        issueRefs: [],
+      });
+
+      const updatedCycle = cycleManager.get(cycle.id);
+      const outcomes: BetOutcomeRecord[] = [
+        { betId: updatedCycle.bets[0]!.id, outcome: 'complete' },
+        { betId: updatedCycle.bets[1]!.id, outcome: 'abandoned', notes: 'Blocked by infra' },
+      ];
+
+      const sessionWithDojo = new CooldownSession({
+        cycleManager,
+        knowledgeStore,
+        persistence: JsonStore,
+        pipelineDir,
+        historyDir,
+        dojoDir,
+      });
+
+      await sessionWithDojo.run(cycle.id, outcomes);
+
+      const { DiaryStore } = await import('@infra/dojo/diary-store.js');
+      const store = new DiaryStore(diaryDir);
+      const entry = store.readByCycleId(cycle.id);
+
+      // Wins should include the completed bet
+      expect(entry!.wins.length).toBeGreaterThanOrEqual(1);
+      // Pain points should include the abandoned bet
+      expect(entry!.painPoints.length).toBeGreaterThanOrEqual(1);
+      // Tags should include 'abandoned-bets'
+      expect(entry!.tags).toContain('abandoned-bets');
+    });
+  });
+
   describe('run with ruleRegistry (ruleSuggestions)', () => {
     const rulesDir = join(baseDir, 'rules');
 

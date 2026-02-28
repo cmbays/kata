@@ -161,6 +161,9 @@ export async function handleInit(options: InitOptions): Promise<InitResult> {
     JsonStore.ensureDir(join(kataDir, KATA_DIRS.tracking));
     JsonStore.ensureDir(join(kataDir, KATA_DIRS.prompts));
     JsonStore.ensureDir(join(kataDir, KATA_DIRS.artifacts));
+    JsonStore.ensureDir(join(kataDir, KATA_DIRS.dojo));
+    JsonStore.ensureDir(join(kataDir, KATA_DIRS.dojo, KATA_DIRS.diary));
+    JsonStore.ensureDir(join(kataDir, KATA_DIRS.dojo, KATA_DIRS.sessions));
   } catch (err) {
     throw new KataError(
       `Failed to create kata directory structure at "${kataDir}": ${err instanceof Error ? err.message : String(err)}. ` +
@@ -280,6 +283,19 @@ export async function handleInit(options: InitOptions): Promise<InitResult> {
     }
   } else {
     logger.warn(`Skill package not found at "${skillSrcDir}". Skill files were not copied — check your installation.`);
+  }
+
+  // Seed default dojo sources
+  const defaultSourcesPath = join(packageRoot, 'dojo', 'default-sources.json');
+  const dojoSourcesPath = join(kataDir, KATA_DIRS.dojo, 'sources.json');
+  if (!existsSync(defaultSourcesPath)) {
+    logger.warn('Default dojo sources not found in package — skipping source seeding.');
+  } else if (!existsSync(dojoSourcesPath)) {
+    try {
+      copyFileSync(defaultSourcesPath, dojoSourcesPath);
+    } catch (err) {
+      logger.warn(`Could not seed default dojo sources: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   // Load pipeline templates
