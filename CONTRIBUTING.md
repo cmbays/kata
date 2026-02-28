@@ -66,16 +66,12 @@ git worktree add ../kata-my-feature -b feat/my-feature
 
 ## Changelog
 
-The changelog is generated from git history using `mintlify-changelog` (managed via `uv tool`).
+The changelog is generated from git history using [`git-cliff`](https://git-cliff.org), a conventional-commits parser. No API keys or external services needed.
 
 **One-time setup:**
 
 ```bash
-# Install the tool
-uv tool install mintlify-changelog
-
-# Store your Anthropic API key
-mintlify-changelog --set-api-key
+brew install git-cliff
 ```
 
 **Generate or refresh the changelog:**
@@ -84,4 +80,4 @@ mintlify-changelog --set-api-key
 npm run changelog:generate
 ```
 
-This reads the last 60 commits, uses Claude to write narrative entries, and overwrites `changelog.md`.
+This reads the full git history, groups commits by type (Features, Bug Fixes, Documentation, etc.), links issue and PR numbers to GitHub, and overwrites `changelog.md`. Configuration lives in `cliff.toml`.
