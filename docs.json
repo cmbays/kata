@@ -1,0 +1,124 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "name": "Kata",
+  "description": "Development Methodology Engine — encode methodology (Shape Up) as executable, composable stages with a self-improving knowledge system.",
+  "theme": "linden",
+  "colors": {
+    "primary": "#805ad5",
+    "light": "#b794f4",
+    "dark": "#553c9a"
+  },
+  "icons": {
+    "library": "lucide"
+  },
+  "navbar": {
+    "links": [
+      {
+        "label": "GitHub",
+        "href": "https://github.com/cmbays/kata"
+      }
+    ]
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/cmbays/kata"
+    }
+  },
+  "navigation": {
+    "groups": [
+      {
+        "group": "Getting Started",
+        "pages": [
+          "README",
+          "docs/project-setup"
+        ]
+      },
+      {
+        "group": "System Guide",
+        "pages": [
+          "docs/kata-system-guide"
+        ]
+      },
+      {
+        "group": "Using Kata",
+        "pages": [
+          "skill/skill",
+          "skill/cli-reference",
+          "skill/file-structure",
+          "skill/dojo"
+        ]
+      },
+      {
+        "group": "For Agents",
+        "pages": [
+          "skill/orchestration",
+          "skill/context-flow"
+        ]
+      },
+      {
+        "group": "Architecture",
+        "pages": [
+          "docs/kataka-architecture",
+          "docs/sensei-orchestration",
+          "docs/meta-learning-architecture",
+          "docs/dojo-architecture"
+        ]
+      },
+      {
+        "group": "Product Design",
+        "pages": [
+          "docs/v1-product-design",
+          "docs/v1-user-journeys",
+          "docs/v1-interaction-design",
+          "docs/v1-design-vision"
+        ]
+      },
+      {
+        "group": "Methodology",
+        "pages": [
+          "docs/methodology/INDEX"
+        ]
+      },
+      {
+        "group": "Skills",
+        "pages": [
+          "docs/methodology/skills/shaping",
+          "docs/methodology/skills/breadboarding",
+          "docs/methodology/skills/breadboard-reflection"
+        ]
+      },
+      {
+        "group": "Quick Reference",
+        "pages": [
+          "docs/methodology/reference/shaping-concepts",
+          "docs/methodology/reference/breadboarding-concepts",
+          "docs/methodology/reference/app-flow-standard"
+        ]
+      },
+      {
+        "group": "Templates",
+        "pages": [
+          "docs/methodology/templates/frame-template",
+          "docs/methodology/templates/shaping-template",
+          "docs/methodology/templates/breadboard-template"
+        ]
+      },
+      {
+        "group": "Roadmap",
+        "pages": [
+          "docs/unified-roadmap"
+        ]
+      },
+      {
+        "group": "Project",
+        "pages": [
+          "changelog",
+          "CONTRIBUTING"
+        ]
+      }
+    ]
+  },
+  "contextual": {
+    "options": ["copy", "view", "claude"]
+  }
+}
