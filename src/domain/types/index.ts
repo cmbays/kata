@@ -190,3 +190,28 @@ export {
   type ExecutionPlan,
   type ReflectionResult,
 } from './orchestration.js';
+
+// Dojo types
+export {
+  DojoMood,
+  DojoDiaryEntrySchema,
+  DojoDirection,
+  DojoPriority,
+  DojoTopicSchema,
+  DojoSectionType,
+  DojoContentSectionSchema,
+  DojoSourceReputation,
+  DojoSourceSchema,
+  DojoSourceRegistrySchema,
+  DojoSessionSchema,
+  DojoSessionMetaSchema,
+  DojoSessionIndexSchema,
+  type DojoDiaryEntry,
+  type DojoTopic,
+  type DojoContentSection,
+  type DojoSource,
+  type DojoSourceRegistry,
+  type DojoSession,
+  type DojoSessionMeta,
+  type DojoSessionIndex,
+} from './dojo.js';
