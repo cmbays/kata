@@ -165,7 +165,7 @@ The self-improvement loop is the mechanism that makes Kata compound over time: *
 
 > See [Dojo Architecture](dojo-architecture.md) for the full deep dive on diary entries, session generation, the design system, and the source registry.
 
-The Dojo transforms Kata's execution data into an interactive training experience for the developer. Each session covers four knowledge directions: **backward** (what happened), **inward** (current state + personal focus), **outward** (industry best practices), and **forward** (what's next). After each cooldown, a diary entry captures the cycle's narrative. Sessions are self-contained HTML experiences with a Japanese dojo theme, generated through conversation with Claude and saved as a personal training archive.
+The Dojo transforms Kata's execution data into an interactive training experience for the developer. Each session covers four knowledge directions: **ushiro** (backward — what happened), **uchi** (inward — current state + personal focus), **soto** (outward — industry best practices), and **mae** (forward — what's next). After each cooldown, a diary entry captures the cycle's narrative. Sessions are self-contained HTML experiences with a Japanese dojo theme, generated through conversation with Claude and saved as a personal training archive.
 
 ---
 

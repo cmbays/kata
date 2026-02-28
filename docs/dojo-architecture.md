@@ -21,16 +21,18 @@ Each Dojo session is an **emergent, fit-for-the-moment** HTML experience — not
 
 ## 1. Four Knowledge Directions
 
-Every Dojo session covers all four directions, ensuring a complete picture:
+Every Dojo session covers all four directions, ensuring a complete picture. Like other Kata concepts, directions have both plain English names and Japanese martial arts aliases — the thematic names are used by default, with `--plain` mode showing English equivalents.
 
-| Direction | What it covers | Color | Data sources |
-|-----------|---------------|-------|-------------|
-| **Backward** | What happened, what worked, what didn't | Kitsune (amber/gold) | Diary entries, run summaries, decision outcomes, bet results |
-| **Inward** | Current project state, personal focus areas | Sora (sky blue) | Knowledge stats, flavor frequency, user reflections, confidence distribution |
-| **Outward** | Industry best practices for your stack | Matcha (green) | Curated external sources, research agent findings |
-| **Forward** | What's next, what to prepare for | Murasaki (purple) | Proposals, roadmap items, open questions from diaries |
+| Direction | Alias | Kanji | Color | What it covers | Data sources |
+|-----------|-------|-------|-------|---------------|-------------|
+| **Backward** | **ushiro** | 後ろ | Kitsune (amber/gold) | What happened, what worked, what didn't | Diary entries, run summaries, decision outcomes, bet results |
+| **Inward** | **uchi** | 内 | Sora (sky blue) | Current project state, personal focus areas | Knowledge stats, flavor frequency, user reflections, confidence distribution |
+| **Outward** | **soto** | 外 | Matcha (green) | Industry best practices for your stack | Curated external sources, research agent findings |
+| **Forward** | **mae** | 前 | Murasaki (purple) | What's next, what to prepare for | Proposals, roadmap items, open questions from diaries |
 
-The four directions are not just organizational — they represent fundamentally different types of learning. Backward is reflective. Inward is introspective. Outward is comparative. Forward is preparatory.
+The aliases come from karate directional vocabulary: ushiro-geri (back kick), mae-geri (front kick), uchi-uke (inside block), soto-uke (outside block). They pair naturally — ushiro/mae (behind/front), uchi/soto (inside/outside).
+
+The four directions are not just organizational — they represent fundamentally different types of learning. Ushiro is reflective. Uchi is introspective. Soto is comparative. Mae is preparatory.
 
 ---
 
@@ -43,10 +45,10 @@ Inside a Claude session, the `/dojo` skill drives collaborative session creation
 1. Read `.kata/dojo/diary/` entries, recent learnings, run history, roadmap
 2. Present "here's what your project has been through" summary
 3. **Collaboratively scope all four directions:**
-   - Backward: What happened? What patterns emerged? What went wrong?
-   - Inward: What does the project look like now? What does the *user* personally want to focus on? What concerns them?
-   - Outward: What do best practices say about the topics that surfaced?
-   - Forward: What's next on the roadmap? What should we prepare for?
+   - Ushiro (backward): What happened? What patterns emerged? What went wrong?
+   - Uchi (inward): What does the project look like now? What does the *user* personally want to focus on? What concerns them?
+   - Soto (outward): What do best practices say about the topics that surfaced?
+   - Mae (forward): What's next on the roadmap? What should we prepare for?
 4. Dispatch research agents for outward-looking topics
 5. Generate session HTML
 6. Present the result
