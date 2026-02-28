@@ -1,0 +1,44 @@
+# Execution Manifest Template
+# Consumed by kata's pipeline runner.
+# See: kata pipeline start <manifest.yaml>
+#
+# Validate: yq '.' <this-file>
+
+pipeline: PIPELINE_SLUG
+
+waves:
+  - name: 'Foundation'
+    serial: true # Sessions run one at a time
+    sessions:
+      - topic: PIPELINE-w0-foundation
+        prompt: |
+          Build the foundational types and data layer for PIPELINE:
+          1. Define all schemas in src/
+          2. Write unit tests colocated with source
+          3. Export types for downstream stages
+
+          Commit and create PR when complete.
+        stage: build
+
+  - name: 'Core Features'
+    serial: false # Sessions run in parallel
+    sessions:
+      - topic: PIPELINE-w1-feature-a
+        prompt: |
+          Build FEATURE_A:
+          - What to build: describe feature
+          - Dependencies: foundation from Wave 0
+
+          Commit and create PR when complete.
+        stage: build
+        dependsOn: PIPELINE-w0-foundation
+
+      - topic: PIPELINE-w1-feature-b
+        prompt: |
+          Build FEATURE_B:
+          - What to build: describe feature
+          - Dependencies: foundation from Wave 0
+
+          Commit and create PR when complete.
+        stage: build
+        dependsOn: PIPELINE-w0-foundation
