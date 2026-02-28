@@ -31,7 +31,8 @@
     "lint": "eslint src/",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "npm run lint && npm run test && npm run build",
-    "prepare": "husky"
+    "prepare": "husky",
+    "changelog:generate": "git-cliff --output changelog.md"
   },
   "keywords": [
     "methodology",
