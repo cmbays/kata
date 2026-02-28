@@ -20,7 +20,7 @@ A file at `.kata/KATA.md` that functions as CLAUDE.md for Kata specifically. Eve
 # KATA.md — Kata Project Context
 
 ## Project
-- Name: print4ink
+- Name: kata
 - Stack: TypeScript, Next.js, Prisma, Tailwind
 - Architecture: Clean architecture (domain → infra → features → CLI)
 

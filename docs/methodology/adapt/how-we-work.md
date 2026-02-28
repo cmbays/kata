@@ -227,8 +227,8 @@ When `main` is validated and ready for release:
 gh pr create --base production --head main --title "Release: <description>"
 
 # Option B: Direct fast-forward (quicker, no branch checkout needed)
-git -C ~/Github/print-4ink fetch origin
-git -C ~/Github/print-4ink push origin origin/main:production
+git -C ~/Github/<your-project> fetch origin
+git -C ~/Github/<your-project> push origin origin/main:production
 ```
 
 ### Deployment Math
