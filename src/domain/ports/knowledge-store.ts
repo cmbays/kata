@@ -1,4 +1,4 @@
-import type { Learning, LearningFilter } from '@domain/types/learning.js';
+import type { Learning, LearningFilter, LearningInput } from '@domain/types/learning.js';
 
 /**
  * Summary statistics for the knowledge store.
@@ -9,6 +9,8 @@ export interface KnowledgeStats {
   total: number;
   /** Count of learnings per tier */
   byTier: {
+    step: number;
+    flavor: number;
     stage: number;
     category: number;
     agent: number;
@@ -30,7 +32,7 @@ export interface IKnowledgeStore {
   /** Tier 2: load category learnings for an agent's subscriptions. */
   loadForSubscriptions(agentId: string): Learning[];
   /** Persist a new learning (timestamps and ID are generated automatically). */
-  capture(learning: Omit<Learning, 'id' | 'createdAt' | 'updatedAt'>): Learning;
+  capture(learning: Omit<LearningInput, 'id' | 'createdAt' | 'updatedAt'>): Learning;
   /** Query learnings with filters. Returns all learnings if filter is empty. */
   query(filter: LearningFilter): Learning[];
 }

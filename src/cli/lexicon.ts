@@ -32,6 +32,12 @@ export interface Lexicon {
   dojo: string;
   /** config — methodology editor */
   config: string;
+  /** observation — raw signal captured during execution */
+  observation: string;
+  /** agent — a kataka (named agent persona) */
+  agent: string;
+  /** artifact — a named output produced by a stage */
+  artifact: string;
 }
 
 /** Thematic lexicon (default): Japanese karate-inspired terms. */
@@ -49,6 +55,9 @@ export const THEMATIC: Lexicon = {
   execute: 'kiai',
   dojo: 'dojo',
   config: 'seido',
+  observation: 'kansatsu',
+  agent: 'kataka',
+  artifact: 'maki',
 };
 
 /** Plain lexicon: standard English equivalents. */
@@ -66,6 +75,9 @@ export const PLAIN: Lexicon = {
   execute: 'execute',
   dojo: 'dojo',
   config: 'config',
+  observation: 'observation',
+  agent: 'agent',
+  artifact: 'artifact',
 };
 
 /**

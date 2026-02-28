@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { LearningSchema } from '@domain/types/learning.js';
 import type { Flavor } from '@domain/types/flavor.js';
 import type { Step } from '@domain/types/step.js';
 import type { KataConfig } from '@domain/types/config.js';
@@ -52,16 +53,18 @@ export class StepFlavorExecutor implements IFlavorExecutor {
     let lastResult: ExecutionResult | undefined;
 
     // Build learnings once — they don't change between steps
-    const learnings = (context.learnings ?? []).map((content) => ({
-      id: randomUUID(),
-      tier: 'stage' as const,
-      category: 'execution',
-      content,
-      confidence: 0.7,
-      evidence: [],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    }));
+    const now = new Date().toISOString();
+    const learnings = (context.learnings ?? []).map((content) =>
+      LearningSchema.parse({
+        id: randomUUID(),
+        tier: 'stage',
+        category: 'execution',
+        content,
+        confidence: 0.7,
+        createdAt: now,
+        updatedAt: now,
+      }),
+    );
 
     // Single pipelineId correlates all steps within this flavor execution
     const pipelineId = randomUUID();

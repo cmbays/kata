@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { LearningSchema } from '@domain/types/learning.js';
-import type { Learning, LearningFilter } from '@domain/types/learning.js';
+import type { Learning, LearningFilter, LearningInput } from '@domain/types/learning.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
 import { SubscriptionManager } from './subscription-manager.js';
 
@@ -31,20 +31,12 @@ export class KnowledgeStore {
    * Persist a new learning. Generates UUID and timestamps automatically.
    */
   capture(
-    learning: Omit<Learning, 'id' | 'createdAt' | 'updatedAt'>,
+    learning: Omit<LearningInput, 'id' | 'createdAt' | 'updatedAt'>,
   ): Learning {
     const now = new Date().toISOString();
     const id = crypto.randomUUID();
 
-    const full: Learning = {
-      ...learning,
-      id,
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    // Validate against schema
-    const validated = LearningSchema.parse(full);
+    const validated = LearningSchema.parse({ ...learning, id, createdAt: now, updatedAt: now });
 
     const filePath = join(this.learningsDir, `${validated.id}.json`);
     JsonStore.write(filePath, validated, LearningSchema);
@@ -148,7 +140,7 @@ export class KnowledgeStore {
   stats(): KnowledgeStats {
     const all = JsonStore.list(this.learningsDir, LearningSchema);
 
-    const byTier = { stage: 0, category: 0, agent: 0 };
+    const byTier = { step: 0, flavor: 0, stage: 0, category: 0, agent: 0 };
     const categoryCount = new Map<string, number>();
     let totalConfidence = 0;
 

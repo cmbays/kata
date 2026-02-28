@@ -14,6 +14,8 @@ import {
   type DecisionEntry,
   type ArtifactIndexEntry,
 } from '@domain/types/run-state.js';
+import { ObservationSchema, type Observation } from '@domain/types/observation.js';
+import { ReflectionSchema, type Reflection } from '@domain/types/reflection.js';
 import type { StageCategory } from '@domain/types/stage.js';
 
 /**
@@ -25,13 +27,23 @@ import type { StageCategory } from '@domain/types/stage.js';
  *     decisions.jsonl
  *     decision-outcomes.jsonl
  *     artifact-index.jsonl
+ *     observations.jsonl          (Wave F — run-level cross-stage observations)
+ *     reflections.jsonl           (Wave F — run-level detection engine output)
  *     stages/
  *       <category>/
  *         state.json
+ *         observations.jsonl      (Wave F — stage-level observations)
+ *         reflections.jsonl       (Wave F — stage-level reflections)
  *         flavors/
  *           <flavor-name>/
  *             state.json
  *             artifact-index.jsonl
+ *             observations.jsonl  (Wave F — flavor-level observations)
+ *             reflections.jsonl   (Wave F — flavor-level reflections)
+ *             steps/
+ *               <step-name>/
+ *                 observations.jsonl  (Wave F — step-level granular observations)
+ *                 reflections.jsonl   (Wave F — step-level reflections)
  *             artifacts/
  *               <files>
  *             synthesis.md  (optional)
@@ -44,9 +56,19 @@ export function runPaths(runsDir: string, runId: string) {
     decisionsJsonl: join(runDir, 'decisions.jsonl'),
     decisionOutcomesJsonl: join(runDir, 'decision-outcomes.jsonl'),
     artifactIndexJsonl: join(runDir, 'artifact-index.jsonl'),
+    /** Wave F — run-level observations (cross-stage signals) */
+    observationsJsonl: join(runDir, 'observations.jsonl'),
+    /** Wave F — run-level reflections (detection engine output) */
+    reflectionsJsonl: join(runDir, 'reflections.jsonl'),
     stagesDir: join(runDir, 'stages'),
     stageDir: (category: StageCategory) => join(runDir, 'stages', category),
     stateJson: (category: StageCategory) => join(runDir, 'stages', category, 'state.json'),
+    /** Wave F — stage-level observations */
+    stageObservationsJsonl: (category: StageCategory) =>
+      join(runDir, 'stages', category, 'observations.jsonl'),
+    /** Wave F — stage-level reflections */
+    stageReflectionsJsonl: (category: StageCategory) =>
+      join(runDir, 'stages', category, 'reflections.jsonl'),
     flavorsDir: (category: StageCategory) => join(runDir, 'stages', category, 'flavors'),
     flavorDir: (category: StageCategory, flavor: string) =>
       join(runDir, 'stages', category, 'flavors', flavor),
@@ -54,6 +76,21 @@ export function runPaths(runsDir: string, runId: string) {
       join(runDir, 'stages', category, 'flavors', flavor, 'state.json'),
     flavorArtifactIndexJsonl: (category: StageCategory, flavor: string) =>
       join(runDir, 'stages', category, 'flavors', flavor, 'artifact-index.jsonl'),
+    /** Wave F — flavor-level observations */
+    flavorObservationsJsonl: (category: StageCategory, flavor: string) =>
+      join(runDir, 'stages', category, 'flavors', flavor, 'observations.jsonl'),
+    /** Wave F — flavor-level reflections */
+    flavorReflectionsJsonl: (category: StageCategory, flavor: string) =>
+      join(runDir, 'stages', category, 'flavors', flavor, 'reflections.jsonl'),
+    /** Wave F — step-level observation directory */
+    stepsDir: (category: StageCategory, flavor: string) =>
+      join(runDir, 'stages', category, 'flavors', flavor, 'steps'),
+    /** Wave F — step-level observations */
+    stepObservationsJsonl: (category: StageCategory, flavor: string, step: string) =>
+      join(runDir, 'stages', category, 'flavors', flavor, 'steps', step, 'observations.jsonl'),
+    /** Wave F — step-level reflections */
+    stepReflectionsJsonl: (category: StageCategory, flavor: string, step: string) =>
+      join(runDir, 'stages', category, 'flavors', flavor, 'steps', step, 'reflections.jsonl'),
     flavorArtifactsDir: (category: StageCategory, flavor: string) =>
       join(runDir, 'stages', category, 'flavors', flavor, 'artifacts'),
     flavorSynthesis: (category: StageCategory, flavor: string) =>
@@ -173,4 +210,100 @@ export function appendDecision(runsDir: string, runId: string, entry: DecisionEn
 /** Append an artifact index entry to the run's artifact-index.jsonl. */
 export function appendArtifact(runsDir: string, runId: string, entry: ArtifactIndexEntry): void {
   JsonlStore.append(runPaths(runsDir, runId).artifactIndexJsonl, entry, ArtifactIndexEntrySchema);
+}
+
+// ---------------------------------------------------------------------------
+// Wave F — Observation + Reflection append helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Observation target — specifies where in the run tree to write the observation.
+ *
+ * - `{ level: 'run' }` — run-level (cross-stage signals)
+ * - `{ level: 'stage', category }` — stage-level (gyo-wide patterns)
+ * - `{ level: 'flavor', category, flavor }` — flavor-level (ryu-specific signals)
+ * - `{ level: 'step', category, flavor, step }` — step-level (granular per-waza)
+ */
+export type ObservationTarget =
+  | { level: 'run' }
+  | { level: 'stage'; category: StageCategory }
+  | { level: 'flavor'; category: StageCategory; flavor: string }
+  | { level: 'step'; category: StageCategory; flavor: string; step: string };
+
+/** Resolve the JSONL path for an observation target. */
+function resolveObservationPath(paths: ReturnType<typeof runPaths>, target: ObservationTarget): string {
+  switch (target.level) {
+    case 'run':    return paths.observationsJsonl;
+    case 'stage':  return paths.stageObservationsJsonl(target.category);
+    case 'flavor': return paths.flavorObservationsJsonl(target.category, target.flavor);
+    case 'step':   return paths.stepObservationsJsonl(target.category, target.flavor, target.step);
+  }
+}
+
+/** Resolve the JSONL path for a reflection target. */
+function resolveReflectionPath(paths: ReturnType<typeof runPaths>, target: ObservationTarget): string {
+  switch (target.level) {
+    case 'run':    return paths.reflectionsJsonl;
+    case 'stage':  return paths.stageReflectionsJsonl(target.category);
+    case 'flavor': return paths.flavorReflectionsJsonl(target.category, target.flavor);
+    case 'step':   return paths.stepReflectionsJsonl(target.category, target.flavor, target.step);
+  }
+}
+
+/**
+ * Append a typed observation to the specified level of the run tree.
+ * The JSONL file and its parent directories are created on first append.
+ */
+export function appendObservation(
+  runsDir: string,
+  runId: string,
+  observation: Observation,
+  target: ObservationTarget,
+): void {
+  const paths = runPaths(runsDir, runId);
+  const path = resolveObservationPath(paths, target);
+  JsonlStore.append(path, observation, ObservationSchema);
+}
+
+/**
+ * Read all observations from the specified level of the run tree.
+ * Returns an empty array if the file does not exist.
+ */
+export function readObservations(
+  runsDir: string,
+  runId: string,
+  target: ObservationTarget,
+): Observation[] {
+  const paths = runPaths(runsDir, runId);
+  const path = resolveObservationPath(paths, target);
+  return JsonlStore.readAll(path, ObservationSchema);
+}
+
+/**
+ * Append a typed reflection to the specified level of the run tree.
+ * The JSONL file and its parent directories are created on first append.
+ */
+export function appendReflection(
+  runsDir: string,
+  runId: string,
+  reflection: Reflection,
+  target: ObservationTarget,
+): void {
+  const paths = runPaths(runsDir, runId);
+  const path = resolveReflectionPath(paths, target);
+  JsonlStore.append(path, reflection, ReflectionSchema);
+}
+
+/**
+ * Read all reflections from the specified level of the run tree.
+ * Returns an empty array if the file does not exist.
+ */
+export function readReflections(
+  runsDir: string,
+  runId: string,
+  target: ObservationTarget,
+): Reflection[] {
+  const paths = runPaths(runsDir, runId);
+  const path = resolveReflectionPath(paths, target);
+  return JsonlStore.readAll(path, ReflectionSchema);
 }

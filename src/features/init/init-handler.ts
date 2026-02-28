@@ -12,11 +12,13 @@ import { KATA_DIRS } from '@shared/constants/paths.js';
 import { logger } from '@shared/lib/logger.js';
 import { KataError } from '@shared/lib/errors.js';
 import { detectProject, type ProjectInfo, type ProjectType } from './project-detector.js';
+import { generateKataMd } from './kata-md-generator.js';
 
 export interface InitOptions {
   cwd: string;
   methodology?: string;
   adapter?: string;
+  experienceLevel?: 'beginner' | 'intermediate' | 'experienced';
   skipPrompts?: boolean;
 }
 
@@ -33,6 +35,8 @@ export interface InitResult {
   aoConfigPath?: string;
   /** True if AO config generation was attempted but failed */
   aoConfigFailed?: boolean;
+  /** Path to the generated KATA.md file */
+  kataMdPath?: string;
 }
 
 
@@ -72,7 +76,11 @@ function resolvePackageRoot(): string {
  * Prompt the user for methodology and adapter interactively.
  * Only called when skipPrompts is false.
  */
-async function promptOptions(): Promise<{ methodology: string; adapter: string }> {
+async function promptOptions(): Promise<{
+  methodology: string;
+  adapter: string;
+  experienceLevel: 'beginner' | 'intermediate' | 'experienced';
+}> {
   const { select } = await import('@inquirer/prompts');
 
   const methodology = await select({
@@ -94,7 +102,17 @@ async function promptOptions(): Promise<{ methodology: string; adapter: string }
     default: 'manual',
   });
 
-  return { methodology, adapter };
+  const experienceLevel = await select<'beginner' | 'intermediate' | 'experienced'>({
+    message: 'Your experience level with Kata:',
+    choices: [
+      { name: 'Beginner — I\'m new to Kata and development methodology', value: 'beginner' },
+      { name: 'Intermediate — I\'m familiar with the concepts', value: 'intermediate' },
+      { name: 'Experienced — I\'m a power user, terse output preferred', value: 'experienced' },
+    ],
+    default: 'intermediate',
+  });
+
+  return { methodology, adapter, experienceLevel };
 }
 
 /**
@@ -112,7 +130,7 @@ async function promptOptions(): Promise<{ methodology: string; adapter: string }
  */
 export async function handleInit(options: InitOptions): Promise<InitResult> {
   const { cwd, skipPrompts = false } = options;
-  let { methodology, adapter } = options;
+  let { methodology, adapter, experienceLevel } = options;
 
   // Detect existing project info
   const projectInfo: ProjectInfo = detectProject(cwd);
@@ -134,6 +152,7 @@ export async function handleInit(options: InitOptions): Promise<InitResult> {
     const prompted = await promptOptions();
     methodology = prompted.methodology;
     adapter = prompted.adapter;
+    experienceLevel = experienceLevel ?? prompted.experienceLevel;
   }
 
   // Apply defaults
@@ -182,6 +201,9 @@ export async function handleInit(options: InitOptions): Promise<InitResult> {
     project: {
       name: projectInfo.packageName,
       repository: projectInfo.hasGit ? cwd : undefined,
+    },
+    user: {
+      experienceLevel: experienceLevel ?? 'intermediate',
     },
   });
 
@@ -321,6 +343,18 @@ export async function handleInit(options: InitOptions): Promise<InitResult> {
     logger.warn(`Built-in pipeline templates not found at "${builtinTemplatesDir}". Templates were not loaded.`);
   }
 
+  // Generate KATA.md — the project context file for kataka agents
+  let kataMdPath: string | undefined;
+  const kataMdDest = join(kataDir, 'KATA.md');
+  try {
+    const { writeFileSync } = await import('node:fs');
+    const kataMdContent = generateKataMd({ config, kataDir });
+    writeFileSync(kataMdDest, kataMdContent, 'utf-8');
+    kataMdPath = kataMdDest;
+  } catch (err) {
+    logger.warn(`Failed to generate KATA.md at "${kataMdDest}": ${err instanceof Error ? err.message : String(err)}`);
+  }
+
   return {
     kataDir,
     config,
@@ -331,5 +365,6 @@ export async function handleInit(options: InitOptions): Promise<InitResult> {
     claudeCliDetected,
     aoConfigPath,
     aoConfigFailed,
+    kataMdPath,
   };
 }

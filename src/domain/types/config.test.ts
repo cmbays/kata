@@ -45,4 +45,40 @@ describe('KataConfigSchema', () => {
       })
     ).toThrow();
   });
+
+  it('defaults user.experienceLevel to intermediate', () => {
+    const result = KataConfigSchema.parse({});
+    expect(result.user.experienceLevel).toBe('intermediate');
+  });
+
+  it('accepts all experience levels', () => {
+    for (const level of ['beginner', 'intermediate', 'experienced'] as const) {
+      const result = KataConfigSchema.parse({ user: { experienceLevel: level } });
+      expect(result.user.experienceLevel).toBe(level);
+    }
+  });
+
+  it('defaults cooldown.synthesisDepth to standard', () => {
+    const result = KataConfigSchema.parse({});
+    expect(result.cooldown.synthesisDepth).toBe('standard');
+  });
+
+  it('accepts all synthesis depths', () => {
+    for (const depth of ['quick', 'standard', 'thorough'] as const) {
+      const result = KataConfigSchema.parse({ cooldown: { synthesisDepth: depth } });
+      expect(result.cooldown.synthesisDepth).toBe(depth);
+    }
+  });
+
+  it('rejects invalid experience level', () => {
+    expect(() =>
+      KataConfigSchema.parse({ user: { experienceLevel: 'expert' } })
+    ).toThrow();
+  });
+
+  it('rejects invalid synthesis depth', () => {
+    expect(() =>
+      KataConfigSchema.parse({ cooldown: { synthesisDepth: 'deep' } })
+    ).toThrow();
+  });
 });
