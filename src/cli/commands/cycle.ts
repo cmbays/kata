@@ -418,6 +418,7 @@ export function registerCycleCommands(parent: Command): void {
         historyDir: kataDirPath(ctx.kataDir, 'history'),
         runsDir: kataDirPath(ctx.kataDir, 'runs'),
         ruleRegistry,
+        dojoDir: kataDirPath(ctx.kataDir, 'dojo'),
       });
 
       const betOutcomes: BetOutcomeRecord[] = [];

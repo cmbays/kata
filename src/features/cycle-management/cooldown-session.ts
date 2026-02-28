@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import type { CycleManager, CooldownReport } from '@domain/services/cycle-manager.js';
 import type { IKnowledgeStore } from '@domain/ports/knowledge-store.js';
 import type { IPersistence } from '@domain/ports/persistence.js';
@@ -9,6 +10,8 @@ import { ExecutionHistoryEntrySchema } from '@domain/types/history.js';
 import { DecisionEntrySchema, ArtifactIndexEntrySchema } from '@domain/types/run-state.js';
 import { readRun, readStageState, runPaths } from '@infra/persistence/run-store.js';
 import { JsonlStore } from '@infra/persistence/jsonl-store.js';
+import { DiaryWriter } from '@features/dojo/diary-writer.js';
+import { DiaryStore } from '@infra/dojo/diary-store.js';
 import { logger } from '@shared/lib/logger.js';
 import { ProposalGenerator, type CycleProposal, type ProposalGeneratorDeps } from './proposal-generator.js';
 import type { RunSummary, StageDetail } from './types.js';
@@ -35,6 +38,11 @@ export interface CooldownSessionDeps {
    * Backward compatible — omitting this field leaves existing behavior unchanged.
    */
   ruleRegistry?: IStageRuleRegistry;
+  /**
+   * Optional path to .kata/dojo/ directory. When provided, CooldownSession writes
+   * a diary entry during cooldown. Backward compatible — omitting this field skips diary writing.
+   */
+  dojoDir?: string;
 }
 
 /**
@@ -140,6 +148,19 @@ export class CooldownSession {
 
       // 8. Capture cooldown learnings (non-critical — errors should not abort)
       const learningsCaptured = this.captureCooldownLearnings(report);
+
+      // 8.5. Write dojo diary entry (non-critical — failure never aborts cooldown)
+      if (this.deps.dojoDir) {
+        this.writeDiaryEntry({
+          cycleId,
+          cycleName: cycle.name,
+          betOutcomes,
+          proposals,
+          runSummaries,
+          learningsCaptured,
+          ruleSuggestions,
+        });
+      }
 
       // 9. Transition to complete
       this.deps.cycleManager.updateState(cycleId, 'complete');
@@ -371,5 +392,24 @@ export class CooldownSession {
   private loadCycleHistory(cycleId: string): ExecutionHistoryEntry[] {
     const allEntries = this.deps.persistence.list(this.deps.historyDir, ExecutionHistoryEntrySchema);
     return allEntries.filter((entry) => entry.cycleId === cycleId);
+  }
+
+  private writeDiaryEntry(input: {
+    cycleId: string;
+    cycleName?: string;
+    betOutcomes: BetOutcomeRecord[];
+    proposals: CycleProposal[];
+    runSummaries?: RunSummary[];
+    learningsCaptured: number;
+    ruleSuggestions?: RuleSuggestion[];
+  }): void {
+    try {
+      const diaryDir = join(this.deps.dojoDir!, 'diary');
+      const store = new DiaryStore(diaryDir);
+      const writer = new DiaryWriter(store);
+      writer.write(input);
+    } catch (err) {
+      logger.warn(`Failed to write dojo diary entry: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 }
