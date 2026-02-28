@@ -36,6 +36,26 @@ export const KataConfigSchema = z.object({
     name: z.string().optional(),
     repository: z.string().optional(),
   }).default({}),
+  /** User profile — captured during init and used to tune output depth */
+  user: z.object({
+    /**
+     * Self-reported experience level with Kata and development methodology.
+     * - 'beginner': First time using Kata — more guidance, simpler output
+     * - 'intermediate': Familiar with the concepts — standard output
+     * - 'experienced': Power user — terse output, full graph context
+     */
+    experienceLevel: z.enum(['beginner', 'intermediate', 'experienced']).default('intermediate'),
+  }).default(() => ({ experienceLevel: 'intermediate' as const })),
+  /** Cooldown session settings */
+  cooldown: z.object({
+    /**
+     * How deeply to run the LLM synthesis pipeline during cooldown.
+     * - 'quick': Filter + basic pattern detection only (fast)
+     * - 'standard': Full 3-step pipeline (default)
+     * - 'thorough': Multiple passes + cross-cycle analysis (major milestones)
+     */
+    synthesisDepth: z.enum(['quick', 'standard', 'thorough']).default('standard'),
+  }).default(() => ({ synthesisDepth: 'standard' as const })),
 });
 
 export type KataConfig = z.infer<typeof KataConfigSchema>;

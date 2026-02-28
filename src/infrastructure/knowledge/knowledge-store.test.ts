@@ -355,7 +355,7 @@ describe('KnowledgeStore', () => {
       const result = store.stats();
       expect(result).toEqual({
         total: 0,
-        byTier: { stage: 0, category: 0, agent: 0 },
+        byTier: { step: 0, flavor: 0, stage: 0, category: 0, agent: 0 },
         topCategories: [],
         averageConfidence: 0,
       });
@@ -377,7 +377,7 @@ describe('KnowledgeStore', () => {
       store.capture(makeLearningInput({ tier: 'agent', agentId: 'a1' }));
 
       const result = store.stats();
-      expect(result.byTier).toEqual({ stage: 2, category: 1, agent: 1 });
+      expect(result.byTier).toEqual({ step: 0, flavor: 0, stage: 2, category: 1, agent: 1 });
     });
 
     it('returns top categories sorted by count', () => {

@@ -113,10 +113,19 @@ export {
 export {
   LearningTier,
   LearningEvidenceSchema,
+  CitationSchema,
+  ReinforcementSchema,
+  LearningVersionSchema,
+  LearningPermanence,
+  LearningSource,
   LearningSchema,
   LearningFilterSchema,
   type LearningEvidence,
+  type Citation,
+  type Reinforcement,
+  type LearningVersion,
   type Learning,
+  type LearningInput,
   type LearningFilter,
 } from './learning.js';
 
@@ -190,6 +199,45 @@ export {
   type ExecutionPlan,
   type ReflectionResult,
 } from './orchestration.js';
+
+// Observation types (Wave F)
+export {
+  FrictionTaxonomy,
+  GapSeverity,
+  ObservationSchema,
+  PredictionQuantitativeSchema,
+  PredictionQualitativeSchema,
+  DecisionObservationSchema,
+  PredictionObservationSchema,
+  FrictionObservationSchema,
+  GapObservationSchema,
+  OutcomeObservationSchema,
+  AssumptionObservationSchema,
+  InsightObservationSchema,
+  type PredictionQuantitative,
+  type PredictionQualitative,
+  type Observation,
+} from './observation.js';
+
+// Reflection types (Wave F)
+export {
+  FrictionResolutionPath,
+  ReflectionSchema,
+  CalibrationReflectionSchema,
+  ValidationReflectionSchema,
+  ResolutionReflectionSchema,
+  UnmatchedReflectionSchema,
+  SynthesisReflectionSchema,
+  type Reflection,
+} from './reflection.js';
+
+// Graph index types (Wave F)
+export {
+  GraphEdgeSchema,
+  GraphIndexSchema,
+  type GraphEdge,
+  type GraphIndex,
+} from './graph-index.js';
 
 // Dojo types
 export {

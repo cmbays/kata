@@ -113,15 +113,16 @@ describe('handleInit', () => {
     const { select } = await import('@inquirer/prompts');
     const mockSelect = vi.mocked(select);
     mockSelect
-      .mockResolvedValueOnce('shape-up')
-      .mockResolvedValueOnce('composio');
+      .mockResolvedValueOnce('shape-up')   // methodology
+      .mockResolvedValueOnce('composio')   // adapter
+      .mockResolvedValueOnce('intermediate'); // experienceLevel
 
     const result = await handleInit({
       cwd: baseDir,
       skipPrompts: false,
     });
 
-    expect(mockSelect).toHaveBeenCalledTimes(2);
+    expect(mockSelect).toHaveBeenCalledTimes(3);
     expect(result.config.methodology).toBe('shape-up');
     expect(result.config.execution.adapter).toBe('composio');
   });

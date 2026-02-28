@@ -31,7 +31,7 @@ export function handleStatus(ctx: { kataDir: string; globalOpts: { json?: boolea
   } catch { /* degraded: artifacts section unavailable */ }
 
   // Knowledge summary
-  let knowledgeStats: ReturnType<KnowledgeStore['stats']> = { total: 0, averageConfidence: 0, byTier: { stage: 0, category: 0, agent: 0 }, topCategories: [] };
+  let knowledgeStats: ReturnType<KnowledgeStore['stats']> = { total: 0, averageConfidence: 0, byTier: { step: 0, flavor: 0, stage: 0, category: 0, agent: 0 }, topCategories: [] };
   try {
     const knowledgeStore = new KnowledgeStore(kataDirPath(ctx.kataDir, 'knowledge'));
     knowledgeStats = knowledgeStore.stats();
@@ -102,7 +102,7 @@ export function handleStats(
   } catch { /* degraded: analytics section unavailable */ }
 
   // Knowledge stats
-  let knowledgeStats: ReturnType<KnowledgeStore['stats']> = { total: 0, averageConfidence: 0, byTier: { stage: 0, category: 0, agent: 0 }, topCategories: [] };
+  let knowledgeStats: ReturnType<KnowledgeStore['stats']> = { total: 0, averageConfidence: 0, byTier: { step: 0, flavor: 0, stage: 0, category: 0, agent: 0 }, topCategories: [] };
   try {
     const knowledgeStore = new KnowledgeStore(kataDirPath(ctx.kataDir, 'knowledge'));
     knowledgeStats = knowledgeStore.stats();

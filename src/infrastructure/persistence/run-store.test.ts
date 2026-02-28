@@ -13,7 +13,12 @@ import {
   writeFlavorState,
   appendDecision,
   appendArtifact,
+  appendObservation,
+  readObservations,
+  appendReflection,
+  readReflections,
   runPaths,
+  type ObservationTarget,
 } from './run-store.js';
 import {
   DecisionEntrySchema,
@@ -23,6 +28,8 @@ import {
 } from '@domain/types/run-state.js';
 import { JsonlStore } from './jsonl-store.js';
 import type { Run } from '@domain/types/run-state.js';
+import { ObservationSchema, type Observation } from '@domain/types/observation.js';
+import { ReflectionSchema, type Reflection } from '@domain/types/reflection.js';
 
 const VALID_UUID = () => randomUUID();
 const VALID_TS = '2026-01-01T00:00:00.000Z';
@@ -268,5 +275,240 @@ describe('appendArtifact', () => {
     const entries = JsonlStore.readAll(paths.artifactIndexJsonl, ArtifactIndexEntrySchema);
     expect(entries).toHaveLength(1);
     expect(entries[0].flavor).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Wave F — runPaths observation/reflection path helpers
+// ---------------------------------------------------------------------------
+
+describe('runPaths — Wave F observation/reflection paths', () => {
+  it('exposes run-level observation paths', () => {
+    const runsDir = tempRunsDir();
+    const run = makeRun();
+    const paths = runPaths(runsDir, run.id);
+    expect(paths.observationsJsonl).toContain('observations.jsonl');
+    expect(paths.reflectionsJsonl).toContain('reflections.jsonl');
+  });
+
+  it('exposes stage-level observation paths', () => {
+    const runsDir = tempRunsDir();
+    const run = makeRun();
+    const paths = runPaths(runsDir, run.id);
+    expect(paths.stageObservationsJsonl('build')).toContain('/stages/build/observations.jsonl');
+    expect(paths.stageReflectionsJsonl('research')).toContain('/stages/research/reflections.jsonl');
+  });
+
+  it('exposes flavor-level observation paths', () => {
+    const runsDir = tempRunsDir();
+    const run = makeRun();
+    const paths = runPaths(runsDir, run.id);
+    expect(paths.flavorObservationsJsonl('build', 'tdd')).toContain('/flavors/tdd/observations.jsonl');
+    expect(paths.flavorReflectionsJsonl('build', 'tdd')).toContain('/flavors/tdd/reflections.jsonl');
+  });
+
+  it('exposes step-level observation paths', () => {
+    const runsDir = tempRunsDir();
+    const run = makeRun();
+    const paths = runPaths(runsDir, run.id);
+    expect(paths.stepObservationsJsonl('build', 'tdd', 'write-tests')).toContain('/steps/write-tests/observations.jsonl');
+    expect(paths.stepReflectionsJsonl('build', 'tdd', 'write-tests')).toContain('/steps/write-tests/reflections.jsonl');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Wave F — appendObservation / readObservations
+// ---------------------------------------------------------------------------
+
+function makeObservation(overrides: Partial<Observation> = {}): Observation {
+  return ObservationSchema.parse({
+    id: VALID_UUID(),
+    timestamp: VALID_TS,
+    content: 'test observation',
+    type: 'insight',
+    ...overrides,
+  });
+}
+
+describe('appendObservation / readObservations', () => {
+  it('appends and reads a run-level observation', () => {
+    const runsDir = tempRunsDir();
+    const run = makeRun();
+    createRunTree(runsDir, run);
+
+    const obs = makeObservation({ type: 'decision', content: 'chose TDD approach' });
+    const target: ObservationTarget = { level: 'run' };
+
+    appendObservation(runsDir, run.id, obs, target);
+
+    const loaded = readObservations(runsDir, run.id, target);
+    expect(loaded).toHaveLength(1);
+    expect(loaded[0].id).toBe(obs.id);
+    expect(loaded[0].type).toBe('decision');
+    expect(loaded[0].content).toBe('chose TDD approach');
+  });
+
+  it('appends and reads a stage-level observation', () => {
+    const runsDir = tempRunsDir();
+    const run = makeRun();
+    createRunTree(runsDir, run);
+    const target: ObservationTarget = { level: 'stage', category: 'build' };
+
+    const frictionObs = ObservationSchema.parse({
+      id: VALID_UUID(),
+      timestamp: VALID_TS,
+      content: 'style guide conflict',
+      type: 'friction',
+      taxonomy: 'convention-clash',
+      katakaId: 'builder-ka',
+    });
+
+    appendObservation(runsDir, run.id, frictionObs, target);
+
+    const loaded = readObservations(runsDir, run.id, target);
+    expect(loaded).toHaveLength(1);
+    expect(loaded[0].type).toBe('friction');
+    if (loaded[0].type === 'friction') {
+      expect(loaded[0].taxonomy).toBe('convention-clash');
+      expect(loaded[0].katakaId).toBe('builder-ka');
+    }
+  });
+
+  it('appends and reads a flavor-level observation', () => {
+    const runsDir = tempRunsDir();
+    const run = makeRun();
+    createRunTree(runsDir, run);
+
+    const obs = makeObservation({ type: 'insight', content: 'TDD works better here' });
+    const target: ObservationTarget = { level: 'flavor', category: 'build', flavor: 'tdd' };
+
+    appendObservation(runsDir, run.id, obs, target);
+
+    const loaded = readObservations(runsDir, run.id, target);
+    expect(loaded).toHaveLength(1);
+    expect(loaded[0].content).toBe('TDD works better here');
+  });
+
+  it('appends and reads a step-level observation', () => {
+    const runsDir = tempRunsDir();
+    const run = makeRun();
+    createRunTree(runsDir, run);
+
+    const gapObs = ObservationSchema.parse({
+      id: VALID_UUID(),
+      timestamp: VALID_TS,
+      content: 'No tests for error paths',
+      type: 'gap',
+      severity: 'major',
+    });
+    const target: ObservationTarget = { level: 'step', category: 'build', flavor: 'tdd', step: 'write-tests' };
+
+    appendObservation(runsDir, run.id, gapObs, target);
+
+    const loaded = readObservations(runsDir, run.id, target);
+    expect(loaded).toHaveLength(1);
+    expect(loaded[0].type).toBe('gap');
+    if (loaded[0].type === 'gap') {
+      expect(loaded[0].severity).toBe('major');
+    }
+  });
+
+  it('returns empty array when no observations exist', () => {
+    const runsDir = tempRunsDir();
+    const run = makeRun();
+    createRunTree(runsDir, run);
+
+    const loaded = readObservations(runsDir, run.id, { level: 'run' });
+    expect(loaded).toEqual([]);
+  });
+
+  it('accumulates multiple observations without overwriting', () => {
+    const runsDir = tempRunsDir();
+    const run = makeRun();
+    createRunTree(runsDir, run);
+    const target: ObservationTarget = { level: 'run' };
+
+    appendObservation(runsDir, run.id, makeObservation({ content: 'first' }), target);
+    appendObservation(runsDir, run.id, makeObservation({ content: 'second' }), target);
+    appendObservation(runsDir, run.id, makeObservation({ content: 'third' }), target);
+
+    const loaded = readObservations(runsDir, run.id, target);
+    expect(loaded).toHaveLength(3);
+    expect(loaded.map((o) => o.content)).toEqual(['first', 'second', 'third']);
+  });
+
+  it('does not mix observations from different levels', () => {
+    const runsDir = tempRunsDir();
+    const run = makeRun();
+    createRunTree(runsDir, run);
+
+    const runTarget: ObservationTarget = { level: 'run' };
+    const stageTarget: ObservationTarget = { level: 'stage', category: 'research' };
+
+    appendObservation(runsDir, run.id, makeObservation({ content: 'run-level' }), runTarget);
+    appendObservation(runsDir, run.id, makeObservation({ content: 'stage-level' }), stageTarget);
+
+    const runObs = readObservations(runsDir, run.id, runTarget);
+    const stageObs = readObservations(runsDir, run.id, stageTarget);
+
+    expect(runObs).toHaveLength(1);
+    expect(runObs[0].content).toBe('run-level');
+    expect(stageObs).toHaveLength(1);
+    expect(stageObs[0].content).toBe('stage-level');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Wave F — appendReflection / readReflections
+// ---------------------------------------------------------------------------
+
+function makeReflection(): Reflection {
+  return ReflectionSchema.parse({
+    id: VALID_UUID(),
+    timestamp: VALID_TS,
+    observationIds: [],
+    type: 'synthesis',
+    sourceReflectionIds: [],
+    insight: 'Calibration improves over time',
+  });
+}
+
+describe('appendReflection / readReflections', () => {
+  it('appends and reads a run-level reflection', () => {
+    const runsDir = tempRunsDir();
+    const run = makeRun();
+    createRunTree(runsDir, run);
+
+    const ref = makeReflection();
+    const target: ObservationTarget = { level: 'run' };
+
+    appendReflection(runsDir, run.id, ref, target);
+
+    const loaded = readReflections(runsDir, run.id, target);
+    expect(loaded).toHaveLength(1);
+    expect(loaded[0].id).toBe(ref.id);
+    expect(loaded[0].type).toBe('synthesis');
+  });
+
+  it('returns empty array when no reflections exist', () => {
+    const runsDir = tempRunsDir();
+    const run = makeRun();
+    createRunTree(runsDir, run);
+
+    const loaded = readReflections(runsDir, run.id, { level: 'run' });
+    expect(loaded).toEqual([]);
+  });
+
+  it('accumulates multiple reflections', () => {
+    const runsDir = tempRunsDir();
+    const run = makeRun();
+    createRunTree(runsDir, run);
+    const target: ObservationTarget = { level: 'stage', category: 'build' };
+
+    appendReflection(runsDir, run.id, makeReflection(), target);
+    appendReflection(runsDir, run.id, makeReflection(), target);
+
+    const loaded = readReflections(runsDir, run.id, target);
+    expect(loaded).toHaveLength(2);
   });
 });
