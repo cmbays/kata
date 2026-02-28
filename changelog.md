@@ -1,3 +1,9 @@
+---
+title: Changelog
+description: Release history for Kata (@withkata/core)
+---
+
+# Changelog
 ## Unreleased
 
 ### Bug Fixes
@@ -13,6 +19,7 @@
 
 - Formalize public repo — LICENSE, badges, gitignore, topics
 - *(docs)* Initialize Mintlify site — linden theme, full navigation
+- *(tooling)* Switch to git-cliff for changelog generation
 
 ### Documentation
 
