@@ -13,7 +13,7 @@
 
 ## Core Idea
 
-Kata captures rich execution data — decisions, learnings, frictions, run state, cooldown reflections — but primarily serves the system's self-improvement loop. The Dojo flips this: it transforms that same data into an interactive training experience for the *developer*.
+Kata captures rich kiai (execution) data — kime (decisions), bunkai (learnings), frictions, run state, ma (cooldown) reflections — but primarily serves the system's self-improvement loop. The Dojo flips this: it transforms that same data into an interactive training experience for the *developer*.
 
 Each Dojo session is an **emergent, fit-for-the-moment** HTML experience — not a static knowledge base. Sessions are generated through conversation with Claude, saved for later review, and build up a personal training archive.
 
@@ -42,18 +42,18 @@ The four directions are not just organizational — they represent fundamentally
 
 Inside a Claude session, the `/dojo` skill drives collaborative session creation:
 
-1. Read `.kata/dojo/diary/` entries, recent learnings, run history, roadmap
+1. Read `.kata/dojo/diary/` entries, recent bunkai (learnings), run history, roadmap
 2. Present "here's what your project has been through" summary
 3. **Collaboratively scope all four directions:**
    - Ushiro (backward): What happened? What patterns emerged? What went wrong?
    - Uchi (inward): What does the project look like now? What does the *user* personally want to focus on? What concerns them?
    - Soto (outward): What do best practices say about the topics that surfaced?
    - Mae (forward): What's next on the roadmap? What should we prepare for?
-4. Dispatch research agents for outward-looking topics
+4. Dispatch research kataka (agents) for soto topics
 5. Generate session HTML
 6. Present the result
 
-The inward direction is deliberately interactive — Claude actively asks the user what they want to focus on, what concerns them, what they feel uncertain about. This is not just data aggregation; it's a conversation.
+The uchi direction is deliberately interactive — Claude actively asks the user what they want to focus on, what concerns them, what they feel uncertain about. This is not just data aggregation; it's a conversation.
 
 ### CLI: `kata dojo`
 
@@ -75,14 +75,14 @@ All commands respect `--json` and `--plain` flags.
 
 ## 3. Diary Entries — The Bridge
 
-Diary entries are the bridge between Kata's structured data and the conversational Dojo experience. After each cooldown, a diary entry captures the narrative of the cycle.
+Diary entries are the bridge between Kata's structured data and the conversational Dojo experience. After each ma (cooldown), a diary entry captures the narrative of the keiko (cycle).
 
 ### Schema: `DojoDiaryEntrySchema`
 
 | Field | Type | Purpose |
 |-------|------|---------|
 | `id` | UUID | |
-| `cycleId` | UUID | Links to the cycle this reflects on |
+| `cycleId` | UUID | Links to the keiko this reflects on |
 | `cycleName` | string? | Display name |
 | `narrative` | string | Free-form: what happened, surprises, breakthroughs |
 | `wins` | string[] | Key accomplishments |
@@ -96,18 +96,18 @@ Diary entries are the bridge between Kata's structured data and the conversation
 
 Diary quality scales with the level of interaction available. All three tiers produce valid diary entries — the difference is narrative richness.
 
-**Interactive (default):** Claude writes the narrative during cooldown with the user present. The cooldown skill instructs Claude to reflect on the cycle and produce a rich narrative — capturing the emotional texture, surprises, and breakthroughs that structured data alone can't convey. Claude can ask the user directly: "What surprised you?", "What are you worried about?", "What felt like a breakthrough?" The user's voice is the richest input.
+**Interactive (default):** Claude writes the narrative during ma (cooldown) with the user present. The ma skill instructs Claude to reflect on the keiko and produce a rich narrative — capturing the emotional texture, surprises, and breakthroughs that structured data alone can't convey. Claude can ask the user directly: "What surprised you?", "What are you worried about?", "What felt like a breakthrough?" The user's voice is the richest input.
 
-**Autonomous (`--auto`):** Claude runs cooldown without user interaction. Claude still has full LLM capability — it can read run data, infer patterns, identify what went well and what didn't, assess mood from structured signals, and write a qualitative narrative. What's missing is the user's personal perspective: their emotional state, their concerns, what felt important to *them* vs. what the data shows. Claude should still make judgment calls — inferring mood from outcome patterns, identifying likely pain points from gap severity, surfacing open questions from unfinished work — it just can't validate those inferences with the user.
+**Autonomous (`--auto`):** Claude runs ma without user interaction. Claude still has full LLM capability — it can read run data, infer patterns, identify what went well and what didn't, assess mood from structured signals, and write a qualitative narrative. What's missing is the user's personal perspective: their emotional state, their concerns, what felt important to *them* vs. what the data shows. Claude should still make judgment calls — inferring mood from outcome patterns, identifying likely pain points from gap severity, surfacing open questions from unfinished work — it just can't validate those inferences with the user.
 
 **Deterministic (no Claude):** Pure template-based generation from structured data when no LLM is available at all (e.g., offline environments, CI pipelines). This is the true fallback:
-- Narrative: "Cycle '{name}' completed with X/Y bets..."
+- Narrative: "Keiko '{name}' completed with X/Y bets..."
 - Wins: From complete bet outcomes
 - Pain points: From partial/abandoned bets + high-severity gaps
 - Open questions: From proposals
 - Mood: Heuristic (>80% bets complete = energized, 50-80% = steady, <50% = frustrated)
 
-> **Current state**: The interactive and deterministic tiers are implemented. The autonomous tier currently falls through to deterministic — enhancing `--auto` to use Claude's inference capability for richer unattended diary entries is tracked as a follow-up.
+> **Current state**: The interactive and deterministic tiers are implemented. The autonomous tier currently falls through to deterministic — enhancing `--auto` to use Claude's inference capability for richer unattended diary entries is tracked as a follow-up ([#180](https://github.com/cmbays/kata/issues/180)).
 
 ---
 
@@ -124,7 +124,7 @@ Diary quality scales with the level of interaction available. All three tiers pr
 | `sections` | DojoContentSection[] | Ordered rendered content |
 | `diaryEntryIds` | UUID[] | Which diary entries informed this |
 | `runIds` | UUID[] | Which runs informed this |
-| `cycleIds` | UUID[] | Which cycles informed this |
+| `cycleIds` | UUID[] | Which keiko informed this |
 | `sourceIds` | UUID[] | Which external sources were used |
 | `tags` | string[] | |
 | `createdAt` | datetime | |
@@ -163,17 +163,17 @@ DataAggregator ──> SessionBuilder ──> HtmlGenerator ──> SessionStore
 ```
 
 **DataAggregator** bridges kata's structured data and the Dojo. Returns a `DojoDataBundle`:
-- Backward: recent diaries, cycles, run summaries, top learnings, recurring gaps
-- Inward: knowledge stats, flavor frequency
-- Metadata: project name, total cycles, total runs
+- Ushiro: recent diaries, keiko, run summaries, top bunkai (learnings), recurring gaps
+- Uchi: bunkai stats, ryu (flavor) frequency
+- Metadata: project name, total keiko, total runs
 
 Reuses existing services: `CycleManager.list()`, `KnowledgeStore.query()/stats()`, cross-run-analyzer's `analyzeFlavorFrequency()`/`analyzeRecurringGaps()`.
 
 **SessionBuilder** generates sections by direction:
-- Backward: Timeline, decision quality charts, gap recurrence, bet outcome trends
-- Inward: Knowledge stats, flavor frequency, confidence distribution
-- Outward: Research findings from curated sources
-- Forward: Proposals reframed as learning objectives, open questions
+- Ushiro (backward): Timeline, kime quality charts, gap recurrence, bet outcome trends
+- Uchi (inward): Bunkai stats, ryu frequency, confidence distribution
+- Soto (outward): Research findings from curated sources
+- Mae (forward): Proposals reframed as learning objectives, open questions
 
 **HtmlGenerator** is a pure function: `DojoSession → HTML string`. All CSS/JS inlined. No external runtime dependencies.
 
@@ -240,41 +240,41 @@ The source registry provides the scope for outward-looking research.
 
 ### Default Sources
 
-Shipped as `dojo/default-sources.json` with curated defaults per common domain: official language docs, MDN, OWASP, framework documentation, etc. Projects inherit these at `kata init` and can add/remove/toggle sources via `kata dojo sources`.
+Shipped as `dojo/default-sources.json` with curated defaults per common domain: official language docs, MDN, OWASP, framework documentation, etc. Projects inherit these at `kata rei` (init) and can add/remove/toggle sources via `kata dojo sources`.
 
-### Research Agents
+### Research Kataka
 
-During a `/dojo` session, Claude dispatches research sub-agents (guided by `skill/dojo-research.md`) to:
+During a `/dojo` session, Claude dispatches research kataka (agents) guided by `skill/dojo-research.md` to:
 1. Read `sources.json` for their search scope
 2. Fetch information relevant to the scoped topics from those sources
-3. Validate findings against internal project data (pain points, learnings, gaps)
+3. Validate findings against internal project data (pain points, bunkai, gaps)
 4. Summarize and structure findings for session consumption
 
-Research agents prioritize official/authoritative sources, check recency, and score relevance to the specific project context.
+Research kataka prioritize official/authoritative sources, check recency, and score relevance to the specific project context.
 
 ---
 
-## 7. Cooldown Integration
+## 7. Ma (Cooldown) Integration
 
-The Dojo integrates into the existing cooldown flow with minimal, non-breaking changes.
+The Dojo integrates into the existing ma flow with minimal, non-breaking changes.
 
 ### How It Works
 
-After cooldown step 8 (capture learnings), before step 9 (transition to complete):
+After ma step 8 (capture bunkai), before step 9 (transition to complete):
 1. `DiaryStore` created from `.kata/dojo/diary/` path
-2. `DiaryWriter.writeDiary()` called with cooldown data
-3. Diary entry saved as `{cycle-id}.json`
-4. Wrapped in try/catch — diary failure **never** aborts cooldown
+2. `DiaryWriter.writeDiary()` called with ma data
+3. Diary entry saved as `{keiko-id}.json`
+4. Wrapped in try/catch — diary failure **never** aborts ma
 
 ### What Feeds In
 
 The DiaryWriter receives:
-- Cycle ID and name
+- Keiko (cycle) ID and name
 - Narrative (from Claude, or generated from templates)
 - Bet outcomes (complete/partial/abandoned)
-- Proposals for next cycle
-- Run summaries (stages, gaps, decisions)
-- Learnings captured during this cooldown
+- Proposals for next keiko
+- Run summaries (gyo, gaps, kime)
+- Bunkai captured during this ma
 - Rule suggestions
 
 ---
@@ -283,8 +283,8 @@ The DiaryWriter receives:
 
 ```
 .kata/dojo/
-  diary/                           # One JSON file per cooldown
-    {cycle-id}.json                # DojoDiaryEntry
+  diary/                           # One JSON file per ma (cooldown)
+    {keiko-id}.json                # DojoDiaryEntry
   sessions/                        # Generated sessions
     {session-id}/
       meta.json                    # DojoSessionMeta (lightweight index data)
@@ -293,7 +293,7 @@ The DiaryWriter receives:
   index.json                       # Session archive index (rebuilt from meta files)
 ```
 
-Created at `kata init`. Session store maintains the index; `rebuildIndex()` repairs it from session directories if needed.
+Created at `kata rei` (init). Session store maintains the index; `rebuildIndex()` repairs it from session directories if needed.
 
 ---
 
@@ -303,8 +303,8 @@ The Dojo is a **consumer** of meta-learning data — it reads whatever exists an
 
 | Wave | What the Dojo gains |
 |------|-------------------|
-| **F** | Observation data enriches diary entries and session content |
-| **H** | Frictions become prime diary content; prediction calibration feeds backward direction |
+| **F** | Kansatsu (observation) data enriches diary entries and session content |
+| **H** | Frictions become prime diary content; prediction calibration feeds ushiro direction |
 | **I** | LLM synthesis could replace template-based section generation (v2 upgrade path) |
 | **J** | Belt data feeds a "progress" section type |
 

@@ -14,7 +14,7 @@
 
 ## Core Idea
 
-Kata separates **deterministic structure** (steps, gates, artifacts) from **non-deterministic judgment** (agents deciding how to compose and sequence that structure). The meta-learning system bridges them — making non-deterministic choices visible, measurable, and learnable.
+Kata separates **deterministic structure** (waza (steps), mon (gates), artifacts) from **non-deterministic judgment** (agents deciding how to compose and sequence that structure). The meta-learning system bridges them — making non-deterministic kime (decisions) visible, measurable, and learnable.
 
 The system has three layers that build on each other:
 
@@ -26,15 +26,15 @@ Layer 3: GRAPH INDEX     Connective tissue linking learnings to evidence (traver
 
 ---
 
-## 1. The Observation System *(Wave F)*
+## 1. The Kansatsu (Observation) System *(Wave F)*
 
-Observations are the raw signals captured during execution — the primary input to everything else. They are append-only JSONL, never modified or deleted after writing.
+Kansatsu (observations) are the raw signals captured during kiai (execution) — the primary input to everything else. They are append-only JSONL, never modified or deleted after writing.
 
-### Seven Observation Types
+### Seven Kansatsu Types
 
 | Type | What it captures | Example |
 |------|-----------------|---------|
-| **Decision** | A choice made among options | "Selected TDD flavor for build stage (confidence: 0.85)" |
+| **Kime (Decision)** | A choice made among options | "Selected TDD ryu for build gyo (confidence: 0.85)" |
 | **Prediction** | An expected outcome to verify later | "This approach will reduce test failures by 50%" |
 | **Friction** | A contradiction or tension detected | "Style guide says X but codebase uses Y" |
 | **Gap** | A capability or knowledge missing | "No tests for error handling paths" |
@@ -56,36 +56,36 @@ Type-specific fields:
 
 ### Hierarchy
 
-Observations capture at any level of the execution tree:
+Kansatsu capture at any level of the execution tree:
 
 ```
 .kata/runs/{run-id}/
-  observations.jsonl                          # Run-level (cross-stage insights)
+  observations.jsonl                          # Run-level (cross-gyo insights)
   stages/{category}/
-    observations.jsonl                        # Stage-level (stage-wide patterns)
+    observations.jsonl                        # Gyo-level (gyo-wide patterns)
     flavors/{name}/
-      observations.jsonl                      # Flavor-level (flavor-specific signals)
+      observations.jsonl                      # Ryu-level (ryu-specific signals)
       steps/{name}/
-        observations.jsonl                    # Step-level (granular per-step)
+        observations.jsonl                    # Waza-level (granular per-waza)
 ```
 
-Higher-level observations (run, stage) capture cross-cutting insights. Lower-level observations (step) capture granular signals. The `runPaths()` utility provides typed access to all levels.
+Higher-level kansatsu (run, gyo) capture cross-cutting insights. Lower-level kansatsu (waza) capture granular signals. The `runPaths()` utility provides typed access to all levels.
 
 ### Capture Mechanism
 
-- **CLI**: `kata observe record` (alias: `kata kansatsu`) — agent-facing command for recording observations during execution
+- **CLI**: `kata kansatsu` (alias: `kata observe record`) — agent-facing command for recording kansatsu during kiai
 - **Programmatic**: `appendObservation()` utility appends typed JSONL at any hierarchy level
-- **Skill-driven**: The orchestration skill instructs agents to call `kata observe record` at natural decision points
+- **Skill-driven**: The orchestration skill instructs kataka to call `kata kansatsu` at natural kime points
 
 ### Immutability Guarantee
 
-Observations are **append-only**. Once written, they are never modified or deleted. This creates an immutable audit trail and ensures the knowledge graph has stable foundations. Any observation can be cited by any number of learnings — removing an observation would invalidate all downstream knowledge.
+Kansatsu are **append-only**. Once written, they are never modified or deleted. This creates an immutable audit trail and ensures the bunkai graph has stable foundations. Any kansatsu can be cited by any number of learnings — removing one would invalidate all downstream knowledge.
 
 ---
 
-## 2. The Knowledge Graph *(Waves F–I)*
+## 2. The Bunkai (Knowledge) Graph *(Waves F–I)*
 
-The knowledge graph transforms raw observations into working knowledge. It is not designed top-down — it **emerges** from bottom-up evidence accumulation.
+The bunkai graph transforms raw kansatsu into working knowledge. It is not designed top-down — it **emerges** from bottom-up evidence accumulation.
 
 ### Three Layers
 
@@ -109,11 +109,11 @@ Layer 1: OBSERVATIONS (immutable, append-only)
 
 ### How Knowledge Emerges
 
-**1. Capture** — During execution, observations accumulate as timestamped JSONL entries. No relationships exist yet. Just raw events.
+**1. Capture** — During kiai, kansatsu accumulate as timestamped JSONL entries. No relationships exist yet. Just raw events.
 
-**2. Pattern detection** — During cooldown, the LearningExtractor reads observations across a run. It finds patterns: "friction about test coverage appeared in 3 different stages" or "predictions about build time were consistently off." Each pattern becomes a learning candidate.
+**2. Pattern detection** — During ma (cooldown), the LearningExtractor reads kansatsu across a run. It finds patterns: "friction about test coverage appeared in 3 different gyo" or "predictions about build time were consistently off." Each pattern becomes a learning candidate.
 
-**3. Learning creation with citations** — When a learning is created, it carries `citations[]` — direct links back to the raw observations that spawned it. This is the first graph edge. The learning knows exactly what evidence supports it.
+**3. Learning creation with citations** — When a learning is created, it carries `citations[]` — direct links back to the raw kansatsu that spawned it. This is the first graph edge. The learning knows exactly what evidence supports it.
 
 ```
 Learning: "TDD significantly reduces rework in this codebase"
@@ -122,9 +122,9 @@ Learning: "TDD significantly reduces rework in this codebase"
   └── Citation: run-3/build/obs-2 (insight: "test-first caught design issue early")
 ```
 
-**4. Reinforcement** — In subsequent runs, similar observations appear. Instead of creating duplicate learnings, the system finds the existing one and adds to `reinforcedBy[]`. The learning's confidence increases based on real evidence count, not LLM estimation.
+**4. Reinforcement** — In subsequent runs, similar kansatsu appear. Instead of creating duplicate learnings, the system finds the existing one and adds to `reinforcedBy[]`. The learning's confidence increases based on real evidence count, not LLM estimation.
 
-**5. Synthesis** *(Wave I)* — During cooldown, LLM synthesis reads multiple related learnings and may consolidate them. "These 4 stage-level learnings about test coverage are really one category-level insight." The synthesized learning gets `derivedFrom[]` — creating parent-child relationships in the graph.
+**5. Synthesis** *(Wave I)* — During ma, LLM synthesis reads multiple related learnings and may consolidate them. "These 4 gyo-level learnings about test coverage are really one category-level insight." The synthesized learning gets `derivedFrom[]` — creating parent-child relationships in the graph.
 
 ```
 Category Learning: "Test coverage correlates with code stability"
@@ -164,13 +164,13 @@ Learnings are scoped to a level of the hierarchy:
 
 | Tier | Scope | Example |
 |------|-------|---------|
-| `step` | A specific methodology step | "The 'write-tests' step benefits from seeing existing test patterns first" |
-| `flavor` | A step composition | "TDD flavor works better than code-first for data models" |
-| `stage` | A mode of work | "Research stage needs longer timeout for external API calls" |
-| `category` | Cross-stage pattern | "This codebase benefits from thorough planning before building" |
-| `agent` | A specific kataka agent | "scout-ka tends to over-scope research topics" |
+| `waza` (step) | A specific methodology waza | "The 'write-tests' waza benefits from seeing existing test patterns first" |
+| `ryu` (flavor) | A waza composition | "TDD ryu works better than code-first for data models" |
+| `gyo` (stage) | A mode of work | "Research gyo needs longer timeout for external API calls" |
+| `category` | Cross-gyo pattern | "This codebase benefits from thorough planning before building" |
+| `kataka` (agent) | A specific kataka | "scout-ka tends to over-scope research topics" |
 
-Promotion happens when step-level patterns appear 3+ times: they become flavor or stage learnings.
+Promotion happens when waza-level patterns appear 3+ times: they become ryu or gyo learnings.
 
 ### What the Graph Enables
 
@@ -193,15 +193,15 @@ The complete loop that makes Kata compound over time:
 
 ```
                     ┌─────────────────────┐
-                    │   EXECUTION         │
-                    │   Agent runs stages  │
-                    │   Observations pile  │
-                    │   up as JSONL        │
+                    │   KIAI (execution)   │
+                    │   Kataka run gyo     │
+                    │   Kansatsu pile up   │
+                    │   as JSONL           │
                     └─────────┬───────────┘
                               │
                               ▼
                     ┌─────────────────────┐
-                    │   COOLDOWN          │
+                    │   MA (cooldown)      │
                     │   Pattern detection  │
                     │   Learning creation  │
                     │   Synthesis          │
@@ -210,7 +210,7 @@ The complete loop that makes Kata compound over time:
                               │
                               ▼
                     ┌─────────────────────┐
-                    │   KNOWLEDGE STORE   │
+                    │   BUNKAI STORE      │
                     │   Learnings + graph  │
                     │   Citations + edges  │
                     │   Confidence scores  │
@@ -221,55 +221,55 @@ The complete loop that makes Kata compound over time:
                     │   MANIFEST BUILDER  │
                     │   Reads learnings    │
                     │   Injects into       │
-                    │   agent prompts      │
+                    │   kataka prompts     │
                     └─────────┬───────────┘
                               │
                               ▼
                     ┌─────────────────────┐
-                    │   NEXT EXECUTION    │
-                    │   Agent has better   │
+                    │   NEXT KIAI         │
+                    │   Kataka has better  │
                     │   context from       │
                     │   accumulated        │
-                    │   knowledge          │
+                    │   bunkai             │
                     └─────────────────────┘
 ```
 
-Each cycle through the loop adds observations, strengthens or creates learnings, updates the graph, and produces better prompts for the next run. The system gets better through use — not through manual configuration.
+Each keiko (cycle) through the loop adds kansatsu, strengthens or creates learnings, updates the graph, and produces better prompts for the next run. The system gets better through use — not through manual configuration.
 
-### Phase 1: Observation Capture
+### Phase 1: Kansatsu (Observation) Capture
 
-During execution, agents record observations via `kata observe record`. The orchestration skill instructs agents to capture observations at natural decision points — when they choose between approaches, when they notice something unexpected, when they hit friction. Observations are cheap (append-only JSONL) and don't slow execution.
+During kiai (execution), kataka (agents) record kansatsu via `kata kansatsu`. The orchestration skill instructs kataka to capture kansatsu at natural kime (decision) points — when they choose between approaches, when they notice something unexpected, when they hit friction. Kansatsu are cheap (append-only JSONL) and don't slow execution.
 
-### Phase 2: Pattern Detection (Cooldown)
+### Phase 2: Pattern Detection (Ma)
 
-The LearningExtractor detects patterns across a run's observations:
-- **Frequency patterns**: Same observation type appearing 3+ times → potential learning
+During ma (cooldown), the LearningExtractor detects patterns across a run's kansatsu:
+- **Frequency patterns**: Same kansatsu type appearing 3+ times → potential learning
 - **Prediction calibration**: Predictions checked against outcomes → confidence adjustment
-- **Friction clustering**: Related frictions across stages → systemic issue
+- **Friction clustering**: Related frictions across gyo (stages) → systemic issue
 - **Gap recurrence**: Same gap appearing across runs → unaddressed problem
 
-### Phase 3: Learning Injection
+### Phase 3: Bunkai (Learning) Injection
 
-The ManifestBuilder reads learnings relevant to the upcoming stage and injects them into the agent's prompt context. Learnings come with provenance:
+The ManifestBuilder reads learnings relevant to the upcoming gyo and injects them into the kataka's prompt context. Learnings come with provenance:
 
 ```
 Learning: "TDD approach reduces rework by ~40% in this codebase"
-  Confidence: 0.85 (based on 6 observations across 3 runs)
-  Reinforced: 2 times in the last cycle
-  Derived from: 2 stage-level learnings about test coverage
+  Confidence: 0.85 (based on 6 kansatsu across 3 runs)
+  Reinforced: 2 times in the last keiko
+  Derived from: 2 gyo-level learnings about test coverage
 ```
 
-The agent can make informed decisions about how much to trust each learning. A learning with 6 citations across 3 runs is more trustworthy than one with 1 citation from 1 run. This is **quantitative trust from structure** — not hallucinated confidence scores.
+The kataka can make informed decisions about how much to trust each learning. A learning with 6 citations across 3 runs is more trustworthy than one with 1 citation from 1 run. This is **quantitative trust from structure** — not hallucinated confidence scores.
 
-### Phase 4: Decision Tracking
+### Phase 4: Kime (Decision) Tracking
 
-Every decision is logged with context, options, reasoning, and confidence. Later, outcomes are recorded against those decisions. Over time, this reveals which types of decisions lead to good outcomes and which don't — enabling the system to adjust confidence thresholds and rule weights.
+Every kime is logged with context, options, reasoning, and confidence. Later, outcomes are recorded against those kime. Over time, this reveals which types of kime lead to good outcomes and which don't — enabling the system to adjust confidence thresholds and rule weights.
 
 ---
 
 ## 4. Detection Engines *(Wave H)*
 
-Wave H adds specialized engines that analyze observations for specific signal types.
+Wave H adds specialized engines that analyze kansatsu for specific signal types.
 
 ### Prediction Calibration
 
@@ -280,7 +280,7 @@ Predictions are matched against outcomes to detect systematic biases:
 | **Overconfidence** | Consistently high confidence with poor outcomes | 5+ predictions |
 | **Domain bias** | Predictions accurate in domain X but not Y | 5+ per domain |
 | **Estimation drift** | Quantitative estimates systematically over/under | 3+ estimates |
-| **Predictor divergence** | Different agents/stages have different calibration | 8+ observations |
+| **Predictor divergence** | Different kataka/gyo have different calibration | 8+ kansatsu |
 
 Calibration is severity-weighted: a wrong high-confidence prediction matters more than a wrong low-confidence one. Results feed into the Reflection subsystem.
 
@@ -291,26 +291,26 @@ Frictions are analyzed for systemic patterns:
 | Taxonomy | Description | Resolution path |
 |----------|-------------|----------------|
 | **Stale learning** | A learning contradicts current evidence | Invalidate or scope |
-| **Config drift** | Configuration doesn't match actual practice | Synthesize |
+| **Seido (config) drift** | Configuration doesn't match actual practice | Synthesize |
 | **Convention clash** | Two valid conventions in conflict | Escalate to user |
 | **Tool mismatch** | Tool assumptions don't match project reality | Scope |
 | **Scope creep** | Work expanding beyond original boundaries | Escalate |
 
-Override detection: When agents consistently override a learning or rule, the system detects it (count + rate thresholds) and generates a friction observation. This surfaces "the system says X but we keep doing Y" patterns.
+Override detection: When kataka consistently override a learning or rule, the system detects it (count + rate thresholds) and generates a friction kansatsu. This surfaces "the system says X but we keep doing Y" patterns.
 
 Four resolution paths with confidence gating:
 - **Invalidate**: Evidence clearly contradicts — archive the learning
 - **Scope**: Learning is correct in some contexts — add context constraints
 - **Synthesize**: Multiple perspectives are valid — create a nuanced learning
-- **Escalate**: Can't resolve automatically — surface to user in cooldown
+- **Escalate**: Can't resolve automatically — surface to user in ma (cooldown)
 
 ### Reflection Schema
 
-Reflections are the output of detection engines — structured assessments produced during cooldown:
+Reflections are the output of detection engines — structured assessments produced during ma:
 
 | Type | What it produces |
 |------|-----------------|
-| **Calibration** | Prediction accuracy analysis for a domain/agent |
+| **Calibration** | Prediction accuracy analysis for a domain/kataka |
 | **Validation** | Prediction matched to outcome (correct/incorrect) |
 | **Resolution** | Friction resolved through one of the 4 paths |
 | **Unmatched** | Prediction with no matching outcome (inconclusive) |
@@ -332,9 +332,9 @@ Not all knowledge has the same shelf life. The permanence system ensures learnin
 
 ### Lifecycle
 
-- **Operational learnings** auto-archive when their TTL expires. This prevents knowledge clutter from accumulating.
-- **Strategic learnings** don't auto-archive but get flagged as stale in cooldown if they haven't been reinforced recently. The user decides whether to keep, scope, or archive them.
-- **Constitutional learnings** cannot be modified — only archived (with reason) or overridden by a new constitutional learning. This ensures foundational knowledge is stable.
+- **Operational learnings** auto-archive when their TTL expires. This prevents bunkai clutter from accumulating.
+- **Strategic learnings** don't auto-archive but get flagged as stale in ma (cooldown) if they haven't been reinforced recently. The user decides whether to keep, scope, or archive them.
+- **Constitutional learnings** cannot be modified — only archived (with reason) or overridden by a new constitutional learning. This ensures foundational bunkai is stable.
 - **Promotion/demotion**: Operational learnings reinforced enough times promote to strategic. Strategic learnings validated by constitutional evidence promote to constitutional. The reverse also happens.
 - **Confidence decay**: Computed at read time (not stored). Learnings lose confidence gradually if not reinforced, with decay rate depending on tier (operational decays fastest, constitutional decays slowest).
 
@@ -346,14 +346,14 @@ Pre-built sets of constitutional learnings for common domains. A generic domain-
 
 ## 6. LLM Synthesis Pipeline *(Wave I)*
 
-The synthesis pipeline is the crown of the meta-learning system — where raw observations and pattern-detected learnings are consolidated into higher-order knowledge by an LLM.
+The synthesis pipeline is the crown of the meta-learning system — where raw kansatsu and pattern-detected learnings are consolidated into higher-order bunkai (knowledge) by an LLM.
 
 ### Three-Step Pipeline
 
 ```
 Step 1: FILTER (rules-based)
-  Select observations + learnings eligible for synthesis
-  Skip: too few citations, already synthesized this cycle, archived
+  Select kansatsu + learnings eligible for synthesis
+  Skip: too few citations, already synthesized this keiko, archived
       │
       ▼
 Step 2: DETECT (Sonnet-class LLM)
@@ -371,11 +371,11 @@ Step 3: SYNTHESIZE (Opus-class LLM)
 
 | Type | What it does |
 |------|-------------|
-| **new-learning** | Create a learning from observations that haven't been captured |
+| **new-learning** | Create a learning from kansatsu that haven't been captured |
 | **update-learning** | Modify an existing learning based on new evidence |
-| **promote** | Elevate a learning's tier (step → flavor → stage → category) |
+| **promote** | Elevate a learning's tier (waza → ryu → gyo → category) |
 | **archive** | Retire a learning that evidence no longer supports |
-| **methodology-recommendation** | Suggest a rule or configuration change |
+| **methodology-recommendation** | Suggest a rule or seido (configuration) change |
 
 ### Confidence Gating
 
@@ -383,23 +383,23 @@ Step 3: SYNTHESIZE (Opus-class LLM)
 - Low confidence proposals: presented to the user for approval
 - `--yolo` mode: auto-applies everything, logs for post-hoc review
 
-### Cooldown Integration
+### Ma (Cooldown) Integration
 
-Synthesis runs during cooldown step 6, after reflection and friction detection have already processed the raw data. This means synthesis has the richest possible input — not just observations, but reflections, calibration results, and friction resolutions.
+Synthesis runs during ma step 6, after reflection and friction detection have already processed the raw data. This means synthesis has the richest possible input — not just kansatsu, but reflections, calibration results, and friction resolutions.
 
 ### Configurable Depth
 
 | Depth | What it does | When to use |
 |-------|-------------|-------------|
-| **quick** | Filter + basic pattern detection only | Fast cooldowns, small runs |
+| **quick** | Filter + basic pattern detection only | Fast ma sessions, small runs |
 | **standard** | Full 3-step pipeline | Default |
-| **thorough** | Multiple synthesis passes, cross-cycle analysis | Major milestone cycles |
+| **thorough** | Multiple synthesis passes, cross-keiko analysis | Major milestone keiko |
 
 ---
 
 ## 7. Domain Confidence *(Wave I)*
 
-Domain confidence tracks how well Kata knows a particular technical domain, enabling informed risk assessment.
+Domain confidence tracks how well Kata's bunkai (knowledge) covers a particular technical domain, enabling informed risk assessment.
 
 ### Four-Axis Tag Vocabulary
 
@@ -419,55 +419,55 @@ Confidence per domain tag is a composite of:
 - **Risk**: How complex/novel is the work?
 - **Historical performance**: How well have past runs in this domain gone?
 
-Materialized during cooldown, injected as informational context into prompts. Agents see "Kata has high confidence in TypeScript/React but low confidence in Rust/embedded" and can adjust their approach accordingly.
+Materialized during ma (cooldown), injected as informational context into prompts. Kataka see "Kata has high confidence in TypeScript/React but low confidence in Rust/embedded" and can adjust their approach accordingly.
 
 ---
 
-## 8. Hierarchical Knowledge Capture *(Waves F + H)*
+## 8. Hierarchical Bunkai (Knowledge) Capture *(Waves F + H)*
 
-Knowledge doesn't just exist at one level. A pattern that appears in a single step might be relevant to the whole stage, or even the whole project.
+Bunkai doesn't just exist at one level. A pattern that appears in a single waza (step) might be relevant to the whole gyo (stage), or even the whole project.
 
 ### Capture at Every Level
 
-Observations are recorded at the level where they occur:
-- **Step-level**: "This specific test-writing step works better with 3 examples"
-- **Flavor-level**: "TDD flavor outperforms code-first in data layer work"
-- **Stage-level**: "Build stage needs longer timeouts for CI integration"
-- **Run-level**: "Cross-cutting: this project benefits from early architecture decisions"
+Kansatsu are recorded at the level where they occur:
+- **Waza-level**: "This specific test-writing waza works better with 3 examples"
+- **Ryu-level**: "TDD ryu outperforms code-first in data layer work"
+- **Gyo-level**: "Build gyo needs longer timeouts for CI integration"
+- **Run-level**: "Cross-cutting: this project benefits from early architecture kime"
 
 ### Promotion Rules
 
 | From | To | Condition |
 |------|-----|-----------|
-| Step observation | Step learning | 3+ similar observations |
-| Step learning | Flavor learning | Pattern appears in 3+ steps within the flavor |
-| Flavor learning | Stage learning | Pattern appears in 2+ flavors within the stage |
-| Stage learning | Category learning | Pattern appears in 2+ stages |
+| Waza kansatsu | Waza learning | 3+ similar kansatsu |
+| Waza learning | Ryu learning | Pattern appears in 3+ waza within the ryu |
+| Ryu learning | Gyo learning | Pattern appears in 2+ ryu within the gyo |
+| Gyo learning | Category learning | Pattern appears in 2+ gyo |
 
-### KnowledgeStore Upgrades
+### BunkaiStore Upgrades
 
 Wave H adds hierarchy-aware methods:
-- `loadForStep(stepId)` — Step-level learnings + inherited from flavor/stage/category
-- `loadForFlavor(flavorId)` — Flavor-level learnings + inherited from stage/category
-- Archive/resurrection logic: archived learnings that match new observations can be resurrected with fresh citations
+- `loadForStep(stepId)` — Waza-level learnings + inherited from ryu/gyo/category
+- `loadForFlavor(flavorId)` — Ryu-level learnings + inherited from gyo/category
+- Archive/resurrection logic: archived learnings that match new kansatsu can be resurrected with fresh citations
 
 ---
 
-## 9. How Agents Use the Knowledge
+## 9. How Kataka (Agents) Use the Bunkai
 
-When a kataka agent starts a stage, the ManifestBuilder injects relevant learnings into its prompt. With the full graph, those learnings carry rich context:
+When a kataka starts a gyo (stage), the ManifestBuilder injects relevant learnings into its prompt. With the full bunkai graph, those learnings carry rich context:
 
 ```
-## Project Knowledge (injected by Kata)
+## Project Bunkai (injected by Kata)
 
 ### High Confidence (0.85+)
 - "TDD approach reduces rework by ~40% in this codebase"
-  Evidence: 6 observations across 3 runs, reinforced 2x this cycle
+  Evidence: 6 kansatsu across 3 runs, reinforced 2x this keiko
   Permanence: Strategic | Last used: 2 days ago
 
 ### Medium Confidence (0.5–0.85)
 - "React Server Components simplify data fetching in this project"
-  Evidence: 2 observations from 1 run
+  Evidence: 2 kansatsu from 1 run
   Permanence: Operational | Expires: 28 days
 
 ### Domain Context
@@ -475,7 +475,7 @@ When a kataka agent starts a stage, the ManifestBuilder injects relevant learnin
 - Recent frictions: 2 unresolved (convention clash in test naming)
 ```
 
-The agent can make informed decisions about how much to trust each piece of knowledge. **Quantitative trust from structure** — not hallucinated confidence.
+The kataka can make informed kime (decisions) about how much to trust each piece of bunkai. **Quantitative trust from structure** — not hallucinated confidence.
 
 ---
 
@@ -483,12 +483,12 @@ The agent can make informed decisions about how much to trust each piece of know
 
 | File/Path | Purpose | Ships in |
 |-----------|---------|----------|
-| `.kata/runs/{id}/**/observations.jsonl` | Raw observations (immutable) | Wave F |
+| `.kata/runs/{id}/**/observations.jsonl` | Raw kansatsu (immutable) | Wave F |
 | `.kata/runs/{id}/**/reflections.jsonl` | Detection engine output | Wave F |
-| `.kata/knowledge/learnings/{id}.json` | Individual learning files (versioned) | Shipped (enriched Wave F) |
-| `.kata/knowledge/graph-index.json` | Graph edges: learning↔observation links | Wave F |
+| `.kata/knowledge/learnings/{id}.json` | Individual bunkai files (versioned) | Shipped (enriched Wave F) |
+| `.kata/knowledge/graph-index.json` | Graph edges: learning↔kansatsu links | Wave F |
 | `.kata/rules/{id}.json` | Orchestration rules | Shipped |
-| `.kata/dojo/diary/{cycle-id}.json` | Narrative reflections | Shipped (Wave K) |
+| `.kata/dojo/diary/{keiko-id}.json` | Narrative reflections | Shipped (Wave K) |
 
 ---
 
@@ -496,13 +496,13 @@ The agent can make informed decisions about how much to trust each piece of know
 
 1. **Quantitative from structure, qualitative from LLM.** Confidence scores come from citation counts and evidence consistency — not from asking an LLM "how confident are you?" LLMs provide the qualitative synthesis; structure provides the numbers.
 
-2. **Append-only execution data.** Observations are never modified. Learnings are versioned, not overwritten. The graph preserves provenance even for knowledge that has been superseded.
+2. **Append-only kiai (execution) data.** Kansatsu are never modified. Learnings are versioned, not overwritten. The graph preserves provenance even for bunkai that has been superseded.
 
-3. **Capture all, analyze selectively.** Observations are captured at every hierarchy level during execution (cheap, append-only). Analysis happens only during cooldown (expensive, LLM-powered). This separates hot-path writes from cold-path reasoning.
+3. **Capture all, analyze selectively.** Kansatsu are captured at every hierarchy level during kiai (cheap, append-only). Analysis happens only during ma (expensive, LLM-powered). This separates hot-path writes from cold-path reasoning.
 
-4. **Soft delete only.** Learnings are never hard-deleted — they're archived. You can always trace back to the raw observations through citations.
+4. **Soft delete only.** Learnings are never hard-deleted — they're archived. You can always trace back to the raw kansatsu through citations.
 
-5. **Progressive improvement.** Zero configuration still works. The meta-learning system expands organically through use. A fresh project and a mature one use the same primitives — the mature one just has more accumulated knowledge.
+5. **Progressive improvement.** Zero seido (configuration) still works. The meta-learning system expands organically through use. A fresh project and a mature one use the same primitives — the mature one just has more accumulated bunkai.
 
 ---
 
