@@ -161,6 +161,9 @@ export async function handleInit(options: InitOptions): Promise<InitResult> {
     JsonStore.ensureDir(join(kataDir, KATA_DIRS.tracking));
     JsonStore.ensureDir(join(kataDir, KATA_DIRS.prompts));
     JsonStore.ensureDir(join(kataDir, KATA_DIRS.artifacts));
+    JsonStore.ensureDir(join(kataDir, KATA_DIRS.dojo));
+    JsonStore.ensureDir(join(kataDir, KATA_DIRS.dojo, KATA_DIRS.diary));
+    JsonStore.ensureDir(join(kataDir, KATA_DIRS.dojo, KATA_DIRS.sessions));
   } catch (err) {
     throw new KataError(
       `Failed to create kata directory structure at "${kataDir}": ${err instanceof Error ? err.message : String(err)}. ` +
