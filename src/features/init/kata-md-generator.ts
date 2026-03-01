@@ -1,8 +1,16 @@
 import type { KataConfig } from '@domain/types/config.js';
 
+export interface RegisteredAgent {
+  name: string;
+  id: string;
+  source: string;
+}
+
 export interface KataMdOptions {
   config: KataConfig;
   kataDir: string;
+  /** Agents populated after `kata init --discover-agents`. */
+  registeredAgents?: RegisteredAgent[];
 }
 
 /**
@@ -12,8 +20,18 @@ export interface KataMdOptions {
  * The file is generated at `kata init` and refreshed after each cooldown
  * (Wave I will add the cooldown refresh step).
  */
+function renderKatakaRegistry(agents?: RegisteredAgent[]): string {
+  if (!agents || agents.length === 0) {
+    return '_No kataka registered. Run `kata init --discover-agents` to auto-register agents._';
+  }
+  const rows = agents
+    .map((a) => `| ${a.name} | ${a.id} | ${a.source} |`)
+    .join('\n');
+  return `| Name | ID | Source |\n|------|----|---------|\n${rows}`;
+}
+
 export function generateKataMd(options: KataMdOptions): string {
-  const { config } = options;
+  const { config, registeredAgents } = options;
   const projectName = config.project.name ?? 'Unnamed Project';
   const methodology = config.methodology;
   const adapter = config.execution.adapter;
@@ -48,10 +66,9 @@ _No active cycle. Run \`kata cycle new\` to start one._
 
 ## Kataka Registry
 
-<!-- This section is populated by \`kata init --scan\` in Wave G. -->
-<!-- Each registered agent (kataka) will appear here with its role and current context. -->
+<!-- Populated by \`kata init --discover-agents\`. Re-run to refresh after registering new agents. -->
 
-_No kataka registered. Kataka are discovered from \`.claude/agents/\` in Wave G._
+${renderKatakaRegistry(registeredAgents)}
 
 ---
 

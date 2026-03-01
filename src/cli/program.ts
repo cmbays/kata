@@ -19,6 +19,7 @@ import { registerConfigCommand } from './commands/config.js';
 import { registerDojoCommand } from './commands/dojo.js';
 import { registerObserveCommands } from './commands/observe.js';
 import { registerAgentCommands } from './commands/agent.js';
+import { registerLexiconCommand } from './commands/lexicon.js';
 
 const VERSION = '0.1.0';
 
@@ -62,6 +63,12 @@ export function createProgram(): Command {
   registerDojoCommand(program);
   registerObserveCommands(program);
   registerAgentCommands(program);
+  registerLexiconCommand(program);
+
+  program.addHelpText('after', `
+Vocabulary (kotoba):
+  Domain terms use English as primary CLI names with Japanese karate aliases.
+  Run "kata lexicon" (or "kata kotoba") for the full vocabulary table.`);
 
   return program;
 }

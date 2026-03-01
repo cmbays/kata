@@ -32,6 +32,8 @@ export interface KiaiRunOptions {
   dryRun?: boolean;
   /** ID of the kataka driving this run — stored in artifact metadata. (Wave G) */
   katakaId?: string;
+  /** Skip confidence gate checks — sets confidenceThreshold to 0 so no decision requires approval. */
+  yolo?: boolean;
 }
 
 export interface ArtifactEntry {
@@ -78,7 +80,7 @@ export class KiaiRunner {
       category: stageCategory,
       orchestrator: {
         type: stageCategory,
-        confidenceThreshold: 0.7,
+        confidenceThreshold: options.yolo ? 0 : 0.7,
         maxParallelFlavors: 3,
       },
       availableFlavors,
@@ -147,7 +149,7 @@ export class KiaiRunner {
       ruleRegistry: this.deps.ruleRegistry,
     });
 
-    const result = await metaOrchestrator.runPipeline(categories, options.bet);
+    const result = await metaOrchestrator.runPipeline(categories, options.bet, { yolo: options.yolo });
 
     // Persist each stage artifact and record analytics
     for (const stageResult of result.stageResults) {

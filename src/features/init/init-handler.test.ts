@@ -265,6 +265,12 @@ describe('handleInit', () => {
       'classification.md',
       'dojo.md',
       'dojo-research.md',
+      'kata-orchestration.md',
+      'kata-sensei.md',
+      'kata-create-agent.md',
+      'kata-create-skill.md',
+      'kata-bridge-gap.md',
+      'kata-scan-project.md',
       join('templates', 'decision-format.md'),
       join('templates', 'synthesis-format.md'),
       join('templates', 'artifact-format.md'),
@@ -294,7 +300,7 @@ describe('handleInit', () => {
       expect(readFileSync(tmpl, 'utf-8').length).toBeGreaterThan(0);
     });
 
-    it('copies all 11 expected skill files', async () => {
+    it('copies all 17 expected skill files', async () => {
       await handleInit({ cwd: baseDir, skipPrompts: true });
 
       for (const relPath of expectedFiles) {

@@ -38,6 +38,8 @@ export interface Lexicon {
   agent: string;
   /** artifact — a named output produced by a stage */
   artifact: string;
+  /** lexicon — the vocabulary table command */
+  lexicon: string;
 }
 
 /** Thematic lexicon (default): Japanese karate-inspired terms. */
@@ -58,6 +60,7 @@ export const THEMATIC: Lexicon = {
   observation: 'kansatsu',
   agent: 'kataka',
   artifact: 'maki',
+  lexicon: 'kotoba',
 };
 
 /** Plain lexicon: standard English equivalents. */
@@ -78,6 +81,7 @@ export const PLAIN: Lexicon = {
   observation: 'observation',
   agent: 'agent',
   artifact: 'artifact',
+  lexicon: 'lexicon',
 };
 
 /**

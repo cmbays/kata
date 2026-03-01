@@ -29,11 +29,13 @@ export interface IMetaOrchestrator {
    *
    * @param categories — Ordered list of stage categories to execute.
    * @param bet — Optional bet context passed to all stages.
+   * @param options — Pipeline-level execution options.
    * @returns Full pipeline result with per-stage results and pipeline-level reflection.
    * @throws OrchestratorError if any stage fails.
    */
   runPipeline(
     categories: StageCategory[],
     bet?: Record<string, unknown>,
+    options?: { yolo?: boolean },
   ): Promise<PipelineOrchestrationResult>;
 }

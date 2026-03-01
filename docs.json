@@ -52,7 +52,13 @@
         "group": "For Agents",
         "pages": [
           "skill/orchestration",
-          "skill/context-flow"
+          "skill/context-flow",
+          "skill/kata-orchestration",
+          "skill/kata-sensei",
+          "skill/kata-create-agent",
+          "skill/kata-create-skill",
+          "skill/kata-bridge-gap",
+          "skill/kata-scan-project"
         ]
       },
       {
