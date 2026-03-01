@@ -174,8 +174,13 @@ export function registerExecuteCommands(program: Command): void {
         // Resolve stage categories from the bet's kata assignment when not specified explicitly
         if (pendingBet.kata && categories.length === 0 && !localOpts.kata && !localOpts.gyo) {
           if (pendingBet.kata.type === 'named') {
-            const kataData = loadSavedKata(ctx.kataDir, pendingBet.kata.pattern);
-            categoriesFromNext = kataData.stages;
+            try {
+              const kataData = loadSavedKata(ctx.kataDir, pendingBet.kata.pattern);
+              categoriesFromNext = kataData.stages;
+            } catch {
+              console.error(`Error: Named kata "${pendingBet.kata.pattern}" not found or is malformed. Check .kata/katas/${pendingBet.kata.pattern}.json.`);
+              return;
+            }
           } else {
             categoriesFromNext = [...pendingBet.kata.stages];
           }

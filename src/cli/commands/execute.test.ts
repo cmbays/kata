@@ -627,6 +627,26 @@ describe('registerExecuteCommands', () => {
       );
     });
 
+    it('errors gracefully when named kata file does not exist', async () => {
+      mkdirSync(cyclesDir, { recursive: true });
+
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 50000 }, 'Missing Kata Cycle');
+      const withBet = manager.addBet(cycle.id, {
+        description: 'Bet with bad kata', appetite: 30, outcome: 'pending', issueRefs: [],
+      });
+      manager.updateBet(cycle.id, withBet.bets[0]!.id, { kata: { type: 'named', pattern: 'nonexistent' } });
+      manager.updateState(cycle.id, 'active');
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', '--next']);
+
+      const errorOutput = errorSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(errorOutput).toContain('"nonexistent" not found or is malformed');
+      expect(mockRunStage).not.toHaveBeenCalled();
+      expect(mockRunPipeline).not.toHaveBeenCalled();
+    });
+
     it('resolves categories from a named kata file', async () => {
       mkdirSync(cyclesDir, { recursive: true });
       writeFileSync(join(kataDir, 'katas', 'my-kata.json'), JSON.stringify({ name: 'my-kata', stages: ['plan', 'build'] }));
