@@ -112,6 +112,7 @@ export function registerExecuteCommands(program: Command): void {
     .option('--list-katas', 'List saved katas and exit')
     .option('--delete-kata <name>', 'Delete a saved kata and exit')
     .option('--kataka <id>', 'Kataka (agent) ID driving this run — stored in artifact metadata and attributed to observations')
+    .option('--yolo', 'Skip confidence gate checks — all decisions proceed without human approval')
     .action(withCommandContext(async (ctx, categories: string[]) => {
       const localOpts = ctx.cmd.opts();
 
@@ -167,6 +168,7 @@ export function registerExecuteCommands(program: Command): void {
         dryRun: localOpts.dryRun,
         saveKata: localOpts.saveKata,
         katakaId: localOpts.kataka as string | undefined,
+        yolo: localOpts.yolo as boolean | undefined,
       });
     }));
 }
@@ -183,6 +185,8 @@ interface RunOptions {
   saveKata?: string;
   /** ID of the kataka driving this run. Validated against KatakaRegistry before execution. */
   katakaId?: string;
+  /** Skip confidence gate checks — all decisions proceed without human approval. */
+  yolo?: boolean;
 }
 
 async function runCategories(
@@ -233,6 +237,7 @@ async function runCategories(
       pin: opts.pin,
       dryRun: opts.dryRun,
       katakaId: opts.katakaId,
+      yolo: opts.yolo,
     });
 
     if (isJson) {
@@ -255,7 +260,7 @@ async function runCategories(
     }
   } else {
     // Multi-stage pipeline
-    const result = await runner.runPipeline(categories, { bet, dryRun: opts.dryRun, katakaId: opts.katakaId });
+    const result = await runner.runPipeline(categories, { bet, dryRun: opts.dryRun, katakaId: opts.katakaId, yolo: opts.yolo });
 
     if (isJson) {
       console.log(JSON.stringify(result, null, 2));
@@ -349,6 +354,15 @@ function collect(value: string, previous: string[]): string[] {
 // Saved kata helpers
 // ---------------------------------------------------------------------------
 
+/** Prevent path traversal via kata names. Only alphanumeric, hyphens, and underscores allowed. */
+function assertValidKataName(name: string): void {
+  if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
+    throw new Error(
+      `Invalid kata name "${name}": names must contain only letters, digits, hyphens, and underscores.`,
+    );
+  }
+}
+
 function katasDir(kataDir: string): string {
   return join(kataDir, KATA_DIRS.katas);
 }
@@ -374,6 +388,7 @@ function listSavedKatas(kataDir: string): Array<{ name: string; stages: StageCat
 }
 
 function loadSavedKata(kataDir: string, name: string): { stages: StageCategory[] } {
+  assertValidKataName(name);
   const filePath = join(katasDir(kataDir), `${name}.json`);
   if (!existsSync(filePath)) {
     throw new Error(`Kata "${name}" not found. Use --list-katas to see available katas.`);
@@ -398,6 +413,7 @@ function loadSavedKata(kataDir: string, name: string): { stages: StageCategory[]
 }
 
 function saveSavedKata(kataDir: string, name: string, stages: StageCategory[]): void {
+  assertValidKataName(name);
   const dir = katasDir(kataDir);
   mkdirSync(dir, { recursive: true });
   const kata = SavedKataSchema.parse({ name, stages });
@@ -405,6 +421,7 @@ function saveSavedKata(kataDir: string, name: string, stages: StageCategory[]): 
 }
 
 function deleteSavedKata(kataDir: string, name: string): void {
+  assertValidKataName(name);
   const filePath = join(katasDir(kataDir), `${name}.json`);
   if (!existsSync(filePath)) {
     throw new Error(`Kata "${name}" not found. Use --list-katas to see available katas.`);

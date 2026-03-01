@@ -33,6 +33,7 @@ export class MetaOrchestrator implements IMetaOrchestrator {
   async runPipeline(
     categories: StageCategory[],
     bet?: Record<string, unknown>,
+    options?: { yolo?: boolean },
   ): Promise<PipelineOrchestrationResult> {
     if (categories.length === 0) {
       throw new OrchestratorError(
@@ -65,7 +66,7 @@ export class MetaOrchestrator implements IMetaOrchestrator {
         category,
         orchestrator: {
           type: category,
-          confidenceThreshold: 0.7,
+          confidenceThreshold: options?.yolo ? 0 : 0.7,
           maxParallelFlavors: 3,
         },
         availableFlavors,

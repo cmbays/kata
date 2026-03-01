@@ -202,6 +202,39 @@ describe('MetaOrchestrator', () => {
     });
   });
 
+  describe('runPipeline() — yolo option', () => {
+    it('accepts yolo: true and runs successfully', async () => {
+      const deps = makeDeps();
+      const meta = new MetaOrchestrator(deps);
+      const result = await meta.runPipeline(['build'], undefined, { yolo: true });
+      expect(result.stageResults).toHaveLength(1);
+      expect(result.stageResults[0]!.stageCategory).toBe('build');
+    });
+
+    it('accepts yolo: false and runs successfully', async () => {
+      const deps = makeDeps();
+      const meta = new MetaOrchestrator(deps);
+      const result = await meta.runPipeline(['build'], undefined, { yolo: false });
+      expect(result.stageResults).toHaveLength(1);
+    });
+
+    it('yolo: true works in a multi-stage pipeline', async () => {
+      const deps = makeDeps();
+      const meta = new MetaOrchestrator(deps);
+      const result = await meta.runPipeline(['research', 'build'], undefined, { yolo: true });
+      expect(result.stageResults).toHaveLength(2);
+      expect(result.stageResults.map((r) => r.stageCategory)).toEqual(['research', 'build']);
+    });
+
+    it('yolo: true still produces pipeline reflection', async () => {
+      const deps = makeDeps();
+      const meta = new MetaOrchestrator(deps);
+      const result = await meta.runPipeline(['build'], undefined, { yolo: true });
+      expect(result.pipelineReflection).toBeDefined();
+      expect(result.pipelineReflection.overallQuality).toBeDefined();
+    });
+  });
+
   describe('runPipeline() — artifact handoff', () => {
     it('first stage gets empty availableArtifacts', async () => {
       const deps = makeDeps();
