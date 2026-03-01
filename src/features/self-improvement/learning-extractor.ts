@@ -1,5 +1,6 @@
 import type { ExecutionHistoryEntry } from '@domain/types/history.js';
 import type { Learning } from '@domain/types/learning.js';
+import type { Observation } from '@domain/types/observation.js';
 import type { Step } from '@domain/types/step.js';
 
 /**
@@ -140,6 +141,104 @@ export class LearningExtractor {
     }
 
     return updates;
+  }
+
+  /**
+   * Analyze observation JSONL data to find recurring patterns.
+   * Complements the existing analyze() which reads ExecutionHistoryEntry[].
+   * Returns Pattern[] suitable for suggestLearnings().
+   */
+  analyzeObservations(observations: Observation[]): Pattern[] {
+    if (observations.length === 0) return [];
+
+    const patterns: Pattern[] = [];
+    const total = observations.length;
+
+    // ---- Friction clustering ------------------------------------------------
+    const frictions = observations.filter((o) => o.type === 'friction');
+    const frictionByTaxonomy = new Map<string, Observation[]>();
+    for (const obs of frictions) {
+      const taxonomy = (obs as Extract<Observation, { type: 'friction' }>).taxonomy;
+      const list = frictionByTaxonomy.get(taxonomy) ?? [];
+      list.push(obs);
+      frictionByTaxonomy.set(taxonomy, list);
+    }
+    for (const [taxonomy, group] of frictionByTaxonomy) {
+      if (group.length < 3) continue;
+      const count = group.length;
+      patterns.push({
+        id: `recurring-friction-${taxonomy}`,
+        stageType: 'friction',
+        description: `${count} friction observations of type "${taxonomy}" recorded — recurring ${taxonomy} friction detected`,
+        evidence: group.map((o) => ({
+          historyEntryId: o.id,
+          pipelineId: 'observation',
+          observation: o.content,
+        })),
+        frequency: count,
+        consistency: count / total,
+      });
+    }
+
+    // ---- Gap recurrence -----------------------------------------------------
+    const gaps = observations.filter((o) => o.type === 'gap');
+    const gapBySeverity = new Map<string, Observation[]>();
+    for (const obs of gaps) {
+      const severity = (obs as Extract<Observation, { type: 'gap' }>).severity;
+      const list = gapBySeverity.get(severity) ?? [];
+      list.push(obs);
+      gapBySeverity.set(severity, list);
+    }
+    for (const [severity, group] of gapBySeverity) {
+      if (group.length < 3) continue;
+      const count = group.length;
+      patterns.push({
+        id: `recurring-gaps-${severity}`,
+        stageType: 'gap',
+        description: `${count} gap observations with severity "${severity}" — recurring ${severity} gaps detected`,
+        evidence: group.map((o) => ({
+          historyEntryId: o.id,
+          pipelineId: 'observation',
+          observation: o.content,
+        })),
+        frequency: count,
+        consistency: count / total,
+      });
+    }
+
+    // ---- Assumption density -------------------------------------------------
+    const assumptions = observations.filter((o) => o.type === 'assumption');
+    const assumptionCount = assumptions.length;
+    if (assumptionCount >= 5) {
+      patterns.push({
+        id: 'assumption-heavy-run',
+        stageType: 'assumptions',
+        description: `${assumptionCount} assumptions recorded — many unverified assumptions increase risk`,
+        evidence: assumptions.map((o) => ({
+          historyEntryId: o.id,
+          pipelineId: 'observation',
+          observation: o.content,
+        })),
+        frequency: assumptionCount,
+        consistency: assumptionCount / total,
+      });
+    }
+
+    // ---- Prediction rate ----------------------------------------------------
+    const predictions = observations.filter((o) => o.type === 'prediction');
+    const predictionCount = predictions.length;
+    if (total >= 10 && predictionCount < total / 5) {
+      patterns.push({
+        id: 'low-prediction-discipline',
+        stageType: 'predictions',
+        description: `Only ${predictionCount} predictions recorded in ${total} observations — low prediction discipline`,
+        evidence: [],
+        frequency: predictionCount,
+        consistency: predictionCount / total,
+      });
+    }
+
+    return patterns;
   }
 
   // ---- Private pattern detection methods ----

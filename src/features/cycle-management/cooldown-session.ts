@@ -13,6 +13,8 @@ import { logger } from '@shared/lib/logger.js';
 import { loadRunSummary } from './run-summary-loader.js';
 import { ProposalGenerator, type CycleProposal, type ProposalGeneratorDeps } from './proposal-generator.js';
 import type { RunSummary } from './types.js';
+import { PredictionMatcher } from '@features/self-improvement/prediction-matcher.js';
+import { HierarchicalPromoter } from '@infra/knowledge/hierarchical-promoter.js';
 
 /**
  * Dependencies injected into CooldownSession for testability.
@@ -41,6 +43,18 @@ export interface CooldownSessionDeps {
    * a diary entry during cooldown. Backward compatible — omitting this field skips diary writing.
    */
   dojoDir?: string;
+  /**
+   * Optional PredictionMatcher for matching cycle predictions to outcomes.
+   * When omitted and runsDir is set, a PredictionMatcher is constructed automatically.
+   * Backward compatible — omitting skips prediction matching.
+   */
+  predictionMatcher?: Pick<PredictionMatcher, 'match'>;
+  /**
+   * Optional HierarchicalPromoter for bubbling step-tier learnings up the hierarchy.
+   * When omitted, a HierarchicalPromoter is constructed automatically using knowledgeStore.
+   * Backward compatible — omitting skips hierarchical promotion.
+   */
+  hierarchicalPromoter?: Pick<HierarchicalPromoter, 'promoteStepToFlavor' | 'promoteFlavorToStage' | 'promoteStageToCategory'>;
 }
 
 /**
@@ -80,6 +94,8 @@ export interface CooldownSessionResult {
 export class CooldownSession {
   private readonly deps: CooldownSessionDeps;
   private readonly proposalGenerator: Pick<ProposalGenerator, 'generate'>;
+  private readonly predictionMatcher: Pick<PredictionMatcher, 'match'> | null;
+  private readonly hierarchicalPromoter: Pick<HierarchicalPromoter, 'promoteStepToFlavor' | 'promoteFlavorToStage' | 'promoteStageToCategory'>;
 
   constructor(deps: CooldownSessionDeps) {
     this.deps = deps;
@@ -90,6 +106,8 @@ export class CooldownSession {
       pipelineDir: deps.pipelineDir,
     };
     this.proposalGenerator = deps.proposalGenerator ?? new ProposalGenerator(generatorDeps);
+    this.predictionMatcher = deps.predictionMatcher ?? (deps.runsDir ? new PredictionMatcher(deps.runsDir) : null);
+    this.hierarchicalPromoter = deps.hierarchicalPromoter ?? new HierarchicalPromoter(deps.knowledgeStore);
   }
 
   /**
@@ -146,6 +164,15 @@ export class CooldownSession {
 
       // 8. Capture cooldown learnings (non-critical — errors should not abort)
       const learningsCaptured = this.captureCooldownLearnings(report);
+
+      // 8a. Match cycle predictions to outcomes (non-critical)
+      this.runPredictionMatching(cycle);
+
+      // 8b. Bubble step-tier learnings up the hierarchy (non-critical)
+      this.runHierarchicalPromotion();
+
+      // 8c. Scan for expired/stale learnings (non-critical)
+      this.runExpiryCheck();
 
       // 8.5. Write dojo diary entry (non-critical — failure never aborts cooldown)
       if (this.deps.dojoDir) {
@@ -350,6 +377,58 @@ export class CooldownSession {
   private loadCycleHistory(cycleId: string): ExecutionHistoryEntry[] {
     const allEntries = this.deps.persistence.list(this.deps.historyDir, ExecutionHistoryEntrySchema);
     return allEntries.filter((entry) => entry.cycleId === cycleId);
+  }
+
+  /**
+   * For each bet with a runId, run PredictionMatcher to match predictions to outcomes.
+   * Writes validation/unmatched reflections to the run's JSONL file.
+   * No-op when runsDir is absent or no prediction matcher is available.
+   */
+  private runPredictionMatching(cycle: Cycle): void {
+    if (!this.predictionMatcher) return;
+
+    for (const bet of cycle.bets) {
+      if (!bet.runId) continue;
+      try {
+        this.predictionMatcher.match(bet.runId);
+      } catch (err) {
+        logger.warn(`Prediction matching failed for run ${bet.runId}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+  }
+
+  /**
+   * Promote step-tier learnings up through flavor → stage → category.
+   * Non-critical: errors are logged and swallowed.
+   */
+  private runHierarchicalPromotion(): void {
+    try {
+      const stepLearnings = this.deps.knowledgeStore.query({ tier: 'step' });
+      const { learnings: flavorLearnings } = this.hierarchicalPromoter.promoteStepToFlavor(stepLearnings, 'cooldown-retrospective');
+      const { learnings: stageLearnings } = this.hierarchicalPromoter.promoteFlavorToStage(flavorLearnings, 'cooldown');
+      this.hierarchicalPromoter.promoteStageToCategory(stageLearnings);
+    } catch (err) {
+      logger.warn(`Hierarchical learning promotion failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  /**
+   * Scan all learnings for expiry: auto-archives expired operational ones,
+   * flags stale strategic ones. Non-critical: errors are logged and swallowed.
+   */
+  private runExpiryCheck(): void {
+    try {
+      if (typeof this.deps.knowledgeStore.checkExpiry !== 'function') return;
+      const { archived, flaggedStale } = this.deps.knowledgeStore.checkExpiry();
+      if (archived.length > 0) {
+        logger.debug(`Expiry check: auto-archived ${archived.length} expired operational learnings`);
+      }
+      if (flaggedStale.length > 0) {
+        logger.debug(`Expiry check: flagged ${flaggedStale.length} stale strategic learnings for review`);
+      }
+    } catch (err) {
+      logger.warn(`Learning expiry check failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   private writeDiaryEntry(input: {

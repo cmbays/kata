@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { ExecutionHistoryEntry } from '@domain/types/history.js';
 import type { Learning } from '@domain/types/learning.js';
+import type { Observation, FrictionTaxonomy, GapSeverity } from '@domain/types/observation.js';
 import type { Step } from '@domain/types/step.js';
 import { LearningExtractor } from './learning-extractor.js';
 import type { Pattern } from './learning-extractor.js';
@@ -474,5 +475,267 @@ describe('LearningExtractor', () => {
       const updates = extractor.suggestPromptUpdates(learnings, stages);
       expect(updates[0].currentPromptPath).toBeUndefined();
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Helper for analyzeObservations tests
+// ---------------------------------------------------------------------------
+
+function makeObs(
+  type: Observation['type'],
+  content: string,
+  extra: Record<string, unknown> = {},
+): Observation {
+  const base = {
+    id: randomUUID(),
+    timestamp: new Date().toISOString(),
+    content,
+    ...extra,
+  };
+
+  switch (type) {
+    case 'friction':
+      return { ...base, type: 'friction', taxonomy: (extra['taxonomy'] as FrictionTaxonomy) ?? 'config-drift' };
+    case 'gap':
+      return { ...base, type: 'gap', severity: (extra['severity'] as GapSeverity) ?? 'major' };
+    case 'assumption':
+      return { ...base, type: 'assumption' };
+    case 'prediction':
+      return { ...base, type: 'prediction' };
+    case 'decision':
+      return { ...base, type: 'decision' };
+    case 'outcome':
+      return { ...base, type: 'outcome' };
+    case 'insight':
+      return { ...base, type: 'insight' };
+    default:
+      throw new Error(`Unknown type: ${type}`);
+  }
+}
+
+describe('LearningExtractor.analyzeObservations', () => {
+  let extractor: LearningExtractor;
+
+  beforeEach(() => {
+    extractor = new LearningExtractor();
+  });
+
+  it('returns empty array for empty observations input', () => {
+    expect(extractor.analyzeObservations([])).toEqual([]);
+  });
+
+  // ---- Friction clustering ------------------------------------------------
+
+  describe('friction clustering', () => {
+    it('detects recurring friction pattern when 3+ observations share the same taxonomy', () => {
+      const observations: Observation[] = [
+        makeObs('friction', 'config drift causing problems', { taxonomy: 'config-drift' }),
+        makeObs('friction', 'another config drift issue', { taxonomy: 'config-drift' }),
+        makeObs('friction', 'config drift still present', { taxonomy: 'config-drift' }),
+      ];
+      const patterns = extractor.analyzeObservations(observations);
+      const pattern = patterns.find((p) => p.id === 'recurring-friction-config-drift');
+      expect(pattern).toBeDefined();
+      expect(pattern!.frequency).toBe(3);
+      expect(pattern!.stageType).toBe('friction');
+      expect(pattern!.evidence).toHaveLength(3);
+    });
+
+    it('does not detect friction pattern when only 2 observations of same taxonomy', () => {
+      const observations: Observation[] = [
+        makeObs('friction', 'config drift causing problems', { taxonomy: 'config-drift' }),
+        makeObs('friction', 'another config drift issue', { taxonomy: 'config-drift' }),
+      ];
+      const patterns = extractor.analyzeObservations(observations);
+      const pattern = patterns.find((p) => p.id === 'recurring-friction-config-drift');
+      expect(pattern).toBeUndefined();
+    });
+
+    it('groups friction observations by taxonomy independently', () => {
+      const observations: Observation[] = [
+        makeObs('friction', 'config drift 1', { taxonomy: 'config-drift' }),
+        makeObs('friction', 'config drift 2', { taxonomy: 'config-drift' }),
+        makeObs('friction', 'config drift 3', { taxonomy: 'config-drift' }),
+        makeObs('friction', 'scope creep 1', { taxonomy: 'scope-creep' }),
+        makeObs('friction', 'scope creep 2', { taxonomy: 'scope-creep' }),
+        makeObs('friction', 'scope creep 3', { taxonomy: 'scope-creep' }),
+      ];
+      const patterns = extractor.analyzeObservations(observations);
+      expect(patterns.find((p) => p.id === 'recurring-friction-config-drift')).toBeDefined();
+      expect(patterns.find((p) => p.id === 'recurring-friction-scope-creep')).toBeDefined();
+    });
+
+    it('maps friction evidence with pipelineId set to "observation"', () => {
+      const observations: Observation[] = [
+        makeObs('friction', 'config drift 1', { taxonomy: 'config-drift' }),
+        makeObs('friction', 'config drift 2', { taxonomy: 'config-drift' }),
+        makeObs('friction', 'config drift 3', { taxonomy: 'config-drift' }),
+      ];
+      const patterns = extractor.analyzeObservations(observations);
+      const pattern = patterns.find((p) => p.id === 'recurring-friction-config-drift');
+      expect(pattern).toBeDefined();
+      for (const e of pattern!.evidence) {
+        expect(e.pipelineId).toBe('observation');
+        expect(e.historyEntryId).toBeDefined();
+      }
+    });
+  });
+
+  // ---- Gap recurrence -----------------------------------------------------
+
+  describe('gap recurrence', () => {
+    it('detects recurring gap pattern when 3+ gaps share the same severity', () => {
+      const observations: Observation[] = [
+        makeObs('gap', 'missing test coverage', { severity: 'major' }),
+        makeObs('gap', 'another major gap found', { severity: 'major' }),
+        makeObs('gap', 'third major gap detected', { severity: 'major' }),
+      ];
+      const patterns = extractor.analyzeObservations(observations);
+      const pattern = patterns.find((p) => p.id === 'recurring-gaps-major');
+      expect(pattern).toBeDefined();
+      expect(pattern!.frequency).toBe(3);
+      expect(pattern!.stageType).toBe('gap');
+    });
+
+    it('does not detect gap pattern when only 2 gaps share severity', () => {
+      const observations: Observation[] = [
+        makeObs('gap', 'missing test coverage', { severity: 'critical' }),
+        makeObs('gap', 'another critical gap', { severity: 'critical' }),
+      ];
+      const patterns = extractor.analyzeObservations(observations);
+      expect(patterns.find((p) => p.id === 'recurring-gaps-critical')).toBeUndefined();
+    });
+
+    it('detects different severities independently', () => {
+      const observations: Observation[] = [
+        makeObs('gap', 'critical 1', { severity: 'critical' }),
+        makeObs('gap', 'critical 2', { severity: 'critical' }),
+        makeObs('gap', 'critical 3', { severity: 'critical' }),
+        makeObs('gap', 'minor 1', { severity: 'minor' }),
+        makeObs('gap', 'minor 2', { severity: 'minor' }),
+        makeObs('gap', 'minor 3', { severity: 'minor' }),
+      ];
+      const patterns = extractor.analyzeObservations(observations);
+      expect(patterns.find((p) => p.id === 'recurring-gaps-critical')).toBeDefined();
+      expect(patterns.find((p) => p.id === 'recurring-gaps-minor')).toBeDefined();
+    });
+  });
+
+  // ---- Assumption density -------------------------------------------------
+
+  describe('assumption density', () => {
+    it('detects assumption-heavy-run when 5+ assumptions recorded', () => {
+      const observations: Observation[] = Array.from({ length: 5 }, (_, i) =>
+        makeObs('assumption', `assumption ${i + 1}`),
+      );
+      const patterns = extractor.analyzeObservations(observations);
+      const pattern = patterns.find((p) => p.id === 'assumption-heavy-run');
+      expect(pattern).toBeDefined();
+      expect(pattern!.frequency).toBe(5);
+      expect(pattern!.stageType).toBe('assumptions');
+      expect(pattern!.evidence).toHaveLength(5);
+    });
+
+    it('does not detect assumption-heavy-run when only 4 assumptions', () => {
+      const observations: Observation[] = Array.from({ length: 4 }, (_, i) =>
+        makeObs('assumption', `assumption ${i + 1}`),
+      );
+      const patterns = extractor.analyzeObservations(observations);
+      expect(patterns.find((p) => p.id === 'assumption-heavy-run')).toBeUndefined();
+    });
+
+    it('includes description mentioning count when 5+ assumptions', () => {
+      const observations: Observation[] = Array.from({ length: 7 }, (_, i) =>
+        makeObs('assumption', `assumption ${i + 1}`),
+      );
+      const patterns = extractor.analyzeObservations(observations);
+      const pattern = patterns.find((p) => p.id === 'assumption-heavy-run');
+      expect(pattern!.description).toContain('7');
+    });
+  });
+
+  // ---- Prediction rate ----------------------------------------------------
+
+  describe('prediction rate', () => {
+    it('detects low-prediction-discipline when total >= 10 and predictions < total/5', () => {
+      // 10 total, 1 prediction (1/10 = 0.1 < 0.2 threshold)
+      const observations: Observation[] = [
+        makeObs('prediction', 'one prediction made'),
+        ...Array.from({ length: 9 }, (_, i) => makeObs('decision', `decision ${i + 1}`)),
+      ];
+      const patterns = extractor.analyzeObservations(observations);
+      const pattern = patterns.find((p) => p.id === 'low-prediction-discipline');
+      expect(pattern).toBeDefined();
+      expect(pattern!.stageType).toBe('predictions');
+      expect(pattern!.evidence).toHaveLength(0);
+    });
+
+    it('does not detect low-prediction-discipline when predictions >= total/5', () => {
+      // 10 total, 3 predictions (3/10 = 0.3 > 0.2 threshold)
+      const observations: Observation[] = [
+        makeObs('prediction', 'prediction 1'),
+        makeObs('prediction', 'prediction 2'),
+        makeObs('prediction', 'prediction 3'),
+        ...Array.from({ length: 7 }, (_, i) => makeObs('decision', `decision ${i + 1}`)),
+      ];
+      const patterns = extractor.analyzeObservations(observations);
+      expect(patterns.find((p) => p.id === 'low-prediction-discipline')).toBeUndefined();
+    });
+
+    it('does not detect low-prediction-discipline when total < 10', () => {
+      // 9 total, 0 predictions — not enough total observations
+      const observations: Observation[] = Array.from({ length: 9 }, (_, i) =>
+        makeObs('decision', `decision ${i + 1}`),
+      );
+      const patterns = extractor.analyzeObservations(observations);
+      expect(patterns.find((p) => p.id === 'low-prediction-discipline')).toBeUndefined();
+    });
+
+    it('includes count in description', () => {
+      const observations: Observation[] = [
+        makeObs('prediction', 'one prediction'),
+        ...Array.from({ length: 9 }, (_, i) => makeObs('outcome', `outcome ${i + 1}`)),
+      ];
+      const patterns = extractor.analyzeObservations(observations);
+      const pattern = patterns.find((p) => p.id === 'low-prediction-discipline');
+      expect(pattern).toBeDefined();
+      expect(pattern!.description).toContain('1');
+      expect(pattern!.description).toContain('10');
+    });
+  });
+
+  // ---- Combined / edge cases ---------------------------------------------
+
+  it('returns multiple pattern types simultaneously', () => {
+    const observations: Observation[] = [
+      makeObs('friction', 'config drift 1', { taxonomy: 'config-drift' }),
+      makeObs('friction', 'config drift 2', { taxonomy: 'config-drift' }),
+      makeObs('friction', 'config drift 3', { taxonomy: 'config-drift' }),
+      makeObs('assumption', 'assumption 1'),
+      makeObs('assumption', 'assumption 2'),
+      makeObs('assumption', 'assumption 3'),
+      makeObs('assumption', 'assumption 4'),
+      makeObs('assumption', 'assumption 5'),
+      makeObs('decision', 'decision 1'),
+      makeObs('outcome', 'outcome 1'),
+    ];
+    const patterns = extractor.analyzeObservations(observations);
+    const ids = patterns.map((p) => p.id);
+    expect(ids).toContain('recurring-friction-config-drift');
+    expect(ids).toContain('assumption-heavy-run');
+  });
+
+  it('consistency is computed as count divided by total', () => {
+    const observations: Observation[] = [
+      makeObs('friction', 'f1', { taxonomy: 'config-drift' }),
+      makeObs('friction', 'f2', { taxonomy: 'config-drift' }),
+      makeObs('friction', 'f3', { taxonomy: 'config-drift' }),
+      makeObs('decision', 'd1'),
+    ];
+    const patterns = extractor.analyzeObservations(observations);
+    const pattern = patterns.find((p) => p.id === 'recurring-friction-config-drift');
+    expect(pattern).toBeDefined();
+    expect(pattern!.consistency).toBeCloseTo(3 / 4, 5);
   });
 });

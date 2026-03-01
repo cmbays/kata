@@ -1,4 +1,4 @@
-import type { Learning, LearningFilter, LearningInput } from '@domain/types/learning.js';
+import type { Learning, LearningFilter, LearningInput, LearningPermanence } from '@domain/types/learning.js';
 
 /**
  * Summary statistics for the knowledge store.
@@ -35,4 +35,18 @@ export interface IKnowledgeStore {
   capture(learning: Omit<LearningInput, 'id' | 'createdAt' | 'updatedAt'>): Learning;
   /** Query learnings with filters. Returns all learnings if filter is empty. */
   query(filter: LearningFilter): Learning[];
+  /** Soft-delete a learning by setting archived=true. Pushes current state to versions[]. */
+  archiveLearning(id: string, reason?: string): Learning;
+  /** Un-archive a learning and record the resurrection observation as a citation. */
+  resurrectedBy(id: string, observationId: string, citedAt: string): Learning;
+  /** Promote a learning to a higher permanence tier. Downgrades and constitutional changes are rejected. */
+  promote(id: string, toPermanence: LearningPermanence): Learning;
+  /** Pure function: compute confidence with time-based decay applied (no I/O). */
+  computeDecayedConfidence(learning: Learning): number;
+  /** Scan all learnings: auto-archive expired operational ones, flag stale strategic ones. */
+  checkExpiry(now?: Date): { archived: Learning[]; flaggedStale: Learning[] };
+  /** Load step-tier learnings for a specific step (waza) ID. */
+  loadForStep(stepId: string): Learning[];
+  /** Load flavor-tier learnings for a specific flavor (ryu) ID. */
+  loadForFlavor(flavorId: string): Learning[];
 }
