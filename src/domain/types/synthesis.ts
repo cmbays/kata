@@ -34,8 +34,8 @@ export type SynthesisProposalType = z.infer<typeof SynthesisProposalType>;
 const SynthesisProposalBaseSchema = z.object({
   id: z.string().uuid(),
   confidence: z.number().min(0).max(1),
-  /** Observation or learning UUIDs supporting this proposal. Minimum 2 required at application time. */
-  citations: z.array(z.string()),
+  /** Observation or learning UUIDs supporting this proposal. Minimum 2 required. */
+  citations: z.array(z.string()).min(2),
   reasoning: z.string(),
   createdAt: z.string().datetime(),
 });

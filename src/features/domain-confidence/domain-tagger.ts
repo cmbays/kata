@@ -34,7 +34,7 @@ export function detectTags(description: string): Partial<DomainTags> {
     lower.startsWith('api ') ||
     lower.endsWith(' api') ||
     lower === 'api' ||
-    lower.includes('server') ||
+    /\bserver\b/.test(lower) ||
     lower.includes('express') ||
     lower.includes('fastapi') ||
     lower.includes('django')
@@ -47,9 +47,9 @@ export function detectTags(description: string): Partial<DomainTags> {
     result.language = 'typescript-js';
   } else if (lower.includes('python') || lower.includes('.py')) {
     result.language = 'python';
-  } else if (lower.includes('rust')) {
+  } else if (/\brust\b/.test(lower)) {
     result.language = 'rust';
-  } else if (lower.includes('go ') || lower.includes('golang')) {
+  } else if (/\bgo\b/.test(lower) || lower.includes('golang')) {
     result.language = 'go';
   }
 

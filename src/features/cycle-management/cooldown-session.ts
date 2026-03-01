@@ -484,15 +484,7 @@ export class CooldownSession {
       }
 
       case 'promote':
-        // promoteTier may not exist on IKnowledgeStore — guard with duck-typing
-        if (typeof (this.deps.knowledgeStore as { promoteTier?: unknown }).promoteTier === 'function') {
-          (this.deps.knowledgeStore as { promoteTier(id: string, toTier: string): void }).promoteTier(
-            proposal.targetLearningId,
-            proposal.toTier,
-          );
-        } else {
-          logger.warn(`KnowledgeStore does not support promoteTier — skipping promote proposal ${proposal.id}`);
-        }
+        this.deps.knowledgeStore.promoteTier(proposal.targetLearningId, proposal.toTier);
         break;
 
       case 'archive':
@@ -562,11 +554,7 @@ export class CooldownSession {
     };
 
     const filePath = join(synthesisDir, `pending-${id}.json`);
-    try {
-      JsonStore.write(filePath, synthesisInput, SynthesisInputSchema);
-    } catch (err) {
-      logger.warn(`Failed to write synthesis input file: ${err instanceof Error ? err.message : String(err)}`);
-    }
+    JsonStore.write(filePath, synthesisInput, SynthesisInputSchema);
 
     return { synthesisInputId: id, synthesisInputPath: filePath };
   }

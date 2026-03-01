@@ -525,6 +525,7 @@ export function registerCycleCommands(parent: Command): void {
     .option('--auto-accept-suggestions', 'Accept all pending rule suggestions without prompts')
     .option('--prepare', 'Write synthesis input file and exit without completing (use with kata-sensei)')
     .option('--yolo', 'Prepare synthesis input, invoke claude --print for synthesis, apply high-confidence proposals, then complete')
+    .option('--depth <level>', 'Synthesis depth: quick | standard | thorough', 'standard')
     .action(withCommandContext(async (ctx, cycleId: string) => {
       const localOpts = ctx.cmd.opts();
       const cyclesDir = kataDirPath(ctx.kataDir, 'cycles');
@@ -547,7 +548,7 @@ export function registerCycleCommands(parent: Command): void {
 
       // --- --prepare mode: write synthesis input file and exit without completing ---
       if (localOpts.prepare) {
-        const prepareResult = await session.prepare(cycleId);
+        const prepareResult = await session.prepare(cycleId, [], localOpts.depth);
 
         if (ctx.globalOpts.json) {
           console.log(JSON.stringify({
@@ -569,7 +570,7 @@ export function registerCycleCommands(parent: Command): void {
 
       // --- --yolo mode: prepare + claude for synthesis + apply high-confidence proposals ---
       if (localOpts.yolo) {
-        const prepareResult = await session.prepare(cycleId);
+        const prepareResult = await session.prepare(cycleId, [], localOpts.depth);
 
         if (!ctx.globalOpts.json) {
           console.log(`Synthesis input prepared: ${prepareResult.synthesisInputPath}`);
@@ -595,7 +596,9 @@ export function registerCycleCommands(parent: Command): void {
             inputContent,
           ].join('\n');
 
-          const output = execFileSync('claude', ['--print', prompt], {
+          // Pipe prompt via stdin to avoid ARG_MAX limits on large synthesis inputs
+          const output = execFileSync('claude', ['--print'], {
+            input: prompt,
             encoding: 'utf-8',
             timeout: 120000,
           });
@@ -616,9 +619,8 @@ export function registerCycleCommands(parent: Command): void {
               synthesisProposals = validProposals;
 
               // Write result file so complete() can pick it up
-              const { JsonStore: JS } = await import('@infra/persistence/json-store.js');
               const resultPath = join(synthesisDir, `result-${synthesisInputId}.json`);
-              JS.write(resultPath, { inputId: synthesisInputId, proposals: synthesisProposals }, SynthesisResultSchema);
+              JsonStore.write(resultPath, { inputId: synthesisInputId, proposals: synthesisProposals }, SynthesisResultSchema);
             }
           }
         } catch (err) {
