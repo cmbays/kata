@@ -13,6 +13,7 @@ const LEXICON_TABLE: LexiconEntry[] = [
   { domain: 'Step (waza)', cli: 'kata step', alias: 'kata waza', description: 'Atomic methodology units' },
   { domain: 'Flavor (ryu)', cli: 'kata flavor', alias: 'kata ryu', description: 'Named compositions of steps' },
   { domain: 'Cycle (keiko)', cli: 'kata cycle', alias: 'kata keiko', description: 'Time-boxed work periods' },
+  { domain: 'Bet (kadai)', cli: 'kata cycle bet', alias: 'kata cycle kadai', description: 'Scoped unit of work in a cycle' },
   { domain: 'Agent (kataka)', cli: 'kata agent', alias: 'kata kataka', description: 'Named agent persona' },
   { domain: 'Init', cli: 'kata init', alias: 'kata rei', description: 'Initialize a project' },
   { domain: 'Execute', cli: 'kata execute', alias: 'kata kiai', description: 'Run stage orchestration' },

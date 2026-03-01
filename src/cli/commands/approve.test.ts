@@ -61,6 +61,13 @@ describe('registerApproveCommand', () => {
     return program;
   }
 
+  it('registers hai as an alias for the approve command', () => {
+    const program = createProgram();
+    const approveCmd = program.commands.find((c) => c.name() === 'approve');
+    expect(approveCmd).toBeDefined();
+    expect(approveCmd!.alias()).toBe('hai');
+  });
+
   it('returns empty array when no pending gates exist', async () => {
     const run = makeRun();
     createRunTree(runsDir, run);

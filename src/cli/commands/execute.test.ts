@@ -3,6 +3,8 @@ import { mkdirSync, rmSync, writeFileSync, existsSync, readFileSync } from 'node
 import { tmpdir } from 'node:os';
 import { Command } from 'commander';
 import { registerExecuteCommands } from './execute.js';
+import { CycleManager } from '@domain/services/cycle-manager.js';
+import { JsonStore } from '@infra/persistence/json-store.js';
 
 // ---------------------------------------------------------------------------
 // Hoist mock functions before modules are imported
@@ -534,6 +536,118 @@ describe('registerExecuteCommands', () => {
       await program.parseAsync(['node', 'test', '--cwd', baseDir, 'kiai', 'build']);
 
       expect(mockRunStage).toHaveBeenCalledWith('build', expect.anything());
+    });
+  });
+
+  // ---- --next flag (Issue #191) ----
+
+  describe('--next', () => {
+    const cyclesDir = join(kataDir, 'cycles');
+
+    it('prints message and exits cleanly when no active cycle exists', async () => {
+      mkdirSync(cyclesDir, { recursive: true });
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', '--next']);
+
+      const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('No active cycle found');
+      expect(mockRunStage).not.toHaveBeenCalled();
+      expect(mockRunPipeline).not.toHaveBeenCalled();
+    });
+
+    it('prints message and exits cleanly when no pending bets in active cycle', async () => {
+      mkdirSync(cyclesDir, { recursive: true });
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 50000 }, 'Resolved Cycle');
+      manager.addBet(cycle.id, { description: 'Done bet', appetite: 30, outcome: 'complete', issueRefs: [] });
+      manager.updateState(cycle.id, 'active');
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', '--next']);
+
+      const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('No pending bets');
+      expect(mockRunStage).not.toHaveBeenCalled();
+    });
+
+    it('auto-selects the first pending bet and resolves categories from its ad-hoc kata', async () => {
+      mkdirSync(cyclesDir, { recursive: true });
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 50000 }, 'Active Cycle');
+      const withBet = manager.addBet(cycle.id, {
+        description: 'My next bet', appetite: 30, outcome: 'pending', issueRefs: [],
+      });
+      manager.updateBet(cycle.id, withBet.bets[0]!.id, { kata: { type: 'ad-hoc', stages: ['build'] } });
+      manager.updateState(cycle.id, 'active');
+
+      mockRunStage.mockResolvedValue(makeSingleResult('build'));
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', '--next']);
+
+      // Correct stage resolved from bet's kata assignment
+      expect(mockRunStage).toHaveBeenCalledWith(
+        'build',
+        expect.objectContaining({ bet: expect.objectContaining({ description: 'My next bet' }) }),
+      );
+
+      const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('Auto-selected bet');
+      expect(output).toContain('My next bet');
+    });
+
+    it('skips non-pending bets and selects the first pending one', async () => {
+      mkdirSync(cyclesDir, { recursive: true });
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 100000 }, 'Multi-Bet Cycle');
+
+      // First bet: complete (should be skipped)
+      const withBet1 = manager.addBet(cycle.id, {
+        description: 'Already done', appetite: 20, outcome: 'complete', issueRefs: [],
+      });
+      manager.updateBet(cycle.id, withBet1.bets[0]!.id, { kata: { type: 'ad-hoc', stages: ['research'] } });
+
+      // Second bet: pending (should be selected)
+      const withBet2 = manager.addBet(cycle.id, {
+        description: 'Next up', appetite: 30, outcome: 'pending', issueRefs: [],
+      });
+      manager.updateBet(cycle.id, withBet2.bets[1]!.id, { kata: { type: 'ad-hoc', stages: ['build'] } });
+
+      manager.updateState(cycle.id, 'active');
+
+      mockRunStage.mockResolvedValue(makeSingleResult('build'));
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', '--next']);
+
+      expect(mockRunStage).toHaveBeenCalledWith(
+        'build',
+        expect.objectContaining({ bet: expect.objectContaining({ description: 'Next up' }) }),
+      );
+    });
+
+    it('resolves categories from a named kata file', async () => {
+      mkdirSync(cyclesDir, { recursive: true });
+      writeFileSync(join(kataDir, 'katas', 'my-kata.json'), JSON.stringify({ name: 'my-kata', stages: ['plan', 'build'] }));
+
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 50000 }, 'Named Kata Cycle');
+      const withBet = manager.addBet(cycle.id, {
+        description: 'Named kata bet', appetite: 30, outcome: 'pending', issueRefs: [],
+      });
+      manager.updateBet(cycle.id, withBet.bets[0]!.id, { kata: { type: 'named', pattern: 'my-kata' } });
+      manager.updateState(cycle.id, 'active');
+
+      mockRunPipeline.mockResolvedValue(makePipelineResult(['plan', 'build']));
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', '--next']);
+
+      expect(mockRunPipeline).toHaveBeenCalledWith(
+        ['plan', 'build'],
+        expect.objectContaining({ bet: expect.objectContaining({ description: 'Named kata bet' }) }),
+      );
     });
   });
 });

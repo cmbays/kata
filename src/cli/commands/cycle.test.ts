@@ -385,6 +385,150 @@ describe('registerCycleCommands', () => {
     });
   });
 
+  describe('cycle bet list (alias: kadai)', () => {
+    it('shows bets from the active cycle', async () => {
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 50000 }, 'Active Cycle');
+      manager.addBet(cycle.id, {
+        description: 'Auth feature',
+        appetite: 30,
+        outcome: 'pending',
+        issueRefs: [],
+      });
+      manager.updateState(cycle.id, 'active');
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'cycle', 'bet', 'list']);
+
+      const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('Auth feature');
+      expect(output).toContain('pending');
+    });
+
+    it('shows "No cycles found" when no cycles exist', async () => {
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'cycle', 'bet', 'list']);
+
+      expect(consoleSpy).toHaveBeenCalledWith('No cycles found. Run "kata cycle new" to create one.');
+    });
+
+    it('falls back to the most recent cycle when no active cycle', async () => {
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 50000 }, 'Planning Cycle');
+      manager.addBet(cycle.id, {
+        description: 'Research task',
+        appetite: 20,
+        outcome: 'pending',
+        issueRefs: [],
+      });
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'cycle', 'bet', 'list']);
+
+      const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('Research task');
+    });
+
+    it('targets a specific cycle with --cycle-id', async () => {
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 50000 }, 'Specific');
+      manager.addBet(cycle.id, {
+        description: 'Specific bet',
+        appetite: 40,
+        outcome: 'complete',
+        issueRefs: [],
+      });
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir,
+        'cycle', 'bet', 'list', '--cycle-id', cycle.id,
+      ]);
+
+      const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('Specific bet');
+      expect(output).toContain('complete');
+    });
+
+    it('outputs JSON with --json flag', async () => {
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 50000 }, 'JSON Test');
+      manager.addBet(cycle.id, {
+        description: 'JSON bet',
+        appetite: 25,
+        outcome: 'pending',
+        issueRefs: [],
+      });
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--json', '--cwd', baseDir, 'cycle', 'bet', 'list',
+      ]);
+
+      const raw = consoleSpy.mock.calls[0]?.[0] as string;
+      const parsed = JSON.parse(raw);
+      expect(parsed.bets).toHaveLength(1);
+      expect(parsed.bets[0].description).toBe('JSON bet');
+      expect(parsed.bets[0].outcome).toBe('pending');
+    });
+
+    it('shows bet count summary line', async () => {
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 50000 }, 'Summary Test');
+      manager.addBet(cycle.id, { description: 'Bet A', appetite: 20, outcome: 'pending', issueRefs: [] });
+      manager.addBet(cycle.id, { description: 'Bet B', appetite: 20, outcome: 'complete', issueRefs: [] });
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'cycle', 'bet', 'list']);
+
+      const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('2 bet(s)');
+      expect(output).toContain('1 pending');
+      expect(output).toContain('1 complete');
+    });
+
+    it('shows "No bets in this cycle" when bets array is empty', async () => {
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      manager.create({ tokenBudget: 50000 }, 'Empty Cycle');
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'cycle', 'bet', 'list']);
+
+      const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('No bets in this cycle');
+    });
+
+    it('accepts the kadai alias (kata cycle kadai list)', async () => {
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 50000 }, 'Kadai Alias Test');
+      manager.addBet(cycle.id, {
+        description: 'Kadai bet',
+        appetite: 30,
+        outcome: 'pending',
+        issueRefs: [],
+      });
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'cycle', 'kadai', 'list']);
+
+      const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('Kadai bet');
+    });
+
+    it('uses plain labels with --plain flag', async () => {
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 50000 }, 'Plain Test');
+      manager.addBet(cycle.id, { description: 'Plain bet', appetite: 20, outcome: 'pending', issueRefs: [] });
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--plain', '--cwd', baseDir, 'cycle', 'bet', 'list']);
+
+      const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('Cycle:');       // plain label, not "Keiko:"
+      expect(output).toContain('Bets:');         // plain "Bets:", not "Bets (kadai):"
+    });
+  });
+
   describe('cooldown', () => {
     it('generates cooldown session result with --skip-prompts', async () => {
       const manager = new CycleManager(cyclesDir, JsonStore);

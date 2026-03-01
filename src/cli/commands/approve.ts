@@ -70,7 +70,8 @@ function findPendingGates(runsDir: string, scopeRunId?: string): PendingGateEntr
 export function registerApproveCommand(parent: Command): void {
   parent
     .command('approve [gate-id]')
-    .description('Approve a pending gate (human or agent approval)')
+    .alias('hai')
+    .description('Approve a pending gate (human or agent approval) (alias: hai)')
     .option('--run <run-id>', 'Scope to a specific run')
     .option('--agent', 'Approve as agent (default: human)')
     .action(withCommandContext(async (ctx, gateId: string | undefined) => {
