@@ -12,6 +12,7 @@ import type {
 } from '@domain/ports/stage-orchestrator.js';
 import { FlavorNotFoundError, OrchestratorError } from '@shared/lib/errors.js';
 import { UsageAnalytics } from '@infra/tracking/usage-analytics.js';
+import { MetaOrchestrator } from '@domain/services/meta-orchestrator.js';
 import { KiaiRunner, type KiaiRunnerDeps } from './kiai-runner.js';
 
 // ---------------------------------------------------------------------------
@@ -253,6 +254,22 @@ describe('KiaiRunner', () => {
     });
   });
 
+  describe('runStage() — yolo option', () => {
+    it('runStage with yolo: true completes successfully', async () => {
+      const deps = makeDeps({ kataDir: baseDir });
+      const runner = new KiaiRunner(deps);
+      const result = await runner.runStage('build', { yolo: true });
+      expect(result.stageCategory).toBe('build');
+    });
+
+    it('runStage with yolo: false uses default threshold (smoke test)', async () => {
+      const deps = makeDeps({ kataDir: baseDir });
+      const runner = new KiaiRunner(deps);
+      const result = await runner.runStage('build', { yolo: false });
+      expect(result.stageCategory).toBe('build');
+    });
+  });
+
   describe('runStage() — different categories', () => {
     const categories: StageCategory[] = ['research', 'plan', 'build', 'review'];
 
@@ -365,6 +382,33 @@ describe('KiaiRunner', () => {
       expect(analysis).toBeDefined();
       const ctx = analysis!.context as Record<string, unknown>;
       expect(ctx.bet).toEqual({ title: 'Add search' });
+    });
+
+    it('runPipeline with yolo: true completes successfully', async () => {
+      const deps = makePipelineDeps();
+      const runner = new KiaiRunner(deps);
+      const result = await runner.runPipeline(['build'], { yolo: true });
+      expect(result.stageResults).toHaveLength(1);
+      expect(result.stageResults[0]!.stageCategory).toBe('build');
+    });
+
+    it('runPipeline passes yolo option to MetaOrchestrator', async () => {
+      const spy = vi.spyOn(MetaOrchestrator.prototype, 'runPipeline');
+      const deps = makePipelineDeps();
+      const runner = new KiaiRunner(deps);
+      await runner.runPipeline(['build'], { yolo: true });
+      expect(spy).toHaveBeenCalledWith(['build'], undefined, { yolo: true });
+      spy.mockRestore();
+    });
+
+    it('runPipeline without yolo passes undefined options.yolo to MetaOrchestrator', async () => {
+      const spy = vi.spyOn(MetaOrchestrator.prototype, 'runPipeline');
+      const deps = makePipelineDeps();
+      const runner = new KiaiRunner(deps);
+      await runner.runPipeline(['build']);
+      // options.yolo is undefined when not supplied — threaded as { yolo: undefined }
+      expect(spy).toHaveBeenCalledWith(['build'], undefined, { yolo: undefined });
+      spy.mockRestore();
     });
   });
 

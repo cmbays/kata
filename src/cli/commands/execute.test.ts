@@ -256,6 +256,44 @@ describe('registerExecuteCommands', () => {
     });
   });
 
+  // ---- kata name validation (assertValidKataName) ----
+
+  describe('kata name path traversal guard', () => {
+    const TRAVERSAL_NAMES = ['../evil', 'foo/bar', '..', 'foo\\bar', 'a b', 'foo|bar'];
+
+    for (const badName of TRAVERSAL_NAMES) {
+      it(`--kata "${badName}" sets exitCode=1`, async () => {
+        const program = createProgram();
+        await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', '--kata', badName]);
+        expect(process.exitCode).toBe(1);
+        expect(errorSpy).toHaveBeenCalled();
+      });
+
+      it(`--save-kata "${badName}" sets exitCode=1`, async () => {
+        const program = createProgram();
+        await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', 'build', '--save-kata', badName]);
+        expect(process.exitCode).toBe(1);
+        expect(errorSpy).toHaveBeenCalled();
+      });
+
+      it(`--delete-kata "${badName}" sets exitCode=1`, async () => {
+        const program = createProgram();
+        await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', '--delete-kata', badName]);
+        expect(process.exitCode).toBe(1);
+        expect(errorSpy).toHaveBeenCalled();
+      });
+    }
+
+    it('accepts a valid kata name with letters, digits, hyphens, underscores', async () => {
+      const kata = { name: 'my_kata-1', stages: ['build'] };
+      writeFileSync(join(kataDir, 'katas', 'my_kata-1.json'), JSON.stringify(kata, null, 2));
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', '--kata', 'my_kata-1']);
+      expect(process.exitCode).not.toBe(1);
+    });
+  });
+
   // ---- --gyo <stages> ----
 
   describe('--gyo', () => {

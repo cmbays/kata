@@ -7,6 +7,7 @@ import { discoverAndRegisterAgents } from '@features/init/agent-discoverer.js';
 import { generateKataMd } from '@features/init/kata-md-generator.js';
 import { withCommandContext } from '@cli/utils.js';
 import { getLexicon, pl } from '@cli/lexicon.js';
+import { logger } from '@shared/lib/logger.js';
 
 const PROJECT_TYPE_LABELS: Record<ProjectType, string> = {
   node: 'Node.js / TypeScript',
@@ -71,8 +72,8 @@ export function registerInitCommand(program: Command): void {
               registeredAgents: agentDiscovery.agents,
             });
             writeFileSync(result.kataMdPath, content, 'utf-8');
-          } catch {
-            // Non-fatal — KATA.md refresh is best-effort
+          } catch (err) {
+            logger.warn(`Failed to refresh KATA.md with discovered agents: ${err instanceof Error ? err.message : String(err)}`);
           }
         }
       }

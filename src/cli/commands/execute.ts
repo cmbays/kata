@@ -354,11 +354,11 @@ function collect(value: string, previous: string[]): string[] {
 // Saved kata helpers
 // ---------------------------------------------------------------------------
 
-/** Prevent path traversal via kata names by rejecting separators and `..`. */
+/** Prevent path traversal via kata names. Only alphanumeric, hyphens, and underscores allowed. */
 function assertValidKataName(name: string): void {
-  if (/[/\\]|\.\./.test(name)) {
+  if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
     throw new Error(
-      `Invalid kata name "${name}": names cannot contain path separators or "..".`,
+      `Invalid kata name "${name}": names must contain only letters, digits, hyphens, and underscores.`,
     );
   }
 }

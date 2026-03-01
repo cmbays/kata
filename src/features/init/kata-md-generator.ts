@@ -20,12 +20,17 @@ export interface KataMdOptions {
  * The file is generated at `kata init` and refreshed after each cooldown
  * (Wave I will add the cooldown refresh step).
  */
+/** Strip pipe characters and newlines to prevent markdown table injection. */
+function sanitizeMd(s: string): string {
+  return s.replace(/[|\n\r]/g, ' ').trim();
+}
+
 function renderKatakaRegistry(agents?: RegisteredAgent[]): string {
   if (!agents || agents.length === 0) {
     return '_No kataka registered. Run `kata init --discover-agents` to auto-register agents._';
   }
   const rows = agents
-    .map((a) => `| ${a.name} | ${a.id} | ${a.source} |`)
+    .map((a) => `| ${sanitizeMd(a.name)} | ${sanitizeMd(a.id)} | ${sanitizeMd(a.source)} |`)
     .join('\n');
   return `| Name | ID | Source |\n|------|----|---------|\n${rows}`;
 }
