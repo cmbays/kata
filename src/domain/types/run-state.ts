@@ -47,6 +47,11 @@ export const RunSchema = z.object({
   startedAt: z.string().datetime(),
   /** ISO 8601 timestamp when the run finished (completed or failed). */
   completedAt: z.string().datetime().optional(),
+  /**
+   * ID of the kataka (agent) driving this run. When set, observations recorded
+   * during the run auto-populate `katakaId` on each observation. (Wave G)
+   */
+  katakaId: z.string().uuid().optional(),
 });
 
 export type Run = z.infer<typeof RunSchema>;

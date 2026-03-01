@@ -9,6 +9,7 @@ import { KataConfigSchema } from '@domain/types/config.js';
 import { StepRegistry } from '@infra/registries/step-registry.js';
 import { FlavorRegistry } from '@infra/registries/flavor-registry.js';
 import { DecisionRegistry } from '@infra/registries/decision-registry.js';
+import { KatakaRegistry } from '@infra/registries/kataka-registry.js';
 import { AdapterResolver } from '@infra/execution/adapter-resolver.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
 import { StepFlavorExecutor } from '@features/execute/step-flavor-executor.js';
@@ -110,6 +111,7 @@ export function registerExecuteCommands(program: Command): void {
     .option('--save-kata <name>', 'Save this run as a named kata after success')
     .option('--list-katas', 'List saved katas and exit')
     .option('--delete-kata <name>', 'Delete a saved kata and exit')
+    .option('--kataka <id>', 'Kataka (agent) ID driving this run — stored in artifact metadata and attributed to observations')
     .action(withCommandContext(async (ctx, categories: string[]) => {
       const localOpts = ctx.cmd.opts();
 
@@ -164,6 +166,7 @@ export function registerExecuteCommands(program: Command): void {
         pin: pin.length > 0 ? pin : undefined,
         dryRun: localOpts.dryRun,
         saveKata: localOpts.saveKata,
+        katakaId: localOpts.kataka as string | undefined,
       });
     }));
 }
@@ -178,6 +181,8 @@ interface RunOptions {
   dryRun?: boolean;
   json?: boolean;
   saveKata?: string;
+  /** ID of the kataka driving this run. Validated against KatakaRegistry before execution. */
+  katakaId?: string;
 }
 
 async function runCategories(
@@ -202,6 +207,23 @@ async function runCategories(
   const bet = parseBetOption(opts.bet);
   if (bet === false) { process.exitCode = 1; return; }
 
+  // Validate --kataka ID if provided
+  if (opts.katakaId) {
+    try {
+      const katakaRegistry = new KatakaRegistry(join(ctx.kataDir, KATA_DIRS.kataka));
+      katakaRegistry.get(opts.katakaId);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (/not found/i.test(msg)) {
+        console.error(`Error: kataka "${opts.katakaId}" not found. Use "kata agent list" to see registered kataka.`);
+      } else {
+        console.error(`Error: Failed to load kataka "${opts.katakaId}": ${msg}`);
+      }
+      process.exitCode = 1;
+      return;
+    }
+  }
+
   const isJson = ctx.globalOpts.json || opts.json;
 
   if (categories.length === 1) {
@@ -210,6 +232,7 @@ async function runCategories(
       bet,
       pin: opts.pin,
       dryRun: opts.dryRun,
+      katakaId: opts.katakaId,
     });
 
     if (isJson) {
@@ -232,7 +255,7 @@ async function runCategories(
     }
   } else {
     // Multi-stage pipeline
-    const result = await runner.runPipeline(categories, { bet, dryRun: opts.dryRun });
+    const result = await runner.runPipeline(categories, { bet, dryRun: opts.dryRun, katakaId: opts.katakaId });
 
     if (isJson) {
       console.log(JSON.stringify(result, null, 2));

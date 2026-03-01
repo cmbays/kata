@@ -2,8 +2,9 @@ import type { Command } from 'commander';
 import type { ProjectType } from '@features/init/project-detector.js';
 import { handleInit } from '@features/init/init-handler.js';
 import { scanProject, type ScanDepth } from '@features/init/scan-handler.js';
+import { discoverAndRegisterAgents } from '@features/init/agent-discoverer.js';
 import { withCommandContext } from '@cli/utils.js';
-import { getLexicon } from '@cli/lexicon.js';
+import { getLexicon, pl } from '@cli/lexicon.js';
 
 const PROJECT_TYPE_LABELS: Record<ProjectType, string> = {
   node: 'Node.js / TypeScript',
@@ -32,6 +33,7 @@ export function registerInitCommand(program: Command): void {
     .option('--adapter <name>', 'Execution adapter: manual, claude-cli, composio')
     .option('--skip-prompts', 'Skip interactive prompts and use defaults')
     .option('--scan <depth>', 'Scan project for metadata without initializing (basic | full). Output is always JSON.')
+    .option('--discover-agents', 'After init, scan for *.agent.ts / *.kataka.ts files and CLAUDE.md agent declarations, then auto-register discovered kataka')
     .action(withCommandContext(async (ctx) => {
       const localOpts = ctx.cmd.opts();
       const cwd = ctx.globalOpts.cwd ?? process.cwd();
@@ -54,8 +56,14 @@ export function registerInitCommand(program: Command): void {
         skipPrompts: localOpts.skipPrompts ?? false,
       });
 
+      // --discover-agents: scan for agent-like files and auto-register kataka
+      let agentDiscovery: import('@features/init/agent-discoverer.js').AgentDiscoveryResult | undefined;
+      if (localOpts.discoverAgents) {
+        agentDiscovery = discoverAndRegisterAgents(cwd, result.kataDir);
+      }
+
       if (ctx.globalOpts.json) {
-        console.log(JSON.stringify(result, null, 2));
+        console.log(JSON.stringify({ ...result, agentDiscovery }, null, 2));
       } else {
         const projectLabel = result.config.project.name
           ? `kata initialized for ${result.config.project.name}`
@@ -106,6 +114,15 @@ export function registerInitCommand(program: Command): void {
         }
         console.log('');
         console.log('  Docs: https://github.com/cmbays/kata');
+
+        // Agent discovery summary
+        if (agentDiscovery) {
+          console.log('');
+          console.log(`  Discovered ${agentDiscovery.discovered} potential ${pl(lex.agent, ctx.globalOpts.plain, agentDiscovery.discovered)} — registered ${agentDiscovery.registered}`);
+          for (const agent of agentDiscovery.agents) {
+            console.log(`    ✓ ${agent.name} (${agent.id})`);
+          }
+        }
       }
     }, { needsKataDir: false }));
 }

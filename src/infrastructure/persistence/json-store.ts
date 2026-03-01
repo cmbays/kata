@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, unlinkSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { z } from 'zod/v4';
 import { logger } from '@shared/lib/logger.js';
@@ -113,6 +113,21 @@ export const JsonStore = {
     }
 
     return results;
+  },
+
+  /**
+   * Delete a JSON file.
+   * @throws JsonStoreError if the file does not exist or deletion fails
+   */
+  remove(path: string): void {
+    if (!existsSync(path)) {
+      throw new JsonStoreError(`File not found: ${path}`, path);
+    }
+    try {
+      unlinkSync(path);
+    } catch (err) {
+      throw new JsonStoreError(`Failed to delete file: ${path}`, path, err);
+    }
   },
 
   /** Create directory and all parents if they don't exist */

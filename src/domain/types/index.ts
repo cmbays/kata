@@ -239,6 +239,14 @@ export {
   type GraphIndex,
 } from './graph-index.js';
 
+// Kataka types (Wave G)
+export {
+  KatakaRoleSchema,
+  KatakaSchema,
+  type KatakaRole,
+  type Kataka,
+} from './kataka.js';
+
 // Dojo types
 export {
   DojoMood,

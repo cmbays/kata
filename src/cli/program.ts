@@ -18,6 +18,7 @@ import { registerWatchCommand } from './commands/watch.js';
 import { registerConfigCommand } from './commands/config.js';
 import { registerDojoCommand } from './commands/dojo.js';
 import { registerObserveCommands } from './commands/observe.js';
+import { registerAgentCommands } from './commands/agent.js';
 
 const VERSION = '0.1.0';
 
@@ -60,6 +61,7 @@ export function createProgram(): Command {
   registerConfigCommand(program);
   registerDojoCommand(program);
   registerObserveCommands(program);
+  registerAgentCommands(program);
 
   return program;
 }

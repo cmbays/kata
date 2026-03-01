@@ -20,6 +20,7 @@ export const KATA_DIRS = {
   dojo: 'dojo',
   diary: 'diary',
   sessions: 'sessions',
+  kataka: 'kataka',
 } as const;
 
 export type KataDirKey = keyof typeof KATA_DIRS;
