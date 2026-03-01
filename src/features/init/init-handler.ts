@@ -13,6 +13,7 @@ import { logger } from '@shared/lib/logger.js';
 import { KataError } from '@shared/lib/errors.js';
 import { detectProject, type ProjectInfo, type ProjectType } from './project-detector.js';
 import { generateKataMd } from './kata-md-generator.js';
+import { generateClaudeHooks, type HookGenerationResult } from './hook-generator.js';
 
 export interface InitOptions {
   cwd: string;
@@ -20,6 +21,7 @@ export interface InitOptions {
   adapter?: string;
   experienceLevel?: 'beginner' | 'intermediate' | 'experienced';
   skipPrompts?: boolean;
+  setupHooks?: boolean;
 }
 
 export interface InitResult {
@@ -37,6 +39,8 @@ export interface InitResult {
   aoConfigFailed?: boolean;
   /** Path to the generated KATA.md file */
   kataMdPath?: string;
+  /** Result of Claude Code hook generation (only set when --setup-hooks is used) */
+  hookResult?: HookGenerationResult;
 }
 
 
@@ -356,6 +360,16 @@ export async function handleInit(options: InitOptions): Promise<InitResult> {
     logger.warn(`Failed to generate KATA.md at "${kataMdDest}": ${err instanceof Error ? err.message : String(err)}`);
   }
 
+  // Generate Claude Code hooks for sensei auto-activation
+  let hookResult: HookGenerationResult | undefined;
+  if (options.setupHooks || (options.setupHooks === undefined && adapter === 'claude-cli' && skipPrompts)) {
+    try {
+      hookResult = generateClaudeHooks(cwd);
+    } catch (err) {
+      logger.warn(`Failed to generate Claude Code hooks: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
   return {
     kataDir,
     config,
@@ -367,5 +381,6 @@ export async function handleInit(options: InitOptions): Promise<InitResult> {
     aoConfigPath,
     aoConfigFailed,
     kataMdPath,
+    hookResult,
   };
 }

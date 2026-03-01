@@ -33,6 +33,13 @@ export const StepOverrideSchema = z.object({
 export type StepOverride = z.infer<typeof StepOverrideSchema>;
 
 /**
+ * Whether a flavor requires git worktree isolation (code-modifying)
+ * or can run in the shared repo (read-only / .kata/-only writes).
+ */
+export const FlavorIsolationSchema = z.enum(['worktree', 'shared']);
+export type FlavorIsolation = z.infer<typeof FlavorIsolationSchema>;
+
+/**
  * A Flavor is a named, ordered composition of Steps within a Stage category.
  * It is the second tier of the three-tier hierarchy: Stage → Flavor → Step.
  *
@@ -83,6 +90,13 @@ export const FlavorSchema = z.object({
    * are automatically attributed to it. (Wave G)
    */
   kataka: z.string().uuid().optional(),
+  /**
+   * Isolation mode for team execution.
+   * - `worktree`: This flavor modifies source code — spawn agent in a git worktree
+   * - `shared`: This flavor only reads code or writes to `.kata/` — no isolation needed
+   * Defaults to `shared`.
+   */
+  isolation: FlavorIsolationSchema.default('shared'),
 });
 
 export type Flavor = z.infer<typeof FlavorSchema>;

@@ -1,0 +1,10 @@
+{
+  "name": "bugfix-verify",
+  "description": "Lightweight verification of a bug fix: root cause, fix correctness, regression coverage.",
+  "stageCategory": "review",
+  "steps": [
+    { "stepName": "verify", "stepType": "bugfix-verify" }
+  ],
+  "synthesisArtifact": "bugfix-verification",
+  "isolation": "shared"
+}

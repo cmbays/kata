@@ -20,8 +20,15 @@ export interface BudgetAlert {
   currency?: string;
 }
 
-/** Schema for persisted usage records: a map of stageId -> TokenUsage */
-const UsageRecordSchema = z.record(z.string(), TokenUsageSchema);
+/** Extended token usage with optional bet attribution for team execution. */
+const AttributedUsageSchema = TokenUsageSchema.extend({
+  betId: z.string().optional(),
+});
+
+type AttributedUsage = z.infer<typeof AttributedUsageSchema>;
+
+/** Schema for persisted usage records: a map of stageId -> AttributedUsage */
+const UsageRecordSchema = z.record(z.string(), AttributedUsageSchema);
 
 type UsageRecord = z.infer<typeof UsageRecordSchema>;
 
@@ -38,19 +45,34 @@ export class TokenTracker {
 
   /**
    * Record token usage for a stage execution.
+   * Optionally tag with a betId for per-bet aggregation during team execution.
    */
-  recordUsage(stageId: string, tokenUsage: TokenUsage): void {
+  recordUsage(stageId: string, tokenUsage: TokenUsage, betId?: string): void {
     const records = this.loadRecords();
-    records[stageId] = tokenUsage;
+    records[stageId] = betId ? { ...tokenUsage, betId } : tokenUsage;
     JsonStore.write(this.usagePath, records, UsageRecordSchema);
   }
 
   /**
    * Retrieve token usage for a specific stage.
    */
-  getUsage(stageId: string): TokenUsage | undefined {
+  getUsage(stageId: string): AttributedUsage | undefined {
     const records = this.loadRecords();
     return records[stageId];
+  }
+
+  /**
+   * Sum token usage for a specific bet across all stages tagged with that betId.
+   */
+  getUsageByBet(betId: string): number {
+    const records = this.loadRecords();
+    let total = 0;
+    for (const usage of Object.values(records)) {
+      if (usage.betId === betId) {
+        total += usage.total;
+      }
+    }
+    return total;
   }
 
   /**

@@ -11,3 +11,4 @@ export {
   DecisionNotFoundError,
   OrchestratorError,
 } from './errors.js';
+export { slugify, generateTeammateName } from './naming.js';

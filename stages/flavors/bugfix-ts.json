@@ -1,0 +1,10 @@
+{
+  "name": "bugfix-ts",
+  "description": "Fix a TypeScript bug: reproduce, diagnose, fix, test. Single-step — no artificial handoffs.",
+  "stageCategory": "build",
+  "steps": [
+    { "stepName": "fix", "stepType": "bugfix-ts" }
+  ],
+  "synthesisArtifact": "bugfix-output",
+  "isolation": "worktree"
+}

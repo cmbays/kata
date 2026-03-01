@@ -1,0 +1,66 @@
+{
+  "type": "bugfix-ts",
+  "stageCategory": "build",
+  "description": "Fix a TypeScript bug: reproduce, diagnose root cause, implement fix with regression tests, verify clean build.",
+  "exitGate": {
+    "type": "exit",
+    "conditions": [
+      {
+        "type": "command-passes",
+        "description": "TypeScript build must succeed",
+        "command": "npm run build"
+      },
+      {
+        "type": "command-passes",
+        "description": "Type checking must pass with no errors",
+        "command": "npx tsc --noEmit"
+      },
+      {
+        "type": "command-passes",
+        "description": "All tests must pass including regression tests",
+        "command": "npm test"
+      },
+      {
+        "type": "artifact-exists",
+        "description": "Bug fix documentation must be produced",
+        "artifactName": "bugfix-output"
+      }
+    ],
+    "required": true
+  },
+  "artifacts": [
+    {
+      "name": "bugfix-output",
+      "description": "Root cause, fix applied, files modified, regression tests added",
+      "required": true,
+      "extension": ".md"
+    }
+  ],
+  "promptTemplate": "../prompts/build.bugfix.md",
+  "learningHooks": [
+    "bug-root-cause",
+    "regression-prevention",
+    "debugging-patterns"
+  ],
+  "config": {},
+  "resources": {
+    "tools": [
+      {
+        "name": "tsc",
+        "purpose": "Type checking after fix",
+        "command": "npx tsc --noEmit"
+      },
+      {
+        "name": "vitest",
+        "purpose": "Run tests",
+        "command": "npx vitest run"
+      }
+    ],
+    "agents": [
+      {
+        "name": "everything-claude-code:build-error-resolver",
+        "when": "when build fails after applying the fix"
+      }
+    ]
+  }
+}
