@@ -1,4 +1,4 @@
-import { FlavorSchema, FlavorStepRefSchema, StepOverrideSchema } from './flavor.js';
+import { FlavorSchema, FlavorStepRefSchema, StepOverrideSchema, FlavorIsolationSchema } from './flavor.js';
 
 describe('FlavorStepRefSchema', () => {
   it('accepts valid step reference', () => {
@@ -171,5 +171,39 @@ describe('FlavorSchema', () => {
 
   it('rejects non-uuid kataka', () => {
     expect(() => FlavorSchema.parse({ ...minimalFlavor, kataka: 'not-a-uuid' })).toThrow();
+  });
+
+  it('defaults isolation to shared when omitted', () => {
+    const flavor = FlavorSchema.parse(minimalFlavor);
+    expect(flavor.isolation).toBe('shared');
+  });
+
+  it('accepts explicit worktree isolation', () => {
+    const flavor = FlavorSchema.parse({ ...minimalFlavor, isolation: 'worktree' });
+    expect(flavor.isolation).toBe('worktree');
+  });
+
+  it('accepts explicit shared isolation', () => {
+    const flavor = FlavorSchema.parse({ ...minimalFlavor, isolation: 'shared' });
+    expect(flavor.isolation).toBe('shared');
+  });
+
+  it('rejects invalid isolation value', () => {
+    expect(() => FlavorSchema.parse({ ...minimalFlavor, isolation: 'invalid' })).toThrow();
+  });
+});
+
+describe('FlavorIsolationSchema', () => {
+  it('accepts worktree', () => {
+    expect(FlavorIsolationSchema.parse('worktree')).toBe('worktree');
+  });
+
+  it('accepts shared', () => {
+    expect(FlavorIsolationSchema.parse('shared')).toBe('shared');
+  });
+
+  it('rejects invalid values', () => {
+    expect(() => FlavorIsolationSchema.parse('none')).toThrow();
+    expect(() => FlavorIsolationSchema.parse('')).toThrow();
   });
 });

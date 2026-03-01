@@ -1,0 +1,41 @@
+{
+  "type": "bugfix-verify",
+  "stageCategory": "review",
+  "description": "Lightweight bug fix verification: confirm root cause, check fix completeness, assess regression risk.",
+  "entryGate": {
+    "type": "entry",
+    "conditions": [
+      {
+        "type": "artifact-exists",
+        "description": "Bug fix output must exist before verification",
+        "artifactName": "bugfix-output"
+      }
+    ],
+    "required": true
+  },
+  "exitGate": {
+    "type": "exit",
+    "conditions": [
+      {
+        "type": "artifact-exists",
+        "description": "Verification document must be produced",
+        "artifactName": "bugfix-verification"
+      }
+    ],
+    "required": true
+  },
+  "artifacts": [
+    {
+      "name": "bugfix-verification",
+      "description": "Verification: root cause assessment, fix assessment, regression test assessment, gate decision",
+      "required": true,
+      "extension": ".md"
+    }
+  ],
+  "promptTemplate": "../prompts/review.bugfix.md",
+  "learningHooks": [
+    "fix-verification",
+    "regression-risk"
+  ],
+  "config": {}
+}

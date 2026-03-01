@@ -37,6 +37,7 @@ export function registerInitCommand(program: Command): void {
     .option('--skip-prompts', 'Skip interactive prompts and use defaults')
     .option('--scan <depth>', 'Scan project for metadata without initializing (basic | full). Output is always JSON.')
     .option('--discover-agents', 'After init, scan for *.agent.ts / *.kataka.ts files and CLAUDE.md agent declarations, then auto-register discovered kataka')
+    .option('--setup-hooks', 'Generate Claude Code hooks for sensei auto-activation')
     .action(withCommandContext(async (ctx) => {
       const localOpts = ctx.cmd.opts();
       const cwd = ctx.globalOpts.cwd ?? process.cwd();
@@ -57,6 +58,7 @@ export function registerInitCommand(program: Command): void {
         methodology: localOpts.methodology,
         adapter: localOpts.adapter,
         skipPrompts: localOpts.skipPrompts ?? false,
+        setupHooks: localOpts.setupHooks,
       });
 
       // --discover-agents: scan for agent-like files and auto-register kataka
@@ -130,6 +132,16 @@ export function registerInitCommand(program: Command): void {
         }
         console.log('');
         console.log('  Docs: https://github.com/cmbays/kata');
+
+        // Hook setup summary
+        if (result.hookResult) {
+          const hr = result.hookResult;
+          if (hr.skipped) {
+            console.log('  Sensei hook: already configured');
+          } else {
+            console.log(`  Sensei hook: ${hr.created ? 'created' : 'merged into'} ${hr.settingsPath}`);
+          }
+        }
 
         // Agent discovery summary
         if (agentDiscovery) {

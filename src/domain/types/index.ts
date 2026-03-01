@@ -66,9 +66,11 @@ export {
 export {
   FlavorStepRefSchema,
   StepOverrideSchema,
+  FlavorIsolationSchema,
   FlavorSchema,
   type FlavorStepRef,
   type StepOverride,
+  type FlavorIsolation,
   type Flavor,
 } from './flavor.js';
 

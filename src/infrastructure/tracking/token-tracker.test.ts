@@ -213,6 +213,45 @@ describe('TokenTracker.checkCostBudget', () => {
   });
 });
 
+describe('TokenTracker bet attribution', () => {
+  it('records usage with betId', () => {
+    tracker.recordUsage('stage-1', makeUsage({ total: 100 }), 'bet-abc');
+    const usage = tracker.getUsage('stage-1');
+    expect(usage).toBeDefined();
+    expect(usage!.betId).toBe('bet-abc');
+    expect(usage!.total).toBe(100);
+  });
+
+  it('records usage without betId (undefined)', () => {
+    tracker.recordUsage('stage-1', makeUsage({ total: 100 }));
+    const usage = tracker.getUsage('stage-1');
+    expect(usage).toBeDefined();
+    expect(usage!.betId).toBeUndefined();
+  });
+
+  it('aggregates usage by betId', () => {
+    tracker.recordUsage('stage-1', makeUsage({ total: 100 }), 'bet-abc');
+    tracker.recordUsage('stage-2', makeUsage({ total: 250 }), 'bet-abc');
+    tracker.recordUsage('stage-3', makeUsage({ total: 300 }), 'bet-xyz');
+
+    expect(tracker.getUsageByBet('bet-abc')).toBe(350);
+    expect(tracker.getUsageByBet('bet-xyz')).toBe(300);
+  });
+
+  it('returns 0 for unknown betId', () => {
+    tracker.recordUsage('stage-1', makeUsage({ total: 100 }), 'bet-abc');
+    expect(tracker.getUsageByBet('unknown')).toBe(0);
+  });
+
+  it('excludes untagged stages from bet aggregation', () => {
+    tracker.recordUsage('stage-1', makeUsage({ total: 100 })); // no bet
+    tracker.recordUsage('stage-2', makeUsage({ total: 200 }), 'bet-abc');
+
+    expect(tracker.getUsageByBet('bet-abc')).toBe(200);
+    expect(tracker.getTotalUsage()).toBe(300);
+  });
+});
+
 describe('TokenTracker persistence', () => {
   it('persists data across tracker instances', () => {
     tracker.recordUsage('stage-1', makeUsage({ total: 100 }));

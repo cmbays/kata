@@ -5,6 +5,7 @@ import type { TokenUsage } from '@domain/types/history.js';
  * Used by PipelineRunner without depending on the concrete TokenTracker class.
  */
 export interface ITokenTracker {
-  recordUsage(stageId: string, tokenUsage: TokenUsage): void;
+  recordUsage(stageId: string, tokenUsage: TokenUsage, betId?: string): void;
+  getUsageByBet(betId: string): number;
   getTotalCost(): number;
 }
