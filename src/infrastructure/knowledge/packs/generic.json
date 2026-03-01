@@ -1,0 +1,61 @@
+{
+  "name": "generic",
+  "version": "1.0.0",
+  "description": "Universal software development best practices",
+  "learnings": [
+    {
+      "content": "Run the full test suite before marking any waza complete.",
+      "category": "quality-assurance",
+      "tier": "category",
+      "confidence": 1.0
+    },
+    {
+      "content": "Review all artifacts for completeness before advancing to the next gyo.",
+      "category": "gate-management",
+      "tier": "category",
+      "confidence": 1.0
+    },
+    {
+      "content": "Record a kime (decision) with full options and reasoning whenever selecting between two or more valid approaches.",
+      "category": "decision-tracking",
+      "tier": "category",
+      "confidence": 1.0
+    },
+    {
+      "content": "Surface gaps immediately — do not proceed past a gyo with a critical severity gap unresolved.",
+      "category": "gap-management",
+      "tier": "category",
+      "confidence": 1.0
+    },
+    {
+      "content": "Prefer smaller, focused artifacts over large monolithic ones — each artifact should answer exactly one question.",
+      "category": "artifact-quality",
+      "tier": "category",
+      "confidence": 0.9
+    },
+    {
+      "content": "When friction is detected, record a kansatsu before resolving — the record is more valuable than the fix.",
+      "category": "observation-discipline",
+      "tier": "category",
+      "confidence": 0.9
+    },
+    {
+      "content": "Capture predictions before executing uncertain waza — unverified assumptions compound across gyo.",
+      "category": "prediction-discipline",
+      "tier": "category",
+      "confidence": 0.9
+    },
+    {
+      "content": "During research gyo, prefer breadth-first exploration then targeted deep-dive over starting deep immediately.",
+      "category": "research-approach",
+      "tier": "stage",
+      "confidence": 0.85
+    },
+    {
+      "content": "When a friction observation's taxonomy is 'stale-learning', include the ID or description of the contradicted learning in the 'contradicts' field — this enables automatic resolution during ma.",
+      "category": "observation-discipline",
+      "tier": "category",
+      "confidence": 0.9
+    }
+  ]
+}

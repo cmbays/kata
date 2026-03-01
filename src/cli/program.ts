@@ -20,6 +20,7 @@ import { registerDojoCommand } from './commands/dojo.js';
 import { registerObserveCommands } from './commands/observe.js';
 import { registerAgentCommands } from './commands/agent.js';
 import { registerLexiconCommand } from './commands/lexicon.js';
+import { registerPredictCommand } from './commands/predict.js';
 
 const VERSION = '0.1.0';
 
@@ -64,6 +65,7 @@ export function createProgram(): Command {
   registerObserveCommands(program);
   registerAgentCommands(program);
   registerLexiconCommand(program);
+  registerPredictCommand(program);
 
   program.addHelpText('after', `
 Vocabulary (kotoba):

@@ -9,6 +9,7 @@ import {
   CitationSchema,
   ReinforcementSchema,
   LearningVersionSchema,
+  PromotionEventSchema,
 } from './learning.js';
 
 const uuid = () => crypto.randomUUID();
@@ -249,6 +250,128 @@ describe('LearningSchema — Wave F graph fields', () => {
     };
     expect(LearningSchema.parse({ ...base, tier: 'step' }).tier).toBe('step');
     expect(LearningSchema.parse({ ...base, tier: 'flavor' }).tier).toBe('flavor');
+  });
+});
+
+describe('PromotionEventSchema', () => {
+  it('parses a valid promotion event with all required fields', () => {
+    const fromId = uuid();
+    const toId = uuid();
+    const ts = now();
+
+    const event = PromotionEventSchema.parse({
+      id: uuid(),
+      fromLearningId: fromId,
+      toLearningId: toId,
+      fromTier: 'step',
+      toTier: 'flavor',
+      promotedAt: ts,
+      evidenceCount: 3,
+      reason: '3 similar step-tier learnings promoted',
+    });
+
+    expect(event.fromLearningId).toBe(fromId);
+    expect(event.toLearningId).toBe(toId);
+    expect(event.fromTier).toBe('step');
+    expect(event.toTier).toBe('flavor');
+    expect(event.evidenceCount).toBe(3);
+    expect(event.reason).toContain('step-tier');
+  });
+
+  it('round-trips through JSON serialization', () => {
+    const original = {
+      id: uuid(),
+      fromLearningId: uuid(),
+      toLearningId: uuid(),
+      fromTier: 'flavor' as const,
+      toTier: 'stage' as const,
+      promotedAt: now(),
+      evidenceCount: 4,
+      reason: '4 similar flavor-tier learnings promoted',
+    };
+    const parsed = PromotionEventSchema.parse(original);
+    const reparsed = PromotionEventSchema.parse(JSON.parse(JSON.stringify(parsed)));
+    expect(reparsed).toEqual(parsed);
+  });
+
+  it('rejects missing required fields', () => {
+    expect(() =>
+      PromotionEventSchema.parse({
+        id: uuid(),
+        fromLearningId: uuid(),
+        // toLearningId missing
+        fromTier: 'step',
+        toTier: 'flavor',
+        promotedAt: now(),
+        evidenceCount: 3,
+        reason: 'test',
+      })
+    ).toThrow();
+  });
+
+  it('rejects invalid tier values', () => {
+    expect(() =>
+      PromotionEventSchema.parse({
+        id: uuid(),
+        fromLearningId: uuid(),
+        toLearningId: uuid(),
+        fromTier: 'invalid-tier',
+        toTier: 'flavor',
+        promotedAt: now(),
+        evidenceCount: 3,
+        reason: 'test',
+      })
+    ).toThrow();
+  });
+
+  it('rejects evidenceCount of 0', () => {
+    expect(() =>
+      PromotionEventSchema.parse({
+        id: uuid(),
+        fromLearningId: uuid(),
+        toLearningId: uuid(),
+        fromTier: 'step',
+        toTier: 'flavor',
+        promotedAt: now(),
+        evidenceCount: 0,
+        reason: 'test',
+      })
+    ).toThrow();
+  });
+
+  it('rejects empty reason string', () => {
+    expect(() =>
+      PromotionEventSchema.parse({
+        id: uuid(),
+        fromLearningId: uuid(),
+        toLearningId: uuid(),
+        fromTier: 'step',
+        toTier: 'flavor',
+        promotedAt: now(),
+        evidenceCount: 3,
+        reason: '',
+      })
+    ).toThrow();
+  });
+
+  it('accepts all valid tier combinations', () => {
+    const tiers = ['step', 'flavor', 'stage', 'category', 'agent'] as const;
+    for (const fromTier of tiers) {
+      for (const toTier of tiers) {
+        const event = PromotionEventSchema.parse({
+          id: uuid(),
+          fromLearningId: uuid(),
+          toLearningId: uuid(),
+          fromTier,
+          toTier,
+          promotedAt: now(),
+          evidenceCount: 2,
+          reason: `promoted from ${fromTier} to ${toTier}`,
+        });
+        expect(event.fromTier).toBe(fromTier);
+        expect(event.toTier).toBe(toTier);
+      }
+    }
   });
 });
 

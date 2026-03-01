@@ -151,3 +151,20 @@ export const LearningFilterSchema = z.object({
 });
 
 export type LearningFilter = z.infer<typeof LearningFilterSchema>;
+
+// ---------------------------------------------------------------------------
+// PromotionEvent — records when a learning was promoted to a higher tier
+// ---------------------------------------------------------------------------
+
+export const PromotionEventSchema = z.object({
+  id: z.string().uuid(),
+  fromLearningId: z.string().uuid(),
+  toLearningId: z.string().uuid(),
+  fromTier: LearningTier,
+  toTier: LearningTier,
+  promotedAt: z.string().datetime(),
+  evidenceCount: z.number().int().min(1),
+  reason: z.string().min(1),
+});
+
+export type PromotionEvent = z.infer<typeof PromotionEventSchema>;
