@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { LearningSchema } from '@domain/types/learning.js';
-import type { Learning, LearningFilter, LearningInput, LearningPermanence } from '@domain/types/learning.js';
+import type { Learning, LearningFilter, LearningInput, LearningPermanence, LearningTier } from '@domain/types/learning.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
 import { logger } from '@shared/lib/logger.js';
 import { SubscriptionManager } from './subscription-manager.js';
@@ -254,6 +254,57 @@ export class KnowledgeStore {
       permanence: toPermanence,
       refreshBy,
       expiresAt,
+      updatedAt: now,
+      versions: [...(existing.versions ?? []), versionSnapshot],
+    };
+
+    const validated = LearningSchema.parse(updated);
+    const filePath = join(this.learningsDir, `${id}.json`);
+    JsonStore.write(filePath, validated, LearningSchema);
+
+    return validated;
+  }
+
+  /**
+   * Promote a learning to a higher tier in the learning hierarchy.
+   * Tier order (ascending): step < flavor < stage < category < agent.
+   * Downgrades are rejected.
+   * Pushes current state snapshot to versions[] with changeReason='tier-promoted'.
+   * Returns the updated Learning.
+   */
+  promoteTier(id: string, toTier: LearningTier, newCategory?: string): Learning {
+    const existing = this.get(id);
+
+    const tierOrder: Record<LearningTier, number> = {
+      step: 0,
+      flavor: 1,
+      stage: 2,
+      category: 3,
+      agent: 4,
+    };
+
+    const currentTierRank = tierOrder[existing.tier];
+    const targetTierRank = tierOrder[toTier];
+
+    if (targetTierRank <= currentTierRank) {
+      throw new Error(
+        `INVALID_TIER_PROMOTION: Cannot promote from tier "${existing.tier}" to "${toTier}". Target tier must be higher in the hierarchy (step < flavor < stage < category < agent).`,
+      );
+    }
+
+    const now = new Date().toISOString();
+
+    const versionSnapshot = {
+      content: existing.content,
+      confidence: existing.confidence,
+      updatedAt: now,
+      changeReason: 'tier-promoted',
+    };
+
+    const updated: Learning = {
+      ...existing,
+      tier: toTier,
+      ...(newCategory !== undefined ? { category: newCategory } : {}),
       updatedAt: now,
       versions: [...(existing.versions ?? []), versionSnapshot],
     };

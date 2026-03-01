@@ -10,8 +10,11 @@ import {
 import {
   appendObservation,
   readObservations,
+  runPaths,
   type ObservationTarget,
 } from '@infra/persistence/run-store.js';
+import { RunSchema } from '@domain/types/run-state.js';
+import { JsonStore } from '@infra/persistence/json-store.js';
 import { KATA_DIRS } from '@shared/constants/paths.js';
 import { withCommandContext } from '@cli/utils.js';
 import { getLexicon } from '@cli/lexicon.js';
@@ -128,12 +131,26 @@ export function registerObserveCommands(parent: Command): void {
         step: localOpts.step,
       });
 
+      // Auto-populate katakaId from run context if not explicitly provided
+      let katakaId: string | undefined = localOpts.kataka as string | undefined;
+
+      if (!katakaId) {
+        // Read run.json to check if this run has a katakaId assigned
+        try {
+          const rp = runPaths(runsDir, runId);
+          const run = JsonStore.read(rp.runJson, RunSchema);
+          katakaId = run.katakaId;
+        } catch {
+          // Run not found or no katakaId — proceed without attribution
+        }
+      }
+
       // Build the observation object for the given type
       const baseFields = {
         id: randomUUID(),
         timestamp: new Date().toISOString(),
         content: contentArg,
-        katakaId: localOpts.kataka,
+        katakaId,
       };
 
       let observation: Observation;

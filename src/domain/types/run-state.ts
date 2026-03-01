@@ -1,5 +1,6 @@
 import { z } from 'zod/v4';
 import { StageCategorySchema } from './stage.js';
+import { DomainTagsSchema } from './domain-tags.js';
 
 // ---------------------------------------------------------------------------
 // Status enums
@@ -52,6 +53,12 @@ export const RunSchema = z.object({
    * during the run auto-populate `katakaId` on each observation. (Wave G)
    */
   katakaId: z.string().uuid().optional(),
+  /**
+   * Domain classification tags for this run.
+   * Copied from the bet's domainTags at cycle start if set, or populated later
+   * via auto-detection or LLM inference.
+   */
+  domainTags: DomainTagsSchema.optional(),
 });
 
 export type Run = z.infer<typeof RunSchema>;

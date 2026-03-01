@@ -9,6 +9,10 @@ import { withCommandContext } from '@cli/utils.js';
 import { getLexicon, cap, pl } from '@cli/lexicon.js';
 import { bold, cyan, dim, visiblePadEnd, strip } from '@shared/lib/ansi.js';
 import type { Kataka } from '@domain/types/kataka.js';
+import {
+  KatakaObservabilityAggregator,
+  type KatakaObservabilityStats,
+} from '@features/kataka/kataka-observability-aggregator.js';
 
 // ---------------------------------------------------------------------------
 // Formatting helpers
@@ -36,7 +40,7 @@ function formatKatakaTable(kataka: Kataka[], plain?: boolean): string {
   return [header, separator, ...rows].join('\n');
 }
 
-function formatKatakaDetail(k: Kataka, plain?: boolean): string {
+function formatKatakaDetail(k: Kataka, plain?: boolean, stats?: KatakaObservabilityStats): string {
   const lines: string[] = [];
   const lex = getLexicon(plain);
 
@@ -50,6 +54,30 @@ function formatKatakaDetail(k: Kataka, plain?: boolean): string {
     lines.push(`Specializations: ${k.specializations.join(', ')}`);
   }
   lines.push(`Registered: ${k.createdAt}`);
+
+  // Runtime stats section
+  lines.push('');
+  lines.push('--- Runtime Stats ---');
+
+  if (!stats || (stats.observationCount === 0 && stats.agentLearningCount === 0 && !stats.lastRunId)) {
+    lines.push('No runtime data yet — run this kataka in a cycle to build stats.');
+  } else {
+    // Observations breakdown
+    const byTypeStr = Object.entries(stats.observationsByType)
+      .map(([t, n]) => `${t}: ${n}`)
+      .join(', ');
+    const obsDetail = byTypeStr ? ` (${byTypeStr})` : '';
+    lines.push(`Observations: ${stats.observationCount}${obsDetail}`);
+
+    lines.push(`Decisions:    ${stats.decisionCount}`);
+    lines.push(`Agent learnings: ${stats.agentLearningCount}`);
+
+    if (stats.lastRunId) {
+      lines.push(
+        `Last active:  run ${stats.lastRunId} in cycle ${stats.lastRunCycleId ?? 'unknown'} at ${stats.lastActiveAt ?? 'unknown'}`,
+      );
+    }
+  }
 
   return lines.join('\n');
 }
@@ -130,12 +158,23 @@ export function registerAgentCommands(parent: Command): void {
         return;
       }
 
+      // Compute runtime stats
+      const runsDir = join(ctx.kataDir, KATA_DIRS.runs);
+      const knowledgeDir = join(ctx.kataDir, KATA_DIRS.knowledge);
+      const aggregator = new KatakaObservabilityAggregator(runsDir, knowledgeDir);
+      let stats: KatakaObservabilityStats | undefined;
+      try {
+        stats = aggregator.computeStats(kataka.id, kataka.name);
+      } catch {
+        // Stats unavailable — continue without them
+      }
+
       if (ctx.globalOpts.json) {
-        console.log(JSON.stringify(kataka, null, 2));
+        console.log(JSON.stringify({ ...kataka, stats }, null, 2));
         return;
       }
 
-      console.log(formatKatakaDetail(kataka, ctx.globalOpts.plain));
+      console.log(formatKatakaDetail(kataka, ctx.globalOpts.plain, stats));
     }));
 
   // ---------------------------------------------------------------------------

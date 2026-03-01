@@ -15,6 +15,9 @@ import {
 } from '@cli/formatters/cycle-formatter.js';
 import { SavedKataSchema } from '@domain/types/saved-kata.js';
 import type { KataAssignment } from '@domain/types/bet.js';
+import { DomainArea, WorkType, WorkNovelty, DomainTagsSchema } from '@domain/types/domain-tags.js';
+import type { DomainTags } from '@domain/types/domain-tags.js';
+import { detectTags } from '@features/domain-confidence/domain-tagger.js';
 import { createRunTree, runPaths } from '@infra/persistence/run-store.js';
 import type { Run } from '@domain/types/run-state.js';
 
@@ -80,12 +83,60 @@ export function registerCycleCommands(parent: Command): void {
             continue;
           }
 
+          // Auto-detect tags from description
+          const autoTags = detectTags(description);
+
+          // Optionally prompt user for domain tags
+          const wantsTags = await confirm({
+            message: 'Add domain tags to this bet? (helps with confidence scoring)',
+            default: false,
+          });
+
+          let domainTags: DomainTags | undefined;
+
+          if (wantsTags) {
+            const { select } = await import('@inquirer/prompts');
+
+            const domainChoice = await select({
+              message: 'Domain area:',
+              choices: [
+                ...DomainArea.options.map((v) => ({ name: v, value: v })),
+                { name: '(skip)', value: '' as never },
+              ],
+              default: autoTags.domain ?? ('' as never),
+            });
+
+            const workTypeChoice = await select({
+              message: 'Work type:',
+              choices: [
+                ...WorkType.options.map((v) => ({ name: v, value: v })),
+                { name: '(skip)', value: '' as never },
+              ],
+              default: autoTags.workType ?? ('' as never),
+            });
+
+            const noveltyChoice = await select({
+              message: 'Novelty:',
+              choices: WorkNovelty.options.map((v) => ({ name: v, value: v })),
+              default: autoTags.novelty ?? 'familiar',
+            });
+
+            domainTags = DomainTagsSchema.parse({
+              ...autoTags,
+              ...(domainChoice ? { domain: domainChoice } : {}),
+              ...(workTypeChoice ? { workType: workTypeChoice } : {}),
+              novelty: noveltyChoice,
+              source: 'user',
+            });
+          }
+
           try {
             manager.addBet(cycle.id, {
               description,
               appetite,
               outcome: 'pending',
               issueRefs: [],
+              ...(domainTags ? { domainTags } : {}),
             });
           } catch (error) {
             console.error(`  Warning: ${error instanceof Error ? error.message : String(error)}`);
@@ -169,6 +220,9 @@ export function registerCycleCommands(parent: Command): void {
     .option('--kata <name>', 'Named kata pattern (e.g. "full-feature")')
     .option('--gyo <stages>', 'Ad-hoc stage list (comma-separated, e.g. "research,build")')
     .option('-a, --appetite <pct>', 'Appetite percentage (default: 20)', parseInt)
+    .option('--domain <area>', 'Domain area tag (e.g. web-frontend, web-backend, security)')
+    .option('--work-type <type>', 'Work type tag (e.g. bug-fix, feature-addition, refactor)')
+    .option('--novelty <level>', 'Novelty level (familiar, novel, experimental)')
     .action(withCommandContext(async (ctx, cycleId: string, description: string) => {
       const localOpts = ctx.cmd.opts();
       const manager = new CycleManager(kataDirPath(ctx.kataDir, 'cycles'), JsonStore);
@@ -190,12 +244,23 @@ export function registerCycleCommands(parent: Command): void {
 
       const appetite: number = localOpts.appetite ?? 20;
 
+      // Build domainTags from CLI flags if any are provided
+      let domainTags: DomainTags | undefined;
+      if (localOpts.domain || localOpts.workType || localOpts.novelty) {
+        const rawTags: Record<string, string> = { source: 'user' };
+        if (localOpts.domain) rawTags['domain'] = localOpts.domain as string;
+        if (localOpts.workType) rawTags['workType'] = localOpts.workType as string;
+        if (localOpts.novelty) rawTags['novelty'] = localOpts.novelty as string;
+        domainTags = DomainTagsSchema.parse(rawTags);
+      }
+
       const cycle = manager.addBet(cycleId, {
         description,
         appetite,
         outcome: 'pending',
         issueRefs: [],
         ...(kata ? { kata } : {}),
+        ...(domainTags ? { domainTags } : {}),
       });
 
       const status = manager.getBudgetStatus(cycleId);
@@ -395,20 +460,79 @@ export function registerCycleCommands(parent: Command): void {
       }
     }));
 
-  // kata cooldown <cycle-id>
-  parent
+  // ---------------------------------------------------------------------------
+  // kata cooldown — main command (alias: ma)
+  // Subcommands: complete
+  // Options: --prepare, --yolo, --skip-prompts, --auto-accept-suggestions
+  // ---------------------------------------------------------------------------
+  const cooldown = parent
     .command('cooldown')
     .alias('ma')
-    .description('Run cooldown reflection on a completed cycle (alias: ma)')
-    .argument('<cycle-id>', 'Cycle ID')
-    .option('--skip-prompts', 'Skip interactive prompts')
-    .option('--auto-accept-suggestions', 'Accept all pending rule suggestions without prompts')
+    .description('Run cooldown reflection on a completed cycle (alias: ma)');
+
+  // kata cooldown complete <cycle-id> — finalize after LLM synthesis
+  cooldown
+    .command('complete <cycle-id>')
+    .description('Finalize cooldown after LLM synthesis (called after --prepare + sensei review)')
+    .option('--synthesis-input <id>', 'ID of the pending synthesis input file')
+    .option('--accepted <ids>', 'Comma-separated list of proposal IDs to apply')
     .action(withCommandContext(async (ctx, cycleId: string) => {
       const localOpts = ctx.cmd.opts();
       const cyclesDir = kataDirPath(ctx.kataDir, 'cycles');
       const manager = new CycleManager(cyclesDir, JsonStore);
       const knowledgeStore = new KnowledgeStore(kataDirPath(ctx.kataDir, 'knowledge'));
       const ruleRegistry = new RuleRegistry(kataDirPath(ctx.kataDir, 'rules'));
+      const synthesisDir = join(ctx.kataDir, 'synthesis');
+
+      const completeSession = new CooldownSession({
+        cycleManager: manager,
+        knowledgeStore,
+        persistence: JsonStore,
+        pipelineDir: kataDirPath(ctx.kataDir, 'pipelines'),
+        historyDir: kataDirPath(ctx.kataDir, 'history'),
+        runsDir: kataDirPath(ctx.kataDir, 'runs'),
+        ruleRegistry,
+        dojoDir: kataDirPath(ctx.kataDir, 'dojo'),
+        synthesisDir,
+      });
+
+      const synthesisInputId: string | undefined = localOpts.synthesisInput;
+      const acceptedIds: string[] | undefined = localOpts.accepted
+        ? (localOpts.accepted as string).split(',').map((s: string) => s.trim()).filter(Boolean)
+        : undefined;
+
+      const completeResult = await completeSession.complete(cycleId, synthesisInputId, acceptedIds);
+
+      if (ctx.globalOpts.json) {
+        console.log(JSON.stringify({
+          report: completeResult.report,
+          proposals: completeResult.proposals,
+          synthesisProposals: completeResult.synthesisProposals,
+        }, null, 2));
+      } else {
+        console.log(`Cooldown complete for cycle ${cycleId}.`);
+        if (completeResult.synthesisProposals && completeResult.synthesisProposals.length > 0) {
+          console.log(`Applied ${completeResult.synthesisProposals.length} synthesis proposal(s).`);
+        }
+        console.log(formatCooldownSessionResult(completeResult, undefined, ctx.globalOpts.plain));
+      }
+    }));
+
+  // kata cooldown <cycle-id> — default action with --prepare / --yolo / standard mode
+  cooldown
+    .argument('<cycle-id>', 'Cycle ID')
+    .option('--skip-prompts', 'Skip interactive prompts')
+    .option('--auto-accept-suggestions', 'Accept all pending rule suggestions without prompts')
+    .option('--prepare', 'Write synthesis input file and exit without completing (use with kata-sensei)')
+    .option('--yolo', 'Prepare synthesis input, invoke claude --print for synthesis, apply high-confidence proposals, then complete')
+    .option('--depth <level>', 'Synthesis depth: quick | standard | thorough', 'standard')
+    .action(withCommandContext(async (ctx, cycleId: string) => {
+      const localOpts = ctx.cmd.opts();
+      const cyclesDir = kataDirPath(ctx.kataDir, 'cycles');
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const knowledgeStore = new KnowledgeStore(kataDirPath(ctx.kataDir, 'knowledge'));
+      const ruleRegistry = new RuleRegistry(kataDirPath(ctx.kataDir, 'rules'));
+      const synthesisDir = join(ctx.kataDir, 'synthesis');
 
       const session = new CooldownSession({
         cycleManager: manager,
@@ -419,8 +543,115 @@ export function registerCycleCommands(parent: Command): void {
         runsDir: kataDirPath(ctx.kataDir, 'runs'),
         ruleRegistry,
         dojoDir: kataDirPath(ctx.kataDir, 'dojo'),
+        synthesisDir,
       });
 
+      // --- --prepare mode: write synthesis input file and exit without completing ---
+      if (localOpts.prepare) {
+        const prepareResult = await session.prepare(cycleId, [], localOpts.depth);
+
+        if (ctx.globalOpts.json) {
+          console.log(JSON.stringify({
+            synthesisInputId: prepareResult.synthesisInputId,
+            synthesisInputPath: prepareResult.synthesisInputPath,
+            report: prepareResult.report,
+            proposals: prepareResult.proposals,
+          }, null, 2));
+        } else {
+          console.log(`Synthesis input prepared.`);
+          console.log(`  ID:   ${prepareResult.synthesisInputId}`);
+          console.log(`  File: ${prepareResult.synthesisInputPath}`);
+          console.log('');
+          console.log('Next step: ask kata-sensei to review the synthesis input and generate proposals.');
+          console.log(`  Then run: kata cooldown complete ${cycleId} --synthesis-input ${prepareResult.synthesisInputId}`);
+        }
+        return;
+      }
+
+      // --- --yolo mode: prepare + claude for synthesis + apply high-confidence proposals ---
+      if (localOpts.yolo) {
+        const prepareResult = await session.prepare(cycleId, [], localOpts.depth);
+
+        if (!ctx.globalOpts.json) {
+          console.log(`Synthesis input prepared: ${prepareResult.synthesisInputPath}`);
+          console.log('Invoking claude --print for synthesis...');
+        }
+
+        let synthesisProposals: import('@domain/types/synthesis.js').SynthesisProposal[] = [];
+        const synthesisInputId: string = prepareResult.synthesisInputId;
+
+        try {
+          const { execFileSync } = await import('node:child_process');
+          const { readFileSync: rfs } = await import('node:fs');
+
+          const inputContent = rfs(prepareResult.synthesisInputPath, 'utf-8');
+          const prompt = [
+            'You are kata-sensei performing LLM synthesis during cooldown.',
+            'Read the following SynthesisInput and generate a JSON array of SynthesisProposal objects.',
+            'Each proposal must include: id (UUID), type (one of: new-learning, update-learning, promote, archive, methodology-recommendation),',
+            'confidence (0-1), citations (array of 2+ UUIDs from the input), reasoning, createdAt (ISO datetime), and type-specific fields.',
+            'Only output a JSON array, no other text.',
+            '',
+            'SYNTHESIS INPUT:',
+            inputContent,
+          ].join('\n');
+
+          // Pipe prompt via stdin to avoid ARG_MAX limits on large synthesis inputs
+          const output = execFileSync('claude', ['--print'], {
+            input: prompt,
+            encoding: 'utf-8',
+            timeout: 120000,
+          });
+
+          // Parse the JSON proposals from claude output
+          const jsonMatch = output.match(/\[[\s\S]*\]/);
+          if (jsonMatch) {
+            const { SynthesisProposalSchema, SynthesisResultSchema } = await import('@domain/types/synthesis.js');
+            const rawProposals = JSON.parse(jsonMatch[0]);
+            if (Array.isArray(rawProposals)) {
+              const validProposals: import('@domain/types/synthesis.js').SynthesisProposal[] = [];
+              for (const p of rawProposals) {
+                const parsed = SynthesisProposalSchema.safeParse(p);
+                if (parsed.success) {
+                  validProposals.push(parsed.data);
+                }
+              }
+              synthesisProposals = validProposals;
+
+              // Write result file so complete() can pick it up
+              const resultPath = join(synthesisDir, `result-${synthesisInputId}.json`);
+              JsonStore.write(resultPath, { inputId: synthesisInputId, proposals: synthesisProposals }, SynthesisResultSchema);
+            }
+          }
+        } catch (err) {
+          if (!ctx.globalOpts.json) {
+            console.warn(`Warning: claude synthesis failed (${err instanceof Error ? err.message : String(err)}). Completing without proposals.`);
+          }
+        }
+
+        // Apply only high-confidence proposals (confidence > 0.8)
+        const highConfidenceIds = synthesisProposals
+          .filter((p) => p.confidence > 0.8)
+          .map((p) => p.id);
+
+        const yoloResult = await session.complete(cycleId, synthesisInputId, highConfidenceIds);
+
+        if (ctx.globalOpts.json) {
+          console.log(JSON.stringify({
+            report: yoloResult.report,
+            proposals: yoloResult.proposals,
+            synthesisProposals: yoloResult.synthesisProposals,
+          }, null, 2));
+        } else {
+          if (yoloResult.synthesisProposals && yoloResult.synthesisProposals.length > 0) {
+            console.log(`Applied ${yoloResult.synthesisProposals.length} high-confidence synthesis proposal(s).`);
+          }
+          console.log(formatCooldownSessionResult(yoloResult, undefined, ctx.globalOpts.plain));
+        }
+        return;
+      }
+
+      // --- Default mode: full run (prepare + complete without synthesis step) ---
       const betOutcomes: BetOutcomeRecord[] = [];
 
       // Interactive mode: prompt for bet outcomes

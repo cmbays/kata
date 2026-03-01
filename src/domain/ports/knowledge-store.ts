@@ -1,4 +1,4 @@
-import type { Learning, LearningFilter, LearningInput, LearningPermanence } from '@domain/types/learning.js';
+import type { Learning, LearningFilter, LearningInput, LearningPermanence, LearningTier } from '@domain/types/learning.js';
 
 /**
  * Summary statistics for the knowledge store.
@@ -49,4 +49,10 @@ export interface IKnowledgeStore {
   loadForStep(stepId: string): Learning[];
   /** Load flavor-tier learnings for a specific flavor (ryu) ID. */
   loadForFlavor(flavorId: string): Learning[];
+  /** Update a learning's content, confidence, or evidence. */
+  update(id: string, updates: Partial<Pick<Learning, 'content' | 'confidence' | 'evidence'>>): Learning;
+  /** Get a single learning by ID. */
+  get(id: string): Learning;
+  /** Promote a learning to a higher tier in the hierarchy (step < flavor < stage < category < agent). */
+  promoteTier(id: string, toTier: LearningTier, newCategory?: string): Learning;
 }

@@ -239,6 +239,31 @@ export {
   type GraphIndex,
 } from './graph-index.js';
 
+// Synthesis types (Wave I)
+export {
+  SynthesisDepth,
+  SynthesisProposalType,
+  SynthesisProposalSchema,
+  SynthesisInputSchema,
+  SynthesisResultSchema,
+  type SynthesisInput,
+  type SynthesisResult,
+  type SynthesisProposal,
+} from './synthesis.js';
+
+// Domain tags and confidence types (Wave I)
+export {
+  DomainArea,
+  LanguageFamily,
+  WorkType,
+  WorkScope,
+  WorkNovelty,
+  DomainTagsSchema,
+  DomainConfidenceScoreSchema,
+  type DomainTags,
+  type DomainConfidenceScore,
+} from './domain-tags.js';
+
 // Kataka types (Wave G)
 export {
   KatakaRoleSchema,

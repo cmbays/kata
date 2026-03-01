@@ -8,6 +8,24 @@ import { JsonlStore } from '@infra/persistence/jsonl-store.js';
 import { runPaths } from '@infra/persistence/run-store.js';
 import { KATA_DIRS } from '@shared/constants/paths.js';
 
+/** Write a minimal run.json so observe.ts can auto-populate katakaId from it. */
+function writeRunJson(runsDir: string, runId: string, katakaId?: string): void {
+  const runDir = join(runsDir, runId);
+  mkdirSync(runDir, { recursive: true });
+  const run = {
+    id: runId,
+    cycleId: randomUUID(),
+    betId: randomUUID(),
+    betPrompt: 'test bet',
+    stageSequence: ['build'],
+    currentStage: null,
+    status: 'pending',
+    startedAt: new Date().toISOString(),
+    ...(katakaId ? { katakaId } : {}),
+  };
+  writeFileSync(join(runDir, 'run.json'), JSON.stringify(run, null, 2), 'utf-8');
+}
+
 
 function makeKataDir(): { kataDir: string; runsDir: string } {
   const base = join(tmpdir(), `kata-observe-test-${randomUUID()}`);
@@ -172,6 +190,61 @@ describe('kata observe record', () => {
     const paths = runPaths(runsDir, runId);
     const obs = JsonlStore.readAll(paths.observationsJsonl, ObservationSchema);
     expect(obs).toHaveLength(0);
+  });
+
+  it('auto-populates katakaId from run.json when --kataka is not provided', async () => {
+    const { kataDir, runsDir } = makeKataDir();
+    const runId = randomUUID();
+    const katakaId = randomUUID();
+    writeRunJson(runsDir, runId, katakaId);
+
+    const { exitCode } = await runCli([
+      'observe', 'record', 'insight', 'auto-attributed observation',
+      '--run', runId,
+      // No --kataka flag
+    ], join(kataDir, '..'));
+
+    expect(exitCode).toBe(0);
+
+    const paths = runPaths(runsDir, runId);
+    const obs = JsonlStore.readAll(paths.observationsJsonl, ObservationSchema);
+    expect(obs).toHaveLength(1);
+    expect(obs[0]!.katakaId).toBe(katakaId);
+  });
+
+  it('explicit --kataka flag takes precedence over run.json katakaId', async () => {
+    const { kataDir, runsDir } = makeKataDir();
+    const runId = randomUUID();
+    const runKatakaId = randomUUID();
+    const explicitKatakaId = randomUUID();
+    writeRunJson(runsDir, runId, runKatakaId);
+
+    await runCli([
+      'observe', 'record', 'insight', 'explicit kataka observation',
+      '--run', runId,
+      '--kataka', explicitKatakaId,
+    ], join(kataDir, '..'));
+
+    const paths = runPaths(runsDir, runId);
+    const obs = JsonlStore.readAll(paths.observationsJsonl, ObservationSchema);
+    expect(obs).toHaveLength(1);
+    expect(obs[0]!.katakaId).toBe(explicitKatakaId);
+  });
+
+  it('leaves katakaId undefined when run.json has no katakaId and --kataka is not provided', async () => {
+    const { kataDir, runsDir } = makeKataDir();
+    const runId = randomUUID();
+    writeRunJson(runsDir, runId); // no katakaId
+
+    await runCli([
+      'observe', 'record', 'insight', 'unattributed observation',
+      '--run', runId,
+    ], join(kataDir, '..'));
+
+    const paths = runPaths(runsDir, runId);
+    const obs = JsonlStore.readAll(paths.observationsJsonl, ObservationSchema);
+    expect(obs).toHaveLength(1);
+    expect(obs[0]!.katakaId).toBeUndefined();
   });
 });
 
