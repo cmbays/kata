@@ -19,6 +19,7 @@ import { KnowledgeStore } from '@infra/knowledge/knowledge-store.js';
 import { UsageAnalytics } from '@infra/tracking/usage-analytics.js';
 import { KATA_DIRS } from '@shared/constants/paths.js';
 import { ProjectStateUpdater } from '@features/belt/belt-calculator.js';
+import { CycleManager } from '@domain/services/cycle-manager.js';
 import { handleStatus, handleStats, parseCategoryFilter } from './status.js';
 
 /**
@@ -117,6 +118,7 @@ export function registerExecuteCommands(program: Command): void {
     .option('--kataka <id>', 'Kataka (agent) ID driving this run — stored in artifact metadata and attributed to observations')
     .option('--yolo', 'Skip confidence gate checks — all decisions proceed without human approval')
     .option('--bridge-gaps', 'Capture identified gaps as step-tier learnings; block on high-severity gaps')
+    .option('--next', 'Auto-select the first pending bet from the active cycle as the run target')
     .action(withCommandContext(async (ctx, categories: string[]) => {
       const localOpts = ctx.cmd.opts();
 
@@ -144,7 +146,48 @@ export function registerExecuteCommands(program: Command): void {
         return;
       }
 
-      // Resolve categories from: positional args OR --kata OR --gyo
+      // --next: auto-select the first pending bet from the active cycle
+      let betFromNext: string | undefined;
+      let categoriesFromNext: string[] | undefined;
+      if (localOpts.next) {
+        const manager = new CycleManager(kataDirPath(ctx.kataDir, 'cycles'), JsonStore);
+        const allCycles = manager.list();
+        const activeCycle = allCycles.find((c) => c.state === 'active');
+
+        if (!activeCycle) {
+          console.log('No active cycle found. Use "kata cycle start <cycle-id>" to activate one.');
+          return;
+        }
+
+        const pendingBet = activeCycle.bets.find((b) => b.outcome === 'pending');
+        if (!pendingBet) {
+          console.log(`No pending bets in cycle "${activeCycle.name ?? activeCycle.id}". All bets are resolved.`);
+          return;
+        }
+
+        if (!ctx.globalOpts.json) {
+          console.log(`Auto-selected bet: "${pendingBet.description}" (cycle: ${activeCycle.name ?? activeCycle.id})`);
+        }
+
+        betFromNext = JSON.stringify({ id: pendingBet.id, description: pendingBet.description, cycleId: activeCycle.id });
+
+        // Resolve stage categories from the bet's kata assignment when not specified explicitly
+        if (pendingBet.kata && categories.length === 0 && !localOpts.kata && !localOpts.gyo) {
+          if (pendingBet.kata.type === 'named') {
+            try {
+              const kataData = loadSavedKata(ctx.kataDir, pendingBet.kata.pattern);
+              categoriesFromNext = kataData.stages;
+            } catch {
+              console.error(`Error: Named kata "${pendingBet.kata.pattern}" not found or is malformed. Check .kata/katas/${pendingBet.kata.pattern}.json.`);
+              return;
+            }
+          } else {
+            categoriesFromNext = [...pendingBet.kata.stages];
+          }
+        }
+      }
+
+      // Resolve categories from: positional args OR --kata OR --gyo OR --next bet's kata
       let resolvedCategories: string[] = categories;
 
       if (localOpts.kata) {
@@ -152,6 +195,8 @@ export function registerExecuteCommands(program: Command): void {
         resolvedCategories = kata.stages;
       } else if (localOpts.gyo) {
         resolvedCategories = (localOpts.gyo as string).split(',').map((s: string) => s.trim()).filter(Boolean);
+      } else if (categoriesFromNext) {
+        resolvedCategories = categoriesFromNext;
       }
 
       if (resolvedCategories.length === 0) {
@@ -167,7 +212,7 @@ export function registerExecuteCommands(program: Command): void {
       const pin = [...(localOpts.ryu ?? []), ...(localOpts.pin ?? [])];
 
       await runCategories(ctx, resolvedCategories, {
-        bet: localOpts.bet,
+        bet: betFromNext ?? (localOpts.bet as string | undefined),
         pin: pin.length > 0 ? pin : undefined,
         dryRun: localOpts.dryRun,
         saveKata: localOpts.saveKata,

@@ -56,6 +56,13 @@ describe('kata rule commands', () => {
     return program;
   }
 
+  it('registers okite as an alias for the rule command', () => {
+    const program = createProgram();
+    const ruleCmd = program.commands.find((c) => c.name() === 'rule');
+    expect(ruleCmd).toBeDefined();
+    expect(ruleCmd!.alias()).toBe('okite');
+  });
+
   describe('kata rule accept <id>', () => {
     it('accepts a pending suggestion and promotes it to an active rule', async () => {
       const ruleRegistry = new RuleRegistry(rulesDir);

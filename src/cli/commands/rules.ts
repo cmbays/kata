@@ -11,7 +11,8 @@ import { withCommandContext, kataDirPath } from '@cli/utils.js';
 export function registerRuleCommands(parent: Command): void {
   const rule = parent
     .command('rule')
-    .description('Manage rule suggestions — accept or reject pending suggestions');
+    .alias('okite')
+    .description('Manage rule suggestions — accept or reject pending suggestions (alias: okite)');
 
   // kata rule accept <id>
   rule

@@ -12,6 +12,7 @@ import {
   formatCycleStatusJson,
   formatCooldownSessionResult,
   formatBetOutcomePrompt,
+  formatBetList,
 } from '@cli/formatters/cycle-formatter.js';
 import { SavedKataSchema } from '@domain/types/saved-kata.js';
 import type { KataAssignment } from '@domain/types/bet.js';
@@ -460,6 +461,50 @@ export function registerCycleCommands(parent: Command): void {
         console.log('Focus added!');
         console.log('');
         console.log(formatCycleStatus(status, cycle, ctx.globalOpts.plain));
+      }
+    }));
+
+  // ---------------------------------------------------------------------------
+  // kata cycle bet (alias: kadai) — bet management subcommand group
+  // Issues #188 (alias wire), #190 (bet list)
+  // ---------------------------------------------------------------------------
+  const bet = cycle
+    .command('bet')
+    .alias('kadai')
+    .description('Manage bets (kadai — challenges) within a cycle (alias: kadai)');
+
+  // kata cycle bet list — list bets in the active (or most recent) cycle
+  bet
+    .command('list')
+    .description('List bets in the active (or most recent) cycle')
+    .option('--cycle-id <id>', 'Cycle ID (defaults to active cycle)')
+    .action(withCommandContext((ctx) => {
+      const localOpts = ctx.cmd.opts();
+      const manager = new CycleManager(kataDirPath(ctx.kataDir, 'cycles'), JsonStore);
+
+      let targetCycle;
+      if (localOpts.cycleId) {
+        targetCycle = manager.get(localOpts.cycleId as string);
+      } else {
+        const cycles = manager.list();
+        if (cycles.length === 0) {
+          console.log('No cycles found. Run "kata cycle new" to create one.');
+          return;
+        }
+        // Prefer active cycle; fall back to most recently updated
+        targetCycle = cycles.find((c) => c.state === 'active')
+          ?? cycles.slice().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]!;
+      }
+
+      if (ctx.globalOpts.json) {
+        console.log(JSON.stringify({
+          cycleId: targetCycle.id,
+          cycleName: targetCycle.name,
+          state: targetCycle.state,
+          bets: targetCycle.bets,
+        }, null, 2));
+      } else {
+        console.log(formatBetList(targetCycle, ctx.globalOpts.plain));
       }
     }));
 

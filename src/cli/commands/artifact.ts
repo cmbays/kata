@@ -12,7 +12,8 @@ import { StageCategorySchema } from '@domain/types/stage.js';
 export function registerArtifactCommands(parent: Command): void {
   const artifact = parent
     .command('artifact')
-    .description('Record artifacts produced during kata runs');
+    .alias('maki')
+    .description('Record artifacts produced during kata runs (alias: maki)');
 
   // kata artifact record <run-id>
   artifact

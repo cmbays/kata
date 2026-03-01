@@ -58,6 +58,13 @@ describe('registerArtifactCommands — artifact record', () => {
     return program;
   }
 
+  it('registers maki as an alias for the artifact command', () => {
+    const program = createProgram();
+    const artifactCmd = program.commands.find((c) => c.name() === 'artifact');
+    expect(artifactCmd).toBeDefined();
+    expect(artifactCmd!.alias()).toBe('maki');
+  });
+
   it('records an artifact and appends to artifact-index.jsonl files', async () => {
     const run = makeRun();
     createRunTree(runsDir, run);

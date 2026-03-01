@@ -252,6 +252,53 @@ function outcomeIcon(outcome: string): string {
 }
 
 /**
+ * Format the bet list for a cycle in a table-like layout.
+ * Supports plain mode (--plain) and thematic mode (default).
+ */
+export function formatBetList(cycle: Cycle, plain?: boolean): string {
+  const lex = getLexicon(plain);
+  const lines: string[] = [];
+
+  lines.push(`${cap(lex.cycle)}: ${cycle.name ?? cycle.id} (${cycle.state})`);
+  lines.push('');
+
+  if (cycle.bets.length === 0) {
+    lines.push('No bets in this cycle.');
+    return lines.join('\n');
+  }
+
+  const betLabel = plain ? 'Bets' : 'Bets (kadai)';
+  lines.push(`${betLabel}:`);
+  lines.push('');
+
+  for (const bet of cycle.bets) {
+    const icon = outcomeIcon(bet.outcome);
+    lines.push(`  ${icon} ${bet.description}`);
+    lines.push(`     Appetite: ${bet.appetite}%  |  Outcome: ${bet.outcome}`);
+    if (bet.runId) {
+      lines.push(`     Run ID:   ${bet.runId}`);
+    }
+    if (bet.kata) {
+      const kataInfo = bet.kata.type === 'named'
+        ? `pattern: ${bet.kata.pattern}`
+        : `stages: ${bet.kata.stages.join(', ')}`;
+      lines.push(`     Kata:     ${kataInfo}`);
+    }
+    if (bet.domainTags) {
+      const tagLine = formatDomainTagsLine(bet.domainTags);
+      if (tagLine) lines.push(`     Tags:     ${tagLine}`);
+    }
+    lines.push('');
+  }
+
+  const pending = cycle.bets.filter((b) => b.outcome === 'pending').length;
+  const complete = cycle.bets.filter((b) => b.outcome === 'complete').length;
+  lines.push(`${cycle.bets.length} bet(s) — ${pending} pending, ${complete} complete`);
+
+  return lines.join('\n').trimEnd();
+}
+
+/**
  * Format domain tags as a single-line string separated by ' · '.
  * Only non-empty fields are included. Returns empty string if no tags set.
  */
