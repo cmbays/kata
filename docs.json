@@ -115,7 +115,8 @@
       {
         "group": "Roadmap",
         "pages": [
-          "docs/unified-roadmap"
+          "docs/unified-roadmap",
+          "docs/dogfooding-roadmap"
         ]
       },
       {
