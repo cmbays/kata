@@ -212,8 +212,13 @@ async function runCategories(
     try {
       const katakaRegistry = new KatakaRegistry(join(ctx.kataDir, KATA_DIRS.kataka));
       katakaRegistry.get(opts.katakaId);
-    } catch {
-      console.error(`Error: kataka "${opts.katakaId}" not found. Use "kata agent list" to see registered kataka.`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (/not found/i.test(msg)) {
+        console.error(`Error: kataka "${opts.katakaId}" not found. Use "kata agent list" to see registered kataka.`);
+      } else {
+        console.error(`Error: Failed to load kataka "${opts.katakaId}": ${msg}`);
+      }
       process.exitCode = 1;
       return;
     }

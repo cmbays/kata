@@ -1,7 +1,15 @@
 import { join } from 'node:path';
-import { unlinkSync } from 'node:fs';
 import { KatakaSchema, type Kataka } from '@domain/types/kataka.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
+
+/** Prevents path traversal by requiring strict UUID format before building file paths. */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function assertValidId(id: string): void {
+  if (!UUID_RE.test(id)) {
+    throw new Error(`Invalid kataka ID: "${id}"`);
+  }
+}
 
 /**
  * KatakaRegistry — manages kataka (agent) registrations with JSON file persistence.
@@ -31,6 +39,7 @@ export class KatakaRegistry {
    * @throws Error if the kataka is not found
    */
   get(id: string): Kataka {
+    assertValidId(id);
     const cached = this.cache.get(id);
     if (cached) return cached;
 
@@ -73,6 +82,7 @@ export class KatakaRegistry {
    * @throws Error if the kataka is not found
    */
   deactivate(id: string): Kataka {
+    assertValidId(id);
     const kataka = this.get(id);
     const updated: Kataka = { ...kataka, active: false };
     const filePath = join(this.basePath, `${id}.json`);
@@ -86,16 +96,10 @@ export class KatakaRegistry {
    * @throws Error if the kataka is not found
    */
   delete(id: string): Kataka {
+    assertValidId(id);
     const kataka = this.get(id);
     const filePath = join(this.basePath, `${id}.json`);
-    try {
-      unlinkSync(filePath);
-    } catch (e) {
-      throw new Error(
-        `Failed to delete kataka "${id}": ${e instanceof Error ? e.message : String(e)}`,
-        { cause: e },
-      );
-    }
+    JsonStore.remove(filePath);
     this.cache.delete(id);
     return kataka;
   }

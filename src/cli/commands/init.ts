@@ -117,9 +117,8 @@ export function registerInitCommand(program: Command): void {
 
         // Agent discovery summary
         if (agentDiscovery) {
-          const lex2 = getLexicon(ctx.globalOpts.plain);
           console.log('');
-          console.log(`  Discovered ${agentDiscovery.discovered} potential ${pl(lex2.agent, ctx.globalOpts.plain, agentDiscovery.discovered)} — registered ${agentDiscovery.registered}`);
+          console.log(`  Discovered ${agentDiscovery.discovered} potential ${pl(lex.agent, ctx.globalOpts.plain, agentDiscovery.discovered)} — registered ${agentDiscovery.registered}`);
           for (const agent of agentDiscovery.agents) {
             console.log(`    ✓ ${agent.name} (${agent.id})`);
           }
