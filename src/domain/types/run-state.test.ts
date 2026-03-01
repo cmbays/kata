@@ -72,6 +72,33 @@ describe('RunSchema', () => {
     const result = RunSchema.safeParse({ ...minimal, katakaId: 'not-a-uuid' });
     expect(result.success).toBe(false);
   });
+
+  it('accepts domainTags as optional field', () => {
+    const result = RunSchema.safeParse({
+      ...minimal,
+      domainTags: { domain: 'web-backend', language: 'python', source: 'auto-detected' },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.domainTags?.domain).toBe('web-backend');
+      expect(result.data.domainTags?.language).toBe('python');
+      expect(result.data.domainTags?.source).toBe('auto-detected');
+    }
+  });
+
+  it('allows domainTags to be omitted', () => {
+    const result = RunSchema.safeParse(minimal);
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.domainTags).toBeUndefined();
+  });
+
+  it('rejects invalid domainTags', () => {
+    const result = RunSchema.safeParse({
+      ...minimal,
+      domainTags: { domain: 'not-a-valid-domain' },
+    });
+    expect(result.success).toBe(false);
+  });
 });
 
 describe('StageStateSchema', () => {

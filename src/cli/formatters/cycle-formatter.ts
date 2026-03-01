@@ -3,6 +3,7 @@ import type { CooldownReport, CooldownBetReport } from '@domain/services/cycle-m
 import type { CycleProposal } from '@features/cycle-management/proposal-generator.js';
 import type { CooldownSessionResult } from '@features/cycle-management/cooldown-session.js';
 import type { RunSummary } from '@features/cycle-management/types.js';
+import type { DomainTags } from '@domain/types/domain-tags.js';
 import { getLexicon, cap } from '@cli/lexicon.js';
 
 /**
@@ -39,6 +40,12 @@ export function formatCycleStatus(status: BudgetStatus, cycle: Cycle, plain?: bo
       const label = cycleBet?.description ?? bet.betId;
       const truncated = label.length > 40 ? label.slice(0, 37) + '...' : label;
       lines.push(`  ${truncated}  ${bet.used.toLocaleString()} / ${bet.allocated.toLocaleString()} tokens (${bet.utilizationPercent.toFixed(1)}%)`);
+      if (cycleBet?.domainTags) {
+        const tagLine = formatDomainTagsLine(cycleBet.domainTags);
+        if (tagLine) {
+          lines.push(`    tags: ${tagLine}`);
+        }
+      }
     }
   }
 
@@ -242,4 +249,19 @@ function outcomeIcon(outcome: string): string {
     case 'abandoned': return '[-]';
     default: return '[ ]';
   }
+}
+
+/**
+ * Format domain tags as a single-line string separated by ' · '.
+ * Only non-empty fields are included. Returns empty string if no tags set.
+ */
+export function formatDomainTagsLine(tags: DomainTags): string {
+  const parts: string[] = [];
+  if (tags.language) parts.push(tags.language);
+  if (tags.domain) parts.push(tags.domain);
+  if (tags.workType) parts.push(tags.workType);
+  if (tags.framework) parts.push(tags.framework);
+  if (tags.scope) parts.push(tags.scope);
+  if (tags.novelty) parts.push(tags.novelty);
+  return parts.join(' · ');
 }

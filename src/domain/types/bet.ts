@@ -1,5 +1,6 @@
 import { z } from 'zod/v4';
 import { StageCategorySchema } from './stage.js';
+import { DomainTagsSchema } from './domain-tags.js';
 
 export const BetOutcome = z.enum(['pending', 'complete', 'partial', 'abandoned']);
 
@@ -38,6 +39,12 @@ export const BetSchema = z.object({
    * without error if called again (e.g., on retry). Absent until the cycle is started.
    */
   runId: z.string().uuid().optional(),
+  /**
+   * Domain classification tags for this bet.
+   * Set progressively: user input → auto-detection → LLM inference.
+   * Used to compute domain confidence scores and inform future planning.
+   */
+  domainTags: DomainTagsSchema.optional(),
 });
 
 export type Bet = z.infer<typeof BetSchema>;

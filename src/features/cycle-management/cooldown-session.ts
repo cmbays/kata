@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { existsSync } from 'node:fs';
 import type { CycleManager, CooldownReport } from '@domain/services/cycle-manager.js';
 import type { IKnowledgeStore } from '@domain/ports/knowledge-store.js';
 import type { IPersistence } from '@domain/ports/persistence.js';
@@ -16,6 +17,15 @@ import type { RunSummary } from './types.js';
 import { PredictionMatcher } from '@features/self-improvement/prediction-matcher.js';
 import { HierarchicalPromoter } from '@infra/knowledge/hierarchical-promoter.js';
 import { FrictionAnalyzer } from '@features/self-improvement/friction-analyzer.js';
+import { JsonStore } from '@infra/persistence/json-store.js';
+import { readObservations } from '@infra/persistence/run-store.js';
+import type { Observation } from '@domain/types/observation.js';
+import {
+  SynthesisInputSchema,
+  SynthesisResultSchema,
+  type SynthesisInput,
+  type SynthesisProposal,
+} from '@domain/types/synthesis.js';
 
 /**
  * Dependencies injected into CooldownSession for testability.
@@ -62,6 +72,18 @@ export interface CooldownSessionDeps {
    * Backward compatible — omitting this field skips friction analysis.
    */
   frictionAnalyzer?: Pick<FrictionAnalyzer, 'analyze'>;
+  /**
+   * Optional path to .kata/synthesis/ directory. When provided, CooldownSession writes
+   * synthesis input files during prepare() and reads synthesis results during complete().
+   * Defaults to join(kataDir, 'synthesis') when not provided — consumers must pass it explicitly.
+   * Backward compatible — omitting this field skips synthesis file writing.
+   */
+  synthesisDir?: string;
+  /**
+   * Cooldown synthesis depth — controls how much data is included in the synthesis input.
+   * Defaults to 'standard'.
+   */
+  synthesisDepth?: import('@domain/types/synthesis.js').SynthesisDepth;
 }
 
 /**
@@ -85,6 +107,27 @@ export interface CooldownSessionResult {
   runSummaries?: RunSummary[];
   /** Pending rule suggestions loaded during cooldown. Present when ruleRegistry was provided. */
   ruleSuggestions?: RuleSuggestion[];
+  /** ID of the synthesis input file written by prepare(). */
+  synthesisInputId?: string;
+  /** Path to the synthesis input file written by prepare(). */
+  synthesisInputPath?: string;
+  /** Synthesis proposals that were applied during complete(). */
+  synthesisProposals?: SynthesisProposal[];
+}
+
+/**
+ * Intermediate result returned by prepare() before synthesis.
+ * Does NOT include completedAt (cycle not yet 'complete').
+ */
+export interface CooldownPrepareResult {
+  report: CooldownReport;
+  betOutcomes: BetOutcomeRecord[];
+  proposals: CycleProposal[];
+  learningsCaptured: number;
+  runSummaries?: RunSummary[];
+  ruleSuggestions?: RuleSuggestion[];
+  synthesisInputId: string;
+  synthesisInputPath: string;
 }
 
 /**
@@ -214,6 +257,9 @@ export class CooldownSession {
         learningsCaptured,
         runSummaries,
         ruleSuggestions,
+        synthesisInputId: undefined,
+        synthesisInputPath: undefined,
+        synthesisProposals: undefined,
       };
     } catch (error) {
       // Attempt to roll back to previous state so the user can retry
@@ -226,6 +272,303 @@ export class CooldownSession {
       }
       throw error;
     }
+  }
+
+  /**
+   * Prepare the cooldown for LLM synthesis.
+   *
+   * Steps 1–9 from run(), but WITHOUT transitioning to 'complete'. Writes a
+   * SynthesisInput file to .kata/synthesis/pending-<id>.json and returns its
+   * location so the caller (or sensei) can run synthesis against it.
+   *
+   * Returns CooldownPrepareResult with synthesisInputId and synthesisInputPath.
+   */
+  async prepare(cycleId: string, betOutcomes: BetOutcomeRecord[] = [], depth?: import('@domain/types/synthesis.js').SynthesisDepth): Promise<CooldownPrepareResult> {
+    const previousState = this.deps.cycleManager.get(cycleId).state;
+
+    // 1. Transition to cooldown state
+    this.deps.cycleManager.updateState(cycleId, 'cooldown');
+
+    try {
+      // 2. Record bet outcomes if provided
+      if (betOutcomes.length > 0) {
+        this.recordBetOutcomes(cycleId, betOutcomes);
+      }
+
+      // 3. Generate the base cooldown report
+      let report = this.deps.cycleManager.generateCooldown(cycleId);
+
+      // 4. Enrich with actual token usage
+      report = this.enrichReportWithTokens(report, cycleId);
+
+      // 5. Load run summaries when runsDir provided
+      const cycle = this.deps.cycleManager.get(cycleId);
+      const runSummaries = this.deps.runsDir
+        ? this.loadRunSummaries(cycle)
+        : undefined;
+
+      // 6. Generate next-cycle proposals
+      const proposals = this.proposalGenerator.generate(cycleId, runSummaries);
+
+      // 7. Load pending rule suggestions
+      let ruleSuggestions: RuleSuggestion[] | undefined;
+      if (this.deps.ruleRegistry) {
+        try {
+          ruleSuggestions = this.deps.ruleRegistry.getPendingSuggestions();
+        } catch (err) {
+          logger.warn(`Failed to load rule suggestions: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+
+      // 8. Capture cooldown learnings
+      const learningsCaptured = this.captureCooldownLearnings(report);
+
+      // 8a. Match cycle predictions to outcomes (non-critical)
+      this.runPredictionMatching(cycle);
+
+      // 8b. Bubble step-tier learnings up the hierarchy (non-critical)
+      this.runHierarchicalPromotion();
+
+      // 8c. Scan for expired/stale learnings (non-critical)
+      this.runExpiryCheck();
+
+      // 8d. Analyze friction observations and resolve contradictions (non-critical)
+      this.runFrictionAnalysis(cycle);
+
+      // 9. Read ALL observations from .kata/runs/ for this cycle and write SynthesisInput
+      const effectiveDepth = depth ?? this.deps.synthesisDepth ?? 'standard';
+      const { synthesisInputId, synthesisInputPath } = this.writeSynthesisInput(
+        cycleId,
+        cycle,
+        report,
+        effectiveDepth,
+      );
+
+      return {
+        report,
+        betOutcomes,
+        proposals,
+        learningsCaptured,
+        runSummaries,
+        ruleSuggestions,
+        synthesisInputId,
+        synthesisInputPath,
+      };
+    } catch (error) {
+      // Attempt to roll back to previous state so the user can retry
+      try {
+        this.deps.cycleManager.updateState(cycleId, previousState);
+      } catch (rollbackError) {
+        logger.error(`Failed to roll back cycle "${cycleId}" from cooldown to "${previousState}". Manual intervention may be required.`, {
+          rollbackError: rollbackError instanceof Error ? rollbackError.message : String(rollbackError),
+        });
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Complete the cooldown after (optional) synthesis.
+   *
+   * 1. Reads the synthesis result from .kata/synthesis/result-<synthesisInputId>.json if it exists
+   * 2. Applies accepted proposals to KnowledgeStore
+   * 3. Writes dojo diary entry
+   * 4. Transitions cycle to 'complete'
+   * 5. Returns CooldownSessionResult with synthesisProposals populated
+   */
+  async complete(
+    cycleId: string,
+    synthesisInputId?: string,
+    acceptedProposalIds?: string[],
+  ): Promise<CooldownSessionResult> {
+    const cycle = this.deps.cycleManager.get(cycleId);
+
+    // Reconstruct basic result data (report may have already been prepared)
+    let report = this.deps.cycleManager.generateCooldown(cycleId);
+    report = this.enrichReportWithTokens(report, cycleId);
+
+    const runSummaries = this.deps.runsDir ? this.loadRunSummaries(cycle) : undefined;
+    const proposals = this.proposalGenerator.generate(cycleId, runSummaries);
+
+    let ruleSuggestions: RuleSuggestion[] | undefined;
+    if (this.deps.ruleRegistry) {
+      try {
+        ruleSuggestions = this.deps.ruleRegistry.getPendingSuggestions();
+      } catch (err) {
+        logger.warn(`Failed to load rule suggestions: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
+    // Read and apply synthesis proposals if synthesisInputId provided
+    let synthesisProposals: SynthesisProposal[] | undefined;
+    if (synthesisInputId && this.deps.synthesisDir) {
+      const resultPath = join(this.deps.synthesisDir, `result-${synthesisInputId}.json`);
+      if (existsSync(resultPath)) {
+        try {
+          const synthesisResult = JsonStore.read(resultPath, SynthesisResultSchema);
+          const idsToApply = acceptedProposalIds
+            ? new Set(acceptedProposalIds)
+            : new Set(synthesisResult.proposals.map((p) => p.id));
+
+          const appliedProposals: SynthesisProposal[] = [];
+          for (const proposal of synthesisResult.proposals) {
+            if (!idsToApply.has(proposal.id)) continue;
+            try {
+              this.applyProposal(proposal);
+              appliedProposals.push(proposal);
+            } catch (err) {
+              logger.warn(`Failed to apply synthesis proposal ${proposal.id} (${proposal.type}): ${err instanceof Error ? err.message : String(err)}`);
+            }
+          }
+          synthesisProposals = appliedProposals;
+        } catch (err) {
+          logger.warn(`Failed to read synthesis result for input ${synthesisInputId}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+    }
+
+    // Write dojo diary entry (non-critical)
+    if (this.deps.dojoDir) {
+      const effectiveBetOutcomes: BetOutcomeRecord[] = cycle.bets
+        .filter((b) => b.outcome !== 'pending')
+        .map((b) => ({ betId: b.id, outcome: b.outcome as BetOutcomeRecord['outcome'], notes: b.outcomeNotes }));
+      this.writeDiaryEntry({
+        cycleId,
+        cycleName: cycle.name,
+        betOutcomes: effectiveBetOutcomes,
+        proposals,
+        runSummaries,
+        learningsCaptured: 0,
+        ruleSuggestions,
+      });
+    }
+
+    // Transition to complete
+    this.deps.cycleManager.updateState(cycleId, 'complete');
+
+    return {
+      report,
+      betOutcomes: [],
+      proposals,
+      learningsCaptured: 0,
+      runSummaries,
+      ruleSuggestions,
+      synthesisInputId,
+      synthesisProposals,
+    };
+  }
+
+  /**
+   * Apply a single synthesis proposal to the KnowledgeStore.
+   */
+  private applyProposal(proposal: SynthesisProposal): void {
+    switch (proposal.type) {
+      case 'new-learning':
+        this.deps.knowledgeStore.capture({
+          tier: proposal.proposedTier,
+          category: proposal.proposedCategory,
+          content: proposal.proposedContent,
+          confidence: proposal.confidence,
+          source: 'synthesized',
+        });
+        break;
+
+      case 'update-learning': {
+        const existing = this.deps.knowledgeStore.get(proposal.targetLearningId);
+        const newConfidence = Math.min(1, Math.max(0, existing.confidence + proposal.confidenceDelta));
+        this.deps.knowledgeStore.update(proposal.targetLearningId, {
+          content: proposal.proposedContent,
+          confidence: newConfidence,
+        });
+        break;
+      }
+
+      case 'promote':
+        // promoteTier may not exist on IKnowledgeStore — guard with duck-typing
+        if (typeof (this.deps.knowledgeStore as { promoteTier?: unknown }).promoteTier === 'function') {
+          (this.deps.knowledgeStore as { promoteTier(id: string, toTier: string): void }).promoteTier(
+            proposal.targetLearningId,
+            proposal.toTier,
+          );
+        } else {
+          logger.warn(`KnowledgeStore does not support promoteTier — skipping promote proposal ${proposal.id}`);
+        }
+        break;
+
+      case 'archive':
+        this.deps.knowledgeStore.archiveLearning(proposal.targetLearningId, proposal.reason);
+        break;
+
+      case 'methodology-recommendation':
+        // Sensei writes methodology-recommendation to KATA.md — we only log here
+        logger.info(`Methodology recommendation (area: ${proposal.area}): ${proposal.recommendation}`);
+        break;
+    }
+  }
+
+  /**
+   * Read all run-level observations for every bet in the cycle, then write
+   * a SynthesisInput file to .kata/synthesis/pending-<id>.json.
+   * Returns the synthesisInputId and synthesisInputPath.
+   * Non-critical: if synthesisDir is not configured, returns placeholder values.
+   */
+  private writeSynthesisInput(
+    cycleId: string,
+    cycle: Cycle,
+    report: CooldownReport,
+    depth: import('@domain/types/synthesis.js').SynthesisDepth,
+  ): { synthesisInputId: string; synthesisInputPath: string } {
+    const synthesisDir = this.deps.synthesisDir;
+    if (!synthesisDir) {
+      // No synthesisDir configured — skip writing, return empty sentinel
+      const id = crypto.randomUUID();
+      return { synthesisInputId: id, synthesisInputPath: '' };
+    }
+
+    const id = crypto.randomUUID();
+    const observations: Observation[] = [];
+
+    // Collect run-level observations for each bet that has a runId
+    if (this.deps.runsDir) {
+      for (const bet of cycle.bets) {
+        if (!bet.runId) continue;
+        try {
+          const runObs = readObservations(this.deps.runsDir, bet.runId, { level: 'run' });
+          observations.push(...runObs);
+        } catch (err) {
+          logger.warn(`Failed to read observations for run ${bet.runId}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+    }
+
+    // Load current active learnings from KnowledgeStore
+    let learnings: import('@domain/types/learning.js').Learning[] = [];
+    try {
+      learnings = this.deps.knowledgeStore.query({});
+    } catch (err) {
+      logger.warn(`Failed to query learnings for synthesis input: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
+    const synthesisInput: SynthesisInput = {
+      id,
+      cycleId,
+      createdAt: new Date().toISOString(),
+      depth,
+      observations,
+      learnings,
+      cycleName: cycle.name,
+      tokenBudget: report.budget.tokenBudget,
+      tokensUsed: report.tokensUsed,
+    };
+
+    const filePath = join(synthesisDir, `pending-${id}.json`);
+    try {
+      JsonStore.write(filePath, synthesisInput, SynthesisInputSchema);
+    } catch (err) {
+      logger.warn(`Failed to write synthesis input file: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
+    return { synthesisInputId: id, synthesisInputPath: filePath };
   }
 
   /**

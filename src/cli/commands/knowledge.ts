@@ -2,6 +2,7 @@ import type { Command } from 'commander';
 import { KnowledgeStore } from '@infra/knowledge/knowledge-store.js';
 import { RuleRegistry } from '@infra/registries/rule-registry.js';
 import type { LearningFilter } from '@domain/types/learning.js';
+import { LearningPermanence } from '@domain/types/learning.js';
 import { StageCategorySchema, type StageCategory } from '@domain/types/stage.js';
 import { withCommandContext, kataDirPath } from '@cli/utils.js';
 import { getLexicon } from '@cli/lexicon.js';
@@ -119,6 +120,83 @@ export function registerKnowledgeCommands(parent: Command): void {
           console.log(`    ID:        ${rule.id}`);
           console.log('');
         }
+      }
+    }));
+
+  // kata knowledge archive <id> — soft-delete a learning
+  knowledge
+    .command('archive <id>')
+    .description('Archive a learning (soft-delete, retained for provenance)')
+    .option('--reason <text>', 'Reason for archiving')
+    .action(withCommandContext((ctx, id: string) => {
+      const localOpts = ctx.cmd.opts();
+      const store = new KnowledgeStore(kataDirPath(ctx.kataDir, 'knowledge'));
+
+      let updated;
+      try {
+        updated = store.archiveLearning(id, localOpts.reason);
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        if (ctx.globalOpts.json) {
+          console.log(JSON.stringify({ error: msg }, null, 2));
+        } else {
+          console.error(`Error: ${msg}`);
+        }
+        process.exitCode = 1;
+        return;
+      }
+
+      if (ctx.globalOpts.json) {
+        console.log(formatLearningJson([updated]));
+      } else {
+        console.log(`Archived learning ${updated.id}`);
+        if (localOpts.reason) {
+          console.log(`Reason: ${localOpts.reason}`);
+        }
+      }
+    }));
+
+  // kata knowledge promote <id> — promote a learning's permanence tier
+  knowledge
+    .command('promote <id>')
+    .description('Promote a learning to a higher permanence tier')
+    .requiredOption('--permanence <level>', 'Permanence level: operational | strategic | constitutional')
+    .action(withCommandContext((ctx, id: string) => {
+      const localOpts = ctx.cmd.opts();
+      const store = new KnowledgeStore(kataDirPath(ctx.kataDir, 'knowledge'));
+
+      // Validate permanence level
+      const permanenceResult = LearningPermanence.safeParse(localOpts.permanence);
+      if (!permanenceResult.success) {
+        const valid = LearningPermanence.options.join(', ');
+        const msg = `Invalid permanence level: "${localOpts.permanence}". Valid levels: ${valid}`;
+        if (ctx.globalOpts.json) {
+          console.log(JSON.stringify({ error: msg }, null, 2));
+        } else {
+          console.error(`Error: ${msg}`);
+        }
+        process.exitCode = 1;
+        return;
+      }
+
+      let updated;
+      try {
+        updated = store.promote(id, permanenceResult.data);
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        if (ctx.globalOpts.json) {
+          console.log(JSON.stringify({ error: msg }, null, 2));
+        } else {
+          console.error(`Error: ${msg}`);
+        }
+        process.exitCode = 1;
+        return;
+      }
+
+      if (ctx.globalOpts.json) {
+        console.log(formatLearningJson([updated]));
+      } else {
+        console.log(`Promoted learning ${updated.id} to permanence: ${updated.permanence}`);
       }
     }));
 

@@ -171,4 +171,227 @@ describe('registerKnowledgeCommands', () => {
       rmSync(noKataDir, { recursive: true, force: true });
     });
   });
+
+  describe('knowledge archive', () => {
+    it('archives an existing learning', async () => {
+      const store = new KnowledgeStore(knowledgeDir);
+      const learning = store.capture({
+        tier: 'stage',
+        category: 'testing',
+        content: 'Old pattern to archive',
+        confidence: 0.6,
+        evidence: [],
+      });
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir,
+        'knowledge', 'archive', learning.id,
+      ]);
+
+      const output = consoleSpy.mock.calls[0]?.[0] as string;
+      expect(output).toContain(`Archived learning ${learning.id}`);
+
+      // Verify archived in store
+      const updated = store.get(learning.id);
+      expect(updated.archived).toBe(true);
+    });
+
+    it('archives with a reason', async () => {
+      const store = new KnowledgeStore(knowledgeDir);
+      const learning = store.capture({
+        tier: 'stage',
+        category: 'testing',
+        content: 'Outdated pattern',
+        confidence: 0.5,
+        evidence: [],
+      });
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir,
+        'knowledge', 'archive', learning.id,
+        '--reason', 'Replaced by a better approach',
+      ]);
+
+      const output = consoleSpy.mock.calls.map((c) => c[0] as string).join('\n');
+      expect(output).toContain('Reason: Replaced by a better approach');
+    });
+
+    it('outputs JSON on success', async () => {
+      const store = new KnowledgeStore(knowledgeDir);
+      const learning = store.capture({
+        tier: 'stage',
+        category: 'testing',
+        content: 'To be archived',
+        confidence: 0.5,
+        evidence: [],
+      });
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--json', '--cwd', baseDir,
+        'knowledge', 'archive', learning.id,
+      ]);
+
+      const output = consoleSpy.mock.calls[0]?.[0] as string;
+      const parsed = JSON.parse(output);
+      expect(Array.isArray(parsed)).toBe(true);
+      expect(parsed[0].id).toBe(learning.id);
+      expect(parsed[0].archived).toBe(true);
+    });
+
+    it('prints error and sets exitCode=1 for unknown ID', async () => {
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir,
+        'knowledge', 'archive', 'nonexistent-id',
+      ]);
+
+      expect(errorSpy).toHaveBeenCalled();
+      expect(process.exitCode).toBe(1);
+      process.exitCode = 0; // reset
+    });
+
+    it('outputs JSON error for unknown ID with --json', async () => {
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--json', '--cwd', baseDir,
+        'knowledge', 'archive', 'nonexistent-id',
+      ]);
+
+      const output = consoleSpy.mock.calls[0]?.[0] as string;
+      const parsed = JSON.parse(output);
+      expect(parsed.error).toBeDefined();
+      process.exitCode = 0; // reset
+    });
+  });
+
+  describe('knowledge promote', () => {
+    it('promotes a learning to a higher permanence tier', async () => {
+      const store = new KnowledgeStore(knowledgeDir);
+      const learning = store.capture({
+        tier: 'stage',
+        category: 'architecture',
+        content: 'Use dependency injection',
+        confidence: 0.85,
+        evidence: [],
+      });
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir,
+        'knowledge', 'promote', learning.id,
+        '--permanence', 'operational',
+      ]);
+
+      const output = consoleSpy.mock.calls[0]?.[0] as string;
+      expect(output).toContain(learning.id);
+      expect(output).toContain('operational');
+    });
+
+    it('outputs JSON on success', async () => {
+      const store = new KnowledgeStore(knowledgeDir);
+      const learning = store.capture({
+        tier: 'stage',
+        category: 'architecture',
+        content: 'Layered architecture',
+        confidence: 0.9,
+        evidence: [],
+      });
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--json', '--cwd', baseDir,
+        'knowledge', 'promote', learning.id,
+        '--permanence', 'strategic',
+      ]);
+
+      const output = consoleSpy.mock.calls[0]?.[0] as string;
+      const parsed = JSON.parse(output);
+      expect(Array.isArray(parsed)).toBe(true);
+      expect(parsed[0].id).toBe(learning.id);
+      expect(parsed[0].permanence).toBe('strategic');
+    });
+
+    it('rejects invalid permanence level', async () => {
+      const store = new KnowledgeStore(knowledgeDir);
+      const learning = store.capture({
+        tier: 'stage',
+        category: 'testing',
+        content: 'Some learning',
+        confidence: 0.7,
+        evidence: [],
+      });
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir,
+        'knowledge', 'promote', learning.id,
+        '--permanence', 'invalid-level',
+      ]);
+
+      expect(errorSpy).toHaveBeenCalled();
+      expect(process.exitCode).toBe(1);
+      process.exitCode = 0; // reset
+    });
+
+    it('outputs JSON error for invalid permanence with --json', async () => {
+      const store = new KnowledgeStore(knowledgeDir);
+      const learning = store.capture({
+        tier: 'stage',
+        category: 'testing',
+        content: 'Some learning',
+        confidence: 0.7,
+        evidence: [],
+      });
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--json', '--cwd', baseDir,
+        'knowledge', 'promote', learning.id,
+        '--permanence', 'invalid-level',
+      ]);
+
+      const output = consoleSpy.mock.calls[0]?.[0] as string;
+      const parsed = JSON.parse(output);
+      expect(parsed.error).toBeDefined();
+      process.exitCode = 0; // reset
+    });
+
+    it('prints error and sets exitCode=1 for unknown ID', async () => {
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir,
+        'knowledge', 'promote', 'nonexistent-id',
+        '--permanence', 'operational',
+      ]);
+
+      expect(errorSpy).toHaveBeenCalled();
+      expect(process.exitCode).toBe(1);
+      process.exitCode = 0; // reset
+    });
+
+    it('supports constitutional permanence level', async () => {
+      const store = new KnowledgeStore(knowledgeDir);
+      const learning = store.capture({
+        tier: 'agent',
+        category: 'architecture',
+        content: 'Constitutional-level principle',
+        confidence: 0.95,
+        evidence: [],
+        agentId: 'kata-sensei',
+      });
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir,
+        'knowledge', 'promote', learning.id,
+        '--permanence', 'constitutional',
+      ]);
+
+      const output = consoleSpy.mock.calls[0]?.[0] as string;
+      expect(output).toContain('constitutional');
+    });
+  });
 });

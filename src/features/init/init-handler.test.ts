@@ -271,6 +271,7 @@ describe('handleInit', () => {
       'kata-create-skill.md',
       'kata-bridge-gap.md',
       'kata-scan-project.md',
+      'kata-synthesis.md',
       join('templates', 'decision-format.md'),
       join('templates', 'synthesis-format.md'),
       join('templates', 'artifact-format.md'),
@@ -300,7 +301,7 @@ describe('handleInit', () => {
       expect(readFileSync(tmpl, 'utf-8').length).toBeGreaterThan(0);
     });
 
-    it('copies all 17 expected skill files', async () => {
+    it('copies all 18 expected skill files', async () => {
       await handleInit({ cwd: baseDir, skipPrompts: true });
 
       for (const relPath of expectedFiles) {
