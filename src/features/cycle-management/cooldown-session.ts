@@ -15,6 +15,7 @@ import { ProposalGenerator, type CycleProposal, type ProposalGeneratorDeps } fro
 import type { RunSummary } from './types.js';
 import { PredictionMatcher } from '@features/self-improvement/prediction-matcher.js';
 import { HierarchicalPromoter } from '@infra/knowledge/hierarchical-promoter.js';
+import { FrictionAnalyzer } from '@features/self-improvement/friction-analyzer.js';
 
 /**
  * Dependencies injected into CooldownSession for testability.
@@ -55,6 +56,12 @@ export interface CooldownSessionDeps {
    * Backward compatible — omitting skips hierarchical promotion.
    */
   hierarchicalPromoter?: Pick<HierarchicalPromoter, 'promoteStepToFlavor' | 'promoteFlavorToStage' | 'promoteStageToCategory'>;
+  /**
+   * Optional FrictionAnalyzer for resolving friction observations per run.
+   * When omitted and runsDir is set, a FrictionAnalyzer is constructed automatically.
+   * Backward compatible — omitting this field skips friction analysis.
+   */
+  frictionAnalyzer?: Pick<FrictionAnalyzer, 'analyze'>;
 }
 
 /**
@@ -96,6 +103,7 @@ export class CooldownSession {
   private readonly proposalGenerator: Pick<ProposalGenerator, 'generate'>;
   private readonly predictionMatcher: Pick<PredictionMatcher, 'match'> | null;
   private readonly hierarchicalPromoter: Pick<HierarchicalPromoter, 'promoteStepToFlavor' | 'promoteFlavorToStage' | 'promoteStageToCategory'>;
+  private readonly frictionAnalyzer: Pick<FrictionAnalyzer, 'analyze'> | null;
 
   constructor(deps: CooldownSessionDeps) {
     this.deps = deps;
@@ -108,6 +116,7 @@ export class CooldownSession {
     this.proposalGenerator = deps.proposalGenerator ?? new ProposalGenerator(generatorDeps);
     this.predictionMatcher = deps.predictionMatcher ?? (deps.runsDir ? new PredictionMatcher(deps.runsDir) : null);
     this.hierarchicalPromoter = deps.hierarchicalPromoter ?? new HierarchicalPromoter(deps.knowledgeStore);
+    this.frictionAnalyzer = deps.frictionAnalyzer ?? (deps.runsDir ? new FrictionAnalyzer(deps.runsDir, deps.knowledgeStore) : null);
   }
 
   /**
@@ -173,6 +182,9 @@ export class CooldownSession {
 
       // 8c. Scan for expired/stale learnings (non-critical)
       this.runExpiryCheck();
+
+      // 8d. Analyze friction observations and resolve contradictions (non-critical)
+      this.runFrictionAnalysis(cycle);
 
       // 8.5. Write dojo diary entry (non-critical — failure never aborts cooldown)
       if (this.deps.dojoDir) {
@@ -428,6 +440,24 @@ export class CooldownSession {
       }
     } catch (err) {
       logger.warn(`Learning expiry check failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  /**
+   * For each bet with a runId, run FrictionAnalyzer to resolve contradiction observations.
+   * Writes ResolutionReflections and optionally archives/captures learnings.
+   * No-op when runsDir is absent or no friction analyzer is available.
+   */
+  private runFrictionAnalysis(cycle: Cycle): void {
+    if (!this.frictionAnalyzer) return;
+
+    for (const bet of cycle.bets) {
+      if (!bet.runId) continue;
+      try {
+        this.frictionAnalyzer.analyze(bet.runId);
+      } catch (err) {
+        logger.warn(`Friction analysis failed for run ${bet.runId}: ${err instanceof Error ? err.message : String(err)}`);
+      }
     }
   }
 
