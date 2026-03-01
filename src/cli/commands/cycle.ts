@@ -20,6 +20,9 @@ import type { DomainTags } from '@domain/types/domain-tags.js';
 import { detectTags } from '@features/domain-confidence/domain-tagger.js';
 import { createRunTree, runPaths } from '@infra/persistence/run-store.js';
 import type { Run } from '@domain/types/run-state.js';
+import { BeltCalculator, ProjectStateUpdater } from '@features/belt/belt-calculator.js';
+import { KatakaConfidenceCalculator } from '@features/kataka/kataka-confidence-calculator.js';
+import { KATA_DIRS } from '@shared/constants/paths.js';
 
 /**
  * Register the `kata cycle` and `kata cooldown` subcommands.
@@ -484,16 +487,34 @@ export function registerCycleCommands(parent: Command): void {
       const ruleRegistry = new RuleRegistry(kataDirPath(ctx.kataDir, 'rules'));
       const synthesisDir = join(ctx.kataDir, 'synthesis');
 
+      const runsDir = kataDirPath(ctx.kataDir, 'runs');
+      const katakaDir = join(ctx.kataDir, KATA_DIRS.kataka);
       const completeSession = new CooldownSession({
         cycleManager: manager,
         knowledgeStore,
         persistence: JsonStore,
         pipelineDir: kataDirPath(ctx.kataDir, 'pipelines'),
         historyDir: kataDirPath(ctx.kataDir, 'history'),
-        runsDir: kataDirPath(ctx.kataDir, 'runs'),
+        runsDir,
         ruleRegistry,
         dojoDir: kataDirPath(ctx.kataDir, 'dojo'),
         synthesisDir,
+        beltCalculator: new BeltCalculator({
+          cyclesDir: kataDirPath(ctx.kataDir, 'cycles'),
+          knowledgeDir: kataDirPath(ctx.kataDir, 'knowledge'),
+          runsDir,
+          flavorsDir: kataDirPath(ctx.kataDir, 'flavors'),
+          savedKataDir: kataDirPath(ctx.kataDir, 'katas'),
+          synthesisDir,
+          dojoSessionsDir: join(kataDirPath(ctx.kataDir, 'dojo'), 'sessions'),
+        }),
+        projectStateFile: join(ctx.kataDir, 'project-state.json'),
+        katakaConfidenceCalculator: new KatakaConfidenceCalculator({
+          runsDir,
+          knowledgeDir: kataDirPath(ctx.kataDir, 'knowledge'),
+          katakaDir,
+        }),
+        katakaDir,
       });
 
       const synthesisInputId: string | undefined = localOpts.synthesisInput;
@@ -502,6 +523,9 @@ export function registerCycleCommands(parent: Command): void {
         : undefined;
 
       const completeResult = await completeSession.complete(cycleId, synthesisInputId, acceptedIds);
+
+      // Fire-and-forget belt discovery hook
+      ProjectStateUpdater.markDiscovery(join(ctx.kataDir, 'project-state.json'), 'completedFirstCycleCooldown');
 
       if (ctx.globalOpts.json) {
         console.log(JSON.stringify({
@@ -534,16 +558,34 @@ export function registerCycleCommands(parent: Command): void {
       const ruleRegistry = new RuleRegistry(kataDirPath(ctx.kataDir, 'rules'));
       const synthesisDir = join(ctx.kataDir, 'synthesis');
 
+      const runsDir = kataDirPath(ctx.kataDir, 'runs');
+      const katakaDir = join(ctx.kataDir, KATA_DIRS.kataka);
       const session = new CooldownSession({
         cycleManager: manager,
         knowledgeStore,
         persistence: JsonStore,
         pipelineDir: kataDirPath(ctx.kataDir, 'pipelines'),
         historyDir: kataDirPath(ctx.kataDir, 'history'),
-        runsDir: kataDirPath(ctx.kataDir, 'runs'),
+        runsDir,
         ruleRegistry,
         dojoDir: kataDirPath(ctx.kataDir, 'dojo'),
         synthesisDir,
+        beltCalculator: new BeltCalculator({
+          cyclesDir,
+          knowledgeDir: kataDirPath(ctx.kataDir, 'knowledge'),
+          runsDir,
+          flavorsDir: kataDirPath(ctx.kataDir, 'flavors'),
+          savedKataDir: kataDirPath(ctx.kataDir, 'katas'),
+          synthesisDir,
+          dojoSessionsDir: join(kataDirPath(ctx.kataDir, 'dojo'), 'sessions'),
+        }),
+        projectStateFile: join(ctx.kataDir, 'project-state.json'),
+        katakaConfidenceCalculator: new KatakaConfidenceCalculator({
+          runsDir,
+          knowledgeDir: kataDirPath(ctx.kataDir, 'knowledge'),
+          katakaDir,
+        }),
+        katakaDir,
       });
 
       // --- --prepare mode: write synthesis input file and exit without completing ---
@@ -636,6 +678,9 @@ export function registerCycleCommands(parent: Command): void {
 
         const yoloResult = await session.complete(cycleId, synthesisInputId, highConfidenceIds);
 
+        // Fire-and-forget belt discovery hook
+        ProjectStateUpdater.markDiscovery(join(ctx.kataDir, 'project-state.json'), 'completedFirstCycleCooldown');
+
         if (ctx.globalOpts.json) {
           console.log(JSON.stringify({
             report: yoloResult.report,
@@ -692,6 +737,9 @@ export function registerCycleCommands(parent: Command): void {
       }
 
       const result = await session.run(cycleId, betOutcomes);
+
+      // Fire-and-forget belt discovery hook
+      ProjectStateUpdater.markDiscovery(join(ctx.kataDir, 'project-state.json'), 'completedFirstCycleCooldown');
 
       // Rule suggestion review — after session.run() so suggestions are loaded
       const suggestionReviewRecords: SuggestionReviewRecord[] = [];

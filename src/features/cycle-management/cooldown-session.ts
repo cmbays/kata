@@ -15,6 +15,7 @@ import { loadRunSummary } from './run-summary-loader.js';
 import { ProposalGenerator, type CycleProposal, type ProposalGeneratorDeps } from './proposal-generator.js';
 import type { RunSummary } from './types.js';
 import { PredictionMatcher } from '@features/self-improvement/prediction-matcher.js';
+import { CalibrationDetector } from '@features/self-improvement/calibration-detector.js';
 import { HierarchicalPromoter } from '@infra/knowledge/hierarchical-promoter.js';
 import { FrictionAnalyzer } from '@features/self-improvement/friction-analyzer.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
@@ -26,6 +27,10 @@ import {
   type SynthesisInput,
   type SynthesisProposal,
 } from '@domain/types/synthesis.js';
+import type { BeltCalculator } from '@features/belt/belt-calculator.js';
+import { loadProjectState, type BeltComputeResult } from '@features/belt/belt-calculator.js';
+import type { KatakaConfidenceCalculator } from '@features/kataka/kataka-confidence-calculator.js';
+import { KatakaRegistry } from '@infra/registries/kataka-registry.js';
 
 /**
  * Dependencies injected into CooldownSession for testability.
@@ -73,6 +78,12 @@ export interface CooldownSessionDeps {
    */
   frictionAnalyzer?: Pick<FrictionAnalyzer, 'analyze'>;
   /**
+   * Optional CalibrationDetector for detecting systematic prediction biases per run.
+   * When omitted and runsDir is set, a CalibrationDetector is constructed automatically.
+   * Backward compatible — omitting this field skips calibration detection.
+   */
+  calibrationDetector?: Pick<CalibrationDetector, 'detect'>;
+  /**
    * Optional path to .kata/synthesis/ directory. When provided, CooldownSession writes
    * synthesis input files during prepare() and reads synthesis results during complete().
    * Defaults to join(kataDir, 'synthesis') when not provided — consumers must pass it explicitly.
@@ -84,6 +95,25 @@ export interface CooldownSessionDeps {
    * Defaults to 'standard'.
    */
   synthesisDepth?: import('@domain/types/synthesis.js').SynthesisDepth;
+  /**
+   * Optional BeltCalculator for computing belt level after cooldown.
+   * Backward compatible — omitting skips belt computation.
+   */
+  beltCalculator?: Pick<BeltCalculator, 'computeAndStore'>;
+  /**
+   * Optional path to .kata/project-state.json for belt computation.
+   * Required when beltCalculator is provided.
+   */
+  projectStateFile?: string;
+  /**
+   * Optional KatakaConfidenceCalculator for computing per-kataka confidence profiles.
+   * Backward compatible — omitting skips confidence computation.
+   */
+  katakaConfidenceCalculator?: Pick<KatakaConfidenceCalculator, 'compute'>;
+  /**
+   * Optional path to .kata/kataka/ directory. Required when katakaConfidenceCalculator is provided.
+   */
+  katakaDir?: string;
 }
 
 /**
@@ -113,6 +143,8 @@ export interface CooldownSessionResult {
   synthesisInputPath?: string;
   /** Synthesis proposals that were applied during complete(). */
   synthesisProposals?: SynthesisProposal[];
+  /** Belt computation result. Present when beltCalculator was provided. */
+  beltResult?: BeltComputeResult;
 }
 
 /**
@@ -145,6 +177,7 @@ export class CooldownSession {
   private readonly deps: CooldownSessionDeps;
   private readonly proposalGenerator: Pick<ProposalGenerator, 'generate'>;
   private readonly predictionMatcher: Pick<PredictionMatcher, 'match'> | null;
+  private readonly calibrationDetector: Pick<CalibrationDetector, 'detect'> | null;
   private readonly hierarchicalPromoter: Pick<HierarchicalPromoter, 'promoteStepToFlavor' | 'promoteFlavorToStage' | 'promoteStageToCategory'>;
   private readonly frictionAnalyzer: Pick<FrictionAnalyzer, 'analyze'> | null;
 
@@ -158,6 +191,7 @@ export class CooldownSession {
     };
     this.proposalGenerator = deps.proposalGenerator ?? new ProposalGenerator(generatorDeps);
     this.predictionMatcher = deps.predictionMatcher ?? (deps.runsDir ? new PredictionMatcher(deps.runsDir) : null);
+    this.calibrationDetector = deps.calibrationDetector ?? (deps.runsDir ? new CalibrationDetector(deps.runsDir) : null);
     this.hierarchicalPromoter = deps.hierarchicalPromoter ?? new HierarchicalPromoter(deps.knowledgeStore);
     this.frictionAnalyzer = deps.frictionAnalyzer ?? (deps.runsDir ? new FrictionAnalyzer(deps.runsDir, deps.knowledgeStore) : null);
   }
@@ -220,6 +254,9 @@ export class CooldownSession {
       // 8a. Match cycle predictions to outcomes (non-critical)
       this.runPredictionMatching(cycle);
 
+      // 8a.5. Detect systematic prediction biases (non-critical, runs after prediction matching)
+      this.runCalibrationDetection(cycle);
+
       // 8b. Bubble step-tier learnings up the hierarchy (non-critical)
       this.runHierarchicalPromotion();
 
@@ -228,6 +265,32 @@ export class CooldownSession {
 
       // 8d. Analyze friction observations and resolve contradictions (non-critical)
       this.runFrictionAnalysis(cycle);
+
+      // 8e. Compute belt advancement (non-critical)
+      let beltResult: BeltComputeResult | undefined;
+      if (this.deps.beltCalculator && this.deps.projectStateFile) {
+        try {
+          const state = loadProjectState(this.deps.projectStateFile);
+          beltResult = this.deps.beltCalculator.computeAndStore(this.deps.projectStateFile, state);
+          if (beltResult.leveledUp) {
+            logger.info(`Belt advanced: ${beltResult.previous} → ${beltResult.belt}`);
+          }
+        } catch (err) {
+          logger.warn(`Belt computation failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+
+      // 8f. Compute per-kataka confidence profiles (non-critical)
+      if (this.deps.katakaConfidenceCalculator && this.deps.katakaDir) {
+        try {
+          const registry = new KatakaRegistry(this.deps.katakaDir);
+          for (const kataka of registry.list()) {
+            this.deps.katakaConfidenceCalculator.compute(kataka.id, kataka.name);
+          }
+        } catch (err) {
+          logger.warn(`Kataka confidence computation failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
 
       // 8.5. Write dojo diary entry (non-critical — failure never aborts cooldown)
       if (this.deps.dojoDir) {
@@ -260,6 +323,7 @@ export class CooldownSession {
         synthesisInputId: undefined,
         synthesisInputPath: undefined,
         synthesisProposals: undefined,
+        beltResult,
       };
     } catch (error) {
       // Attempt to roll back to previous state so the user can retry
@@ -325,6 +389,9 @@ export class CooldownSession {
 
       // 8a. Match cycle predictions to outcomes (non-critical)
       this.runPredictionMatching(cycle);
+
+      // 8a.5. Detect systematic prediction biases (non-critical, runs after prediction matching)
+      this.runCalibrationDetection(cycle);
 
       // 8b. Bubble step-tier learnings up the hierarchy (non-critical)
       this.runHierarchicalPromotion();
@@ -443,6 +510,32 @@ export class CooldownSession {
       });
     }
 
+    // 8e. Compute belt advancement (non-critical)
+    let beltResult: BeltComputeResult | undefined;
+    if (this.deps.beltCalculator && this.deps.projectStateFile) {
+      try {
+        const state = loadProjectState(this.deps.projectStateFile);
+        beltResult = this.deps.beltCalculator.computeAndStore(this.deps.projectStateFile, state);
+        if (beltResult.leveledUp) {
+          logger.info(`Belt advanced: ${beltResult.previous} → ${beltResult.belt}`);
+        }
+      } catch (err) {
+        logger.warn(`Belt computation failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
+    // 8f. Compute per-kataka confidence profiles (non-critical)
+    if (this.deps.katakaConfidenceCalculator && this.deps.katakaDir) {
+      try {
+        const registry = new KatakaRegistry(this.deps.katakaDir);
+        for (const kataka of registry.list()) {
+          this.deps.katakaConfidenceCalculator.compute(kataka.id, kataka.name);
+        }
+      } catch (err) {
+        logger.warn(`Kataka confidence computation failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
     // Transition to complete
     this.deps.cycleManager.updateState(cycleId, 'complete');
 
@@ -455,6 +548,7 @@ export class CooldownSession {
       ruleSuggestions,
       synthesisInputId,
       synthesisProposals,
+      beltResult,
     };
   }
 
@@ -736,6 +830,25 @@ export class CooldownSession {
         this.predictionMatcher.match(bet.runId);
       } catch (err) {
         logger.warn(`Prediction matching failed for run ${bet.runId}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+  }
+
+  /**
+   * For each bet with a runId, run CalibrationDetector to detect systematic prediction biases.
+   * Writes CalibrationReflections to the run's JSONL file.
+   * Must run after runPredictionMatching (reads validation reflections it produces).
+   * No-op when runsDir is absent or no calibration detector is available.
+   */
+  private runCalibrationDetection(cycle: Cycle): void {
+    if (!this.calibrationDetector) return;
+
+    for (const bet of cycle.bets) {
+      if (!bet.runId) continue;
+      try {
+        this.calibrationDetector.detect(bet.runId);
+      } catch (err) {
+        logger.warn(`Calibration detection failed for run ${bet.runId}: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
   }

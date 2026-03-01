@@ -84,3 +84,41 @@ gap observed → flavor/step created → learning recorded → gap resolved
 ```
 
 Gaps surface in `.kata/KATA.md` under `## Open Gaps` after each cooldown (Wave I).
+
+---
+
+## Quality Gate
+
+The `--bridge-gaps` flag enforces a quality gate — execution is blocked until high-severity gaps are resolved. Medium/low gaps are captured as step-tier learnings and execution continues.
+
+```bash
+kata kiai build --bridge-gaps
+# [kata] Blocked by 1 high-severity gap(s):
+#   • Missing authentication layer
+```
+
+High-severity gaps indicate critical coverage problems. Resolve them by selecting additional flavors or adjusting your kata sequence before running again.
+
+---
+
+## Knowledge Capture
+
+Gaps become `step`-tier learnings in the knowledge store automatically when `--bridge-gaps` is used. Each non-high-severity gap is recorded with:
+- Tier: `step` (narrowest scope — specific to this execution context)
+- Confidence: `0.6` (moderate — gap was identified by the orchestrator, not validated by outcome)
+- Category: `gap-<hash>` (unique per gap description)
+
+These learnings feed the belt system's `gapsIdentified` metric. Over time, consistently identified gaps can be promoted to `flavor` or `stage` tier through hierarchical promotion during cooldown.
+
+---
+
+## Full Lifecycle
+
+Gap to Learning to Belt progression:
+
+1. **Observe**: `kata observe record --type gap` — manually record a coverage gap
+2. **Auto-detect**: `kata kiai <category>` — orchestrator identifies gaps during planning
+3. **Bridge**: `kata kiai <category> --bridge-gaps` — quality gate check; high-severity gaps block execution
+4. **Capture**: Medium/low gaps are captured as step-tier learnings
+5. **Promote**: During `kata cooldown`, hierarchical promoter bubbles gap learnings up the tier hierarchy
+6. **Belt**: Captured gaps contribute to `gapsIdentified` metric; closed gaps (via bridging) contribute to `gapsClosed` on the belt system

@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import type { Command } from 'commander';
 import type { FlavorStepRef, Flavor } from '@domain/types/flavor.js';
 import { StageCategorySchema, type StageCategory } from '@domain/types/stage.js';
@@ -6,6 +7,7 @@ import { StepRegistry } from '@infra/registries/step-registry.js';
 import { StepNotFoundError } from '@shared/lib/errors.js';
 import { withCommandContext, kataDirPath } from '@cli/utils.js';
 import { formatFlavorTable, formatFlavorDetail, formatFlavorJson } from '@cli/formatters/flavor-formatter.js';
+import { ProjectStateUpdater } from '@features/belt/belt-calculator.js';
 
 /**
  * Register the `kata flavor` / `kata ryu` commands.
@@ -155,6 +157,8 @@ export function registerFlavorCommands(parent: Command): void {
             { cause: writeErr },
           );
         }
+        // Fire-and-forget belt discovery hook
+        ProjectStateUpdater.markDiscovery(join(ctx.kataDir, 'project-state.json'), 'createdCustomStepOrFlavor');
         if (isJson) {
           console.log(formatFlavorJson(createdFlavors));
         } else {
@@ -177,6 +181,8 @@ export function registerFlavorCommands(parent: Command): void {
         const { FlavorSchema } = await import('@domain/types/flavor.js');
         const flavor = FlavorSchema.parse(raw);
         registry.register(flavor);
+        // Fire-and-forget belt discovery hook
+        ProjectStateUpdater.markDiscovery(join(ctx.kataDir, 'project-state.json'), 'createdCustomStepOrFlavor');
         if (isJson) {
           console.log(formatFlavorJson([flavor]));
         } else {
@@ -237,6 +243,9 @@ export function registerFlavorCommands(parent: Command): void {
         synthesisArtifact,
       });
       registry.register(flavor);
+
+      // Fire-and-forget belt discovery hook
+      ProjectStateUpdater.markDiscovery(join(ctx.kataDir, 'project-state.json'), 'createdCustomStepOrFlavor');
 
       if (isJson) {
         console.log(formatFlavorJson([flavor]));

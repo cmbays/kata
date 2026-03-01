@@ -8,6 +8,7 @@ import { formatStepTable, formatStepDetail, formatStepJson } from '@cli/formatte
 import { createStep } from '@features/step-create/step-creator.js';
 import { editStep } from '@features/step-create/step-editor.js';
 import { deleteStep } from '@features/step-create/step-deleter.js';
+import { ProjectStateUpdater } from '@features/belt/belt-calculator.js';
 import type { Gate } from '@domain/types/gate.js';
 import type { Step, StepResources } from '@domain/types/step.js';
 import { FlavorRegistry } from '@infra/registries/flavor-registry.js';
@@ -376,6 +377,8 @@ export function registerStepCommands(parent: Command): void {
             { cause: writeErr },
           );
         }
+        // Fire-and-forget belt discovery hook
+        ProjectStateUpdater.markDiscovery(join(ctx.kataDir, 'project-state.json'), 'createdCustomStepOrFlavor');
         if (isJson) {
           console.log(formatStepJson(created));
         } else {
@@ -394,6 +397,8 @@ export function registerStepCommands(parent: Command): void {
           throw new Error(`Could not read step file "${filePath}": ${e instanceof Error ? e.message : String(e)}`, { cause: e });
         }
         const { step: created } = createStep({ stagesDir, input: raw });
+        // Fire-and-forget belt discovery hook
+        ProjectStateUpdater.markDiscovery(join(ctx.kataDir, 'project-state.json'), 'createdCustomStepOrFlavor');
         if (isJson) {
           console.log(formatStepJson([created]));
         } else {
@@ -456,6 +461,9 @@ export function registerStepCommands(parent: Command): void {
         stagesDir,
         input: { type, flavor, description, artifacts, entryGate, exitGate, learningHooks, promptTemplate },
       });
+
+      // Fire-and-forget belt discovery hook
+      ProjectStateUpdater.markDiscovery(join(ctx.kataDir, 'project-state.json'), 'createdCustomStepOrFlavor');
 
       if (isJson) {
         console.log(formatStepJson([created]));

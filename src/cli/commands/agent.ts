@@ -13,6 +13,8 @@ import {
   KatakaObservabilityAggregator,
   type KatakaObservabilityStats,
 } from '@features/kataka/kataka-observability-aggregator.js';
+import { KatakaConfidenceCalculator } from '@features/kataka/kataka-confidence-calculator.js';
+import type { KatakaConfidenceProfile } from '@domain/types/kataka-confidence.js';
 
 // ---------------------------------------------------------------------------
 // Formatting helpers
@@ -40,7 +42,7 @@ function formatKatakaTable(kataka: Kataka[], plain?: boolean): string {
   return [header, separator, ...rows].join('\n');
 }
 
-function formatKatakaDetail(k: Kataka, plain?: boolean, stats?: KatakaObservabilityStats): string {
+function formatKatakaDetail(k: Kataka, plain?: boolean, stats?: KatakaObservabilityStats, confidenceProfile?: KatakaConfidenceProfile | null): string {
   const lines: string[] = [];
   const lex = getLexicon(plain);
 
@@ -77,6 +79,23 @@ function formatKatakaDetail(k: Kataka, plain?: boolean, stats?: KatakaObservabil
         `Last active:  run ${stats.lastRunId} in cycle ${stats.lastRunCycleId ?? 'unknown'} at ${stats.lastActiveAt ?? 'unknown'}`,
       );
     }
+  }
+
+  // Confidence profile section
+  lines.push('');
+  lines.push('--- Confidence Profile ---');
+  if (confidenceProfile) {
+    lines.push(`  Overall: ${(confidenceProfile.overallConfidence * 100).toFixed(0)}%`);
+    lines.push(`  Observations attributed: ${confidenceProfile.observationCount}`);
+    lines.push(`  Agent learnings: ${confidenceProfile.learningCount}`);
+    if (Object.keys(confidenceProfile.domainScores).length > 0) {
+      lines.push('  Domain scores:');
+      for (const [domain, score] of Object.entries(confidenceProfile.domainScores)) {
+        lines.push(`    ${domain}: ${(score.composite * 100).toFixed(0)}%`);
+      }
+    }
+  } else {
+    lines.push('  Not yet computed (run kata cooldown to generate)');
   }
 
   return lines.join('\n');
@@ -169,12 +188,20 @@ export function registerAgentCommands(parent: Command): void {
         // Stats unavailable — continue without them
       }
 
+      // Load confidence profile
+      const calculator = new KatakaConfidenceCalculator({
+        runsDir,
+        knowledgeDir,
+        katakaDir: katakaRegistryPath(ctx.kataDir),
+      });
+      const confidenceProfile = calculator.load(kataka.id);
+
       if (ctx.globalOpts.json) {
-        console.log(JSON.stringify({ ...kataka, stats }, null, 2));
+        console.log(JSON.stringify({ ...kataka, stats, confidenceProfile }, null, 2));
         return;
       }
 
-      console.log(formatKatakaDetail(kataka, ctx.globalOpts.plain, stats));
+      console.log(formatKatakaDetail(kataka, ctx.globalOpts.plain, stats, confidenceProfile));
     }));
 
   // ---------------------------------------------------------------------------

@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import { mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { randomUUID } from 'node:crypto';
 import { CycleManager } from '@domain/services/cycle-manager.js';
 import { KnowledgeStore } from '@infra/knowledge/knowledge-store.js';
 import { ExecutionHistoryEntrySchema } from '@domain/types/history.js';
@@ -839,6 +840,37 @@ describe('CooldownSession', () => {
       const cycle = cycleManager.create({ tokenBudget: 50000 });
       const result = await session.run(cycle.id);
       expect(result.ruleSuggestions).toBeUndefined();
+    });
+
+    it('calls calibrationDetector.detect for each bet with a runId', async () => {
+      const detectMock = vi.fn().mockReturnValue({ biasesDetected: [], calibrationsWritten: 0, synthesisWritten: false });
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      const runId1 = randomUUID();
+      const runId2 = randomUUID();
+      cycleManager.addBet(cycle.id, { description: 'Bet A', appetite: 10, runId: runId1 });
+      cycleManager.addBet(cycle.id, { description: 'Bet B', appetite: 10, runId: runId2 });
+      cycleManager.addBet(cycle.id, { description: 'Bet C (no runId)', appetite: 10 });
+
+      const sessionWithDetector = new CooldownSession({
+        cycleManager,
+        knowledgeStore,
+        persistence: JsonStore,
+        pipelineDir,
+        historyDir,
+        calibrationDetector: { detect: detectMock },
+      });
+
+      await sessionWithDetector.run(cycle.id);
+
+      expect(detectMock).toHaveBeenCalledTimes(2);
+      expect(detectMock).toHaveBeenCalledWith(runId1);
+      expect(detectMock).toHaveBeenCalledWith(runId2);
+    });
+
+    it('does not call calibrationDetector when no calibrationDetector provided (backward compat)', async () => {
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      // session has no calibrationDetector — should complete without error
+      await expect(session.run(cycle.id)).resolves.toBeDefined();
     });
 
     it('only includes pending suggestions, not accepted or rejected', async () => {

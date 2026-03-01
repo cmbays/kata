@@ -1,8 +1,10 @@
+import { join } from 'node:path';
 import React from 'react';
 import { render } from 'ink';
 import type { Command } from 'commander';
 import { withCommandContext, kataDirPath } from '@cli/utils.js';
 import WatchApp from '@cli/tui/WatchApp.js';
+import { ProjectStateUpdater } from '@features/belt/belt-calculator.js';
 
 export function registerWatchCommand(parent: Command): void {
   parent
@@ -14,6 +16,9 @@ export function registerWatchCommand(parent: Command): void {
       withCommandContext(async (ctx) => {
         const localOpts = ctx.cmd.opts();
         const runsDir = kataDirPath(ctx.kataDir, 'runs');
+
+        // Fire-and-forget belt discovery hook
+        ProjectStateUpdater.markDiscovery(join(ctx.kataDir, 'project-state.json'), 'launchedWatch');
 
         const { waitUntilExit } = render(
           React.createElement(WatchApp, {
