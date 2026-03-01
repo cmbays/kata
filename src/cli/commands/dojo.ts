@@ -2,7 +2,8 @@ import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
 import type { Command } from 'commander';
-import { withCommandContext, kataDirPath } from '@cli/utils.js';
+import { withCommandContext, kataDirPath, resolveKataDir } from '@cli/utils.js';
+import { ProjectStateUpdater } from '@features/belt/belt-calculator.js';
 import { DiaryStore } from '@infra/dojo/diary-store.js';
 import { SessionStore } from '@infra/dojo/session-store.js';
 import { SourceRegistry } from '@infra/dojo/source-registry.js';
@@ -47,7 +48,14 @@ export function parsePositiveInt(value: string): number {
 export function registerDojoCommand(parent: Command): void {
   const dojo = parent
     .command('dojo')
-    .description('Personal training environment — session archive, diary, and sources');
+    .description('Personal training environment — session archive, diary, and sources')
+    .hook('preAction', () => {
+      // Fire-and-forget belt discovery hook — fires on any dojo subcommand
+      try {
+        const kataDir = resolveKataDir();
+        ProjectStateUpdater.markDiscovery(join(kataDir, 'project-state.json'), 'launchedDojo');
+      } catch { /* not in a kata project — skip */ }
+    });
 
   // kata dojo list
   dojo

@@ -15,6 +15,7 @@ import { loadRunSummary } from './run-summary-loader.js';
 import { ProposalGenerator, type CycleProposal, type ProposalGeneratorDeps } from './proposal-generator.js';
 import type { RunSummary } from './types.js';
 import { PredictionMatcher } from '@features/self-improvement/prediction-matcher.js';
+import { CalibrationDetector } from '@features/self-improvement/calibration-detector.js';
 import { HierarchicalPromoter } from '@infra/knowledge/hierarchical-promoter.js';
 import { FrictionAnalyzer } from '@features/self-improvement/friction-analyzer.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
@@ -76,6 +77,12 @@ export interface CooldownSessionDeps {
    * Backward compatible — omitting this field skips friction analysis.
    */
   frictionAnalyzer?: Pick<FrictionAnalyzer, 'analyze'>;
+  /**
+   * Optional CalibrationDetector for detecting systematic prediction biases per run.
+   * When omitted and runsDir is set, a CalibrationDetector is constructed automatically.
+   * Backward compatible — omitting this field skips calibration detection.
+   */
+  calibrationDetector?: Pick<CalibrationDetector, 'detect'>;
   /**
    * Optional path to .kata/synthesis/ directory. When provided, CooldownSession writes
    * synthesis input files during prepare() and reads synthesis results during complete().
@@ -170,6 +177,7 @@ export class CooldownSession {
   private readonly deps: CooldownSessionDeps;
   private readonly proposalGenerator: Pick<ProposalGenerator, 'generate'>;
   private readonly predictionMatcher: Pick<PredictionMatcher, 'match'> | null;
+  private readonly calibrationDetector: Pick<CalibrationDetector, 'detect'> | null;
   private readonly hierarchicalPromoter: Pick<HierarchicalPromoter, 'promoteStepToFlavor' | 'promoteFlavorToStage' | 'promoteStageToCategory'>;
   private readonly frictionAnalyzer: Pick<FrictionAnalyzer, 'analyze'> | null;
 
@@ -183,6 +191,7 @@ export class CooldownSession {
     };
     this.proposalGenerator = deps.proposalGenerator ?? new ProposalGenerator(generatorDeps);
     this.predictionMatcher = deps.predictionMatcher ?? (deps.runsDir ? new PredictionMatcher(deps.runsDir) : null);
+    this.calibrationDetector = deps.calibrationDetector ?? (deps.runsDir ? new CalibrationDetector(deps.runsDir) : null);
     this.hierarchicalPromoter = deps.hierarchicalPromoter ?? new HierarchicalPromoter(deps.knowledgeStore);
     this.frictionAnalyzer = deps.frictionAnalyzer ?? (deps.runsDir ? new FrictionAnalyzer(deps.runsDir, deps.knowledgeStore) : null);
   }
@@ -244,6 +253,9 @@ export class CooldownSession {
 
       // 8a. Match cycle predictions to outcomes (non-critical)
       this.runPredictionMatching(cycle);
+
+      // 8a.5. Detect systematic prediction biases (non-critical, runs after prediction matching)
+      this.runCalibrationDetection(cycle);
 
       // 8b. Bubble step-tier learnings up the hierarchy (non-critical)
       this.runHierarchicalPromotion();
@@ -377,6 +389,9 @@ export class CooldownSession {
 
       // 8a. Match cycle predictions to outcomes (non-critical)
       this.runPredictionMatching(cycle);
+
+      // 8a.5. Detect systematic prediction biases (non-critical, runs after prediction matching)
+      this.runCalibrationDetection(cycle);
 
       // 8b. Bubble step-tier learnings up the hierarchy (non-critical)
       this.runHierarchicalPromotion();
@@ -815,6 +830,25 @@ export class CooldownSession {
         this.predictionMatcher.match(bet.runId);
       } catch (err) {
         logger.warn(`Prediction matching failed for run ${bet.runId}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+  }
+
+  /**
+   * For each bet with a runId, run CalibrationDetector to detect systematic prediction biases.
+   * Writes CalibrationReflections to the run's JSONL file.
+   * Must run after runPredictionMatching (reads validation reflections it produces).
+   * No-op when runsDir is absent or no calibration detector is available.
+   */
+  private runCalibrationDetection(cycle: Cycle): void {
+    if (!this.calibrationDetector) return;
+
+    for (const bet of cycle.bets) {
+      if (!bet.runId) continue;
+      try {
+        this.calibrationDetector.detect(bet.runId);
+      } catch (err) {
+        logger.warn(`Calibration detection failed for run ${bet.runId}: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
   }

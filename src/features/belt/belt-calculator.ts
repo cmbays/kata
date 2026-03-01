@@ -43,7 +43,6 @@ export class BeltCalculator {
     knowledgeDir: string;
     runsDir?: string;
     flavorsDir?: string;
-    decisionsDir?: string;
     savedKataDir?: string;
     synthesisDir?: string;
     dojoSessionsDir?: string;
@@ -229,7 +228,7 @@ export class BeltCalculator {
               if (ref.type === 'resolution') frictionResolutions++;
               if (ref.type === 'calibration') {
                 calibrationTotal++;
-                if (ref.accurate) calibrationCorrect++;
+                if (typeof ref.accuracyRate === 'number') calibrationCorrect += ref.accuracyRate;
               }
             } catch { /* skip malformed lines */ }
           }
@@ -276,17 +275,20 @@ export class BeltCalculator {
   }
 
   private countDecisionOutcomes(): number {
-    if (!this.deps.decisionsDir || !existsSync(this.deps.decisionsDir)) return 0;
-    // Count decisions that have an outcome recorded
+    // Decision outcomes are written per-run to decisions.jsonl / decision-outcomes.jsonl
+    // in .kata/runs/<run-id>/. Count distinct outcome entries across all runs.
+    if (!this.deps.runsDir || !existsSync(this.deps.runsDir)) return 0;
     try {
-      const files = readdirSync(this.deps.decisionsDir).filter((f) => f.endsWith('.json'));
+      const runDirs = readdirSync(this.deps.runsDir, { withFileTypes: true })
+        .filter((d) => d.isDirectory())
+        .map((d) => d.name);
       let count = 0;
-      for (const file of files) {
-        try {
-          const raw = readFileSync(join(this.deps.decisionsDir, file), 'utf-8');
-          const decision = JSON.parse(raw);
-          if (decision.outcome) count++;
-        } catch { /* skip */ }
+      for (const runId of runDirs) {
+        // decision-outcomes.jsonl: each line = one outcome-recorded decision pair
+        const outcomesPath = join(this.deps.runsDir, runId, 'decision-outcomes.jsonl');
+        if (existsSync(outcomesPath)) {
+          count += readLines(outcomesPath).filter((l) => l.trim().length > 0).length;
+        }
       }
       return count;
     } catch { return 0; }

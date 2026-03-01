@@ -18,6 +18,7 @@ import { GapBridger } from '@features/execute/gap-bridger.js';
 import { KnowledgeStore } from '@infra/knowledge/knowledge-store.js';
 import { UsageAnalytics } from '@infra/tracking/usage-analytics.js';
 import { KATA_DIRS } from '@shared/constants/paths.js';
+import { ProjectStateUpdater } from '@features/belt/belt-calculator.js';
 import { handleStatus, handleStats, parseCategoryFilter } from './status.js';
 
 /**
@@ -217,6 +218,11 @@ async function runCategories(
   const bet = parseBetOption(opts.bet);
   if (bet === false) { process.exitCode = 1; return; }
 
+  // Fire-and-forget belt discovery hooks
+  const projectStateFile = join(ctx.kataDir, 'project-state.json');
+  ProjectStateUpdater.markDiscovery(projectStateFile, 'ranFirstExecution');
+  if (opts.yolo) ProjectStateUpdater.markRanWithYolo(projectStateFile);
+
   // Validate --kataka ID if provided
   if (opts.katakaId) {
     try {
@@ -259,6 +265,7 @@ async function runCategories(
       }
       if (bridged.length > 0) {
         console.log(`[kata] Captured ${bridged.length} gap(s) as step-tier learnings.`);
+        ProjectStateUpdater.incrementGapsClosed(projectStateFile, bridged.length);
       }
     }
 
@@ -299,6 +306,7 @@ async function runCategories(
         }
         if (bridged.length > 0) {
           console.log(`[kata] Captured ${bridged.length} gap(s) as step-tier learnings.`);
+          ProjectStateUpdater.incrementGapsClosed(projectStateFile, bridged.length);
         }
       }
     }
@@ -333,6 +341,7 @@ async function runCategories(
   // Save kata if requested
   if (opts.saveKata && !opts.dryRun) {
     saveSavedKata(ctx.kataDir, opts.saveKata, categories);
+    ProjectStateUpdater.markDiscovery(projectStateFile, 'savedKataSequence');
     if (!isJson) console.log(`\nKata "${opts.saveKata}" saved.`);
   }
 }

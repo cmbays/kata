@@ -14,7 +14,7 @@ import {
   BeltLevel,
   type ProjectState,
 } from '@domain/types/belt.js';
-import { loadProjectState } from '@features/belt/belt-calculator.js';
+import { BeltCalculator, type BeltSnapshot, loadProjectState } from '@features/belt/belt-calculator.js';
 import { withCommandContext, kataDirPath } from '@cli/utils.js';
 import { getLexicon, cap } from '@cli/lexicon.js';
 
@@ -49,10 +49,28 @@ export function handleStatus(ctx: { kataDir: string; globalOpts: { json?: boolea
 
   // Belt / project state
   let projectState: ProjectState | null = null;
+  let beltSnapshot: BeltSnapshot | null = null;
   try {
     const stateFile = join(ctx.kataDir, 'project-state.json');
     if (JsonStore.exists(stateFile)) {
       projectState = loadProjectState(stateFile);
+    }
+    const calc = new BeltCalculator({
+      cyclesDir: kataDirPath(ctx.kataDir, 'cycles'),
+      knowledgeDir: kataDirPath(ctx.kataDir, 'knowledge'),
+      runsDir: kataDirPath(ctx.kataDir, 'runs'),
+      flavorsDir: kataDirPath(ctx.kataDir, 'flavors'),
+      savedKataDir: kataDirPath(ctx.kataDir, 'katas'),
+      synthesisDir: join(ctx.kataDir, 'synthesis'),
+      dojoSessionsDir: join(kataDirPath(ctx.kataDir, 'dojo'), 'sessions'),
+    });
+    beltSnapshot = calc.computeSnapshot();
+    if (projectState && beltSnapshot) {
+      // Overlay persistent counters onto live snapshot
+      beltSnapshot.gapsClosed = projectState.gapsClosedCount;
+      beltSnapshot.ranWithYolo = projectState.ranWithYolo;
+      beltSnapshot.discovery = projectState.discovery;
+      beltSnapshot.synthesisApplied = Math.max(beltSnapshot.synthesisApplied, projectState.synthesisAppliedCount);
     }
   } catch { /* degraded: belt section unavailable */ }
 
@@ -123,7 +141,7 @@ export function handleStatus(ctx: { kataDir: string; globalOpts: { json?: boolea
     if (nextLevel) {
       console.log('');
       console.log(`  Next: ${nextLevel} (${BELT_KANJI[nextLevel]})`);
-      const checklist = getNextBeltChecklist(belt, projectState);
+      const checklist = getNextBeltChecklist(belt, projectState, beltSnapshot);
       for (const item of checklist) {
         const mark = item.met ? '[✓]' : '[ ]';
         const value = item.current !== undefined ? `  (${item.current})` : '';
@@ -152,11 +170,14 @@ interface ChecklistItem {
   current?: number | string;
 }
 
-function getNextBeltChecklist(current: BeltLevel, state: ProjectState): ChecklistItem[] {
+function getNextBeltChecklist(current: BeltLevel, state: ProjectState, snap: BeltSnapshot | null): ChecklistItem[] {
   const next = getNextBeltLevel(current);
   if (!next) return [];
 
   const d = state.discovery;
+  const s = snap;
+
+  const pct = (v: number) => `${(v * 100).toFixed(0)}%`;
 
   switch (next) {
     case 'go-kyu':
@@ -168,64 +189,64 @@ function getNextBeltChecklist(current: BeltLevel, state: ProjectState): Checklis
       ];
     case 'yon-kyu':
       return [
-        { label: '3+ cycles completed', met: false },
-        { label: '6+ bets completed', met: false },
-        { label: '10+ learnings captured', met: false },
-        { label: '1+ constitutional learning', met: false },
+        { label: '3+ cycles completed', met: (s?.cyclesCompleted ?? 0) >= 3, current: s?.cyclesCompleted },
+        { label: '6+ bets completed', met: (s?.betsCompleted ?? 0) >= 6, current: s?.betsCompleted },
+        { label: '10+ learnings captured', met: (s?.learningsTotal ?? 0) >= 10, current: s?.learningsTotal },
+        { label: '1+ constitutional learning', met: (s?.constitutionalLearnings ?? 0) >= 1, current: s?.constitutionalLearnings },
         { label: 'Run with --yolo', met: state.ranWithYolo },
-        { label: '5+ decision-outcome pairs', met: false },
-        { label: '2+ flavors created', met: false },
-        { label: '1+ dojo session generated', met: false },
+        { label: '5+ decision-outcome pairs', met: (s?.decisionOutcomePairs ?? 0) >= 5, current: s?.decisionOutcomePairs },
+        { label: '2+ flavors created', met: (s?.flavorsTotal ?? 0) >= 2, current: s?.flavorsTotal },
+        { label: '1+ dojo session generated', met: (s?.dojoSessionsGenerated ?? 0) >= 1, current: s?.dojoSessionsGenerated },
       ];
     case 'san-kyu':
       return [
-        { label: '6+ cycles completed', met: false },
-        { label: '12+ bets completed', met: false },
-        { label: '15+ learnings captured', met: false },
-        { label: '1+ strategic learning', met: false },
-        { label: '5+ prediction-outcome pairs', met: false },
-        { label: '3+ gaps identified', met: false },
-        { label: '1+ synthesis applied', met: state.synthesisAppliedCount >= 1 },
-        { label: '1+ kata saved', met: false },
-        { label: '3+ dojo sessions generated', met: false },
+        { label: '6+ cycles completed', met: (s?.cyclesCompleted ?? 0) >= 6, current: s?.cyclesCompleted },
+        { label: '12+ bets completed', met: (s?.betsCompleted ?? 0) >= 12, current: s?.betsCompleted },
+        { label: '15+ learnings captured', met: (s?.learningsTotal ?? 0) >= 15, current: s?.learningsTotal },
+        { label: '1+ strategic learning', met: (s?.strategicLearnings ?? 0) >= 1, current: s?.strategicLearnings },
+        { label: '5+ prediction-outcome pairs', met: (s?.predictionOutcomePairs ?? 0) >= 5, current: s?.predictionOutcomePairs },
+        { label: '3+ gaps identified', met: (s?.gapsIdentified ?? 0) >= 3, current: s?.gapsIdentified },
+        { label: '1+ synthesis applied', met: (s?.synthesisApplied ?? state.synthesisAppliedCount) >= 1 },
+        { label: '1+ kata saved', met: (s?.katasSaved ?? 0) >= 1, current: s?.katasSaved },
+        { label: '3+ dojo sessions generated', met: (s?.dojoSessionsGenerated ?? 0) >= 3, current: s?.dojoSessionsGenerated },
       ];
     case 'ni-kyu':
       return [
-        { label: '10+ cycles completed', met: false },
-        { label: '20+ bets completed', met: false },
-        { label: '20+ learnings captured', met: false },
-        { label: '3+ strategic learnings', met: false },
-        { label: '5+ friction observations', met: false },
-        { label: '60%+ friction resolution rate', met: false },
-        { label: 'Cross-cycle patterns active', met: false },
-        { label: '2+ avg citations per strategic', met: false },
-        { label: '5+ dojo sessions generated', met: false },
+        { label: '10+ cycles completed', met: (s?.cyclesCompleted ?? 0) >= 10, current: s?.cyclesCompleted },
+        { label: '20+ bets completed', met: (s?.betsCompleted ?? 0) >= 20, current: s?.betsCompleted },
+        { label: '20+ learnings captured', met: (s?.learningsTotal ?? 0) >= 20, current: s?.learningsTotal },
+        { label: '3+ strategic learnings', met: (s?.strategicLearnings ?? 0) >= 3, current: s?.strategicLearnings },
+        { label: '5+ friction observations', met: (s?.frictionObservations ?? 0) >= 5, current: s?.frictionObservations },
+        { label: '60%+ friction resolution rate', met: (s?.frictionResolutionRate ?? 0) >= 0.6, current: s ? pct(s.frictionResolutionRate) : undefined },
+        { label: 'Cross-cycle patterns active', met: s?.crossCyclePatternsActive ?? false },
+        { label: '2+ avg citations per strategic', met: (s?.avgCitationsPerStrategic ?? 0) >= 2, current: s ? s.avgCitationsPerStrategic.toFixed(1) : undefined },
+        { label: '5+ dojo sessions generated', met: (s?.dojoSessionsGenerated ?? 0) >= 5, current: s?.dojoSessionsGenerated },
       ];
     case 'ik-kyu':
       return [
-        { label: '15+ cycles completed', met: false },
-        { label: '30+ bets completed', met: false },
-        { label: '30+ learnings captured', met: false },
-        { label: '5+ strategic learnings', met: false },
-        { label: '1+ user-created constitutional', met: false },
-        { label: '2+ domain categories', met: false },
-        { label: '2+ methodology recommendations applied', met: false },
-        { label: '10+ learning versions', met: false },
-        { label: '3+ avg citations per strategic', met: false },
+        { label: '15+ cycles completed', met: (s?.cyclesCompleted ?? 0) >= 15, current: s?.cyclesCompleted },
+        { label: '30+ bets completed', met: (s?.betsCompleted ?? 0) >= 30, current: s?.betsCompleted },
+        { label: '30+ learnings captured', met: (s?.learningsTotal ?? 0) >= 30, current: s?.learningsTotal },
+        { label: '5+ strategic learnings', met: (s?.strategicLearnings ?? 0) >= 5, current: s?.strategicLearnings },
+        { label: '1+ user-created constitutional', met: (s?.userCreatedConstitutional ?? 0) >= 1, current: s?.userCreatedConstitutional },
+        { label: '2+ domain categories', met: (s?.domainCategoryCount ?? 0) >= 2, current: s?.domainCategoryCount },
+        { label: '2+ methodology recommendations applied', met: (s?.methodologyRecommendationsApplied ?? 0) >= 2, current: s?.methodologyRecommendationsApplied },
+        { label: '10+ learning versions', met: (s?.learningVersionCount ?? 0) >= 10, current: s?.learningVersionCount },
+        { label: '3+ avg citations per strategic', met: (s?.avgCitationsPerStrategic ?? 0) >= 3, current: s ? s.avgCitationsPerStrategic.toFixed(1) : undefined },
       ];
     case 'shodan':
       return [
-        { label: '25+ cycles completed', met: false },
-        { label: '50+ bets completed', met: false },
-        { label: '40+ learnings captured', met: false },
-        { label: '8+ strategic learnings', met: false },
-        { label: '80%+ calibration accuracy', met: false },
-        { label: '75%+ friction resolution rate', met: false },
-        { label: '10+ gaps closed', met: state.gapsClosedCount >= 10 },
-        { label: '5+ avg citations per strategic', met: false },
-        { label: '2+ methodology recommendations applied', met: false },
-        { label: '20+ learning versions', met: false },
-        { label: '10+ dojo sessions generated', met: false },
+        { label: '25+ cycles completed', met: (s?.cyclesCompleted ?? 0) >= 25, current: s?.cyclesCompleted },
+        { label: '50+ bets completed', met: (s?.betsCompleted ?? 0) >= 50, current: s?.betsCompleted },
+        { label: '40+ learnings captured', met: (s?.learningsTotal ?? 0) >= 40, current: s?.learningsTotal },
+        { label: '8+ strategic learnings', met: (s?.strategicLearnings ?? 0) >= 8, current: s?.strategicLearnings },
+        { label: '80%+ calibration accuracy', met: (s?.calibrationAccuracy ?? 0) >= 0.8, current: s ? pct(s.calibrationAccuracy) : undefined },
+        { label: '75%+ friction resolution rate', met: (s?.frictionResolutionRate ?? 0) >= 0.75, current: s ? pct(s.frictionResolutionRate) : undefined },
+        { label: '10+ gaps closed', met: state.gapsClosedCount >= 10, current: state.gapsClosedCount },
+        { label: '5+ avg citations per strategic', met: (s?.avgCitationsPerStrategic ?? 0) >= 5, current: s ? s.avgCitationsPerStrategic.toFixed(1) : undefined },
+        { label: '2+ methodology recommendations applied', met: (s?.methodologyRecommendationsApplied ?? 0) >= 2, current: s?.methodologyRecommendationsApplied },
+        { label: '20+ learning versions', met: (s?.learningVersionCount ?? 0) >= 20, current: s?.learningVersionCount },
+        { label: '10+ dojo sessions generated', met: (s?.dojoSessionsGenerated ?? 0) >= 10, current: s?.dojoSessionsGenerated },
       ];
     default:
       return [];

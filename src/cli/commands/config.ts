@@ -19,6 +19,7 @@ import { SavedKataSchema } from '@domain/types/saved-kata.js';
 import { StageCategorySchema } from '@domain/types/stage.js';
 import type { StageCategory } from '@domain/types/stage.js';
 import { editFieldLoop, stepLabel, buildStepChoiceLabel } from '@cli/commands/shared-wizards.js';
+import { ProjectStateUpdater } from '@features/belt/belt-calculator.js';
 
 /** State passed to the next ConfigApp render to restore navigation position. */
 interface RelaunchState {
@@ -36,6 +37,9 @@ export function registerConfigCommand(parent: Command): void {
         const stepsDir = kataDirPath(ctx.kataDir, 'stages');
         const flavorsDir = kataDirPath(ctx.kataDir, 'flavors');
         const katasDir = kataDirPath(ctx.kataDir, 'katas');
+
+        // Fire-and-forget belt discovery hook
+        ProjectStateUpdater.markDiscovery(join(ctx.kataDir, 'project-state.json'), 'launchedConfig');
 
         let relaunchState: RelaunchState | null = null;
 

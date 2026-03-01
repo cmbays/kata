@@ -215,6 +215,61 @@ describe('BeltCalculator', () => {
       expect(snap.frictionObservations).toBe(2);
       expect(snap.gapsIdentified).toBe(1);
     });
+
+    it('reads calibration accuracyRate from reflections.jsonl', () => {
+      const runsDir = join(base, 'runs');
+      const runId = randomUUID();
+      const runDir = join(runsDir, runId);
+      mkdirSync(runDir, { recursive: true });
+
+      // Two calibration reflections with accuracyRate (not 'accurate')
+      const refLines = [
+        JSON.stringify({ type: 'calibration', accuracyRate: 0.8, domain: 'global' }),
+        JSON.stringify({ type: 'calibration', accuracyRate: 0.6, domain: 'quantitative' }),
+      ];
+      writeFileSync(join(runDir, 'reflections.jsonl'), refLines.join('\n'));
+
+      const calc = new BeltCalculator({ cyclesDir, knowledgeDir, runsDir });
+      const snap = calc.computeSnapshot();
+      // Average of 0.8 and 0.6 = 0.7
+      expect(snap.calibrationAccuracy).toBeCloseTo(0.7, 5);
+    });
+
+    it('calibrationAccuracy is 0 when no calibration reflections exist', () => {
+      const runsDir = join(base, 'runs');
+      const runId = randomUUID();
+      const runDir = join(runsDir, runId);
+      mkdirSync(runDir, { recursive: true });
+      writeFileSync(join(runDir, 'reflections.jsonl'), '');
+
+      const calc = new BeltCalculator({ cyclesDir, knowledgeDir, runsDir });
+      const snap = calc.computeSnapshot();
+      expect(snap.calibrationAccuracy).toBe(0);
+    });
+
+    it('counts decision-outcomes.jsonl entries as decisionOutcomePairs', () => {
+      const runsDir = join(base, 'runs');
+      const runId1 = randomUUID();
+      const runId2 = randomUUID();
+      mkdirSync(join(runsDir, runId1), { recursive: true });
+      mkdirSync(join(runsDir, runId2), { recursive: true });
+
+      // run1 has 2 outcome entries, run2 has 1
+      const entry = (decisionId: string) =>
+        JSON.stringify({ decisionId, runId: runId1, outcome: { notes: 'ok' }, recordedAt: new Date().toISOString() });
+      writeFileSync(join(runsDir, runId1, 'decision-outcomes.jsonl'), [entry(randomUUID()), entry(randomUUID())].join('\n'));
+      writeFileSync(join(runsDir, runId2, 'decision-outcomes.jsonl'), entry(randomUUID()));
+
+      const calc = new BeltCalculator({ cyclesDir, knowledgeDir, runsDir });
+      const snap = calc.computeSnapshot();
+      expect(snap.decisionOutcomePairs).toBe(3);
+    });
+
+    it('decisionOutcomePairs is 0 when no runsDir configured', () => {
+      const calc = new BeltCalculator({ cyclesDir, knowledgeDir });
+      const snap = calc.computeSnapshot();
+      expect(snap.decisionOutcomePairs).toBe(0);
+    });
   });
 
   describe('computeAndStore', () => {
