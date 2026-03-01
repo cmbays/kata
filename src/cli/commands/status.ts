@@ -75,12 +75,20 @@ export function handleStatus(ctx: { kataDir: string; globalOpts: { json?: boolea
   } catch { /* degraded: belt section unavailable */ }
 
   if (isJson) {
-    const beltJson = projectState ? {
-      level: projectState.currentBelt,
-      earnedAt: projectState.earnedAt ?? null,
-      headline: BELT_HEADLINE[projectState.currentBelt],
-      nextLevel: getNextBeltLevel(projectState.currentBelt),
-    } : null;
+    const beltJson = projectState ? (() => {
+      const nextLevel = getNextBeltLevel(projectState.currentBelt);
+      const nextCriteria = nextLevel
+        ? getNextBeltChecklist(projectState.currentBelt, projectState, beltSnapshot)
+            .map((item) => ({ label: item.label, met: item.met, current: item.current?.toString() }))
+        : [];
+      return {
+        level: projectState.currentBelt,
+        earnedAt: projectState.earnedAt ?? null,
+        headline: BELT_HEADLINE[projectState.currentBelt],
+        nextLevel,
+        nextCriteria,
+      };
+    })() : null;
     console.log(JSON.stringify({
       activeCycle: activeCycle ? { name: activeCycle.name, state: activeCycle.state, bets: activeCycle.bets.length } : null,
       recentArtifacts,
@@ -132,7 +140,7 @@ export function handleStatus(ctx: { kataDir: string; globalOpts: { json?: boolea
     const kanji = BELT_KANJI[belt];
     const headline = BELT_HEADLINE[belt];
     if (isPlain) {
-      console.log(`  Belt: ${belt} (${kanji}) — ${headline}`);
+      console.log(`  Belt: ${belt} — ${headline}`);
     } else {
       console.log(`  ${BELT_COLOR[belt]}◆${ANSI_RESET} ${belt} (${kanji}) — ${headline}`);
     }
@@ -140,7 +148,8 @@ export function handleStatus(ctx: { kataDir: string; globalOpts: { json?: boolea
     const nextLevel = getNextBeltLevel(belt);
     if (nextLevel) {
       console.log('');
-      console.log(`  Next: ${nextLevel} (${BELT_KANJI[nextLevel]})`);
+      const nextLabel = isPlain ? nextLevel : `${nextLevel} (${BELT_KANJI[nextLevel]})`;
+      console.log(`  Next: ${nextLabel}`);
       const checklist = getNextBeltChecklist(belt, projectState, beltSnapshot);
       for (const item of checklist) {
         const mark = item.met ? '[✓]' : '[ ]';

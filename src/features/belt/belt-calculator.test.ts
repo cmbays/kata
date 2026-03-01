@@ -270,6 +270,42 @@ describe('BeltCalculator', () => {
       const snap = calc.computeSnapshot();
       expect(snap.decisionOutcomePairs).toBe(0);
     });
+
+    it('reads synthesisApplied and methodologyRecommendationsApplied from result-*.json files', () => {
+      const synthesisDir = join(base, 'synthesis');
+      mkdirSync(synthesisDir, { recursive: true });
+
+      const inputId1 = randomUUID();
+      const inputId2 = randomUUID();
+
+      const result1 = {
+        inputId: inputId1,
+        proposals: [
+          { id: randomUUID(), type: 'new-learning', confidence: 0.8, citations: [randomUUID(), randomUUID()], reasoning: 'r', createdAt: new Date().toISOString(), proposedContent: 'c', proposedTier: 'category', proposedCategory: 'test' },
+          { id: randomUUID(), type: 'methodology-recommendation', confidence: 0.9, citations: [randomUUID(), randomUUID()], reasoning: 'r', createdAt: new Date().toISOString(), recommendation: 'Do X', area: 'testing' },
+        ],
+      };
+      const result2 = {
+        inputId: inputId2,
+        proposals: [
+          { id: randomUUID(), type: 'methodology-recommendation', confidence: 0.7, citations: [randomUUID(), randomUUID()], reasoning: 'r', createdAt: new Date().toISOString(), recommendation: 'Do Y', area: 'process' },
+        ],
+      };
+      writeFileSync(join(synthesisDir, `result-${inputId1}.json`), JSON.stringify(result1));
+      writeFileSync(join(synthesisDir, `result-${inputId2}.json`), JSON.stringify(result2));
+
+      const calc = new BeltCalculator({ cyclesDir, knowledgeDir, synthesisDir });
+      const snap = calc.computeSnapshot();
+      expect(snap.synthesisApplied).toBe(3);                  // 2 + 1 proposals total
+      expect(snap.methodologyRecommendationsApplied).toBe(2); // 1 + 1 methodology-recommendation
+    });
+
+    it('synthesisApplied is 0 when synthesisDir not configured', () => {
+      const calc = new BeltCalculator({ cyclesDir, knowledgeDir });
+      const snap = calc.computeSnapshot();
+      expect(snap.synthesisApplied).toBe(0);
+      expect(snap.methodologyRecommendationsApplied).toBe(0);
+    });
   });
 
   describe('computeAndStore', () => {
