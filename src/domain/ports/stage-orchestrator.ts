@@ -1,5 +1,6 @@
 import type { Stage, StageCategory } from '@domain/types/stage.js';
 import type { Flavor } from '@domain/types/flavor.js';
+import type { FlavorHint } from '@domain/types/saved-kata.js';
 import type { Decision } from '@domain/types/decision.js';
 import type { CapabilityProfile, GapReport, MatchReport, ReflectionResult } from '@domain/types/orchestration.js';
 
@@ -31,6 +32,18 @@ export interface OrchestratorContext {
    * Treat `undefined` and `[]` as equivalent ("no applicable learnings").
    */
   readonly learnings?: readonly string[];
+  /**
+   * Flavor hint for the current stage from a SavedKata's flavorHints map.
+   * When present, guides orchestrator flavor selection:
+   *   - "prefer": boost recommended flavors, allow fallback to others
+   *   - "restrict": only allow recommended flavors
+   */
+  readonly flavorHint?: FlavorHint;
+  /**
+   * Active kataka ID for this execution context — set from flavor.kataka or run-level katakaId.
+   * Used for observation attribution.
+   */
+  readonly activeKatakaId?: string;
 }
 
 /**

@@ -80,6 +80,7 @@ export class StepFlavorExecutor implements IFlavorExecutor {
           metadata: {
             flavorName: flavor.name,
             stepName: stepRef.stepName,
+            ...(context.activeKatakaId ? { katakaId: context.activeKatakaId } : {}),
             ...(context.bet ?? {}),
           },
         },

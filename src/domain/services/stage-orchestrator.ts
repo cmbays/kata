@@ -345,15 +345,37 @@ export class BaseStageOrchestrator implements IStageOrchestrator {
       );
     }
 
+    // Apply flavorHint filtering when present
+    const hint = context.flavorHint;
+    let scoringCandidates = candidates;
+    if (hint) {
+      const recommended = new Set(hint.recommended);
+      if (hint.strategy === 'restrict') {
+        // ONLY recommended flavors are allowed
+        scoringCandidates = candidates.filter((f) => recommended.has(f.name));
+        if (scoringCandidates.length === 0 && pinnedFlavors.length === 0) {
+          throw new OrchestratorError(
+            `Stage "${this.stageCategory}" has no resolvable flavors after applying flavorHint restriction. ` +
+              `Recommended: [${hint.recommended.join(', ')}], available: [${candidates.map((f) => f.name).join(', ')}].`,
+          );
+        }
+      }
+    }
+
     // Score each candidate and produce MatchReports
     const keywords = this.vocabulary?.keywords ?? [];
-    const matchReports: MatchReport[] = candidates.map((flavor) => {
+    const recommendedSet = hint ? new Set(hint.recommended) : undefined;
+    const hintBoost = 0.2; // Score boost for recommended flavors in "prefer" mode
+    const matchReports: MatchReport[] = scoringCandidates.map((flavor) => {
       const base = this.scoreFlavorForContext(flavor, context);
       const kwHits = this.countKeywordHits(flavor, context, keywords);
       const lBoost = learningBoost(flavor, context);
       const ruleAdj = ruleAdjMap.get(flavor.name) ?? 0;
       const ruleFired = flavorsAffectedByRules.includes(flavor.name);
-      const score = Math.max(0, Math.min(1, base + lBoost + ruleAdj));
+      // Boost recommended flavors in "prefer" mode
+      const recBoost = (recommendedSet && hint?.strategy !== 'restrict' && recommendedSet.has(flavor.name))
+        ? hintBoost : 0;
+      const score = Math.max(0, Math.min(1, base + lBoost + ruleAdj + recBoost));
 
       return {
         flavorName: flavor.name,
@@ -364,11 +386,12 @@ export class BaseStageOrchestrator implements IStageOrchestrator {
         reasoning:
           `Score ${score.toFixed(2)}: ${kwHits} keyword hit(s), ` +
           `learning boost ${lBoost.toFixed(2)}, rule adj ${ruleAdj.toFixed(2)}.` +
+          (recBoost > 0 ? ` Hint boost ${recBoost.toFixed(2)}.` : '') +
           (ruleFired ? ` Rule fired for "${flavor.name}".` : ''),
       };
     });
 
-    return { candidates, pinnedFlavors, matchReports, excluded, pinned };
+    return { candidates: scoringCandidates, pinnedFlavors, matchReports, excluded, pinned };
   }
 
   /**
@@ -687,6 +710,16 @@ export class BaseStageOrchestrator implements IStageOrchestrator {
   // Phase 4: Execute
   // ---------------------------------------------------------------------------
 
+  /**
+   * Build a per-flavor context with cascading kataka attribution:
+   * flavor.kataka > context.activeKatakaId (from run-level) > none
+   */
+  private contextForFlavor(flavor: Flavor, context: OrchestratorContext): OrchestratorContext {
+    const activeKatakaId = flavor.kataka ?? context.activeKatakaId;
+    if (activeKatakaId === context.activeKatakaId) return context;
+    return { ...context, activeKatakaId };
+  }
+
   protected async executeFlavors(
     flavors: Flavor[],
     executionMode: 'sequential' | 'parallel',
@@ -694,7 +727,7 @@ export class BaseStageOrchestrator implements IStageOrchestrator {
   ): Promise<FlavorExecutionResult[]> {
     if (executionMode === 'parallel') {
       const settled = await Promise.allSettled(
-        flavors.map((flavor) => this.deps.executor.execute(flavor, context)),
+        flavors.map((flavor) => this.deps.executor.execute(flavor, this.contextForFlavor(flavor, context))),
       );
       const failures = settled.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
       if (failures.length > 0) {
@@ -710,7 +743,7 @@ export class BaseStageOrchestrator implements IStageOrchestrator {
 
     const results: FlavorExecutionResult[] = [];
     for (const flavor of flavors) {
-      results.push(await this.deps.executor.execute(flavor, context));
+      results.push(await this.deps.executor.execute(flavor, this.contextForFlavor(flavor, context)));
     }
     return results;
   }

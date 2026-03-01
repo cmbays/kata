@@ -1,4 +1,5 @@
 import type { StageCategory, Stage } from '@domain/types/stage.js';
+import type { FlavorHint } from '@domain/types/saved-kata.js';
 import type { ReflectionResult } from '@domain/types/orchestration.js';
 import type { IFlavorRegistry } from '@domain/ports/flavor-registry.js';
 import type { IDecisionRegistry } from '@domain/ports/decision-registry.js';
@@ -33,7 +34,7 @@ export class MetaOrchestrator implements IMetaOrchestrator {
   async runPipeline(
     categories: StageCategory[],
     bet?: Record<string, unknown>,
-    options?: { yolo?: boolean },
+    options?: { yolo?: boolean; flavorHints?: Record<string, FlavorHint> },
   ): Promise<PipelineOrchestrationResult> {
     if (categories.length === 0) {
       throw new OrchestratorError(
@@ -73,10 +74,12 @@ export class MetaOrchestrator implements IMetaOrchestrator {
       };
 
       // Build context with artifacts from prior stages
+      const flavorHint = options?.flavorHints?.[category];
       const context: OrchestratorContext = {
         availableArtifacts: [...accumulatedArtifacts],
         bet,
         learnings: [],
+        flavorHint,
       };
 
       // Create and run the stage orchestrator

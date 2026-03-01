@@ -4,7 +4,7 @@ import type { Command } from 'commander';
 import { withCommandContext, kataDirPath } from '@cli/utils.js';
 import { getLexicon } from '@cli/lexicon.js';
 import { StageCategorySchema, type StageCategory } from '@domain/types/stage.js';
-import { SavedKataSchema } from '@domain/types/saved-kata.js';
+import { SavedKataSchema, type FlavorHint } from '@domain/types/saved-kata.js';
 import { KataConfigSchema } from '@domain/types/config.js';
 import { StepRegistry } from '@infra/registries/step-registry.js';
 import { FlavorRegistry } from '@infra/registries/flavor-registry.js';
@@ -118,6 +118,7 @@ export function registerExecuteCommands(program: Command): void {
     .option('--kataka <id>', 'Kataka (agent) ID driving this run — stored in artifact metadata and attributed to observations')
     .option('--yolo', 'Skip confidence gate checks — all decisions proceed without human approval')
     .option('--bridge-gaps', 'Capture identified gaps as step-tier learnings; block on high-severity gaps')
+    .option('--hint <spec>', 'Flavor hint for --save-kata: stage:flavor1,flavor2[:strategy] (can be repeated)', collect, [])
     .option('--next', 'Auto-select the first pending bet from the active cycle as the run target')
     .action(withCommandContext(async (ctx, categories: string[]) => {
       const localOpts = ctx.cmd.opts();
@@ -149,6 +150,7 @@ export function registerExecuteCommands(program: Command): void {
       // --next: auto-select the first pending bet from the active cycle
       let betFromNext: string | undefined;
       let categoriesFromNext: string[] | undefined;
+      let hintsFromNext: Record<string, FlavorHint> | undefined;
       if (localOpts.next) {
         const manager = new CycleManager(kataDirPath(ctx.kataDir, 'cycles'), JsonStore);
         const allCycles = manager.list();
@@ -177,6 +179,7 @@ export function registerExecuteCommands(program: Command): void {
             try {
               const kataData = loadSavedKata(ctx.kataDir, pendingBet.kata.pattern);
               categoriesFromNext = kataData.stages;
+              hintsFromNext = kataData.flavorHints;
             } catch {
               console.error(`Error: Named kata "${pendingBet.kata.pattern}" not found or is malformed. Check .kata/katas/${pendingBet.kata.pattern}.json.`);
               return;
@@ -189,14 +192,17 @@ export function registerExecuteCommands(program: Command): void {
 
       // Resolve categories from: positional args OR --kata OR --gyo OR --next bet's kata
       let resolvedCategories: string[] = categories;
+      let resolvedHints: Record<string, FlavorHint> | undefined;
 
       if (localOpts.kata) {
         const kata = loadSavedKata(ctx.kataDir, localOpts.kata);
         resolvedCategories = kata.stages;
+        resolvedHints = kata.flavorHints;
       } else if (localOpts.gyo) {
         resolvedCategories = (localOpts.gyo as string).split(',').map((s: string) => s.trim()).filter(Boolean);
       } else if (categoriesFromNext) {
         resolvedCategories = categoriesFromNext;
+        resolvedHints = hintsFromNext;
       }
 
       if (resolvedCategories.length === 0) {
@@ -211,14 +217,23 @@ export function registerExecuteCommands(program: Command): void {
 
       const pin = [...(localOpts.ryu ?? []), ...(localOpts.pin ?? [])];
 
+      // Parse --hint flags into flavorHints map (merges with loaded kata hints)
+      const cliHints = parseHintFlags(localOpts.hint as string[]);
+      if (cliHints === false) { process.exitCode = 1; return; }
+      const mergedHints = cliHints
+        ? { ...(resolvedHints ?? {}), ...cliHints }
+        : resolvedHints;
+
       await runCategories(ctx, resolvedCategories, {
         bet: betFromNext ?? (localOpts.bet as string | undefined),
         pin: pin.length > 0 ? pin : undefined,
         dryRun: localOpts.dryRun,
         saveKata: localOpts.saveKata,
+        saveKataHints: localOpts.hint as string[] | undefined,
         katakaId: localOpts.kataka as string | undefined,
         yolo: localOpts.yolo as boolean | undefined,
         bridgeGaps: localOpts.bridgeGaps as boolean | undefined,
+        flavorHints: mergedHints,
       });
     }));
 }
@@ -233,12 +248,16 @@ interface RunOptions {
   dryRun?: boolean;
   json?: boolean;
   saveKata?: string;
+  /** Raw --hint flag values to persist with --save-kata. */
+  saveKataHints?: string[];
   /** ID of the kataka driving this run. Validated against KatakaRegistry before execution. */
   katakaId?: string;
   /** Skip confidence gate checks — all decisions proceed without human approval. */
   yolo?: boolean;
   /** Capture identified gaps as step-tier learnings; block on high-severity gaps. */
   bridgeGaps?: boolean;
+  /** Parsed flavor hints (from saved kata or --hint flags). */
+  flavorHints?: Record<string, FlavorHint>;
 }
 
 async function runCategories(
@@ -295,6 +314,7 @@ async function runCategories(
       dryRun: opts.dryRun,
       katakaId: opts.katakaId,
       yolo: opts.yolo,
+      flavorHints: opts.flavorHints,
     });
 
     // --bridge-gaps: evaluate identified gaps
@@ -334,7 +354,7 @@ async function runCategories(
     }
   } else {
     // Multi-stage pipeline
-    const result = await runner.runPipeline(categories, { bet, dryRun: opts.dryRun, katakaId: opts.katakaId, yolo: opts.yolo });
+    const result = await runner.runPipeline(categories, { bet, dryRun: opts.dryRun, katakaId: opts.katakaId, yolo: opts.yolo, flavorHints: opts.flavorHints });
 
     // --bridge-gaps: evaluate identified gaps across all stages
     if (opts.bridgeGaps) {
@@ -385,7 +405,7 @@ async function runCategories(
 
   // Save kata if requested
   if (opts.saveKata && !opts.dryRun) {
-    saveSavedKata(ctx.kataDir, opts.saveKata, categories);
+    saveSavedKata(ctx.kataDir, opts.saveKata, categories, opts.flavorHints);
     ProjectStateUpdater.markDiscovery(projectStateFile, 'savedKataSequence');
     if (!isJson) console.log(`\nKata "${opts.saveKata}" saved.`);
   }
@@ -482,7 +502,7 @@ function listSavedKatas(kataDir: string): Array<{ name: string; stages: StageCat
     .filter((k): k is NonNullable<typeof k> => k !== null);
 }
 
-function loadSavedKata(kataDir: string, name: string): { stages: StageCategory[] } {
+function loadSavedKata(kataDir: string, name: string): { stages: StageCategory[]; flavorHints?: Record<string, FlavorHint> } {
   assertValidKataName(name);
   const filePath = join(katasDir(kataDir), `${name}.json`);
   if (!existsSync(filePath)) {
@@ -507,12 +527,53 @@ function loadSavedKata(kataDir: string, name: string): { stages: StageCategory[]
   }
 }
 
-function saveSavedKata(kataDir: string, name: string, stages: StageCategory[]): void {
+function saveSavedKata(kataDir: string, name: string, stages: StageCategory[], flavorHints?: Record<string, FlavorHint>): void {
   assertValidKataName(name);
   const dir = katasDir(kataDir);
   mkdirSync(dir, { recursive: true });
-  const kata = SavedKataSchema.parse({ name, stages });
+  const kata = SavedKataSchema.parse({ name, stages, flavorHints });
   writeFileSync(join(dir, `${name}.json`), JSON.stringify(kata, null, 2), 'utf-8');
+}
+
+/**
+ * Parse --hint flag values into a flavorHints map.
+ * Format: stage:flavor1,flavor2[:strategy]
+ * Returns undefined if no hints, false on parse error.
+ */
+function parseHintFlags(hints: string[]): Record<string, FlavorHint> | undefined | false {
+  if (!hints || hints.length === 0) return undefined;
+  const result: Record<string, FlavorHint> = {};
+  const validCategories = StageCategorySchema.options;
+
+  for (const spec of hints) {
+    const parts = spec.split(':');
+    if (parts.length < 2 || parts.length > 3) {
+      console.error(`Error: invalid --hint format "${spec}". Expected: stage:flavor1,flavor2[:strategy]`);
+      return false;
+    }
+
+    const stage = parts[0]!;
+    if (!validCategories.includes(stage as typeof validCategories[number])) {
+      console.error(`Error: invalid stage category "${stage}" in --hint. Valid: ${validCategories.join(', ')}`);
+      return false;
+    }
+
+    const flavors = parts[1]!.split(',').map((s) => s.trim()).filter(Boolean);
+    if (flavors.length === 0) {
+      console.error(`Error: --hint "${spec}" has no flavor names.`);
+      return false;
+    }
+
+    const strategy = parts[2] as 'prefer' | 'restrict' | undefined;
+    if (strategy && strategy !== 'prefer' && strategy !== 'restrict') {
+      console.error(`Error: invalid strategy "${strategy}" in --hint. Valid: prefer, restrict`);
+      return false;
+    }
+
+    result[stage] = { recommended: flavors, strategy: strategy ?? 'prefer' };
+  }
+
+  return result;
 }
 
 function deleteSavedKata(kataDir: string, name: string): void {

@@ -229,5 +229,29 @@ describe('StepFlavorExecutor', () => {
       const firstCall = vi.mocked(adapter.execute).mock.calls[0]![0];
       expect(firstCall.prompt).toContain('Learnings');
     });
+
+    it('includes activeKatakaId in manifest metadata when set', async () => {
+      const adapter = makeMockAdapter();
+      const deps = makeDeps({
+        adapterResolver: { resolve: vi.fn().mockReturnValue(adapter) },
+      });
+      const executor = new StepFlavorExecutor(deps);
+      const katakaId = '00000000-0000-4000-a000-000000000001';
+      const context = makeContext({ activeKatakaId: katakaId });
+      await executor.execute(makeFlavor(), context);
+      const firstCall = vi.mocked(adapter.execute).mock.calls[0]![0];
+      expect(firstCall.context.metadata.katakaId).toBe(katakaId);
+    });
+
+    it('omits katakaId from manifest metadata when not set', async () => {
+      const adapter = makeMockAdapter();
+      const deps = makeDeps({
+        adapterResolver: { resolve: vi.fn().mockReturnValue(adapter) },
+      });
+      const executor = new StepFlavorExecutor(deps);
+      await executor.execute(makeFlavor(), makeContext());
+      const firstCall = vi.mocked(adapter.execute).mock.calls[0]![0];
+      expect(firstCall.context.metadata.katakaId).toBeUndefined();
+    });
   });
 });

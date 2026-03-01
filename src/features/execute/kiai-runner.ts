@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import type { StageCategory, Stage } from '@domain/types/stage.js';
+import type { FlavorHint } from '@domain/types/saved-kata.js';
 import type { IFlavorRegistry } from '@domain/ports/flavor-registry.js';
 import type { IDecisionRegistry } from '@domain/ports/decision-registry.js';
 import type { IStageRuleRegistry } from '@domain/ports/rule-registry.js';
@@ -34,6 +35,8 @@ export interface KiaiRunOptions {
   katakaId?: string;
   /** Skip confidence gate checks — sets confidenceThreshold to 0 so no decision requires approval. */
   yolo?: boolean;
+  /** Per-stage flavor hints from a SavedKata — keyed by stage category. */
+  flavorHints?: Record<string, FlavorHint>;
 }
 
 export interface ArtifactEntry {
@@ -65,10 +68,13 @@ export class KiaiRunner {
     options: KiaiRunOptions = {},
   ): Promise<OrchestratorResult> {
     // Build context
+    const flavorHint = options.flavorHints?.[stageCategory];
     const context: OrchestratorContext = {
       availableArtifacts: this.scanAvailableArtifacts(),
       bet: options.bet,
       learnings: [],
+      flavorHint,
+      activeKatakaId: options.katakaId,
     };
 
     // Build Stage object
@@ -149,7 +155,7 @@ export class KiaiRunner {
       ruleRegistry: this.deps.ruleRegistry,
     });
 
-    const result = await metaOrchestrator.runPipeline(categories, options.bet, { yolo: options.yolo });
+    const result = await metaOrchestrator.runPipeline(categories, options.bet, { yolo: options.yolo, flavorHints: options.flavorHints });
 
     // Persist each stage artifact and record analytics
     for (const stageResult of result.stageResults) {

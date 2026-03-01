@@ -182,7 +182,9 @@ export {
 
 // Saved kata types
 export {
+  FlavorHintSchema,
   SavedKataSchema,
+  type FlavorHint,
   type SavedKata,
 } from './saved-kata.js';
 
