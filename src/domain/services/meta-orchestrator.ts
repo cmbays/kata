@@ -34,7 +34,7 @@ export class MetaOrchestrator implements IMetaOrchestrator {
   async runPipeline(
     categories: StageCategory[],
     bet?: Record<string, unknown>,
-    options?: { yolo?: boolean; flavorHints?: Record<string, FlavorHint> },
+    options?: { yolo?: boolean; flavorHints?: Record<string, FlavorHint>; katakaId?: string },
   ): Promise<PipelineOrchestrationResult> {
     if (categories.length === 0) {
       throw new OrchestratorError(
@@ -80,6 +80,7 @@ export class MetaOrchestrator implements IMetaOrchestrator {
         bet,
         learnings: [],
         flavorHint,
+        activeKatakaId: options?.katakaId,
       };
 
       // Create and run the stage orchestrator

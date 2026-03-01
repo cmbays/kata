@@ -78,10 +78,10 @@ export class StepFlavorExecutor implements IFlavorExecutor {
           pipelineId,
           stageIndex: 0,
           metadata: {
+            ...(context.bet ?? {}),
             flavorName: flavor.name,
             stepName: stepRef.stepName,
             ...(context.activeKatakaId ? { katakaId: context.activeKatakaId } : {}),
-            ...(context.bet ?? {}),
           },
         },
         learnings.length > 0 ? learnings : undefined,

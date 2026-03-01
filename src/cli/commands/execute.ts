@@ -118,7 +118,7 @@ export function registerExecuteCommands(program: Command): void {
     .option('--kataka <id>', 'Kataka (agent) ID driving this run — stored in artifact metadata and attributed to observations')
     .option('--yolo', 'Skip confidence gate checks — all decisions proceed without human approval')
     .option('--bridge-gaps', 'Capture identified gaps as step-tier learnings; block on high-severity gaps')
-    .option('--hint <spec>', 'Flavor hint for --save-kata: stage:flavor1,flavor2[:strategy] (can be repeated)', collect, [])
+    .option('--hint <spec>', 'Per-stage flavor hint: stage:flavor1,flavor2[:strategy] — guides orchestrator selection (can be repeated)', collect, [])
     .option('--next', 'Auto-select the first pending bet from the active cycle as the run target')
     .action(withCommandContext(async (ctx, categories: string[]) => {
       const localOpts = ctx.cmd.opts();
@@ -180,8 +180,9 @@ export function registerExecuteCommands(program: Command): void {
               const kataData = loadSavedKata(ctx.kataDir, pendingBet.kata.pattern);
               categoriesFromNext = kataData.stages;
               hintsFromNext = kataData.flavorHints;
-            } catch {
-              console.error(`Error: Named kata "${pendingBet.kata.pattern}" not found or is malformed. Check .kata/katas/${pendingBet.kata.pattern}.json.`);
+            } catch (err) {
+              const detail = err instanceof Error ? err.message : String(err);
+              console.error(`Error loading kata "${pendingBet.kata.pattern}": ${detail}`);
               return;
             }
           } else {
@@ -229,7 +230,6 @@ export function registerExecuteCommands(program: Command): void {
         pin: pin.length > 0 ? pin : undefined,
         dryRun: localOpts.dryRun,
         saveKata: localOpts.saveKata,
-        saveKataHints: localOpts.hint as string[] | undefined,
         katakaId: localOpts.kataka as string | undefined,
         yolo: localOpts.yolo as boolean | undefined,
         bridgeGaps: localOpts.bridgeGaps as boolean | undefined,
@@ -248,8 +248,6 @@ interface RunOptions {
   dryRun?: boolean;
   json?: boolean;
   saveKata?: string;
-  /** Raw --hint flag values to persist with --save-kata. */
-  saveKataHints?: string[];
   /** ID of the kataka driving this run. Validated against KatakaRegistry before execution. */
   katakaId?: string;
   /** Skip confidence gate checks — all decisions proceed without human approval. */

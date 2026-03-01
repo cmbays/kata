@@ -37,6 +37,6 @@ export interface IMetaOrchestrator {
   runPipeline(
     categories: StageCategory[],
     bet?: Record<string, unknown>,
-    options?: { yolo?: boolean; flavorHints?: Record<string, FlavorHint> },
+    options?: { yolo?: boolean; flavorHints?: Record<string, FlavorHint>; katakaId?: string },
   ): Promise<PipelineOrchestrationResult>;
 }

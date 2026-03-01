@@ -350,6 +350,17 @@ export class BaseStageOrchestrator implements IStageOrchestrator {
     let scoringCandidates = candidates;
     if (hint) {
       const recommended = new Set(hint.recommended);
+
+      // Warn about recommended flavors not found among candidates
+      for (const rec of hint.recommended) {
+        if (!candidates.some((f) => f.name === rec)) {
+          logger.warn(
+            `Orchestrator: flavorHint recommends "${rec}" for stage "${this.stageCategory}" ` +
+              `but no candidate with that name exists. Check for typos.`,
+          );
+        }
+      }
+
       if (hint.strategy === 'restrict') {
         // ONLY recommended flavors are allowed
         scoringCandidates = candidates.filter((f) => recommended.has(f.name));

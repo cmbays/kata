@@ -9,7 +9,7 @@ export const FlavorHintSchema = z.object({
   /** Recommended flavor names for this stage. Orchestrator filters to these. */
   recommended: z.array(z.string().min(1)).min(1),
   /** How to use the recommendations:
-   *  - "prefer" (default): score only recommended flavors first, but allow fallback to others
+   *  - "prefer" (default): apply a score boost (+0.2) to recommended flavors; all others still scored normally
    *  - "restrict": ONLY allow recommended flavors, no fallback
    */
   strategy: z.enum(['prefer', 'restrict']).default('prefer'),

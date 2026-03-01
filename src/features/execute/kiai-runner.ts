@@ -131,8 +131,10 @@ export class KiaiRunner {
         executionMode: result.executionMode,
         decisionConfidences: result.decisions.map((d) => d.confidence),
       });
-    } catch {
-      // Analytics failures must never crash a successful orchestration
+    } catch (err) {
+      logger.debug('Analytics recordEvent failed — non-fatal, continuing.', {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
 
     return result;
@@ -155,7 +157,7 @@ export class KiaiRunner {
       ruleRegistry: this.deps.ruleRegistry,
     });
 
-    const result = await metaOrchestrator.runPipeline(categories, options.bet, { yolo: options.yolo, flavorHints: options.flavorHints });
+    const result = await metaOrchestrator.runPipeline(categories, options.bet, { yolo: options.yolo, flavorHints: options.flavorHints, katakaId: options.katakaId });
 
     // Persist each stage artifact and record analytics
     for (const stageResult of result.stageResults) {
@@ -177,8 +179,10 @@ export class KiaiRunner {
           executionMode: stageResult.executionMode,
           decisionConfidences: stageResult.decisions.map((d) => d.confidence),
         });
-      } catch {
-        // Analytics failures must never crash a successful orchestration
+      } catch (err) {
+        logger.debug('Analytics recordEvent failed — non-fatal, continuing.', {
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
     }
 
