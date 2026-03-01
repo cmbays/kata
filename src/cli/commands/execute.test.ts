@@ -514,6 +514,18 @@ describe('registerExecuteCommands', () => {
     });
   });
 
+  // ---- --bridge-gaps ----
+
+  describe('--bridge-gaps', () => {
+    it('registers --bridge-gaps option on the execute command', () => {
+      const program = createProgram();
+      const executeCmd = program.commands.find((c) => c.name() === 'execute');
+      expect(executeCmd).toBeDefined();
+      const bridgeGapsOpt = executeCmd!.options.find((o) => o.long === '--bridge-gaps');
+      expect(bridgeGapsOpt).toBeDefined();
+    });
+  });
+
   // ---- kiai alias ----
 
   describe('kiai alias', () => {

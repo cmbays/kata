@@ -272,6 +272,27 @@ export {
   type Kataka,
 } from './kataka.js';
 
+// Kataka confidence types (Wave J)
+export {
+  KatakaConfidenceProfileSchema,
+  type KatakaConfidenceProfile,
+} from './kataka-confidence.js';
+
+// Belt types (Wave J)
+export {
+  BeltLevel,
+  BeltDiscoverySchema,
+  ProjectStateSchema,
+  BELT_KANJI,
+  BELT_HEADLINE,
+  BELT_COLOR,
+  ANSI_RESET,
+  computeBelt,
+  type BeltDiscovery,
+  type ProjectState,
+  type BeltSnapshot,
+} from './belt.js';
+
 // Dojo types
 export {
   DojoMood,

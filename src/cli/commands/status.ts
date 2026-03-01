@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import type { Command } from 'commander';
 import { CycleManager } from '@domain/services/cycle-manager.js';
 import { KnowledgeStore } from '@infra/knowledge/knowledge-store.js';
@@ -5,6 +6,15 @@ import { UsageAnalytics } from '@infra/tracking/usage-analytics.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
 import { listRecentArtifacts } from '@features/execute/kiai-runner.js';
 import { StageCategorySchema, type StageCategory } from '@domain/types/stage.js';
+import {
+  BELT_KANJI,
+  BELT_HEADLINE,
+  BELT_COLOR,
+  ANSI_RESET,
+  BeltLevel,
+  type ProjectState,
+} from '@domain/types/belt.js';
+import { loadProjectState } from '@features/belt/belt-calculator.js';
 import { withCommandContext, kataDirPath } from '@cli/utils.js';
 import { getLexicon, cap } from '@cli/lexicon.js';
 
@@ -37,16 +47,33 @@ export function handleStatus(ctx: { kataDir: string; globalOpts: { json?: boolea
     knowledgeStats = knowledgeStore.stats();
   } catch { /* degraded: knowledge section unavailable */ }
 
+  // Belt / project state
+  let projectState: ProjectState | null = null;
+  try {
+    const stateFile = join(ctx.kataDir, 'project-state.json');
+    if (JsonStore.exists(stateFile)) {
+      projectState = loadProjectState(stateFile);
+    }
+  } catch { /* degraded: belt section unavailable */ }
+
   if (isJson) {
+    const beltJson = projectState ? {
+      level: projectState.currentBelt,
+      earnedAt: projectState.earnedAt ?? null,
+      headline: BELT_HEADLINE[projectState.currentBelt],
+      nextLevel: getNextBeltLevel(projectState.currentBelt),
+    } : null;
     console.log(JSON.stringify({
       activeCycle: activeCycle ? { name: activeCycle.name, state: activeCycle.state, bets: activeCycle.bets.length } : null,
       recentArtifacts,
       knowledge: knowledgeStats,
+      belt: beltJson,
     }, null, 2));
     return;
   }
 
   const lex = getLexicon(ctx.globalOpts.plain);
+  const isPlain = !!ctx.globalOpts.plain;
 
   console.log('Kata Project Status');
   console.log('');
@@ -78,6 +105,130 @@ export function handleStatus(ctx: { kataDir: string; globalOpts: { json?: boolea
     console.log(`  ${cap(lex.knowledge)}: ${knowledgeStats.total} learnings (avg confidence: ${(knowledgeStats.averageConfidence * 100).toFixed(0)}%)`);
   } else {
     console.log(`  ${cap(lex.knowledge)}: no learnings captured yet`);
+  }
+
+  // Belt
+  if (projectState) {
+    console.log('');
+    const belt = projectState.currentBelt;
+    const kanji = BELT_KANJI[belt];
+    const headline = BELT_HEADLINE[belt];
+    if (isPlain) {
+      console.log(`  Belt: ${belt} (${kanji}) — ${headline}`);
+    } else {
+      console.log(`  ${BELT_COLOR[belt]}◆${ANSI_RESET} ${belt} (${kanji}) — ${headline}`);
+    }
+
+    const nextLevel = getNextBeltLevel(belt);
+    if (nextLevel) {
+      console.log('');
+      console.log(`  Next: ${nextLevel} (${BELT_KANJI[nextLevel]})`);
+      const checklist = getNextBeltChecklist(belt, projectState);
+      for (const item of checklist) {
+        const mark = item.met ? '[✓]' : '[ ]';
+        const value = item.current !== undefined ? `  (${item.current})` : '';
+        console.log(`    ${mark} ${item.label}${value}`);
+      }
+    } else {
+      console.log('  You have reached the highest rank. Your practice improves itself.');
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Belt helpers
+// ---------------------------------------------------------------------------
+
+function getNextBeltLevel(current: BeltLevel): BeltLevel | null {
+  const levels = BeltLevel.options;
+  const idx = levels.indexOf(current);
+  if (idx < levels.length - 1) return levels[idx + 1]!;
+  return null;
+}
+
+interface ChecklistItem {
+  label: string;
+  met: boolean;
+  current?: number | string;
+}
+
+function getNextBeltChecklist(current: BeltLevel, state: ProjectState): ChecklistItem[] {
+  const next = getNextBeltLevel(current);
+  if (!next) return [];
+
+  const d = state.discovery;
+
+  switch (next) {
+    case 'go-kyu':
+      return [
+        { label: 'Run first execution', met: d.ranFirstExecution },
+        { label: 'Complete first cycle cooldown', met: d.completedFirstCycleCooldown },
+        { label: 'Create a custom step or flavor', met: d.createdCustomStepOrFlavor },
+        { label: 'Save a kata sequence', met: d.savedKataSequence },
+      ];
+    case 'yon-kyu':
+      return [
+        { label: '3+ cycles completed', met: false },
+        { label: '6+ bets completed', met: false },
+        { label: '10+ learnings captured', met: false },
+        { label: '1+ constitutional learning', met: false },
+        { label: 'Run with --yolo', met: state.ranWithYolo },
+        { label: '5+ decision-outcome pairs', met: false },
+        { label: '2+ flavors created', met: false },
+        { label: '1+ dojo session generated', met: false },
+      ];
+    case 'san-kyu':
+      return [
+        { label: '6+ cycles completed', met: false },
+        { label: '12+ bets completed', met: false },
+        { label: '15+ learnings captured', met: false },
+        { label: '1+ strategic learning', met: false },
+        { label: '5+ prediction-outcome pairs', met: false },
+        { label: '3+ gaps identified', met: false },
+        { label: '1+ synthesis applied', met: state.synthesisAppliedCount >= 1 },
+        { label: '1+ kata saved', met: false },
+        { label: '3+ dojo sessions generated', met: false },
+      ];
+    case 'ni-kyu':
+      return [
+        { label: '10+ cycles completed', met: false },
+        { label: '20+ bets completed', met: false },
+        { label: '20+ learnings captured', met: false },
+        { label: '3+ strategic learnings', met: false },
+        { label: '5+ friction observations', met: false },
+        { label: '60%+ friction resolution rate', met: false },
+        { label: 'Cross-cycle patterns active', met: false },
+        { label: '2+ avg citations per strategic', met: false },
+        { label: '5+ dojo sessions generated', met: false },
+      ];
+    case 'ik-kyu':
+      return [
+        { label: '15+ cycles completed', met: false },
+        { label: '30+ bets completed', met: false },
+        { label: '30+ learnings captured', met: false },
+        { label: '5+ strategic learnings', met: false },
+        { label: '1+ user-created constitutional', met: false },
+        { label: '2+ domain categories', met: false },
+        { label: '2+ methodology recommendations applied', met: false },
+        { label: '10+ learning versions', met: false },
+        { label: '3+ avg citations per strategic', met: false },
+      ];
+    case 'shodan':
+      return [
+        { label: '25+ cycles completed', met: false },
+        { label: '50+ bets completed', met: false },
+        { label: '40+ learnings captured', met: false },
+        { label: '8+ strategic learnings', met: false },
+        { label: '80%+ calibration accuracy', met: false },
+        { label: '75%+ friction resolution rate', met: false },
+        { label: '10+ gaps closed', met: state.gapsClosedCount >= 10 },
+        { label: '5+ avg citations per strategic', met: false },
+        { label: '2+ methodology recommendations applied', met: false },
+        { label: '20+ learning versions', met: false },
+        { label: '10+ dojo sessions generated', met: false },
+      ];
+    default:
+      return [];
   }
 }
 

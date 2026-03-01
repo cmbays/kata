@@ -14,6 +14,8 @@ import { AdapterResolver } from '@infra/execution/adapter-resolver.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
 import { StepFlavorExecutor } from '@features/execute/step-flavor-executor.js';
 import { KiaiRunner } from '@features/execute/kiai-runner.js';
+import { GapBridger } from '@features/execute/gap-bridger.js';
+import { KnowledgeStore } from '@infra/knowledge/knowledge-store.js';
 import { UsageAnalytics } from '@infra/tracking/usage-analytics.js';
 import { KATA_DIRS } from '@shared/constants/paths.js';
 import { handleStatus, handleStats, parseCategoryFilter } from './status.js';
@@ -113,6 +115,7 @@ export function registerExecuteCommands(program: Command): void {
     .option('--delete-kata <name>', 'Delete a saved kata and exit')
     .option('--kataka <id>', 'Kataka (agent) ID driving this run — stored in artifact metadata and attributed to observations')
     .option('--yolo', 'Skip confidence gate checks — all decisions proceed without human approval')
+    .option('--bridge-gaps', 'Capture identified gaps as step-tier learnings; block on high-severity gaps')
     .action(withCommandContext(async (ctx, categories: string[]) => {
       const localOpts = ctx.cmd.opts();
 
@@ -169,6 +172,7 @@ export function registerExecuteCommands(program: Command): void {
         saveKata: localOpts.saveKata,
         katakaId: localOpts.kataka as string | undefined,
         yolo: localOpts.yolo as boolean | undefined,
+        bridgeGaps: localOpts.bridgeGaps as boolean | undefined,
       });
     }));
 }
@@ -187,6 +191,8 @@ interface RunOptions {
   katakaId?: string;
   /** Skip confidence gate checks — all decisions proceed without human approval. */
   yolo?: boolean;
+  /** Capture identified gaps as step-tier learnings; block on high-severity gaps. */
+  bridgeGaps?: boolean;
 }
 
 async function runCategories(
@@ -240,6 +246,22 @@ async function runCategories(
       yolo: opts.yolo,
     });
 
+    // --bridge-gaps: evaluate identified gaps
+    if (opts.bridgeGaps && result.gaps && result.gaps.length > 0) {
+      const store = new KnowledgeStore(kataDirPath(ctx.kataDir, 'knowledge'));
+      const bridger = new GapBridger({ knowledgeStore: store });
+      const { blocked, bridged } = bridger.bridge(result.gaps);
+      if (blocked.length > 0) {
+        console.error(`[kata] Blocked by ${blocked.length} high-severity gap(s):`);
+        for (const g of blocked) console.error(`  • ${g.description}`);
+        process.exitCode = 1;
+        return;
+      }
+      if (bridged.length > 0) {
+        console.log(`[kata] Captured ${bridged.length} gap(s) as step-tier learnings.`);
+      }
+    }
+
     if (isJson) {
       console.log(JSON.stringify(result, null, 2));
     } else {
@@ -261,6 +283,25 @@ async function runCategories(
   } else {
     // Multi-stage pipeline
     const result = await runner.runPipeline(categories, { bet, dryRun: opts.dryRun, katakaId: opts.katakaId, yolo: opts.yolo });
+
+    // --bridge-gaps: evaluate identified gaps across all stages
+    if (opts.bridgeGaps) {
+      const allGaps = result.stageResults.flatMap((sr) => sr.gaps ?? []);
+      if (allGaps.length > 0) {
+        const store = new KnowledgeStore(kataDirPath(ctx.kataDir, 'knowledge'));
+        const bridger = new GapBridger({ knowledgeStore: store });
+        const { blocked, bridged } = bridger.bridge(allGaps);
+        if (blocked.length > 0) {
+          console.error(`[kata] Blocked by ${blocked.length} high-severity gap(s):`);
+          for (const g of blocked) console.error(`  • ${g.description}`);
+          process.exitCode = 1;
+          return;
+        }
+        if (bridged.length > 0) {
+          console.log(`[kata] Captured ${bridged.length} gap(s) as step-tier learnings.`);
+        }
+      }
+    }
 
     if (isJson) {
       console.log(JSON.stringify(result, null, 2));
