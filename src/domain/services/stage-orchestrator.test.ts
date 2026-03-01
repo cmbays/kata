@@ -1267,4 +1267,216 @@ describe('createStageOrchestrator factory', () => {
       expect(result.reflection!.overallQuality).toBe('good');
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // FlavorHint integration
+  // ---------------------------------------------------------------------------
+
+  describe('flavorHint — prefer strategy', () => {
+    it('boosts recommended flavors — they get a higher score than without hint', async () => {
+      // Use BaseStageOrchestrator directly (scores 0.5 without vocabulary — room for boost)
+      const flavors = [makeFlavor('flavor-a'), makeFlavor('flavor-b')];
+      const deps = makeDeps({ flavorRegistry: makeFlavorRegistry(flavors) });
+      const config = { type: 'build' as const, confidenceThreshold: 0.7, maxParallelFlavors: 5 };
+
+      // Without hint — both score 0.5 (no vocabulary)
+      const baseOrch = new BaseStageOrchestrator('build', deps, config);
+      const baseResult = await baseOrch.run(
+        makeStage({ availableFlavors: ['flavor-a', 'flavor-b'] }),
+        makeContext(),
+      );
+      const baseScoreB = baseResult.matchReports!.find((r) => r.flavorName === 'flavor-b')!.score;
+
+      // With hint boosting flavor-b
+      const hintOrch = new BaseStageOrchestrator('build', deps, config);
+      const hintResult = await hintOrch.run(
+        makeStage({ availableFlavors: ['flavor-a', 'flavor-b'] }),
+        makeContext({
+          flavorHint: {
+            recommended: ['flavor-b'],
+            strategy: 'prefer',
+          },
+        }),
+      );
+      const hintScoreB = hintResult.matchReports!.find((r) => r.flavorName === 'flavor-b')!.score;
+
+      expect(hintScoreB).toBeGreaterThan(baseScoreB);
+    });
+
+    it('still allows non-recommended flavors as fallback', async () => {
+      const flavors = [makeFlavor('typescript-feature'), makeFlavor('bug-fix')];
+      const deps = makeDeps({ flavorRegistry: makeFlavorRegistry(flavors) });
+      const orch = makeOrchestrator(deps);
+
+      const result = await orch.run(
+        makeStage(),
+        makeContext({
+          flavorHint: {
+            recommended: ['bug-fix'],
+            strategy: 'prefer',
+          },
+        }),
+      );
+
+      // typescript-feature should still appear in match reports (not excluded)
+      expect(result.matchReports).toBeDefined();
+      const tsReport = result.matchReports!.find((r) => r.flavorName === 'typescript-feature');
+      expect(tsReport).toBeDefined();
+    });
+
+    it('match report reasoning mentions hint boost for recommended flavors', async () => {
+      const flavors = [makeFlavor('typescript-feature'), makeFlavor('bug-fix')];
+      const deps = makeDeps({ flavorRegistry: makeFlavorRegistry(flavors) });
+      const orch = makeOrchestrator(deps);
+
+      const result = await orch.run(
+        makeStage(),
+        makeContext({
+          flavorHint: {
+            recommended: ['bug-fix'],
+            strategy: 'prefer',
+          },
+        }),
+      );
+
+      const bugReport = result.matchReports!.find((r) => r.flavorName === 'bug-fix');
+      expect(bugReport!.reasoning).toContain('Hint boost');
+    });
+  });
+
+  describe('flavorHint — restrict strategy', () => {
+    it('excludes non-recommended flavors', async () => {
+      const flavors = [makeFlavor('typescript-feature'), makeFlavor('bug-fix')];
+      const deps = makeDeps({ flavorRegistry: makeFlavorRegistry(flavors) });
+      const orch = makeOrchestrator(deps);
+
+      const result = await orch.run(
+        makeStage(),
+        makeContext({
+          flavorHint: {
+            recommended: ['bug-fix'],
+            strategy: 'restrict',
+          },
+        }),
+      );
+
+      expect(result.selectedFlavors).toContain('bug-fix');
+      expect(result.selectedFlavors).not.toContain('typescript-feature');
+    });
+
+    it('throws when no recommended flavors are available', async () => {
+      const flavors = [makeFlavor('typescript-feature'), makeFlavor('bug-fix')];
+      const deps = makeDeps({ flavorRegistry: makeFlavorRegistry(flavors) });
+      const orch = makeOrchestrator(deps);
+
+      await expect(
+        orch.run(
+          makeStage(),
+          makeContext({
+            flavorHint: {
+              recommended: ['nonexistent-flavor'],
+              strategy: 'restrict',
+            },
+          }),
+        ),
+      ).rejects.toThrow(OrchestratorError);
+    });
+
+    it('does not apply hint boost in restrict mode', async () => {
+      const flavors = [makeFlavor('typescript-feature'), makeFlavor('bug-fix')];
+      const deps = makeDeps({ flavorRegistry: makeFlavorRegistry(flavors) });
+      const orch = makeOrchestrator(deps);
+
+      const result = await orch.run(
+        makeStage(),
+        makeContext({
+          flavorHint: {
+            recommended: ['bug-fix'],
+            strategy: 'restrict',
+          },
+        }),
+      );
+
+      const bugReport = result.matchReports!.find((r) => r.flavorName === 'bug-fix');
+      // In restrict mode, no "Hint boost" since all candidates are already recommended
+      expect(bugReport!.reasoning).not.toContain('Hint boost');
+    });
+  });
+
+  describe('flavorHint — no hint', () => {
+    it('behaves identically to pre-hint behavior when no hint is set', async () => {
+      const flavors = [makeFlavor('typescript-feature'), makeFlavor('bug-fix')];
+      const deps = makeDeps({ flavorRegistry: makeFlavorRegistry(flavors) });
+      const orch = makeOrchestrator(deps);
+
+      const result = await orch.run(makeStage(), makeContext());
+
+      // Both flavors should be scored without any hint boost
+      expect(result.matchReports).toBeDefined();
+      expect(result.matchReports!.length).toBe(2);
+      for (const report of result.matchReports!) {
+        expect(report.reasoning).not.toContain('Hint boost');
+      }
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Kataka attribution cascading
+  // ---------------------------------------------------------------------------
+
+  describe('kataka attribution cascading', () => {
+    it('flavor.kataka wins over context.activeKatakaId', async () => {
+      const flavorKatakaId = '00000000-0000-4000-a000-000000000001';
+      const runKatakaId = '00000000-0000-4000-a000-000000000002';
+
+      const flavorWithKataka: Flavor = {
+        ...makeFlavor('bug-fix'),
+        kataka: flavorKatakaId,
+      };
+      const deps = makeDeps({ flavorRegistry: makeFlavorRegistry([makeFlavor('typescript-feature'), flavorWithKataka]) });
+      const orch = makeOrchestrator(deps);
+
+      await orch.run(
+        makeStage({ pinnedFlavors: ['bug-fix'] }),
+        makeContext({ activeKatakaId: runKatakaId }),
+      );
+
+      // The executor should have been called with the flavor's kataka, not the run-level one
+      const executorCalls = vi.mocked(deps.executor.execute).mock.calls;
+      const bugFixCall = executorCalls.find(([f]) => f.name === 'bug-fix');
+      expect(bugFixCall).toBeDefined();
+      expect(bugFixCall![1].activeKatakaId).toBe(flavorKatakaId);
+    });
+
+    it('falls back to context.activeKatakaId when flavor has no kataka', async () => {
+      const runKatakaId = '00000000-0000-4000-a000-000000000002';
+
+      const flavors = [makeFlavor('typescript-feature'), makeFlavor('bug-fix')];
+      const deps = makeDeps({ flavorRegistry: makeFlavorRegistry(flavors) });
+      const orch = makeOrchestrator(deps);
+
+      await orch.run(
+        makeStage({ pinnedFlavors: ['bug-fix'] }),
+        makeContext({ activeKatakaId: runKatakaId }),
+      );
+
+      const executorCalls = vi.mocked(deps.executor.execute).mock.calls;
+      const bugFixCall = executorCalls.find(([f]) => f.name === 'bug-fix');
+      expect(bugFixCall).toBeDefined();
+      expect(bugFixCall![1].activeKatakaId).toBe(runKatakaId);
+    });
+
+    it('activeKatakaId is undefined when neither flavor nor context sets it', async () => {
+      const flavors = [makeFlavor('typescript-feature'), makeFlavor('bug-fix')];
+      const deps = makeDeps({ flavorRegistry: makeFlavorRegistry(flavors) });
+      const orch = makeOrchestrator(deps);
+
+      await orch.run(makeStage(), makeContext());
+
+      const executorCalls = vi.mocked(deps.executor.execute).mock.calls;
+      for (const [, ctx] of executorCalls) {
+        expect(ctx.activeKatakaId).toBeUndefined();
+      }
+    });
+  });
 });

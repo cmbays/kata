@@ -1,4 +1,5 @@
 import type { StageCategory } from '@domain/types/stage.js';
+import type { FlavorHint } from '@domain/types/saved-kata.js';
 import type { OrchestratorResult } from './stage-orchestrator.js';
 import type { ReflectionResult } from '@domain/types/orchestration.js';
 
@@ -36,6 +37,6 @@ export interface IMetaOrchestrator {
   runPipeline(
     categories: StageCategory[],
     bet?: Record<string, unknown>,
-    options?: { yolo?: boolean },
+    options?: { yolo?: boolean; flavorHints?: Record<string, FlavorHint>; katakaId?: string },
   ): Promise<PipelineOrchestrationResult>;
 }

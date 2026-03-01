@@ -642,7 +642,7 @@ describe('registerExecuteCommands', () => {
       await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', '--next']);
 
       const errorOutput = errorSpy.mock.calls.map((c) => c[0]).join('\n');
-      expect(errorOutput).toContain('"nonexistent" not found or is malformed');
+      expect(errorOutput).toContain('Error loading kata "nonexistent"');
       expect(mockRunStage).not.toHaveBeenCalled();
       expect(mockRunPipeline).not.toHaveBeenCalled();
     });
