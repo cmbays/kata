@@ -29,9 +29,9 @@ export function registerLearningReviewCommand(knowledge: Command): void {
     .action(withCommandContext(async (ctx) => {
       const localOpts = ctx.cmd.opts();
 
-      // Load execution history
+      // Load execution history — suppress warnings for legacy pre-schema files (#238)
       const historyDir = kataDirPath(ctx.kataDir, 'history');
-      const history = JsonStore.list(historyDir, ExecutionHistoryEntrySchema);
+      const history = JsonStore.list(historyDir, ExecutionHistoryEntrySchema, { warnOnInvalid: false });
 
       if (history.length === 0) {
         console.log('No execution history found. Run some flows first to generate patterns.');

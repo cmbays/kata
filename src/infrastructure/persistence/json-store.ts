@@ -84,12 +84,19 @@ export const JsonStore = {
 
   /**
    * Read all .json files in a directory and validate each against schema.
-   * Skips files that fail validation (logs warning).
+   * Skips files that fail validation.
+   *
+   * @param options.warnOnInvalid - When false, downgrades validation-failure
+   *   log messages from `warn` to `debug`. Use this for directories that may
+   *   contain legacy/pre-schema files (e.g. `.kata/history/`) where stale files
+   *   are expected and noise-free output is preferred. Defaults to `true`.
    */
-  list<T>(dir: string, schema: z.ZodType<T>): T[] {
+  list<T>(dir: string, schema: z.ZodType<T>, options?: { warnOnInvalid?: boolean }): T[] {
     if (!existsSync(dir)) {
       return [];
     }
+
+    const warnOnInvalid = options?.warnOnInvalid ?? true;
 
     let files: string[];
     try {
@@ -104,11 +111,16 @@ export const JsonStore = {
       try {
         results.push(JsonStore.read(join(dir, file), schema));
       } catch (err) {
-        logger.warn(`Skipping invalid file "${file}" in ${dir}`, {
+        const logData = {
           file,
           dir,
           error: err instanceof Error ? err.message : String(err),
-        });
+        };
+        if (warnOnInvalid) {
+          logger.warn(`Skipping invalid file "${file}" in ${dir}`, logData);
+        } else {
+          logger.debug(`Skipping invalid file "${file}" in ${dir}`, logData);
+        }
       }
     }
 

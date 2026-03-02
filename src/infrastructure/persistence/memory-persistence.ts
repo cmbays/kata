@@ -36,7 +36,8 @@ export class MemoryPersistence implements IPersistence {
     return this.store.has(filePath);
   }
 
-  list<T>(dirPath: string, schema: z.ZodType<T>): T[] {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  list<T>(dirPath: string, schema: z.ZodType<T>, _options?: { warnOnInvalid?: boolean }): T[] {
     const prefix = dirPath.endsWith('/') ? dirPath : `${dirPath}/`;
     const results: T[] = [];
     for (const [key, value] of this.store) {

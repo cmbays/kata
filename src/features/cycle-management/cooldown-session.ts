@@ -881,9 +881,19 @@ export class CooldownSession {
 
   /**
    * Load execution history entries associated with this cycle.
+   *
+   * Uses warnOnInvalid: false to suppress validation warnings for legacy
+   * pre-schema history files that predate required fields (pipelineId,
+   * stageType, stageIndex, adapter, startedAt, completedAt). These files
+   * are expected to exist in long-running projects and are silently skipped
+   * rather than flooding cooldown output with noise. See issue #238.
    */
   private loadCycleHistory(cycleId: string): ExecutionHistoryEntry[] {
-    const allEntries = this.deps.persistence.list(this.deps.historyDir, ExecutionHistoryEntrySchema);
+    const allEntries = this.deps.persistence.list(
+      this.deps.historyDir,
+      ExecutionHistoryEntrySchema,
+      { warnOnInvalid: false },
+    );
     return allEntries.filter((entry) => entry.cycleId === cycleId);
   }
 
