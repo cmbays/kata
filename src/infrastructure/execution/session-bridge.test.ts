@@ -258,6 +258,49 @@ describe('SessionExecutionBridge', () => {
       expect(context).toContain("### When you're done");
       expect(context).toContain('Do NOT close the run yourself');
     });
+
+    it('should include git workflow instructions (#237)', () => {
+      const cycle = createCycle(kataDir);
+      const bridge = new SessionExecutionBridge(kataDir);
+      const prepared = bridge.prepare(cycle.bets[0]!.id);
+
+      const context = bridge.formatAgentContext(prepared);
+
+      expect(context).toContain('### Git workflow');
+      expect(context).toContain('NEVER commit directly to the `main` branch');
+      expect(context).toContain('git checkout -b');
+      expect(context).toContain(`keiko-${prepared.runId.slice(0, 8)}/`);
+      expect(context).toContain('The sensei will merge');
+    });
+
+    it('should include KATA_RUN_ID export instruction for hook detection (#237)', () => {
+      const cycle = createCycle(kataDir);
+      const bridge = new SessionExecutionBridge(kataDir);
+      const prepared = bridge.prepare(cycle.bets[0]!.id);
+
+      const context = bridge.formatAgentContext(prepared);
+
+      expect(context).toContain(`export KATA_RUN_ID=${prepared.runId}`);
+    });
+
+    it('should slugify bet name in branch suggestion (#237)', () => {
+      const betId = randomUUID();
+      createCycle(kataDir, {
+        bets: [{
+          id: betId,
+          description: 'Fix the Login Bug #42',
+          appetite: 30,
+          outcome: 'pending',
+        }],
+      });
+      const bridge = new SessionExecutionBridge(kataDir);
+      const prepared = bridge.prepare(betId);
+
+      const context = bridge.formatAgentContext(prepared);
+
+      // Bet name should be slugified: spaces → dashes, special chars removed, lowercase
+      expect(context).toContain('fix-the-login-bug-42');
+    });
   });
 
   describe('complete()', () => {

@@ -164,6 +164,19 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
       lines.push('');
     }
 
+    // Git workflow
+    lines.push('### Git workflow');
+    lines.push('You are working in a git worktree. **NEVER commit directly to the `main` branch.**');
+    lines.push('');
+    lines.push('Before your first commit, create a feature branch:');
+    lines.push(`  git checkout -b keiko-${prepared.runId.slice(0, 8)}/${prepared.betName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40)}`);
+    lines.push('');
+    lines.push('Then commit to that branch and open a PR. The sensei will merge.');
+    lines.push('');
+    lines.push('To ensure hooks can detect your agent context, set this env var in your shell before git operations:');
+    lines.push(`  export KATA_RUN_ID=${prepared.runId}`);
+    lines.push('');
+
     // Record as you work
     lines.push('### Record as you work');
     lines.push('Use these commands at natural checkpoints (not after every line of code):');
