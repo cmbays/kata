@@ -46,7 +46,7 @@ function resolveVocabularyPath(category: StageCategory, customDir?: string): str
 function loadVocabulary(category: StageCategory, customDir?: string): StageVocabulary | undefined {
   const vocabPath = resolveVocabularyPath(category, customDir);
   if (!vocabPath) {
-    logger.warn(`No vocabulary file found for category "${category}". Using default scoring.`, {
+    logger.debug(`No vocabulary file found for category "${category}". Using default scoring.`, {
       category,
     });
     return undefined;

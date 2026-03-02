@@ -423,15 +423,19 @@ function buildRunner(kataDir: string): KiaiRunner {
   const flavorRegistry = new FlavorRegistry(kataDirPath(kataDir, 'flavors'));
   const decisionRegistry = new DecisionRegistry(kataDirPath(kataDir, 'history'));
 
+  const defaultConfig = KataConfigSchema.parse({
+    methodology: 'shape-up',
+    execution: { adapter: 'manual', config: {} },
+    customStagePaths: [],
+    project: {},
+  });
+
+  const effectiveConfig = config ?? defaultConfig;
+
   const executor = new StepFlavorExecutor({
     stepRegistry,
     adapterResolver: AdapterResolver,
-    config: config ?? KataConfigSchema.parse({
-      methodology: 'shape-up',
-      execution: { adapter: 'manual', config: {} },
-      customStagePaths: [],
-      project: {},
-    }),
+    config: effectiveConfig,
   });
 
   const analytics = new UsageAnalytics(kataDir);
@@ -441,6 +445,7 @@ function buildRunner(kataDir: string): KiaiRunner {
     executor,
     kataDir,
     analytics,
+    adapterName: effectiveConfig.execution.adapter,
   });
 }
 

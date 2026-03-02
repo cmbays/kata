@@ -83,3 +83,21 @@ export class OrchestratorError extends KataError {
     this.name = 'OrchestratorError';
   }
 }
+
+export class RefNotFoundError extends KataError {
+  constructor(label: string, ref: string) {
+    super(
+      `${label.charAt(0).toUpperCase() + label.slice(1)} "${ref}" not found. Use the appropriate list command to see available ${label}s.`,
+    );
+    this.name = 'RefNotFoundError';
+  }
+}
+
+export class AmbiguousRefError extends KataError {
+  constructor(label: string, ref: string, count: number) {
+    super(
+      `Ambiguous ${label} reference "${ref}": matches ${count} ${label}s. Use more characters or the full UUID.`,
+    );
+    this.name = 'AmbiguousRefError';
+  }
+}

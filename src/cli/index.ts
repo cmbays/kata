@@ -1,4 +1,4 @@
 import { createProgram } from './program.js';
 
 const program = createProgram();
-program.parse();
+await program.parseAsync();

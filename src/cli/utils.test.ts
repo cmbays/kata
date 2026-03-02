@@ -182,6 +182,30 @@ describe('withCommandContext', () => {
     expect(process.exitCode).toBe(1);
   });
 
+  it('prints error exactly once (no duplicate from unhandled rejection)', async () => {
+    const handler = withCommandContext(async () => { throw new Error('single error'); });
+
+    const cmd = makeCmd(testDir);
+    const localOpts = {};
+    await handler(localOpts, cmd);
+
+    // Only one console.error call for the error message (not verbose, so no stack trace)
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+    expect(errorSpy).toHaveBeenCalledWith('Error: single error');
+  });
+
+  it('does not reject the returned promise on handler error', async () => {
+    const handler = withCommandContext(async () => { throw new Error('should not reject'); });
+
+    const cmd = makeCmd(testDir);
+    const localOpts = {};
+
+    // The wrapper must resolve (not reject) so Commander's parse() doesn't
+    // see a rejection that would duplicate the error output.
+    await expect(handler(localOpts, cmd)).resolves.toBeUndefined();
+    expect(process.exitCode).toBe(1);
+  });
+
   it('skips kataDir resolution when needsKataDir is false', async () => {
     let captured: CommandContext | undefined;
     const handler = withCommandContext(

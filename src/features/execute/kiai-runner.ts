@@ -1,5 +1,6 @@
 import { join } from 'node:path';
 import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import type { StageCategory, Stage } from '@domain/types/stage.js';
 import type { FlavorHint } from '@domain/types/saved-kata.js';
 import type { IFlavorRegistry } from '@domain/ports/flavor-registry.js';
@@ -11,6 +12,7 @@ import type {
   OrchestratorResult,
 } from '@domain/ports/stage-orchestrator.js';
 import type { PipelineOrchestrationResult } from '@domain/ports/meta-orchestrator.js';
+import { ExecutionHistoryEntrySchema } from '@domain/types/history.js';
 import { createStageOrchestrator } from '@domain/services/orchestrators/index.js';
 import { MetaOrchestrator } from '@domain/services/meta-orchestrator.js';
 import { KATA_DIRS } from '@shared/constants/paths.js';
@@ -25,6 +27,8 @@ export interface KiaiRunnerDeps {
   analytics?: UsageAnalytics;
   /** Optional rule registry passed to the stage orchestrator for rule-driven selection. */
   ruleRegistry?: IStageRuleRegistry;
+  /** Adapter name recorded in history entries. Defaults to 'manual'. */
+  adapterName?: string;
 }
 
 export interface KiaiRunOptions {
@@ -109,9 +113,13 @@ export class KiaiRunner {
 
     // For dry-run, we still run the orchestrator (which includes selection)
     // since the executor is what actually does real work
+    const startedAt = new Date().toISOString();
+    const startMs = Date.now();
     const result = await orchestrator.run(stage, context);
+    const completedAt = new Date().toISOString();
+    const durationMs = Date.now() - startMs;
 
-    // Persist stage artifact
+    // Persist stage artifact and history entry
     if (!options.dryRun) {
       try {
         this.persistArtifact(stageCategory, result, options);
@@ -121,6 +129,18 @@ export class KiaiRunner {
           error: err instanceof Error ? err.message : String(err),
         });
       }
+
+      this.writeHistoryEntry({
+        stageType: stageCategory,
+        stageFlavor: result.selectedFlavors.join(','),
+        stageIndex: 0,
+        artifactNames: [result.stageArtifact.name],
+        startedAt,
+        completedAt,
+        durationMs,
+        cycleId: options.bet?.cycleId as string | undefined,
+        betId: options.bet?.id as string | undefined,
+      });
     }
 
     // Record analytics event (never crash on analytics failure)
@@ -157,10 +177,21 @@ export class KiaiRunner {
       ruleRegistry: this.deps.ruleRegistry,
     });
 
+    // One pipelineId shared across all stage entries so callers can correlate them.
+    // startedAt/completedAt/durationMs are pipeline-level (not per-stage) because
+    // MetaOrchestrator runs stages sequentially in a single call; per-stage timing
+    // would require deeper refactoring and is left for a future improvement.
+    const pipelineId = randomUUID();
+    const startedAt = new Date().toISOString();
+    const startMs = Date.now();
     const result = await metaOrchestrator.runPipeline(categories, options.bet, { yolo: options.yolo, flavorHints: options.flavorHints, katakaId: options.katakaId });
+    const completedAt = new Date().toISOString();
+    const durationMs = Date.now() - startMs;
 
-    // Persist each stage artifact and record analytics
-    for (const stageResult of result.stageResults) {
+    // Persist each stage artifact, record analytics, and write history entries
+    for (let i = 0; i < result.stageResults.length; i++) {
+      const stageResult = result.stageResults[i]!;
+
       if (!options.dryRun) {
         try {
           this.persistArtifact(stageResult.stageCategory, stageResult, options);
@@ -170,6 +201,19 @@ export class KiaiRunner {
             error: err instanceof Error ? err.message : String(err),
           });
         }
+
+        this.writeHistoryEntry({
+          pipelineId,
+          stageType: stageResult.stageCategory,
+          stageFlavor: stageResult.selectedFlavors.join(','),
+          stageIndex: i,
+          artifactNames: [stageResult.stageArtifact.name],
+          startedAt,
+          completedAt,
+          durationMs,
+          cycleId: options.bet?.cycleId as string | undefined,
+          betId: options.bet?.id as string | undefined,
+        });
       }
 
       try {
@@ -194,6 +238,54 @@ export class KiaiRunner {
    */
   listRecentArtifacts(): ArtifactEntry[] {
     return listRecentArtifacts(this.deps.kataDir);
+  }
+
+  /**
+   * Write a validated ExecutionHistoryEntry to .kata/history/.
+   * Non-critical — failures are logged but never crash the caller.
+   */
+  private writeHistoryEntry(params: {
+    pipelineId?: string;
+    stageType: string;
+    stageFlavor?: string;
+    stageIndex: number;
+    artifactNames: string[];
+    startedAt: string;
+    completedAt: string;
+    durationMs: number;
+    cycleId?: string;
+    betId?: string;
+  }): void {
+    try {
+      const id = randomUUID();
+      const entry = ExecutionHistoryEntrySchema.parse({
+        id,
+        pipelineId: params.pipelineId ?? randomUUID(),
+        stageType: params.stageType,
+        stageFlavor: params.stageFlavor,
+        stageIndex: params.stageIndex,
+        adapter: this.deps.adapterName ?? 'manual',
+        artifactNames: params.artifactNames,
+        startedAt: params.startedAt,
+        completedAt: params.completedAt,
+        durationMs: params.durationMs,
+        cycleId: params.cycleId,
+        betId: params.betId,
+      });
+
+      const historyDir = join(this.deps.kataDir, KATA_DIRS.history);
+      mkdirSync(historyDir, { recursive: true });
+      writeFileSync(
+        join(historyDir, `${id}.json`),
+        JSON.stringify(entry, null, 2) + '\n',
+      );
+    } catch (err) {
+      logger.error('Failed to write history entry — cooldown will have incomplete data.', {
+        stageType: params.stageType,
+        errorType: err instanceof Error ? err.constructor.name : typeof err,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   /**
