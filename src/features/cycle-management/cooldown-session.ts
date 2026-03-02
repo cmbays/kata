@@ -239,7 +239,7 @@ export class CooldownSession {
     const incompleteRuns = this.checkIncompleteRuns(cycleId);
     if (incompleteRuns.length > 0 && !force) {
       logger.warn(
-        `Warning: ${incompleteRuns.length} run(s) are still in progress. Cooldown data may be incomplete. Use --force to proceed anyway.`,
+        `Warning: ${incompleteRuns.length} run(s) are still in progress. Cooldown data may be incomplete. Proceeding — use --force to suppress this warning.`,
       );
     }
 
@@ -387,7 +387,7 @@ export class CooldownSession {
     const incompleteRuns = this.checkIncompleteRuns(cycleId);
     if (incompleteRuns.length > 0 && !force) {
       logger.warn(
-        `Warning: ${incompleteRuns.length} run(s) are still in progress. Cooldown data may be incomplete. Use --force to proceed anyway.`,
+        `Warning: ${incompleteRuns.length} run(s) are still in progress. Cooldown data may be incomplete. Proceeding — use --force to suppress this warning.`,
       );
     }
 
