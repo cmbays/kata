@@ -765,7 +765,7 @@ export function registerCycleCommands(parent: Command): void {
           console.log(JSON.stringify({
             report: yoloResult.report,
             proposals: yoloResult.proposals,
-            synthesisProposals: yoloResult.synthesisProposals,
+            synthesisProposals: yoloResult.synthesisProposals ?? [],
             ...(synthesisError !== undefined ? { synthesisError } : {}),
           }, null, 2));
         } else {
