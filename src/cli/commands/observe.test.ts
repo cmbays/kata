@@ -322,3 +322,98 @@ describe('kata kansatsu alias', () => {
     expect(obs[0].content).toBe('via kansatsu alias');
   });
 });
+
+describe('kata observe list --all (aggregation across all levels)', () => {
+  it('aggregates observations from run, stage, flavor, and step levels', async () => {
+    const { kataDir, runsDir } = makeKataDir();
+    const runId = randomUUID();
+
+    // Write run.json with known stageSequence
+    writeRunJson(runsDir, runId);
+
+    const paths = runPaths(runsDir, runId);
+
+    // Manually write observations at each level
+    const runObs = { id: randomUUID(), type: 'insight', content: 'run-level observation', timestamp: '2026-01-01T01:00:00.000Z' };
+    const stageObs = { id: randomUUID(), type: 'decision', content: 'stage-level observation', timestamp: '2026-01-01T02:00:00.000Z' };
+    const flavorObs = { id: randomUUID(), type: 'outcome', content: 'flavor-level observation', timestamp: '2026-01-01T03:00:00.000Z' };
+    const stepObs = { id: randomUUID(), type: 'assumption', content: 'step-level observation', timestamp: '2026-01-01T04:00:00.000Z' };
+
+    JsonlStore.append(paths.observationsJsonl, runObs, ObservationSchema);
+    JsonlStore.append(paths.stageObservationsJsonl('build'), stageObs, ObservationSchema);
+    JsonlStore.append(paths.flavorObservationsJsonl('build', 'tdd'), flavorObs, ObservationSchema);
+    JsonlStore.append(paths.stepObservationsJsonl('build', 'tdd', 'write-tests'), stepObs, ObservationSchema);
+
+    const { stdout } = await runCli([
+      '--json', 'observe', 'list', '--run', runId, '--all',
+    ], join(kataDir, '..'));
+
+    const parsed = JSON.parse(stdout);
+    expect(Array.isArray(parsed)).toBe(true);
+    expect(parsed).toHaveLength(4);
+    const contents = parsed.map((o: { content: string }) => o.content);
+    expect(contents).toContain('run-level observation');
+    expect(contents).toContain('stage-level observation');
+    expect(contents).toContain('flavor-level observation');
+    expect(contents).toContain('step-level observation');
+  });
+
+  it('sorts aggregated observations by timestamp ascending', async () => {
+    const { kataDir, runsDir } = makeKataDir();
+    const runId = randomUUID();
+    writeRunJson(runsDir, runId);
+
+    const paths = runPaths(runsDir, runId);
+
+    const laterObs = { id: randomUUID(), type: 'insight', content: 'later', timestamp: '2026-01-01T02:00:00.000Z' };
+    const earlierObs = { id: randomUUID(), type: 'outcome', content: 'earlier', timestamp: '2026-01-01T01:00:00.000Z' };
+
+    // Write in reverse order to test sorting
+    JsonlStore.append(paths.stageObservationsJsonl('build'), laterObs, ObservationSchema);
+    JsonlStore.append(paths.observationsJsonl, earlierObs, ObservationSchema);
+
+    const { stdout } = await runCli([
+      '--json', 'observe', 'list', '--run', runId, '--all',
+    ], join(kataDir, '..'));
+
+    const parsed = JSON.parse(stdout) as Array<{ content: string }>;
+    expect(parsed[0].content).toBe('earlier');
+    expect(parsed[1].content).toBe('later');
+  });
+
+  it('--all can be combined with --type filter', async () => {
+    const { kataDir, runsDir } = makeKataDir();
+    const runId = randomUUID();
+    writeRunJson(runsDir, runId);
+
+    const paths = runPaths(runsDir, runId);
+
+    const insightObs = { id: randomUUID(), type: 'insight', content: 'insight at run level', timestamp: '2026-01-01T01:00:00.000Z' };
+    const decisionObs = { id: randomUUID(), type: 'decision', content: 'decision at stage level', timestamp: '2026-01-01T02:00:00.000Z' };
+
+    JsonlStore.append(paths.observationsJsonl, insightObs, ObservationSchema);
+    JsonlStore.append(paths.stageObservationsJsonl('build'), decisionObs, ObservationSchema);
+
+    const { stdout } = await runCli([
+      '--json', 'observe', 'list', '--run', runId, '--all', '--type', 'insight',
+    ], join(kataDir, '..'));
+
+    const parsed = JSON.parse(stdout);
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].type).toBe('insight');
+    expect(parsed[0].content).toBe('insight at run level');
+  });
+
+  it('returns empty array when no observations exist at any level', async () => {
+    const { kataDir, runsDir } = makeKataDir();
+    const runId = randomUUID();
+    writeRunJson(runsDir, runId);
+
+    const { stdout } = await runCli([
+      '--json', 'observe', 'list', '--run', runId, '--all',
+    ], join(kataDir, '..'));
+
+    const parsed = JSON.parse(stdout);
+    expect(parsed).toEqual([]);
+  });
+});
