@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { SessionExecutionBridge } from './session-bridge.js';
 import type { AgentCompletionResult } from '@domain/ports/session-bridge.js';
 import { CycleSchema } from '@domain/types/cycle.js';
+import { RunSchema } from '@domain/types/run-state.js';
 
 // ---------------------------------------------------------------------------
 // Test fixtures
@@ -131,6 +132,105 @@ describe('SessionExecutionBridge', () => {
 
       expect(prepared.stages).toEqual(['research']);
       expect(prepared.isolation).toBe('shared'); // no build stage → shared
+    });
+
+    it('should write run.json to runs/<run-id>/run.json (#234)', () => {
+      const cycle = createCycle(kataDir);
+      const betId = cycle.bets[0]!.id;
+      const bridge = new SessionExecutionBridge(kataDir);
+
+      const prepared = bridge.prepare(betId);
+
+      const runJsonPath = join(kataDir, 'runs', prepared.runId, 'run.json');
+      expect(existsSync(runJsonPath)).toBe(true);
+
+      const raw = JSON.parse(readFileSync(runJsonPath, 'utf-8'));
+      // Must parse against RunSchema without throwing
+      const run = RunSchema.parse(raw);
+      expect(run.id).toBe(prepared.runId);
+      expect(run.betId).toBe(betId);
+      expect(run.cycleId).toBe(cycle.id);
+      expect(run.betPrompt).toBe('Fix the login bug');
+      expect(run.stageSequence).toEqual(['research', 'plan', 'build', 'review']);
+      expect(run.currentStage).toBe('research');
+    });
+
+    it('run.json status should be "running", not "in-progress" (#234)', () => {
+      const cycle = createCycle(kataDir);
+      const betId = cycle.bets[0]!.id;
+      const bridge = new SessionExecutionBridge(kataDir);
+
+      const prepared = bridge.prepare(betId);
+
+      const runJsonPath = join(kataDir, 'runs', prepared.runId, 'run.json');
+      const raw = JSON.parse(readFileSync(runJsonPath, 'utf-8'));
+      expect(raw.status).toBe('running');
+    });
+
+    it('run.json stageSequence should reflect ad-hoc stages (#234)', () => {
+      const betId = randomUUID();
+      createCycle(kataDir, {
+        bets: [{
+          id: betId,
+          description: 'Research-only bet',
+          appetite: 15,
+          outcome: 'pending',
+          kata: { type: 'ad-hoc', stages: ['research'] },
+        }],
+      });
+      const bridge = new SessionExecutionBridge(kataDir);
+
+      const prepared = bridge.prepare(betId);
+
+      const runJsonPath = join(kataDir, 'runs', prepared.runId, 'run.json');
+      const run = RunSchema.parse(JSON.parse(readFileSync(runJsonPath, 'utf-8')));
+      expect(run.stageSequence).toEqual(['research']);
+      expect(run.currentStage).toBe('research');
+    });
+
+    it('run.json should be discoverable by listActiveRuns (#234)', () => {
+      // Simulate what kata watch does: list run directories, read run.json,
+      // filter by status === "running". Bridge-prepared runs must be visible.
+      const cycle = createCycle(kataDir);
+      const bridge = new SessionExecutionBridge(kataDir);
+
+      bridge.prepareCycle(cycle.id);
+
+      const runsDir = join(kataDir, 'runs');
+      const runDirs = readdirSync(runsDir, { withFileTypes: true })
+        .filter((e) => e.isDirectory())
+        .map((e) => e.name);
+
+      expect(runDirs.length).toBe(2); // one per bet
+
+      const activeRuns = runDirs.filter((runId) => {
+        const runJsonPath = join(runsDir, runId, 'run.json');
+        if (!existsSync(runJsonPath)) return false;
+        try {
+          const run = RunSchema.parse(JSON.parse(readFileSync(runJsonPath, 'utf-8')));
+          return run.status === 'running';
+        } catch {
+          return false;
+        }
+      });
+
+      expect(activeRuns.length).toBe(2);
+    });
+
+    it('run.json stage directories should be created for each stage (#234)', () => {
+      const cycle = createCycle(kataDir);
+      const betId = cycle.bets[0]!.id;
+      const bridge = new SessionExecutionBridge(kataDir);
+
+      const prepared = bridge.prepare(betId);
+
+      // createRunTree creates stage directories with state.json files
+      const stagesDir = join(kataDir, 'runs', prepared.runId, 'stages');
+      expect(existsSync(stagesDir)).toBe(true);
+      for (const stage of ['research', 'plan', 'build', 'review']) {
+        const stateJson = join(stagesDir, stage, 'state.json');
+        expect(existsSync(stateJson)).toBe(true);
+      }
     });
   });
 

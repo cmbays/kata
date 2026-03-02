@@ -14,8 +14,10 @@ import type { ExecutionManifest } from '@domain/types/manifest.js';
 import { ExecutionHistoryEntrySchema } from '@domain/types/history.js';
 import { CycleSchema, type Cycle } from '@domain/types/cycle.js';
 import { type Bet } from '@domain/types/bet.js';
+import { StageCategorySchema } from '@domain/types/stage.js';
 import { z } from 'zod/v4';
 import { JsonStore } from '@infra/persistence/json-store.js';
+import { createRunTree } from '@infra/persistence/run-store.js';
 import { KATA_DIRS } from '@shared/constants/paths.js';
 import { logger } from '@shared/lib/logger.js';
 
@@ -100,6 +102,12 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
       startedAt,
       status: 'in-progress',
     });
+
+    // Write run.json to runs/<run-id>/run.json so kata watch can discover
+    // this run. BridgeRunMeta uses status "in-progress" but RunSchema requires
+    // "running" — we map on write. Only valid StageCategory values are written
+    // (filter guards against hypothetical custom stage strings).
+    this.writeRunJson(runId, bet.id, bet.description, cycle.id, stages, startedAt);
 
     return prepared;
   }
@@ -527,6 +535,63 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
       JsonStore.write(cyclePath, cycle, CycleSchema);
     } catch (err) {
       logger.warn(`Failed to update bet outcome in cycle "${cycleId}" for bet "${betId}": ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  // ── run.json writer ───────────────────────────────────────────────────
+
+  /**
+   * Write a RunSchema-conforming run.json to runs/<runId>/run.json.
+   *
+   * This is called by prepare() so that kata watch (which reads RunSchema)
+   * can discover bridge-prepared runs immediately (#234).
+   *
+   * Status mapping: BridgeRunMeta uses "in-progress" but RunSchema uses
+   * "running". We always write "running" here. The run.json is NOT updated
+   * when the bridge run completes — history entries are the completion record.
+   *
+   * Stage filtering: RunSchema.stageSequence requires StageCategory values.
+   * Any stage string that is not a valid StageCategory is dropped so that
+   * Zod validation does not fail on hypothetical custom stage names.
+   */
+  private writeRunJson(
+    runId: string,
+    betId: string,
+    betPrompt: string,
+    cycleId: string,
+    stages: string[],
+    startedAt: string,
+  ): void {
+    try {
+      const validCategories = StageCategorySchema.options;
+      const stageSequence = stages.filter((s): s is typeof validCategories[number] =>
+        (validCategories as readonly string[]).includes(s),
+      );
+
+      // Fall back to the standard four-stage sequence if all were filtered out
+      const finalSequence = stageSequence.length > 0
+        ? stageSequence
+        : (['research', 'plan', 'build', 'review'] as const);
+
+      const runsDir = join(this.kataDir, KATA_DIRS.runs);
+      createRunTree(runsDir, {
+        id: runId,
+        cycleId,
+        betId,
+        betPrompt,
+        stageSequence: [...finalSequence],
+        currentStage: finalSequence[0] ?? null,
+        status: 'running',
+        startedAt,
+      });
+    } catch (err) {
+      // Non-critical: log a warning but do not abort prepare(). The bridge-run
+      // metadata was already written and the agent can still execute. kata watch
+      // will simply not see this run until the issue is resolved.
+      logger.warn('Failed to write run.json for bridge run — kata watch will not see this run.', {
+        runId,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
