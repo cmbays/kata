@@ -82,8 +82,8 @@ describe('SessionExecutionBridge', () => {
       expect(prepared.stages).toEqual(['research', 'plan', 'build', 'review']);
       expect(prepared.isolation).toBe('worktree'); // build stage → worktree
       expect(prepared.startedAt).toBeTruthy();
-      expect(prepared.agentContext).toContain('## Kata Run Context');
-      expect(prepared.agentContext).toContain(prepared.runId);
+      // agentContext is NOT baked in at prepare time (#243 — late-bind)
+      expect((prepared as Record<string, unknown>).agentContext).toBeUndefined();
     });
 
     it('should write bridge-run metadata', () => {
@@ -257,6 +257,55 @@ describe('SessionExecutionBridge', () => {
       expect(context).toContain(`kata kime record --decision "..." --rationale "..." --run ${prepared.runId}`);
       expect(context).toContain("### When you're done");
       expect(context).toContain('Do NOT close the run yourself');
+    });
+  });
+
+  describe('getAgentContext()', () => {
+    it('should return a non-empty agent context string with the run ID embedded (#243)', () => {
+      const cycle = createCycle(kataDir);
+      const bridge = new SessionExecutionBridge(kataDir);
+      const prepared = bridge.prepare(cycle.bets[0]!.id);
+
+      // getAgentContext() reads stored bridge-run metadata and generates fresh context
+      const context = bridge.getAgentContext(prepared.runId);
+
+      expect(context).toBeTruthy();
+      expect(context).toContain('## Kata Run Context');
+      expect(context).toContain(prepared.runId);
+      expect(context).toContain(prepared.betId);
+      expect(context).toContain(kataDir);
+      expect(context).toContain('### Record as you work');
+    });
+
+    it('should produce equivalent output to formatAgentContext() (#243)', () => {
+      const cycle = createCycle(kataDir);
+      const bridge = new SessionExecutionBridge(kataDir);
+      const prepared = bridge.prepare(cycle.bets[0]!.id);
+
+      const viaGet = bridge.getAgentContext(prepared.runId);
+      const viaDirect = bridge.formatAgentContext(prepared);
+
+      // Both should contain the same key identifiers
+      expect(viaGet).toContain(prepared.runId);
+      expect(viaGet).toContain(prepared.betId);
+      expect(viaDirect).toContain(prepared.runId);
+      expect(viaDirect).toContain(prepared.betId);
+    });
+
+    it('should throw for unknown run ID (#243)', () => {
+      const bridge = new SessionExecutionBridge(kataDir);
+
+      expect(() => bridge.getAgentContext(randomUUID())).toThrow(/No bridge run found/);
+    });
+
+    it('agentContext should NOT be present on PreparedRun returned by prepare() (#243)', () => {
+      const cycle = createCycle(kataDir);
+      const bridge = new SessionExecutionBridge(kataDir);
+
+      const prepared = bridge.prepare(cycle.bets[0]!.id);
+
+      // Confirm agentContext is not a property of the returned object at all
+      expect(Object.prototype.hasOwnProperty.call(prepared, 'agentContext')).toBe(false);
     });
   });
 

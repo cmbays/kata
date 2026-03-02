@@ -23,8 +23,6 @@ export interface PreparedRun {
   kataDir: string;
   /** Stage categories this run will execute */
   stages: string[];
-  /** Formatted agent context block (ready to paste into Agent tool prompt) */
-  agentContext: string;
   /** Isolation mode for this run's agent */
   isolation: 'worktree' | 'shared';
   /** ISO timestamp when the run was opened */
@@ -109,6 +107,21 @@ export interface ISessionExecutionBridge {
 
   /** Generate the agent context block from a prepared run. */
   formatAgentContext(prepared: PreparedRun): string;
+
+  /**
+   * Generate a fresh agent context block for an already-prepared run.
+   *
+   * This is the late-bind alternative to reading `preparedRun.agentContext` at
+   * dispatch time. Because `agentContext` is no longer stored in the bridge-run
+   * metadata, this method reads the persisted `BridgeRunMeta` for `runId`,
+   * reconstructs the minimal `PreparedRun` shape, calls `formatAgentContext()`,
+   * and returns the result.
+   *
+   * Generating fresh at dispatch time means agents always receive instructions
+   * from the current binary — eliminating the bootstrap ordering problem where
+   * agents inherited context from a buggy binary at prepare time (#243).
+   */
+  getAgentContext(runId: string): string;
 
   /** Complete a run after the agent finishes. Writes history entry. */
   complete(runId: string, result: AgentCompletionResult): void;

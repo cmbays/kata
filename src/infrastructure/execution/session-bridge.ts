@@ -82,13 +82,9 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
       manifest,
       kataDir: this.kataDir,
       stages,
-      agentContext: '', // Populated below
       isolation,
       startedAt,
     };
-
-    // Generate the agent context block
-    prepared.agentContext = this.formatAgentContext(prepared);
 
     // Persist bridge run metadata so getCycleStatus() can find it
     this.writeBridgeRunMeta({
@@ -198,6 +194,50 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
     lines.push('Do NOT close the run yourself — the sensei handles run lifecycle.');
 
     return lines.join('\n');
+  }
+
+  getAgentContext(runId: string): string {
+    const meta = this.readBridgeRunMeta(runId);
+    if (!meta) {
+      throw new Error(`No bridge run found for run ID "${runId}". Was it prepared via the session bridge?`);
+    }
+
+    // Reconstruct the minimal PreparedRun shape needed by formatAgentContext().
+    // The manifest is rebuilt from stored metadata — it doesn't need to be the
+    // exact original manifest because formatAgentContext() only reads:
+    //   prepared.runId, betId, cycleId, kataDir, stages,
+    //   manifest.artifacts, manifest.entryGate, manifest.exitGate, manifest.learnings
+    // betName and betPrompt are stored in BridgeRunMeta directly.
+    const prepared: PreparedRun = {
+      runId: meta.runId,
+      betId: meta.betId,
+      betName: meta.betName,
+      cycleId: meta.cycleId,
+      cycleName: meta.cycleName,
+      manifest: {
+        stageType: meta.stages.join(','),
+        prompt: `Execute the bet: "${meta.betName}"`,
+        context: {
+          pipelineId: meta.runId,
+          stageIndex: 0,
+          metadata: {
+            betId: meta.betId,
+            cycleId: meta.cycleId,
+            cycleName: meta.cycleName,
+            runId: meta.runId,
+            adapter: 'claude-native',
+          },
+        },
+        artifacts: [],
+        learnings: [],
+      },
+      kataDir: this.kataDir,
+      stages: meta.stages,
+      isolation: meta.isolation,
+      startedAt: meta.startedAt,
+    };
+
+    return this.formatAgentContext(prepared);
   }
 
   complete(runId: string, result: AgentCompletionResult): void {
