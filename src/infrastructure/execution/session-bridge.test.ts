@@ -204,6 +204,77 @@ describe('SessionExecutionBridge', () => {
       expect(() => bridge.complete(randomUUID(), { success: true })).toThrow(/No bridge run found/);
     });
 
+    it('should update bet outcome to "complete" in cycle JSON when success is true (#216)', () => {
+      const cycle = createCycle(kataDir);
+      const betId = cycle.bets[0]!.id;
+      const bridge = new SessionExecutionBridge(kataDir);
+      const prepared = bridge.prepare(betId);
+
+      bridge.complete(prepared.runId, { success: true });
+
+      // Read cycle JSON directly and verify bet outcome was updated
+      const cyclePath = join(kataDir, 'cycles', `${cycle.id}.json`);
+      const updatedCycle = JSON.parse(readFileSync(cyclePath, 'utf-8'));
+      const updatedBet = updatedCycle.bets.find((b: { id: string }) => b.id === betId);
+      expect(updatedBet.outcome).toBe('complete');
+    });
+
+    it('should update bet outcome to "partial" in cycle JSON when success is false (#216)', () => {
+      const cycle = createCycle(kataDir);
+      const betId = cycle.bets[0]!.id;
+      const bridge = new SessionExecutionBridge(kataDir);
+      const prepared = bridge.prepare(betId);
+
+      bridge.complete(prepared.runId, { success: false, notes: 'Build failed' });
+
+      const cyclePath = join(kataDir, 'cycles', `${cycle.id}.json`);
+      const updatedCycle = JSON.parse(readFileSync(cyclePath, 'utf-8'));
+      const updatedBet = updatedCycle.bets.find((b: { id: string }) => b.id === betId);
+      expect(updatedBet.outcome).toBe('partial');
+    });
+
+    it('should not overwrite a manually-set bet outcome (#216)', () => {
+      // If a user already ran kata cooldown and manually set the outcome,
+      // completing the bridge run should NOT revert it.
+      const betId = randomUUID();
+      const cycle = createCycle(kataDir, {
+        bets: [{
+          id: betId,
+          description: 'Already resolved bet',
+          appetite: 30,
+          outcome: 'abandoned', // manually set before bridge complete()
+        }],
+      });
+      const bridge = new SessionExecutionBridge(kataDir);
+      const prepared = bridge.prepare(betId);
+
+      bridge.complete(prepared.runId, { success: true });
+
+      const cyclePath = join(kataDir, 'cycles', `${cycle.id}.json`);
+      const updatedCycle = JSON.parse(readFileSync(cyclePath, 'utf-8'));
+      const updatedBet = updatedCycle.bets.find((b: { id: string }) => b.id === betId);
+      // outcome should remain 'abandoned', not overwritten to 'complete'
+      expect(updatedBet.outcome).toBe('abandoned');
+    });
+
+    it('should leave other bets untouched in cycle JSON (#216)', () => {
+      const cycle = createCycle(kataDir);
+      const bet1Id = cycle.bets[0]!.id;
+      const bet2Id = cycle.bets[1]!.id;
+      const bridge = new SessionExecutionBridge(kataDir);
+      const prepared = bridge.prepare(bet1Id);
+
+      bridge.complete(prepared.runId, { success: true });
+
+      const cyclePath = join(kataDir, 'cycles', `${cycle.id}.json`);
+      const updatedCycle = JSON.parse(readFileSync(cyclePath, 'utf-8'));
+      const bet1 = updatedCycle.bets.find((b: { id: string }) => b.id === bet1Id);
+      const bet2 = updatedCycle.bets.find((b: { id: string }) => b.id === bet2Id);
+      expect(bet1.outcome).toBe('complete');
+      // Bet 2 was not completed — should remain pending
+      expect(bet2.outcome).toBe('pending');
+    });
+
     it('should record token usage in history entry', () => {
       const cycle = createCycle(kataDir);
       const bridge = new SessionExecutionBridge(kataDir);
@@ -405,6 +476,29 @@ describe('SessionExecutionBridge', () => {
       const summary = bridge.completeCycle(cycle.id, {});
 
       expect(summary.completedBets).toBe(2);
+    });
+
+    it('should update all bet outcomes in cycle JSON after completeCycle() (#216)', () => {
+      // Regression test for #216: kata cooldown showed 0% completion because
+      // bet outcomes were never written to the cycle JSON.
+      const cycle = createCycle(kataDir);
+      const bridge = new SessionExecutionBridge(kataDir);
+
+      const prepared = bridge.prepareCycle(cycle.id);
+      const results: Record<string, AgentCompletionResult> = {
+        [prepared.preparedRuns[0]!.runId]: { success: true },
+        [prepared.preparedRuns[1]!.runId]: { success: false },
+      };
+      bridge.completeCycle(cycle.id, results);
+
+      // Verify cycle JSON has updated outcomes — this is what CycleManager.generateCooldown() reads
+      const cyclePath = join(kataDir, 'cycles', `${cycle.id}.json`);
+      const updatedCycle = JSON.parse(readFileSync(cyclePath, 'utf-8'));
+      const outcomes: string[] = updatedCycle.bets.map((b: { outcome: string }) => b.outcome);
+      // Both should be resolved — one success, one failure
+      expect(outcomes).not.toContain('pending');
+      expect(outcomes).toContain('complete');
+      expect(outcomes).toContain('partial');
     });
   });
 });
