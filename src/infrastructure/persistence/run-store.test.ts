@@ -15,6 +15,7 @@ import {
   appendArtifact,
   appendObservation,
   readObservations,
+  readAllObservationsForRun,
   appendReflection,
   readReflections,
   runPaths,
@@ -510,5 +511,95 @@ describe('appendReflection / readReflections', () => {
 
     const loaded = readReflections(runsDir, run.id, target);
     expect(loaded).toHaveLength(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// readAllObservationsForRun — aggregation across all levels
+// ---------------------------------------------------------------------------
+
+describe('readAllObservationsForRun', () => {
+  it('collects run-level, stage-level, flavor-level, and step-level observations', () => {
+    const runsDir = tempRunsDir();
+    const run = makeRun({ stageSequence: ['research', 'build'] });
+    createRunTree(runsDir, run);
+
+    const runObs = makeObservation({ content: 'run-level', timestamp: '2026-01-01T01:00:00.000Z' });
+    const stageObs = makeObservation({ content: 'stage-level', timestamp: '2026-01-01T02:00:00.000Z' });
+    const flavorObs = makeObservation({ content: 'flavor-level', timestamp: '2026-01-01T03:00:00.000Z' });
+    const stepObs = makeObservation({ content: 'step-level', timestamp: '2026-01-01T04:00:00.000Z' });
+
+    appendObservation(runsDir, run.id, runObs, { level: 'run' });
+    appendObservation(runsDir, run.id, stageObs, { level: 'stage', category: 'build' });
+    appendObservation(runsDir, run.id, flavorObs, { level: 'flavor', category: 'build', flavor: 'tdd' });
+    appendObservation(runsDir, run.id, stepObs, { level: 'step', category: 'build', flavor: 'tdd', step: 'write-tests' });
+
+    const all = readAllObservationsForRun(runsDir, run.id, run.stageSequence);
+    expect(all).toHaveLength(4);
+    const contents = all.map((o) => o.content);
+    expect(contents).toContain('run-level');
+    expect(contents).toContain('stage-level');
+    expect(contents).toContain('flavor-level');
+    expect(contents).toContain('step-level');
+  });
+
+  it('returns observations sorted by timestamp ascending', () => {
+    const runsDir = tempRunsDir();
+    const run = makeRun({ stageSequence: ['build'] });
+    createRunTree(runsDir, run);
+
+    // Write in reverse order to confirm sorting
+    const laterObs = makeObservation({ content: 'later', timestamp: '2026-01-01T05:00:00.000Z' });
+    const earlierObs = makeObservation({ content: 'earlier', timestamp: '2026-01-01T01:00:00.000Z' });
+    const middleObs = makeObservation({ content: 'middle', timestamp: '2026-01-01T03:00:00.000Z' });
+
+    appendObservation(runsDir, run.id, laterObs, { level: 'run' });
+    appendObservation(runsDir, run.id, earlierObs, { level: 'stage', category: 'build' });
+    appendObservation(runsDir, run.id, middleObs, { level: 'flavor', category: 'build', flavor: 'core' });
+
+    const all = readAllObservationsForRun(runsDir, run.id, run.stageSequence);
+    expect(all[0].content).toBe('earlier');
+    expect(all[1].content).toBe('middle');
+    expect(all[2].content).toBe('later');
+  });
+
+  it('returns empty array when no observations exist at any level', () => {
+    const runsDir = tempRunsDir();
+    const run = makeRun({ stageSequence: ['research', 'build'] });
+    createRunTree(runsDir, run);
+
+    const all = readAllObservationsForRun(runsDir, run.id, run.stageSequence);
+    expect(all).toEqual([]);
+  });
+
+  it('handles runs with no stage sequence gracefully', () => {
+    const runsDir = tempRunsDir();
+    const run = makeRun({ stageSequence: ['research'] });
+    createRunTree(runsDir, run);
+
+    const runObs = makeObservation({ content: 'only run-level' });
+    appendObservation(runsDir, run.id, runObs, { level: 'run' });
+
+    // Pass empty stageSequence — only run-level observations should be returned
+    const all = readAllObservationsForRun(runsDir, run.id, []);
+    expect(all).toHaveLength(1);
+    expect(all[0].content).toBe('only run-level');
+  });
+
+  it('aggregates observations across multiple stages', () => {
+    const runsDir = tempRunsDir();
+    const run = makeRun({ stageSequence: ['research', 'build'] });
+    createRunTree(runsDir, run);
+
+    const researchObs = makeObservation({ content: 'research stage', timestamp: '2026-01-01T01:00:00.000Z' });
+    const buildObs = makeObservation({ content: 'build stage', timestamp: '2026-01-01T02:00:00.000Z' });
+
+    appendObservation(runsDir, run.id, researchObs, { level: 'stage', category: 'research' });
+    appendObservation(runsDir, run.id, buildObs, { level: 'stage', category: 'build' });
+
+    const all = readAllObservationsForRun(runsDir, run.id, run.stageSequence);
+    expect(all).toHaveLength(2);
+    expect(all.map((o) => o.content)).toContain('research stage');
+    expect(all.map((o) => o.content)).toContain('build stage');
   });
 });

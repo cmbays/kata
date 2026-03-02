@@ -1,5 +1,6 @@
 import { join } from 'node:path';
 import type { Command } from 'commander';
+import { logger } from '@shared/lib/logger.js';
 import { CycleManager } from '@domain/services/cycle-manager.js';
 import { KnowledgeStore } from '@infra/knowledge/knowledge-store.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
@@ -611,6 +612,7 @@ export function registerCycleCommands(parent: Command): void {
     .option('--prepare', 'Write synthesis input file and exit without completing (use with kata-sensei)')
     .option('--yolo', 'Prepare synthesis input, invoke claude --print for synthesis, apply high-confidence proposals, then complete')
     .option('--depth <level>', 'Synthesis depth: quick | standard | thorough', 'standard')
+    .option('--force', 'Proceed with cooldown even if runs are still in progress (bypasses incomplete-run warning)')
     .action(withCommandContext(async (ctx, rawCycleId: string) => {
       const localOpts = ctx.cmd.opts();
       const cyclesDir = kataDirPath(ctx.kataDir, 'cycles');
@@ -650,9 +652,11 @@ export function registerCycleCommands(parent: Command): void {
         katakaDir,
       });
 
+      const force: boolean = Boolean(localOpts.force);
+
       // --- --prepare mode: write synthesis input file and exit without completing ---
       if (localOpts.prepare) {
-        const prepareResult = await session.prepare(cycleId, [], localOpts.depth);
+        const prepareResult = await session.prepare(cycleId, [], localOpts.depth, { force });
 
         if (ctx.globalOpts.json) {
           console.log(JSON.stringify({
@@ -660,8 +664,13 @@ export function registerCycleCommands(parent: Command): void {
             synthesisInputPath: prepareResult.synthesisInputPath,
             report: prepareResult.report,
             proposals: prepareResult.proposals,
+            incompleteRuns: prepareResult.incompleteRuns,
           }, null, 2));
         } else {
+          if (prepareResult.incompleteRuns && prepareResult.incompleteRuns.length > 0) {
+            console.warn(`Warning: ${prepareResult.incompleteRuns.length} run(s) are still in progress. Cooldown data may be incomplete. Use --force to suppress this warning.`);
+            console.log('');
+          }
           console.log(`Synthesis input prepared.`);
           console.log(`  ID:   ${prepareResult.synthesisInputId}`);
           console.log(`  File: ${prepareResult.synthesisInputPath}`);
@@ -674,15 +683,20 @@ export function registerCycleCommands(parent: Command): void {
 
       // --- --yolo mode: prepare + claude for synthesis + apply high-confidence proposals ---
       if (localOpts.yolo) {
-        const prepareResult = await session.prepare(cycleId, [], localOpts.depth);
+        const prepareResult = await session.prepare(cycleId, [], localOpts.depth, { force });
 
         if (!ctx.globalOpts.json) {
+          if (prepareResult.incompleteRuns && prepareResult.incompleteRuns.length > 0) {
+            console.warn(`Warning: ${prepareResult.incompleteRuns.length} run(s) are still in progress. Cooldown data may be incomplete. Use --force to suppress this warning.`);
+            console.log('');
+          }
           console.log(`Synthesis input prepared: ${prepareResult.synthesisInputPath}`);
           console.log('Invoking claude --print for synthesis...');
         }
 
         let synthesisProposals: import('@domain/types/synthesis.js').SynthesisProposal[] = [];
         const synthesisInputId: string = prepareResult.synthesisInputId;
+        let synthesisError: string | undefined;
 
         try {
           const { execFileSync } = await import('node:child_process');
@@ -728,8 +742,12 @@ export function registerCycleCommands(parent: Command): void {
             }
           }
         } catch (err) {
-          if (!ctx.globalOpts.json) {
-            console.warn(`Warning: claude synthesis failed (${err instanceof Error ? err.message : String(err)}). Completing without proposals.`);
+          const msg = `claude synthesis failed: ${err instanceof Error ? err.message : String(err)}`;
+          synthesisError = msg;
+          if (ctx.globalOpts.json) {
+            logger.warn(`--yolo synthesis failure: ${msg}. Completing without proposals.`);
+          } else {
+            console.warn(`Warning: ${msg}. Completing without proposals.`);
           }
         }
 
@@ -748,6 +766,7 @@ export function registerCycleCommands(parent: Command): void {
             report: yoloResult.report,
             proposals: yoloResult.proposals,
             synthesisProposals: yoloResult.synthesisProposals,
+            ...(synthesisError !== undefined ? { synthesisError } : {}),
           }, null, 2));
         } else {
           if (yoloResult.synthesisProposals && yoloResult.synthesisProposals.length > 0) {
@@ -798,7 +817,7 @@ export function registerCycleCommands(parent: Command): void {
         }
       }
 
-      const result = await session.run(cycleId, betOutcomes);
+      const result = await session.run(cycleId, betOutcomes, { force });
 
       // Fire-and-forget belt discovery hook
       ProjectStateUpdater.markDiscovery(join(ctx.kataDir, 'project-state.json'), 'completedFirstCycleCooldown');
@@ -875,8 +894,13 @@ export function registerCycleCommands(parent: Command): void {
           runSummaries: result.runSummaries,
           ruleSuggestions: result.ruleSuggestions,
           suggestionReview,
+          incompleteRuns: result.incompleteRuns,
         }, null, 2));
       } else {
+        if (result.incompleteRuns && result.incompleteRuns.length > 0) {
+          console.warn(`Warning: ${result.incompleteRuns.length} run(s) were still in progress when cooldown ran. Data may be incomplete.`);
+          console.log('');
+        }
         console.log(formatCooldownSessionResult(result, suggestionReview, ctx.globalOpts.plain));
       }
     }));

@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readdirSync, existsSync } from 'node:fs';
 import { JsonStore } from './json-store.js';
 import { JsonlStore } from './jsonl-store.js';
 import {
@@ -306,4 +306,80 @@ export function readReflections(
   const paths = runPaths(runsDir, runId);
   const path = resolveReflectionPath(paths, target);
   return JsonlStore.readAll(path, ReflectionSchema);
+}
+
+/**
+ * Read ALL observations for a run, aggregated across every level of the run tree:
+ *   - run level
+ *   - each stage level
+ *   - each flavor level (discovered from filesystem)
+ *   - each step level (discovered from filesystem)
+ *
+ * The stageSequence from the run.json determines which stages to scan.
+ * Flavors and steps are discovered by listing subdirectories.
+ *
+ * Returns observations sorted by timestamp ascending (oldest first).
+ */
+export function readAllObservationsForRun(
+  runsDir: string,
+  runId: string,
+  stageSequence: StageCategory[],
+): Observation[] {
+  const paths = runPaths(runsDir, runId);
+  const allObservations: Observation[] = [];
+
+  // 1. Run-level observations
+  allObservations.push(...JsonlStore.readAll(paths.observationsJsonl, ObservationSchema));
+
+  // 2. Stage-level observations + nested flavor/step observations
+  for (const category of stageSequence) {
+    // Stage-level
+    allObservations.push(
+      ...JsonlStore.readAll(paths.stageObservationsJsonl(category), ObservationSchema),
+    );
+
+    // Discover flavors on disk
+    const flavorsDir = paths.flavorsDir(category);
+    if (!existsSync(flavorsDir)) continue;
+
+    let flavorNames: string[];
+    try {
+      flavorNames = readdirSync(flavorsDir, { withFileTypes: true })
+        .filter((d) => d.isDirectory())
+        .map((d) => d.name);
+    } catch {
+      continue;
+    }
+
+    for (const flavorName of flavorNames) {
+      // Flavor-level
+      allObservations.push(
+        ...JsonlStore.readAll(paths.flavorObservationsJsonl(category, flavorName), ObservationSchema),
+      );
+
+      // Discover steps on disk
+      const stepsDir = paths.stepsDir(category, flavorName);
+      if (!existsSync(stepsDir)) continue;
+
+      let stepNames: string[];
+      try {
+        stepNames = readdirSync(stepsDir, { withFileTypes: true })
+          .filter((d) => d.isDirectory())
+          .map((d) => d.name);
+      } catch {
+        continue;
+      }
+
+      for (const stepName of stepNames) {
+        allObservations.push(
+          ...JsonlStore.readAll(paths.stepObservationsJsonl(category, flavorName, stepName), ObservationSchema),
+        );
+      }
+    }
+  }
+
+  // Sort by timestamp ascending
+  allObservations.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+
+  return allObservations;
 }

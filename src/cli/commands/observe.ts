@@ -10,6 +10,7 @@ import {
 import {
   appendObservation,
   readObservations,
+  readAllObservationsForRun,
   runPaths,
   type ObservationTarget,
 } from '@infra/persistence/run-store.js';
@@ -239,19 +240,39 @@ export function registerObserveCommands(parent: Command): void {
     .option('--flavor <name>', 'Filter to flavor-level observations (requires --stage)')
     .option('--step <name>', 'Filter to step-level observations (requires --stage and --flavor)')
     .option('--type <type>', 'Filter by observation type')
+    .option('--all', 'Aggregate observations from all levels (run + all stages + all flavors + all steps)')
     .action(withCommandContext((ctx) => {
       const localOpts = ctx.cmd.opts();
       const lex = getLexicon(ctx.globalOpts.plain);
       const runsDir = join(ctx.kataDir, KATA_DIRS.runs);
+      const runId = localOpts.run as string;
 
-      const target = resolveTarget({
-        runId: localOpts.run as string,
-        stage: localOpts.stage,
-        flavor: localOpts.flavor,
-        step: localOpts.step,
-      });
+      let observations;
 
-      let observations = readObservations(runsDir, localOpts.run as string, target);
+      if (localOpts.all) {
+        // Aggregate across all levels — need run.json for stageSequence
+        let stageSequence: string[] = [];
+        try {
+          const rp = runPaths(runsDir, runId);
+          const run = JsonStore.read(rp.runJson, RunSchema);
+          stageSequence = run.stageSequence;
+        } catch {
+          // Run not found — use empty stageSequence, will still get run-level obs
+        }
+        observations = readAllObservationsForRun(
+          runsDir,
+          runId,
+          stageSequence as Parameters<typeof readAllObservationsForRun>[2],
+        );
+      } else {
+        const target = resolveTarget({
+          runId,
+          stage: localOpts.stage,
+          flavor: localOpts.flavor,
+          step: localOpts.step,
+        });
+        observations = readObservations(runsDir, runId, target);
+      }
 
       if (localOpts.type) {
         observations = observations.filter((o) => o.type === localOpts.type);

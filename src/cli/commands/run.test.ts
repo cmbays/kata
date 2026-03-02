@@ -8,6 +8,30 @@ import { registerDecisionCommands } from './decision.js';
 import { createRunTree, writeStageState, runPaths } from '@infra/persistence/run-store.js';
 import type { Run } from '@domain/types/run-state.js';
 
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function writeCycleJson(
+  cyclesDir: string,
+  cycleId: string,
+  opts: { name?: string; createdAt?: string } = {},
+): void {
+  mkdirSync(cyclesDir, { recursive: true });
+  const cycle = {
+    id: cycleId,
+    name: opts.name,
+    budget: {},
+    bets: [],
+    pipelineMappings: [],
+    state: 'active',
+    cooldownReserve: 10,
+    createdAt: opts.createdAt ?? '2026-01-01T00:00:00.000Z',
+    updatedAt: opts.createdAt ?? '2026-01-01T00:00:00.000Z',
+  };
+  writeFileSync(join(cyclesDir, `${cycleId}.json`), JSON.stringify(cycle, null, 2), 'utf-8');
+}
+
 function tempBase(): string {
   return join(tmpdir(), `kata-run-test-${randomUUID()}`);
 }
@@ -220,5 +244,146 @@ describe('registerRunCommands — run status', () => {
     await program.parseAsync(['node', 'test', '--cwd', baseDir, 'run', 'status', randomUUID()]);
 
     expect(errorSpy).toHaveBeenCalled();
+  });
+});
+
+describe('registerRunCommands — run list', () => {
+  let baseDir: string;
+  let kataDir: string;
+  let runsDir: string;
+  let cyclesDir: string;
+  let consoleSpy: ReturnType<typeof vi.spyOn>;
+  let errorSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    baseDir = join(tmpdir(), `kata-run-list-test-${randomUUID()}`);
+    kataDir = join(baseDir, '.kata');
+    runsDir = join(kataDir, 'runs');
+    cyclesDir = join(kataDir, 'cycles');
+    mkdirSync(runsDir, { recursive: true });
+    mkdirSync(cyclesDir, { recursive: true });
+    consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    rmSync(baseDir, { recursive: true, force: true });
+    consoleSpy.mockRestore();
+    errorSpy.mockRestore();
+    vi.clearAllMocks();
+  });
+
+  function createProgram(): Command {
+    const program = new Command();
+    program.option('--json').option('--verbose').option('--cwd <path>');
+    program.exitOverride();
+    registerRunCommands(program);
+    return program;
+  }
+
+  it('lists runs for the latest cycle (default)', async () => {
+    const cycleId = randomUUID();
+    writeCycleJson(cyclesDir, cycleId, { name: 'Sprint 1' });
+
+    const run1 = makeRun({ cycleId, betPrompt: 'Implement auth', startedAt: '2026-01-01T01:00:00.000Z' });
+    const run2 = makeRun({ cycleId, betPrompt: 'Add logging', startedAt: '2026-01-01T02:00:00.000Z' });
+    createRunTree(runsDir, run1);
+    createRunTree(runsDir, run2);
+
+    const program = createProgram();
+    await program.parseAsync(['node', 'test', '--cwd', baseDir, 'run', 'list']);
+
+    expect(consoleSpy).toHaveBeenCalled();
+    const output = consoleSpy.mock.calls[0]?.[0] as string;
+    expect(output).toContain('Implement auth');
+    expect(output).toContain('Add logging');
+    expect(output).toContain('Sprint 1');
+  });
+
+  it('outputs JSON with --json flag', async () => {
+    const cycleId = randomUUID();
+    writeCycleJson(cyclesDir, cycleId);
+
+    const run = makeRun({ cycleId, status: 'completed', completedAt: '2026-01-01T01:30:00.000Z' });
+    createRunTree(runsDir, run);
+
+    const program = createProgram();
+    await program.parseAsync(['node', 'test', '--json', '--cwd', baseDir, 'run', 'list']);
+
+    const output = consoleSpy.mock.calls[0]?.[0] as string;
+    const parsed = JSON.parse(output);
+    expect(Array.isArray(parsed)).toBe(true);
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].id).toBe(run.id);
+    expect(parsed[0].status).toBe('completed');
+    expect(parsed[0].betPrompt).toBe('Implement auth');
+    expect(parsed[0].shortId).toBe(run.id.slice(0, 8));
+    expect(parsed[0].durationMs).toBeTypeOf('number');
+  });
+
+  it('filters runs by --cycle <id>', async () => {
+    const cycleA = randomUUID();
+    const cycleB = randomUUID();
+    writeCycleJson(cyclesDir, cycleA, { name: 'Cycle A', createdAt: '2026-01-01T00:00:00.000Z' });
+    writeCycleJson(cyclesDir, cycleB, { name: 'Cycle B', createdAt: '2026-01-02T00:00:00.000Z' });
+
+    const runA = makeRun({ cycleId: cycleA, betPrompt: 'Bet in Cycle A' });
+    const runB = makeRun({ cycleId: cycleB, betPrompt: 'Bet in Cycle B' });
+    createRunTree(runsDir, runA);
+    createRunTree(runsDir, runB);
+
+    const program = createProgram();
+    await program.parseAsync(['node', 'test', '--json', '--cwd', baseDir, 'run', 'list', '--cycle', cycleA]);
+
+    const output = consoleSpy.mock.calls[0]?.[0] as string;
+    const parsed = JSON.parse(output);
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].betPrompt).toBe('Bet in Cycle A');
+  });
+
+  it('shows empty message when no runs exist for cycle', async () => {
+    const cycleId = randomUUID();
+    writeCycleJson(cyclesDir, cycleId, { name: 'Empty Cycle' });
+
+    const program = createProgram();
+    await program.parseAsync(['node', 'test', '--cwd', baseDir, 'run', 'list', '--cycle', cycleId]);
+
+    expect(consoleSpy).toHaveBeenCalled();
+    const output = consoleSpy.mock.calls[0]?.[0] as string;
+    expect(output).toContain('No runs found');
+  });
+
+  it('shows empty message when no runs exist and no cycles', async () => {
+    const program = createProgram();
+    await program.parseAsync(['node', 'test', '--cwd', baseDir, 'run', 'list']);
+
+    expect(consoleSpy).toHaveBeenCalled();
+    const output = consoleSpy.mock.calls[0]?.[0] as string;
+    expect(output).toContain('No runs found');
+  });
+
+  it('errors when --cycle references unknown cycle', async () => {
+    const program = createProgram();
+    await program.parseAsync(['node', 'test', '--cwd', baseDir, 'run', 'list', '--cycle', randomUUID()]);
+
+    expect(errorSpy).toHaveBeenCalled();
+  });
+
+  it('returns runs sorted by startedAt descending (most recent first)', async () => {
+    const cycleId = randomUUID();
+    writeCycleJson(cyclesDir, cycleId);
+
+    const run1 = makeRun({ cycleId, betPrompt: 'First bet', startedAt: '2026-01-01T01:00:00.000Z' });
+    const run2 = makeRun({ cycleId, betPrompt: 'Second bet', startedAt: '2026-01-01T03:00:00.000Z' });
+    createRunTree(runsDir, run1);
+    createRunTree(runsDir, run2);
+
+    const program = createProgram();
+    await program.parseAsync(['node', 'test', '--json', '--cwd', baseDir, 'run', 'list']);
+
+    const output = consoleSpy.mock.calls[0]?.[0] as string;
+    const parsed = JSON.parse(output) as Array<{ betPrompt: string }>;
+    expect(parsed[0].betPrompt).toBe('Second bet');
+    expect(parsed[1].betPrompt).toBe('First bet');
   });
 });

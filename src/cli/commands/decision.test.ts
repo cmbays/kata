@@ -422,6 +422,68 @@ describe('registerDecisionCommands — decision record', () => {
     expect(entries[0]!.lowConfidence).toBe(true);
   });
 
+  // Issue #212 — optional flags
+  it('records a decision with minimal required args (omitting --context, --options, --confidence, --reasoning)', async () => {
+    const run = makeRun();
+    createRunTree(runsDir, run);
+
+    const program = createProgram();
+    await program.parseAsync([
+      'node', 'test', '--json', '--cwd', baseDir,
+      'decision', 'record', run.id,
+      '--stage', 'build',
+      '--type', 'flavor-selection',
+      '--selected', 'fast-path',
+    ]);
+
+    expect(errorSpy).not.toHaveBeenCalled();
+    const output = JSON.parse(consoleSpy.mock.calls[0]![0] as string);
+    // Defaults
+    expect(output.context).toEqual({});
+    expect(output.options).toEqual([]);
+    expect(output.confidence).toBe(1.0);
+    expect(output.reasoning).toBe('(no reasoning provided)');
+    expect(output.selection).toBe('fast-path');
+  });
+
+  it('defaults --confidence to 1.0 when omitted (no gate created)', async () => {
+    const run = makeRun();
+    createRunTree(runsDir, run);
+
+    const program = createProgram();
+    await program.parseAsync([
+      'node', 'test', '--json', '--cwd', baseDir,
+      'decision', 'record', run.id,
+      '--stage', 'research',
+      '--type', 'gap-assessment',
+      '--selected', 'proceed',
+    ]);
+
+    const output = JSON.parse(consoleSpy.mock.calls[0]![0] as string);
+    expect(output.confidence).toBe(1.0);
+    expect(output.lowConfidenceGateCreated).toBeUndefined();
+
+    const stageState = readStageState(runsDir, run.id, 'research');
+    expect(stageState.pendingGate).toBeUndefined();
+  });
+
+  it('still validates --context JSON when the flag is provided', async () => {
+    const run = makeRun();
+    createRunTree(runsDir, run);
+
+    const program = createProgram();
+    await program.parseAsync([
+      'node', 'test', '--cwd', baseDir,
+      'decision', 'record', run.id,
+      '--stage', 'plan',
+      '--type', 'flavor-selection',
+      '--context', 'not-valid-json',
+      '--selected', 'a',
+    ]);
+
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('context'));
+  });
+
   it('does not create a second gate when pendingGate already exists', async () => {
     const run = makeRun();
     createRunTree(runsDir, run);

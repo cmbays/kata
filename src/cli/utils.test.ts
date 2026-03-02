@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { mkdirSync, rmSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolveKataDir, getGlobalOptions, handleCommandError, kataDirPath, withCommandContext } from './utils.js';
 import type { CommandContext } from './utils.js';
@@ -234,5 +234,48 @@ describe('withCommandContext', () => {
     await handler(localOpts, cmd);
 
     expect(called).toBe(true);
+  });
+
+  // Issue #228 — loadConfigOutputMode should warn on malformed config.json
+  it('emits a logger warn and falls back when config.json is malformed', async () => {
+    // Write a malformed config.json
+    writeFileSync(join(testDir, '.kata', 'config.json'), 'not-valid-json{{{');
+
+    let captured: CommandContext | undefined;
+    const handler = withCommandContext(async (ctx) => { captured = ctx; });
+
+    const cmd = makeCmd(testDir);
+    const localOpts = {};
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await handler(localOpts, cmd);
+    warnSpy.mockRestore();
+
+    // Command should still succeed (falls back to default)
+    expect(captured).toBeDefined();
+    // plain should remain false (default fallback)
+    expect(captured!.globalOpts.plain).toBe(false);
+  });
+
+  it('reads outputMode from valid config.json when set to plain', async () => {
+    writeFileSync(
+      join(testDir, '.kata', 'config.json'),
+      JSON.stringify({
+        methodology: 'shape-up',
+        execution: { adapter: 'manual', config: {}, confidenceThreshold: 0.7 },
+        customStagePaths: [],
+        outputMode: 'plain',
+        project: {},
+      }),
+    );
+
+    let captured: CommandContext | undefined;
+    const handler = withCommandContext(async (ctx) => { captured = ctx; });
+
+    const cmd = makeCmd(testDir);
+    const localOpts = {};
+    await handler(localOpts, cmd);
+
+    expect(captured!.globalOpts.plain).toBe(true);
   });
 });

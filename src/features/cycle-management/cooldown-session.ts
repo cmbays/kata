@@ -19,7 +19,7 @@ import { CalibrationDetector } from '@features/self-improvement/calibration-dete
 import { HierarchicalPromoter } from '@infra/knowledge/hierarchical-promoter.js';
 import { FrictionAnalyzer } from '@features/self-improvement/friction-analyzer.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
-import { readObservations } from '@infra/persistence/run-store.js';
+import { readObservations, readRun } from '@infra/persistence/run-store.js';
 import type { Observation } from '@domain/types/observation.js';
 import {
   SynthesisInputSchema,
@@ -117,6 +117,15 @@ export interface CooldownSessionDeps {
 }
 
 /**
+ * A run that was found to be incomplete when cooldown was triggered.
+ */
+export interface IncompleteRunInfo {
+  runId: string;
+  betId: string;
+  status: 'pending' | 'running';
+}
+
+/**
  * Record of a bet's outcome after cooldown review.
  */
 export interface BetOutcomeRecord {
@@ -145,6 +154,12 @@ export interface CooldownSessionResult {
   synthesisProposals?: SynthesisProposal[];
   /** Belt computation result. Present when beltCalculator was provided. */
   beltResult?: BeltComputeResult;
+  /**
+   * Runs that were found to be incomplete (pending/running) when cooldown was triggered.
+   * Non-empty only when runsDir is provided and incomplete runs were detected.
+   * Always present (may be empty array) when runsDir is configured.
+   */
+  incompleteRuns?: IncompleteRunInfo[];
 }
 
 /**
@@ -160,6 +175,12 @@ export interface CooldownPrepareResult {
   ruleSuggestions?: RuleSuggestion[];
   synthesisInputId: string;
   synthesisInputPath: string;
+  /**
+   * Runs that were found to be incomplete (pending/running) when cooldown was triggered.
+   * Non-empty only when runsDir is provided and incomplete runs were detected.
+   * Always present (may be empty array) when runsDir is configured.
+   */
+  incompleteRuns?: IncompleteRunInfo[];
 }
 
 /**
@@ -199,18 +220,29 @@ export class CooldownSession {
   /**
    * Run the full cooldown session.
    *
-   * 1. Transition cycle state to 'cooldown'
-   * 2. Record per-bet outcomes (data collection, not interactive -- CLI handles prompts)
-   * 3. Generate the CooldownReport via CycleManager
-   * 4. Enrich report with actual token usage from TokenTracker
-   * 5. Load run summaries when runsDir provided
-   * 6. Generate next-cycle proposals via ProposalGenerator
-   * 7. Load pending rule suggestions when ruleRegistry provided
-   * 8. Capture any learnings from the cooldown analysis
-   * 9. Transition cycle state to 'complete'
-   * 10. Return the full session result
+   * 1. Check for incomplete runs (pending/running) — warn if found; --force bypasses
+   * 2. Transition cycle state to 'cooldown'
+   * 3. Record per-bet outcomes (data collection, not interactive -- CLI handles prompts)
+   * 4. Generate the CooldownReport via CycleManager
+   * 5. Enrich report with actual token usage from TokenTracker
+   * 6. Load run summaries when runsDir provided
+   * 7. Generate next-cycle proposals via ProposalGenerator
+   * 8. Load pending rule suggestions when ruleRegistry provided
+   * 9. Capture any learnings from the cooldown analysis
+   * 10. Transition cycle state to 'complete'
+   * 11. Return the full session result
+   *
+   * @param force When true, skips the incomplete-run guard and proceeds even if runs are in-progress.
    */
-  async run(cycleId: string, betOutcomes: BetOutcomeRecord[] = []): Promise<CooldownSessionResult> {
+  async run(cycleId: string, betOutcomes: BetOutcomeRecord[] = [], { force = false }: { force?: boolean } = {}): Promise<CooldownSessionResult> {
+    // 0. Check for incomplete runs before any state mutation
+    const incompleteRuns = this.checkIncompleteRuns(cycleId);
+    if (incompleteRuns.length > 0 && !force) {
+      logger.warn(
+        `Warning: ${incompleteRuns.length} run(s) are still in progress. Cooldown data may be incomplete. Proceeding — use --force to suppress this warning.`,
+      );
+    }
+
     // Save previous state for rollback on failure
     const previousState = this.deps.cycleManager.get(cycleId).state;
 
@@ -324,6 +356,7 @@ export class CooldownSession {
         synthesisInputPath: undefined,
         synthesisProposals: undefined,
         beltResult,
+        incompleteRuns: this.deps.runsDir ? incompleteRuns : undefined,
       };
     } catch (error) {
       // Attempt to roll back to previous state so the user can retry
@@ -346,8 +379,18 @@ export class CooldownSession {
    * location so the caller (or sensei) can run synthesis against it.
    *
    * Returns CooldownPrepareResult with synthesisInputId and synthesisInputPath.
+   *
+   * @param force When true, skips the incomplete-run guard and proceeds even if runs are in-progress.
    */
-  async prepare(cycleId: string, betOutcomes: BetOutcomeRecord[] = [], depth?: import('@domain/types/synthesis.js').SynthesisDepth): Promise<CooldownPrepareResult> {
+  async prepare(cycleId: string, betOutcomes: BetOutcomeRecord[] = [], depth?: import('@domain/types/synthesis.js').SynthesisDepth, { force = false }: { force?: boolean } = {}): Promise<CooldownPrepareResult> {
+    // Check for incomplete runs before any state mutation
+    const incompleteRuns = this.checkIncompleteRuns(cycleId);
+    if (incompleteRuns.length > 0 && !force) {
+      logger.warn(
+        `Warning: ${incompleteRuns.length} run(s) are still in progress. Cooldown data may be incomplete. Proceeding — use --force to suppress this warning.`,
+      );
+    }
+
     const previousState = this.deps.cycleManager.get(cycleId).state;
 
     // 1. Transition to cooldown state
@@ -420,6 +463,7 @@ export class CooldownSession {
         ruleSuggestions,
         synthesisInputId,
         synthesisInputPath,
+        incompleteRuns: this.deps.runsDir ? incompleteRuns : undefined,
       };
     } catch (error) {
       // Attempt to roll back to previous state so the user can retry
@@ -788,6 +832,33 @@ export class CooldownSession {
       logger.warn(`Failed to capture cooldown learning: ${error instanceof Error ? error.message : String(error)}`);
       return false;
     }
+  }
+
+  /**
+   * Check whether any bets in the cycle have runs that are still in-progress.
+   * Returns an array of IncompleteRunInfo for every run with status 'pending' or 'running'.
+   * Returns an empty array when runsDir is not configured or all runs are complete/failed.
+   * Read errors for individual run files are swallowed (the run is skipped silently).
+   */
+  checkIncompleteRuns(cycleId: string): IncompleteRunInfo[] {
+    if (!this.deps.runsDir) return [];
+
+    const cycle = this.deps.cycleManager.get(cycleId);
+    const incomplete: IncompleteRunInfo[] = [];
+
+    for (const bet of cycle.bets) {
+      if (!bet.runId) continue;
+      try {
+        const run = readRun(this.deps.runsDir, bet.runId);
+        if (run.status === 'pending' || run.status === 'running') {
+          incomplete.push({ runId: bet.runId, betId: bet.id, status: run.status });
+        }
+      } catch {
+        // Run file missing or invalid — skip silently (run may not have started yet)
+      }
+    }
+
+    return incomplete;
   }
 
   /**

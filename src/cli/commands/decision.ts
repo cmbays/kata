@@ -31,11 +31,11 @@ export function registerDecisionCommands(parent: Command): void {
     .option('--flavor <name>', 'Flavor context of the decision (omit for stage-level decisions)')
     .option('--step <name>', 'Step context of the decision (omit for flavor/stage-level decisions)')
     .requiredOption('--type <decision-type>', 'Type of decision (e.g. flavor-selection, execution-mode)')
-    .requiredOption('--context <json>', 'JSON object of contextual information at decision time')
-    .requiredOption('--options <json>', 'JSON array of available options the orchestrator considered')
+    .option('--context <json>', 'JSON object of contextual information at decision time (default: {})')
+    .option('--options <json>', 'JSON array of available options the orchestrator considered (default: [])')
     .requiredOption('--selected <option>', 'The option that was chosen')
-    .requiredOption('--confidence <number>', 'Confidence in the selection [0-1]', parseFloat)
-    .requiredOption('--reasoning <text>', 'Orchestrator\'s reasoning for the selection')
+    .option('--confidence <number>', 'Confidence in the selection [0-1] (default: 1.0)', parseFloat)
+    .option('--reasoning <text>', 'Orchestrator\'s reasoning for the selection')
     .option('--yolo', 'Bypass the confidence gate even if confidence is below threshold')
     .action(withCommandContext(async (ctx, runId: string) => {
       const localOpts = ctx.cmd.opts();
@@ -50,33 +50,41 @@ export function registerDecisionCommands(parent: Command): void {
       }
       const stage = stageResult.data as StageCategory;
 
-      // Validate confidence
-      const confidence = localOpts.confidence as number;
+      // Validate confidence (default: 1.0)
+      const confidence = localOpts.confidence !== undefined ? localOpts.confidence as number : 1.0;
       if (Number.isNaN(confidence) || confidence < 0 || confidence > 1) {
         throw new Error(`--confidence must be a number between 0 and 1, got: ${localOpts.confidence as string}`);
       }
 
-      // Parse context JSON
+      // Parse context JSON (default: empty object)
       let context: Record<string, unknown>;
-      try {
-        context = JSON.parse(localOpts.context as string) as Record<string, unknown>;
-        if (typeof context !== 'object' || Array.isArray(context) || context === null) {
-          throw new Error('must be a JSON object');
+      if (localOpts.context === undefined || localOpts.context === null) {
+        context = {};
+      } else {
+        try {
+          context = JSON.parse(localOpts.context as string) as Record<string, unknown>;
+          if (typeof context !== 'object' || Array.isArray(context) || context === null) {
+            throw new Error('must be a JSON object');
+          }
+        } catch (e) {
+          throw new Error(`--context must be a valid JSON object: ${e instanceof Error ? e.message : String(e)}`, { cause: e });
         }
-      } catch (e) {
-        throw new Error(`--context must be a valid JSON object: ${e instanceof Error ? e.message : String(e)}`, { cause: e });
       }
 
-      // Parse options JSON
+      // Parse options JSON (default: empty array)
       let options: string[];
-      try {
-        const parsed: unknown = JSON.parse(localOpts.options as string);
-        if (!Array.isArray(parsed) || parsed.some((o) => typeof o !== 'string')) {
-          throw new Error('must be a JSON array of strings');
+      if (localOpts.options === undefined || localOpts.options === null) {
+        options = [];
+      } else {
+        try {
+          const parsed: unknown = JSON.parse(localOpts.options as string);
+          if (!Array.isArray(parsed) || parsed.some((o) => typeof o !== 'string')) {
+            throw new Error('must be a JSON array of strings');
+          }
+          options = parsed as string[];
+        } catch (e) {
+          throw new Error(`--options must be a valid JSON array of strings: ${e instanceof Error ? e.message : String(e)}`, { cause: e });
         }
-        options = parsed as string[];
-      } catch (e) {
-        throw new Error(`--options must be a valid JSON array of strings: ${e instanceof Error ? e.message : String(e)}`, { cause: e });
       }
 
       // Cross-validate --selected against --options when options are provided
@@ -126,7 +134,7 @@ export function registerDecisionCommands(parent: Command): void {
         context,
         options,
         selection: selected,
-        reasoning: localOpts.reasoning as string,
+        reasoning: (localOpts.reasoning as string | undefined) ?? '(no reasoning provided)',
         confidence,
         decidedAt: now,
         ...(isLowConfidence ? { lowConfidence: true } : {}),

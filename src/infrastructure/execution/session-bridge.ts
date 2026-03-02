@@ -245,6 +245,11 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
     meta.completedAt = completedAt;
     meta.status = result.success ? 'complete' : 'failed';
     this.writeBridgeRunMeta(meta);
+
+    // Update the bet outcome in the cycle JSON so CycleManager.generateCooldown()
+    // sees correct completion data (fixes #216: 0% completion rate in cooldown).
+    // success → 'complete', failure → 'partial' (agent ran but did not fully succeed).
+    this.updateBetOutcomeInCycle(meta.cycleId, meta.betId, result.success ? 'complete' : 'partial');
   }
 
   // ── Cycle-level convenience ───────────────────────────────────────────
@@ -478,6 +483,49 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
         return 'command must exit with code 0';
       default:
         return cond.type;
+    }
+  }
+
+  // ── Cycle JSON update ─────────────────────────────────────────────────
+
+  /**
+   * Update a bet's outcome field directly in the cycle JSON file.
+   * Non-critical: errors are logged as warnings — a failed update should not
+   * abort the run completion, since the history entry was already persisted.
+   *
+   * Only updates bets that are currently 'pending' to avoid overwriting
+   * a manually-set outcome (e.g. user ran kata cooldown before bridge complete).
+   */
+  private updateBetOutcomeInCycle(
+    cycleId: string,
+    betId: string,
+    outcome: 'complete' | 'partial',
+  ): void {
+    try {
+      const cyclesDir = join(this.kataDir, KATA_DIRS.cycles);
+      const cyclePath = join(cyclesDir, `${cycleId}.json`);
+      if (!existsSync(cyclePath)) {
+        logger.warn(`Cannot update bet outcome: cycle file not found for cycle "${cycleId}".`);
+        return;
+      }
+
+      const cycle = JsonStore.read(cyclePath, CycleSchema);
+      const bet = cycle.bets.find((b) => b.id === betId);
+      if (!bet) {
+        logger.warn(`Cannot update bet outcome: bet "${betId}" not found in cycle "${cycleId}".`);
+        return;
+      }
+
+      // Only update if still pending — don't overwrite a manually-set outcome
+      if (bet.outcome !== 'pending') {
+        return;
+      }
+
+      bet.outcome = outcome;
+      cycle.updatedAt = new Date().toISOString();
+      JsonStore.write(cyclePath, cycle, CycleSchema);
+    } catch (err) {
+      logger.warn(`Failed to update bet outcome in cycle "${cycleId}" for bet "${betId}": ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
