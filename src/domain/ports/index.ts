@@ -27,3 +27,12 @@ export type {
   IMetaOrchestrator,
   PipelineOrchestrationResult,
 } from './meta-orchestrator.js';
+export type {
+  ISessionExecutionBridge,
+  PreparedRun,
+  PreparedCycle,
+  CycleExecutionStatus,
+  RunStatus,
+  CycleSummary,
+  AgentCompletionResult,
+} from './session-bridge.js';

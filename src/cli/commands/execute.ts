@@ -20,6 +20,8 @@ import { UsageAnalytics } from '@infra/tracking/usage-analytics.js';
 import { KATA_DIRS } from '@shared/constants/paths.js';
 import { ProjectStateUpdater } from '@features/belt/belt-calculator.js';
 import { CycleManager } from '@domain/services/cycle-manager.js';
+import { SessionExecutionBridge } from '@infra/execution/session-bridge.js';
+import { resolveRef } from '@cli/resolve-ref.js';
 import { handleStatus, handleStats, parseCategoryFilter } from './status.js';
 
 /**
@@ -66,6 +68,149 @@ export function registerExecuteCommands(program: Command): void {
       if (categoryFilter === false) { process.exitCode = 1; return; }
 
       handleStats(ctx, categoryFilter);
+    }));
+
+  // ---- cycle <id> --prepare/--status/--complete (session bridge) ----
+  execute
+    .command('cycle <cycle-ref>')
+    .description('Session bridge — prepare, monitor, or complete a cycle for in-session agent execution')
+    .option('--prepare', 'Prepare all pending bets in the cycle for agent dispatch')
+    .option('--status', 'Get aggregated status of all runs in the cycle')
+    .option('--complete', 'Complete all in-progress runs in the cycle')
+    .option('--json', 'Output as JSON')
+    .action(withCommandContext(async (ctx, cycleRef: string) => {
+      const localOpts = ctx.cmd.opts() as { prepare?: boolean; status?: boolean; complete?: boolean; json?: boolean };
+      const isJson = !!(localOpts.json || ctx.globalOpts.json);
+      const bridge = new SessionExecutionBridge(ctx.kataDir);
+
+      // Resolve cycle ref to ID
+      const manager = new CycleManager(kataDirPath(ctx.kataDir, 'cycles'), JsonStore);
+      const cycleId = resolveRef(cycleRef, manager.list(), 'cycle').id;
+
+      if (localOpts.prepare) {
+        const result = bridge.prepareCycle(cycleId);
+        if (isJson) {
+          console.log(JSON.stringify(result, null, 2));
+        } else {
+          console.log(`Prepared ${result.preparedRuns.length} run(s) for cycle "${result.cycleName}"`);
+          for (const run of result.preparedRuns) {
+            console.log(`  ${run.betName}`);
+            console.log(`    Run ID: ${run.runId}`);
+            console.log(`    Stages: ${run.stages.join(', ')}`);
+            console.log(`    Isolation: ${run.isolation}`);
+          }
+        }
+      } else if (localOpts.status) {
+        const result = bridge.getCycleStatus(cycleId);
+        if (isJson) {
+          console.log(JSON.stringify(result, null, 2));
+        } else {
+          console.log(`Cycle "${result.cycleName}" — ${result.elapsed} elapsed`);
+          if (result.budgetUsed) {
+            console.log(`  Budget: ${result.budgetUsed.percent}% used (~${result.budgetUsed.tokenEstimate} tokens)`);
+          }
+          console.log('');
+          for (const bet of result.bets) {
+            const status = bet.status === 'in-progress' ? '⟳' : bet.status === 'complete' ? '✓' : bet.status === 'failed' ? '✗' : '·';
+            console.log(`  ${status} ${bet.betName} [${bet.status}]`);
+            if (bet.runId) {
+              console.log(`    kansatsu: ${bet.kansatsuCount}, maki: ${bet.artifactCount}, kime: ${bet.decisionCount}`);
+            }
+          }
+        }
+      } else if (localOpts.complete) {
+        const result = bridge.completeCycle(cycleId, {});
+        if (isJson) {
+          console.log(JSON.stringify(result, null, 2));
+        } else {
+          console.log(`Cycle "${result.cycleName}" completed.`);
+          console.log(`  Bets: ${result.completedBets}/${result.totalBets} completed`);
+          console.log(`  Duration: ${formatDurationMs(result.totalDurationMs)}`);
+          if (result.tokenUsage) {
+            console.log(`  Tokens: ${result.tokenUsage.total} total (${result.tokenUsage.inputTokens} in, ${result.tokenUsage.outputTokens} out)`);
+          }
+        }
+      } else {
+        console.error('Specify one of: --prepare, --status, --complete');
+        process.exitCode = 1;
+      }
+    }));
+
+  // ---- complete <run-id> (complete a single bridge run) ----
+  execute
+    .command('complete <run-id>')
+    .description('Complete a single bridge run after agent finishes')
+    .option('--success', 'Mark run as successful (default)')
+    .option('--failed', 'Mark run as failed')
+    .option('--artifacts <json>', 'JSON array of artifacts: [{"name":"...","path":"..."}]')
+    .option('--notes <text>', 'Free-form notes from the agent')
+    .option('--json', 'Output as JSON')
+    .action(withCommandContext(async (ctx, runId: string) => {
+      const localOpts = ctx.cmd.opts() as { success?: boolean; failed?: boolean; artifacts?: string; notes?: string; json?: boolean };
+      const isJson = !!(localOpts.json || ctx.globalOpts.json);
+      const bridge = new SessionExecutionBridge(ctx.kataDir);
+
+      let artifacts: Array<{ name: string; path?: string }> | undefined;
+      if (localOpts.artifacts) {
+        try {
+          const parsed: unknown = JSON.parse(localOpts.artifacts);
+          if (!Array.isArray(parsed)) {
+            console.error('Error: --artifacts must be a JSON array');
+            process.exitCode = 1;
+            return;
+          }
+          for (const item of parsed) {
+            if (typeof item !== 'object' || item === null || typeof (item as Record<string, unknown>).name !== 'string') {
+              console.error('Error: each artifact must have a "name" string property');
+              process.exitCode = 1;
+              return;
+            }
+          }
+          artifacts = parsed as Array<{ name: string; path?: string }>;
+        } catch {
+          console.error('Error: --artifacts must be valid JSON');
+          process.exitCode = 1;
+          return;
+        }
+      }
+
+      bridge.complete(runId, {
+        success: !localOpts.failed,
+        artifacts,
+        notes: localOpts.notes,
+      });
+
+      if (isJson) {
+        console.log(JSON.stringify({ runId, status: localOpts.failed ? 'failed' : 'complete' }));
+      } else {
+        console.log(`Run ${runId} marked as ${localOpts.failed ? 'failed' : 'complete'}.`);
+      }
+    }));
+
+  // ---- prepare --bet <bet-id> (prepare a single bet) ----
+  execute
+    .command('prepare')
+    .description('Prepare a single bet for agent execution (session bridge)')
+    .requiredOption('--bet <bet-id>', 'Bet ID to prepare')
+    .option('--json', 'Output as JSON')
+    .action(withCommandContext(async (ctx) => {
+      const localOpts = ctx.cmd.opts() as { bet: string; json?: boolean };
+      const isJson = !!(localOpts.json || ctx.globalOpts.json);
+      const bridge = new SessionExecutionBridge(ctx.kataDir);
+
+      const result = bridge.prepare(localOpts.bet);
+      if (isJson) {
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        console.log(`Prepared run for bet: "${result.betName}"`);
+        console.log(`  Run ID: ${result.runId}`);
+        console.log(`  Cycle: ${result.cycleName}`);
+        console.log(`  Stages: ${result.stages.join(', ')}`);
+        console.log(`  Isolation: ${result.isolation}`);
+        console.log('');
+        console.log('Agent context block:');
+        console.log(result.agentContext);
+      }
     }));
 
   // ---- run (hidden backward compat) ----
@@ -577,6 +722,15 @@ function parseHintFlags(hints: string[]): Record<string, FlavorHint> | undefined
   }
 
   return result;
+}
+
+function formatDurationMs(ms: number): string {
+  const seconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  if (hours > 0) return `${hours}h ${minutes % 60}m`;
+  if (minutes > 0) return `${minutes}m ${seconds % 60}s`;
+  return `${seconds}s`;
 }
 
 function deleteSavedKata(kataDir: string, name: string): void {
