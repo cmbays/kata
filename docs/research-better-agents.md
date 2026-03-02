@@ -184,6 +184,148 @@ This is a new Kata feature idea — "methodology simulation" — where the thing
 
 ---
 
+## Recommended Actions
+
+Six actionable items, prioritized by impact-to-effort ratio. Each is scoped to a single implementable unit.
+
+### Tier 1: High Impact, Low Effort
+
+#### 1. Prescriptive Rules in KATA.md from Constitutional Learnings
+
+**What**: Add a new auto-refreshed section to KATA.md that surfaces high-confidence learnings as explicit behavioral rules (e.g., "you MUST validate schema before advancing past Build").
+
+**Why**: KATA.md currently reports *state* but doesn't prescribe *behavior*. AGENTS.md's one advantage is explicit Always/Never rules — but those are hardcoded. Kata can generate them from earned knowledge, which is strictly better.
+
+**Where it touches**:
+- `KataMdRefresher` — add a new delimited section for prescriptive rules
+- `KnowledgeStore.loadForStage()` — filter by confidence threshold + permanence level to select rule-worthy learnings
+- New formatter to render learnings as imperative prescriptions
+
+**Effort**: Small. Extends existing refresh pipeline with one new section builder.
+
+#### 2. `quality-eval` Gate Type
+
+**What**: A new `GateConditionType` that scores artifact content against quality criteria, not just presence. Criteria can be structured rubrics or natural-language descriptions evaluated by the execution adapter's LLM.
+
+**Why**: Current gates (`artifact-exists`, `schema-valid`) answer "is it there?" and "is it shaped right?" but never "is it good enough?". This is the L2 gap in the testing pyramid — evaluations that measure quality of non-deterministic output.
+
+**Where it touches**:
+- `GateConditionType` enum in `src/domain/types/gate.ts` — add `quality-eval`
+- `GateEvaluator` in `src/features/pipeline-run/` — add evaluation branch that sends artifact + criteria to the execution adapter
+- Gate schema — add optional `criteria: string[]` field for quality-eval conditions
+
+**Effort**: Medium-small. The gate evaluation architecture already supports exhaustive condition checking; this adds one new branch.
+
+### Tier 2: High Impact, Medium Effort
+
+#### 3. MCP Resource Server for Methodology Context
+
+**What**: A lightweight MCP server that exposes Kata's live state as **Resources** — read-only, URI-addressed data that MCP-compatible hosts (Claude Code, Cursor, Copilot) can subscribe to and surface proactively.
+
+**Resources to expose**:
+
+| Resource URI | Source Service | What It Surfaces |
+|---|---|---|
+| `kata://pipeline/current` | `PipelineComposer` | Active stage, completion %, next gate requirements |
+| `kata://cycle/budget` | `CycleManager.getBudgetStatus()` | Remaining tokens/time for active cycle and bet |
+| `kata://knowledge/stage/{id}` | `KnowledgeStore.loadForStage()` | Learnings filtered to current stage |
+| `kata://gates/status` | `GateEvaluator` | Pass/fail status of current stage's exit gates |
+| `kata://cycle/active` | `CycleManager.get()` | Active cycle details, bet list, outcomes |
+
+**Why**: This is the single biggest workflow improvement for AI-assisted development. The agent gets methodology awareness without running commands or burning tokens on tool schemas. Resources are push-based — the host decides when to surface them, costing zero tokens when not needed.
+
+**Where it touches**:
+- New `src/infrastructure/mcp/` module with MCP server setup
+- Thin wrappers calling existing services (no new business logic)
+- New entrypoint in tsup config for `mcp/index`
+
+**Effort**: Medium. The MCP SDK handles protocol; Kata's services already expose the data. Wiring only.
+
+#### 4. Curated MCP Tool Set (5-7 Tools)
+
+**What**: A small, intentional set of MCP tools for operations that happen *during* AI-assisted work — things awkward to do via CLI mid-flow.
+
+**Tools to expose**:
+
+| Tool | Maps To | Why Not CLI |
+|---|---|---|
+| `record_observation` | `KnowledgeStore.capture()` | Agent captures inline during work, not after |
+| `record_decision` | New: structured decision record | Decisions happen mid-thought, not as a separate command |
+| `evaluate_gate` | `GateEvaluator.evaluateGate()` | Agent checks gate without context-switching to terminal |
+| `query_knowledge` | `KnowledgeStore.query()` | Filtered retrieval with structured params |
+| `report_progress` | Pipeline stage status update | Real-time progress without CLI round-trip |
+
+**Why**: These 5 tools cover the operations where MCP adds genuine value over CLI. Everything else (init, pipeline start, cycle management, cooldown) stays CLI-only to avoid schema bloat.
+
+**Where it touches**: Same `src/infrastructure/mcp/` module as Resources. Tool handlers delegate to existing services.
+
+**Effort**: Medium. Couples with item 3 — build together.
+
+### Tier 3: High Impact, Higher Effort (Future Wave)
+
+#### 5. Methodology Simulation Mode
+
+**What**: A new pipeline execution mode — `kata pipeline simulate` — that validates methodology design by running synthetic scenarios through the pipeline with an LLM judge evaluating adherence.
+
+**Three-agent architecture** (inspired by LangWatch Scenario):
+1. **Pipeline Under Test** — a Kata pipeline definition with its stages and gates
+2. **Work Simulator** — generates synthetic stage inputs (shaped pitches, build artifacts, etc.)
+3. **Methodology Judge** — evaluates whether the pipeline enforces correct ordering, catches missing gates, and handles edge cases
+
+**Use cases**:
+- Validate new pipeline designs before real cycles
+- Regression-test methodology changes (reordered stages, new gates)
+- Compare pipeline variants (with/without learning injection)
+- Training: simulate beginner vs experienced developer behavior against the same pipeline
+
+**Where it touches**:
+- New `src/features/simulation/` module
+- New CLI command: `kata pipeline simulate --scenario <file>`
+- Scenario definition schema (description, synthetic inputs, judge criteria)
+- Integration with execution adapters for LLM-powered simulation
+
+**Effort**: Large. This is a new feature domain. Worth shaping as its own cycle bet.
+
+#### 6. MCP Prompt Templates for Methodology Workflows
+
+**What**: Pre-built prompt templates exposed via MCP's Prompts primitive, selectable in the IDE.
+
+**Templates**:
+- "Start shaping session" — injects relevant learnings, cycle budget constraints, artifact requirements
+- "Evaluate gate readiness" — structures reasoning about whether exit criteria are met
+- "Generate cooldown reflection" — includes execution history, token usage, bet outcomes
+- "Review knowledge" — surfaces learnings for human review with confidence scores
+
+**Why**: Lower priority than Resources because KATA.md already delivers most methodology context statically. Prompts add value when the workflow is interactive and benefits from structured framing.
+
+**Where it touches**: Extends the MCP server from items 3-4 with prompt definitions. Templates reference Resource URIs for dynamic data injection.
+
+**Effort**: Medium-small once the MCP server exists. Depends on items 3-4.
+
+### What NOT to Do
+
+| Anti-pattern | Why to Avoid |
+|---|---|
+| Expose every CLI command as an MCP tool | 20+ tools = 10,000+ schema tokens. Defeats Kata's own token budget tracking |
+| Adopt LangWatch Scenario as a dependency | The *principle* is valuable; the *library* is tied to their ecosystem and commercial platform |
+| Copy AGENTS.md's static rule approach | KATA.md's auto-refresh with edit preservation is already superior. Adopt *prescriptive voice*, not static content |
+| Build MCP Tools before Resources | Resources are the killer feature with zero token overhead. Tools are commodity — add them second |
+| Build simulation before MCP | MCP delivers immediate value for every AI-assisted session. Simulation is a methodology R&D tool — valuable but lower frequency |
+
+### Implementation Sequence
+
+```
+Wave 5 (next):
+  Session 10: Prescriptive KATA.md rules (item 1) + quality-eval gate (item 2)
+  Session 11: MCP Resource server (item 3) + curated tools (item 4)
+
+Wave 6 (future):
+  Session 12: MCP Prompt templates (item 6)
+  Session 13: Methodology simulation (item 5) — shape as its own cycle bet first
+```
+
+---
+
 ## Sources
 
 - [langwatch/better-agents GitHub](https://github.com/langwatch/better-agents)
