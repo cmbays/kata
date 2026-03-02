@@ -7,6 +7,7 @@ import { RuleRegistry } from '@infra/registries/rule-registry.js';
 import { CooldownSession, type BetOutcomeRecord } from '@features/cycle-management/cooldown-session.js';
 import type { SuggestionReviewRecord } from '@features/cycle-management/types.js';
 import { withCommandContext, kataDirPath } from '@cli/utils.js';
+import { resolveRef } from '@cli/resolve-ref.js';
 import {
   formatCycleStatus,
   formatCycleStatusJson,
@@ -24,6 +25,15 @@ import type { Run } from '@domain/types/run-state.js';
 import { BeltCalculator, ProjectStateUpdater } from '@features/belt/belt-calculator.js';
 import { KatakaConfidenceCalculator } from '@features/kataka/kataka-confidence-calculator.js';
 import { KATA_DIRS } from '@shared/constants/paths.js';
+
+/**
+ * Resolve a human-friendly cycle reference (name, short hash, "latest", or UUID)
+ * to a full cycle UUID. Uses CycleManager.list() to get all candidates.
+ */
+function resolveCycleId(manager: CycleManager, ref: string): string {
+  const cycles = manager.list();
+  return resolveRef(ref, cycles, 'cycle').id;
+}
 
 /**
  * Register the `kata cycle` and `kata cooldown` subcommands.
@@ -181,13 +191,14 @@ export function registerCycleCommands(parent: Command): void {
   cycle
     .command('status')
     .description('Show cycle status and budget')
-    .argument('[id]', 'Cycle ID (shows all if omitted)')
+    .argument('[id]', 'Cycle ID, name, short hash, or "latest" (shows all if omitted)')
     .action(withCommandContext((ctx, id: string | undefined) => {
       const manager = new CycleManager(kataDirPath(ctx.kataDir, 'cycles'), JsonStore);
 
       if (id) {
-        const cycle = manager.get(id);
-        const status = manager.getBudgetStatus(id);
+        const resolvedId = resolveCycleId(manager, id);
+        const cycle = manager.get(resolvedId);
+        const status = manager.getBudgetStatus(resolvedId);
 
         if (ctx.globalOpts.json) {
           console.log(formatCycleStatusJson(status, cycle));
@@ -227,9 +238,10 @@ export function registerCycleCommands(parent: Command): void {
     .option('--domain <area>', 'Domain area tag (e.g. web-frontend, web-backend, security)')
     .option('--work-type <type>', 'Work type tag (e.g. bug-fix, feature-addition, refactor)')
     .option('--novelty <level>', 'Novelty level (familiar, novel, experimental)')
-    .action(withCommandContext(async (ctx, cycleId: string, description: string) => {
+    .action(withCommandContext(async (ctx, rawCycleId: string, description: string) => {
       const localOpts = ctx.cmd.opts();
       const manager = new CycleManager(kataDirPath(ctx.kataDir, 'cycles'), JsonStore);
+      const cycleId = resolveCycleId(manager, rawCycleId);
 
       if (localOpts.kata && localOpts.gyo) {
         throw new Error('--kata and --gyo are mutually exclusive');
@@ -326,8 +338,9 @@ export function registerCycleCommands(parent: Command): void {
   cycle
     .command('start <cycle-id>')
     .description('Start a cycle — validates kata assignments and creates run trees for each bet')
-    .action(withCommandContext(async (ctx, cycleId: string) => {
+    .action(withCommandContext(async (ctx, rawCycleId: string) => {
       const manager = new CycleManager(kataDirPath(ctx.kataDir, 'cycles'), JsonStore);
+      const cycleId = resolveCycleId(manager, rawCycleId);
       const runsDir = kataDirPath(ctx.kataDir, 'runs');
       const katasDir = kataDirPath(ctx.kataDir, 'katas');
 
@@ -424,13 +437,14 @@ export function registerCycleCommands(parent: Command): void {
   cycle
     .command('focus')
     .description('Add a focus (bet) to a cycle (use add-bet for new workflows)')
-    .argument('<cycle-id>', 'Cycle ID')
+    .argument('<cycle-id>', 'Cycle ID, name, short hash, or "latest"')
     .option('-d, --description <desc>', 'Bet description')
     .option('-a, --appetite <pct>', 'Appetite percentage', parseInt)
     .option('--skip-prompts', 'Skip interactive prompts')
-    .action(withCommandContext(async (ctx, cycleId: string) => {
+    .action(withCommandContext(async (ctx, rawCycleId: string) => {
       const localOpts = ctx.cmd.opts();
       const manager = new CycleManager(kataDirPath(ctx.kataDir, 'cycles'), JsonStore);
+      const cycleId = resolveCycleId(manager, rawCycleId);
 
       let description: string = localOpts.description;
       let appetite: number = localOpts.appetite;
@@ -477,14 +491,15 @@ export function registerCycleCommands(parent: Command): void {
   bet
     .command('list')
     .description('List bets in the active (or most recent) cycle')
-    .option('--cycle-id <id>', 'Cycle ID (defaults to active cycle)')
+    .option('--cycle-id <id>', 'Cycle ID, name, short hash, or "latest" (defaults to active cycle)')
     .action(withCommandContext((ctx) => {
       const localOpts = ctx.cmd.opts();
       const manager = new CycleManager(kataDirPath(ctx.kataDir, 'cycles'), JsonStore);
 
       let targetCycle;
       if (localOpts.cycleId) {
-        targetCycle = manager.get(localOpts.cycleId as string);
+        const resolvedId = resolveCycleId(manager, localOpts.cycleId as string);
+        targetCycle = manager.get(resolvedId);
       } else {
         const cycles = manager.list();
         if (cycles.length === 0) {
@@ -524,10 +539,11 @@ export function registerCycleCommands(parent: Command): void {
     .description('Finalize cooldown after LLM synthesis (called after --prepare + sensei review)')
     .option('--synthesis-input <id>', 'ID of the pending synthesis input file')
     .option('--accepted <ids>', 'Comma-separated list of proposal IDs to apply')
-    .action(withCommandContext(async (ctx, cycleId: string) => {
+    .action(withCommandContext(async (ctx, rawCycleId: string) => {
       const localOpts = ctx.cmd.opts();
       const cyclesDir = kataDirPath(ctx.kataDir, 'cycles');
       const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycleId = resolveCycleId(manager, rawCycleId);
       const knowledgeStore = new KnowledgeStore(kataDirPath(ctx.kataDir, 'knowledge'));
       const ruleRegistry = new RuleRegistry(kataDirPath(ctx.kataDir, 'rules'));
       const synthesisDir = join(ctx.kataDir, 'synthesis');
@@ -589,16 +605,17 @@ export function registerCycleCommands(parent: Command): void {
 
   // kata cooldown <cycle-id> — default action with --prepare / --yolo / standard mode
   cooldown
-    .argument('<cycle-id>', 'Cycle ID')
+    .argument('<cycle-id>', 'Cycle ID, name, short hash, or "latest"')
     .option('--skip-prompts', 'Skip interactive prompts')
     .option('--auto-accept-suggestions', 'Accept all pending rule suggestions without prompts')
     .option('--prepare', 'Write synthesis input file and exit without completing (use with kata-sensei)')
     .option('--yolo', 'Prepare synthesis input, invoke claude --print for synthesis, apply high-confidence proposals, then complete')
     .option('--depth <level>', 'Synthesis depth: quick | standard | thorough', 'standard')
-    .action(withCommandContext(async (ctx, cycleId: string) => {
+    .action(withCommandContext(async (ctx, rawCycleId: string) => {
       const localOpts = ctx.cmd.opts();
       const cyclesDir = kataDirPath(ctx.kataDir, 'cycles');
       const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycleId = resolveCycleId(manager, rawCycleId);
       const knowledgeStore = new KnowledgeStore(kataDirPath(ctx.kataDir, 'knowledge'));
       const ruleRegistry = new RuleRegistry(kataDirPath(ctx.kataDir, 'rules'));
       const synthesisDir = join(ctx.kataDir, 'synthesis');
