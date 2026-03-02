@@ -147,9 +147,14 @@ describe('SessionExecutionBridge', () => {
       expect(context).toContain(`- **Bet ID**: ${prepared.betId}`);
       expect(context).toContain(`- **Kata dir**: ${kataDir}`);
       expect(context).toContain('### Record as you work');
-      expect(context).toContain(`kata kansatsu record --run-id ${prepared.runId}`);
-      expect(context).toContain(`kata maki record --run-id ${prepared.runId}`);
-      expect(context).toContain(`kata kime record --run-id ${prepared.runId}`);
+      // kansatsu: positional type + content, --run flag (not --run-id)
+      expect(context).toContain(`kata kansatsu record <type> "..." --run ${prepared.runId}`);
+      // valid types listed in context comment
+      expect(context).toContain('decision | prediction | friction | gap | outcome | assumption | insight');
+      // maki: positional name + path, --run flag
+      expect(context).toContain(`kata maki record <name> <path> --run ${prepared.runId}`);
+      // kime: named flags only, --run flag (not --run-id)
+      expect(context).toContain(`kata kime record --decision "..." --rationale "..." --run ${prepared.runId}`);
       expect(context).toContain("### When you're done");
       expect(context).toContain('Do NOT close the run yourself');
     });

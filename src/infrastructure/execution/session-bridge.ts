@@ -160,9 +160,10 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
     lines.push('### Record as you work');
     lines.push('Use these commands at natural checkpoints (not after every line of code):');
     lines.push('');
-    lines.push(`  kata kansatsu record --run-id ${prepared.runId} --note "..." --severity info`);
-    lines.push(`  kata maki record --run-id ${prepared.runId} --name "..." --path "..."`);
-    lines.push(`  kata kime record --run-id ${prepared.runId} --decision "..." --rationale "..."`);
+    lines.push('  # kansatsu record — type is one of: decision | prediction | friction | gap | outcome | assumption | insight');
+    lines.push(`  kata kansatsu record <type> "..." --run ${prepared.runId} --severity info`);
+    lines.push(`  kata maki record <name> <path> --run ${prepared.runId}`);
+    lines.push(`  kata kime record --decision "..." --rationale "..." --run ${prepared.runId}`);
     lines.push('');
 
     // Injected learnings
