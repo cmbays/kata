@@ -15,8 +15,9 @@ import {
   type ProjectState,
 } from '@domain/types/belt.js';
 import { BeltCalculator, type BeltSnapshot, loadProjectState } from '@features/belt/belt-calculator.js';
-import { withCommandContext, kataDirPath } from '@cli/utils.js';
+import { withCommandContext, kataDirPath, resolveKataDir } from '@cli/utils.js';
 import { getLexicon, cap } from '@cli/lexicon.js';
+import { detectSessionContext } from '@shared/lib/session-context.js';
 
 // ---------------------------------------------------------------------------
 // Core handlers (exported so `kata kiai status/stats` can delegate here)
@@ -369,11 +370,44 @@ export function registerStatusCommands(parent: Command): void {
     .command('status')
     .description('Show project overview — active cycle, recent artifacts, knowledge summary')
     .option('--json', 'Output as JSON')
+    .option('--context', 'Show session context (kata init state, worktree mode, active cycle)')
     .action(withCommandContext((ctx) => {
-      const localOpts = ctx.cmd.opts() as { json?: boolean };
+      const localOpts = ctx.cmd.opts() as { json?: boolean; context?: boolean };
       const isJson = !!(localOpts.json || ctx.globalOpts.json);
+
+      if (localOpts.context) {
+        const sessionCtx = detectSessionContext(ctx.globalOpts.cwd);
+        if (isJson) {
+          console.log(JSON.stringify(sessionCtx, null, 2));
+        } else {
+          console.log('Session Context:');
+          console.log(`  Kata initialized: ${sessionCtx.kataInitialized ? 'yes' : 'no'}`);
+          if (sessionCtx.kataDir) {
+            console.log(`  Kata dir: ${sessionCtx.kataDir}`);
+          }
+          console.log(`  In worktree: ${sessionCtx.inWorktree ? 'yes' : 'no'}`);
+          if (sessionCtx.activeCycle) {
+            console.log(`  Active cycle: ${sessionCtx.activeCycle.name} (${sessionCtx.activeCycle.id.slice(0, 8)})`);
+          } else {
+            console.log('  Active cycle: none');
+          }
+        }
+        return;
+      }
+
+      // For non-context mode, we need a valid kataDir
+      if (!ctx.kataDir) {
+        try {
+          const kataDir = resolveKataDir(ctx.globalOpts.cwd);
+          handleStatus({ kataDir, globalOpts: { ...ctx.globalOpts, json: isJson } });
+        } catch (err) {
+          console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
+          process.exitCode = 1;
+        }
+        return;
+      }
       handleStatus({ kataDir: ctx.kataDir, globalOpts: { ...ctx.globalOpts, json: isJson } });
-    }));
+    }, { needsKataDir: false }));
 
   // ---- kata stats ----
   parent
