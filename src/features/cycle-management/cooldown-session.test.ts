@@ -7,7 +7,7 @@ import { KnowledgeStore } from '@infra/knowledge/knowledge-store.js';
 import { ExecutionHistoryEntrySchema } from '@domain/types/history.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
 import { RuleRegistry } from '@infra/registries/rule-registry.js';
-import { createRunTree, writeStageState } from '@infra/persistence/run-store.js';
+import { createRunTree, writeRun, writeStageState } from '@infra/persistence/run-store.js';
 import type { Run, StageState } from '@domain/types/run-state.js';
 // JsonStore satisfies IPersistence structurally — passed as persistence adapter in deps
 import {
@@ -896,6 +896,340 @@ describe('CooldownSession', () => {
 
       expect(result.ruleSuggestions).toHaveLength(1);
       expect(result.ruleSuggestions![0]!.id).toBe(pending.id);
+    });
+  });
+
+  describe('checkIncompleteRuns', () => {
+    const runsDir = join(baseDir, 'runs-incomplete');
+
+    function makeRun(cycleId: string, betId: string, status: Run['status'] = 'completed'): Run {
+      return {
+        id: crypto.randomUUID(),
+        cycleId,
+        betId,
+        betPrompt: 'Test bet',
+        stageSequence: ['build'],
+        currentStage: null,
+        status,
+        startedAt: new Date().toISOString(),
+      };
+    }
+
+    beforeEach(() => {
+      mkdirSync(runsDir, { recursive: true });
+    });
+
+    it('returns empty array when runsDir is not configured', () => {
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      // session has no runsDir
+      const result = session.checkIncompleteRuns(cycle.id);
+      expect(result).toEqual([]);
+    });
+
+    it('returns empty array when all runs are completed', async () => {
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      const withBet = cycleManager.addBet(cycle.id, { description: 'Bet A', appetite: 30, outcome: 'pending', issueRefs: [] });
+      const bet = withBet.bets[0]!;
+
+      const run = makeRun(cycle.id, bet.id, 'completed');
+      createRunTree(runsDir, run);
+      cycleManager.setRunId(cycle.id, bet.id, run.id);
+
+      const sessionWithRuns = new CooldownSession({
+        cycleManager, knowledgeStore, persistence: JsonStore, pipelineDir, historyDir, runsDir,
+      });
+      const result = sessionWithRuns.checkIncompleteRuns(cycle.id);
+      expect(result).toEqual([]);
+    });
+
+    it('returns empty array when all runs are failed', () => {
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      const withBet = cycleManager.addBet(cycle.id, { description: 'Bet B', appetite: 30, outcome: 'pending', issueRefs: [] });
+      const bet = withBet.bets[0]!;
+
+      const run = makeRun(cycle.id, bet.id, 'failed');
+      createRunTree(runsDir, run);
+      cycleManager.setRunId(cycle.id, bet.id, run.id);
+
+      const sessionWithRuns = new CooldownSession({
+        cycleManager, knowledgeStore, persistence: JsonStore, pipelineDir, historyDir, runsDir,
+      });
+      const result = sessionWithRuns.checkIncompleteRuns(cycle.id);
+      expect(result).toEqual([]);
+    });
+
+    it('returns incomplete run info when a run is still pending', () => {
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      const withBet = cycleManager.addBet(cycle.id, { description: 'Bet C', appetite: 30, outcome: 'pending', issueRefs: [] });
+      const bet = withBet.bets[0]!;
+
+      const run = makeRun(cycle.id, bet.id, 'pending');
+      createRunTree(runsDir, run);
+      cycleManager.setRunId(cycle.id, bet.id, run.id);
+
+      const sessionWithRuns = new CooldownSession({
+        cycleManager, knowledgeStore, persistence: JsonStore, pipelineDir, historyDir, runsDir,
+      });
+      const result = sessionWithRuns.checkIncompleteRuns(cycle.id);
+
+      expect(result).toHaveLength(1);
+      expect(result[0]!.runId).toBe(run.id);
+      expect(result[0]!.betId).toBe(bet.id);
+      expect(result[0]!.status).toBe('pending');
+    });
+
+    it('returns incomplete run info when a run is still running', () => {
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      const withBet = cycleManager.addBet(cycle.id, { description: 'Bet D', appetite: 30, outcome: 'pending', issueRefs: [] });
+      const bet = withBet.bets[0]!;
+
+      const run = makeRun(cycle.id, bet.id, 'running');
+      createRunTree(runsDir, run);
+      // Update run status to 'running' since createRunTree initialises as pending
+      writeRun(runsDir, { ...run, status: 'running', currentStage: 'build' });
+      cycleManager.setRunId(cycle.id, bet.id, run.id);
+
+      const sessionWithRuns = new CooldownSession({
+        cycleManager, knowledgeStore, persistence: JsonStore, pipelineDir, historyDir, runsDir,
+      });
+      const result = sessionWithRuns.checkIncompleteRuns(cycle.id);
+
+      expect(result).toHaveLength(1);
+      expect(result[0]!.status).toBe('running');
+    });
+
+    it('skips bets with no runId', () => {
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      cycleManager.addBet(cycle.id, { description: 'Bet no runId', appetite: 30, outcome: 'pending', issueRefs: [] });
+
+      const sessionWithRuns = new CooldownSession({
+        cycleManager, knowledgeStore, persistence: JsonStore, pipelineDir, historyDir, runsDir,
+      });
+      const result = sessionWithRuns.checkIncompleteRuns(cycle.id);
+      expect(result).toEqual([]);
+    });
+
+    it('skips bets whose run file is missing (handles gracefully)', () => {
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      const withBet = cycleManager.addBet(cycle.id, { description: 'Bet missing run', appetite: 30, outcome: 'pending', issueRefs: [] });
+      const bet = withBet.bets[0]!;
+      // Set a runId that doesn't actually have a run file
+      cycleManager.setRunId(cycle.id, bet.id, crypto.randomUUID());
+
+      const sessionWithRuns = new CooldownSession({
+        cycleManager, knowledgeStore, persistence: JsonStore, pipelineDir, historyDir, runsDir,
+      });
+      // Should not throw — missing run file is swallowed
+      const result = sessionWithRuns.checkIncompleteRuns(cycle.id);
+      expect(result).toEqual([]);
+    });
+
+    it('counts only incomplete runs when cycle has mix of complete and incomplete', () => {
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      const withBet1 = cycleManager.addBet(cycle.id, { description: 'Complete bet', appetite: 20, outcome: 'pending', issueRefs: [] });
+      const bet1 = withBet1.bets[0]!;
+      const withBet2 = cycleManager.addBet(cycle.id, { description: 'In-progress bet', appetite: 20, outcome: 'pending', issueRefs: [] });
+      const bet2 = withBet2.bets[1]!;
+
+      const run1 = makeRun(cycle.id, bet1.id, 'completed');
+      createRunTree(runsDir, run1);
+      cycleManager.setRunId(cycle.id, bet1.id, run1.id);
+
+      const run2 = makeRun(cycle.id, bet2.id, 'pending');
+      createRunTree(runsDir, run2);
+      cycleManager.setRunId(cycle.id, bet2.id, run2.id);
+
+      const sessionWithRuns = new CooldownSession({
+        cycleManager, knowledgeStore, persistence: JsonStore, pipelineDir, historyDir, runsDir,
+      });
+      const result = sessionWithRuns.checkIncompleteRuns(cycle.id);
+
+      expect(result).toHaveLength(1);
+      expect(result[0]!.betId).toBe(bet2.id);
+    });
+  });
+
+  describe('run — incomplete runs warning', () => {
+    const runsDir = join(baseDir, 'runs-warn');
+
+    function makeRun(cycleId: string, betId: string, status: Run['status'] = 'completed'): Run {
+      return {
+        id: crypto.randomUUID(),
+        cycleId,
+        betId,
+        betPrompt: 'Test bet',
+        stageSequence: ['build'],
+        currentStage: null,
+        status,
+        startedAt: new Date().toISOString(),
+      };
+    }
+
+    beforeEach(() => {
+      mkdirSync(runsDir, { recursive: true });
+    });
+
+    it('incompleteRuns is undefined when runsDir is not provided', async () => {
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      const result = await session.run(cycle.id);
+      expect(result.incompleteRuns).toBeUndefined();
+    });
+
+    it('incompleteRuns is empty array when all runs are complete', async () => {
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      const withBet = cycleManager.addBet(cycle.id, { description: 'Done bet', appetite: 30, outcome: 'pending', issueRefs: [] });
+      const bet = withBet.bets[0]!;
+
+      const run = makeRun(cycle.id, bet.id, 'completed');
+      createRunTree(runsDir, run);
+      cycleManager.setRunId(cycle.id, bet.id, run.id);
+
+      const sessionWithRuns = new CooldownSession({
+        cycleManager, knowledgeStore, persistence: JsonStore, pipelineDir, historyDir, runsDir,
+      });
+      const result = await sessionWithRuns.run(cycle.id);
+
+      expect(result.incompleteRuns).toBeDefined();
+      expect(result.incompleteRuns).toHaveLength(0);
+    });
+
+    it('incompleteRuns is non-empty when a run is pending (no --force)', async () => {
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      const withBet = cycleManager.addBet(cycle.id, { description: 'In-progress bet', appetite: 30, outcome: 'pending', issueRefs: [] });
+      const bet = withBet.bets[0]!;
+
+      const run = makeRun(cycle.id, bet.id, 'pending');
+      createRunTree(runsDir, run);
+      cycleManager.setRunId(cycle.id, bet.id, run.id);
+
+      const sessionWithRuns = new CooldownSession({
+        cycleManager, knowledgeStore, persistence: JsonStore, pipelineDir, historyDir, runsDir,
+      });
+      // Without --force, should still complete (just warns)
+      const result = await sessionWithRuns.run(cycle.id, [], { force: false });
+
+      expect(result.incompleteRuns).toHaveLength(1);
+      expect(result.incompleteRuns![0]!.runId).toBe(run.id);
+      expect(result.incompleteRuns![0]!.status).toBe('pending');
+    });
+
+    it('incompleteRuns is non-empty when --force is used (bypasses warning, still runs)', async () => {
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      const withBet = cycleManager.addBet(cycle.id, { description: 'Forced bet', appetite: 30, outcome: 'pending', issueRefs: [] });
+      const bet = withBet.bets[0]!;
+
+      const run = makeRun(cycle.id, bet.id, 'running');
+      createRunTree(runsDir, run);
+      writeRun(runsDir, { ...run, status: 'running', currentStage: 'build' });
+      cycleManager.setRunId(cycle.id, bet.id, run.id);
+
+      const sessionWithRuns = new CooldownSession({
+        cycleManager, knowledgeStore, persistence: JsonStore, pipelineDir, historyDir, runsDir,
+      });
+      // --force should proceed without blocking
+      const result = await sessionWithRuns.run(cycle.id, [], { force: true });
+
+      expect(result.incompleteRuns).toHaveLength(1);
+      expect(result.incompleteRuns![0]!.status).toBe('running');
+      // Cycle should still complete
+      expect(cycleManager.get(cycle.id).state).toBe('complete');
+    });
+
+    it('cooldown proceeds normally (no block) even with incomplete runs — just warns', async () => {
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      const withBet = cycleManager.addBet(cycle.id, { description: 'Stale bet', appetite: 30, outcome: 'pending', issueRefs: [] });
+      const bet = withBet.bets[0]!;
+
+      const run = makeRun(cycle.id, bet.id, 'pending');
+      createRunTree(runsDir, run);
+      cycleManager.setRunId(cycle.id, bet.id, run.id);
+
+      const sessionWithRuns = new CooldownSession({
+        cycleManager, knowledgeStore, persistence: JsonStore, pipelineDir, historyDir, runsDir,
+      });
+      // Should not throw — just warns
+      const result = await sessionWithRuns.run(cycle.id);
+
+      expect(result.report).toBeDefined();
+      expect(cycleManager.get(cycle.id).state).toBe('complete');
+    });
+  });
+
+  describe('prepare — incomplete runs warning', () => {
+    const runsDir = join(baseDir, 'runs-prepare-warn');
+    const synthesisDir = join(baseDir, 'synthesis-prepare-warn');
+
+    function makeRun(cycleId: string, betId: string, status: Run['status'] = 'completed'): Run {
+      return {
+        id: crypto.randomUUID(),
+        cycleId,
+        betId,
+        betPrompt: 'Test bet',
+        stageSequence: ['build'],
+        currentStage: null,
+        status,
+        startedAt: new Date().toISOString(),
+      };
+    }
+
+    beforeEach(() => {
+      mkdirSync(runsDir, { recursive: true });
+      mkdirSync(synthesisDir, { recursive: true });
+    });
+
+    it('incompleteRuns is non-empty in prepare result when run is still pending', async () => {
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      const withBet = cycleManager.addBet(cycle.id, { description: 'Pending bet', appetite: 30, outcome: 'pending', issueRefs: [] });
+      const bet = withBet.bets[0]!;
+
+      const run = makeRun(cycle.id, bet.id, 'pending');
+      createRunTree(runsDir, run);
+      cycleManager.setRunId(cycle.id, bet.id, run.id);
+
+      const sessionWithRuns = new CooldownSession({
+        cycleManager, knowledgeStore, persistence: JsonStore, pipelineDir, historyDir, runsDir, synthesisDir,
+      });
+      const result = await sessionWithRuns.prepare(cycle.id, [], 'quick');
+
+      expect(result.incompleteRuns).toHaveLength(1);
+      expect(result.incompleteRuns![0]!.runId).toBe(run.id);
+    });
+
+    it('incompleteRuns is empty in prepare result when all runs complete', async () => {
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      const withBet = cycleManager.addBet(cycle.id, { description: 'Done bet', appetite: 30, outcome: 'pending', issueRefs: [] });
+      const bet = withBet.bets[0]!;
+
+      const run = makeRun(cycle.id, bet.id, 'completed');
+      createRunTree(runsDir, run);
+      cycleManager.setRunId(cycle.id, bet.id, run.id);
+
+      const sessionWithRuns = new CooldownSession({
+        cycleManager, knowledgeStore, persistence: JsonStore, pipelineDir, historyDir, runsDir, synthesisDir,
+      });
+      const result = await sessionWithRuns.prepare(cycle.id, [], 'quick', { force: false });
+
+      expect(result.incompleteRuns).toHaveLength(0);
+    });
+
+    it('prepare with --force proceeds when runs are incomplete', async () => {
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      const withBet = cycleManager.addBet(cycle.id, { description: 'Running bet', appetite: 30, outcome: 'pending', issueRefs: [] });
+      const bet = withBet.bets[0]!;
+
+      const run = makeRun(cycle.id, bet.id, 'running');
+      createRunTree(runsDir, run);
+      writeRun(runsDir, { ...run, status: 'running', currentStage: 'build' });
+      cycleManager.setRunId(cycle.id, bet.id, run.id);
+
+      const sessionWithRuns = new CooldownSession({
+        cycleManager, knowledgeStore, persistence: JsonStore, pipelineDir, historyDir, runsDir, synthesisDir,
+      });
+      const result = await sessionWithRuns.prepare(cycle.id, [], 'quick', { force: true });
+
+      // Should still return incompleteRuns so the caller can surface them
+      expect(result.incompleteRuns).toHaveLength(1);
+      expect(result.synthesisInputId).toBeTruthy();
     });
   });
 });
