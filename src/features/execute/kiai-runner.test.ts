@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { mkdirSync, rmSync, readdirSync } from 'node:fs';
+import { mkdirSync, rmSync, readdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { vi } from 'vitest';
 import type { StageCategory } from '@domain/types/stage.js';
@@ -13,6 +13,7 @@ import type {
 import { FlavorNotFoundError, OrchestratorError } from '@shared/lib/errors.js';
 import { UsageAnalytics } from '@infra/tracking/usage-analytics.js';
 import { MetaOrchestrator } from '@domain/services/meta-orchestrator.js';
+import { ExecutionHistoryEntrySchema } from '@domain/types/history.js';
 import { KiaiRunner, type KiaiRunnerDeps } from './kiai-runner.js';
 
 // ---------------------------------------------------------------------------
@@ -482,6 +483,170 @@ describe('KiaiRunner', () => {
       // Should not throw despite analytics failure
       const result = await runner.runStage('build');
       expect(result.stageCategory).toBe('build');
+    });
+  });
+
+  describe('history entry writing (#215)', () => {
+    function readHistoryFiles(dir: string) {
+      const historyDir = join(dir, 'history');
+      try {
+        return readdirSync(historyDir).filter((f) => f.endsWith('.json'));
+      } catch {
+        return [];
+      }
+    }
+
+    function readHistoryEntry(dir: string, file: string) {
+      const raw = readFileSync(join(dir, 'history', file), 'utf-8');
+      return JSON.parse(raw);
+    }
+
+    it('writes a history entry after runStage', async () => {
+      const deps = makeDeps({ kataDir: baseDir });
+      const runner = new KiaiRunner(deps);
+      await runner.runStage('build');
+      const files = readHistoryFiles(baseDir);
+      expect(files.length).toBe(1);
+    });
+
+    it('history entry passes ExecutionHistoryEntrySchema validation', async () => {
+      const deps = makeDeps({ kataDir: baseDir });
+      const runner = new KiaiRunner(deps);
+      await runner.runStage('build');
+      const files = readHistoryFiles(baseDir);
+      const entry = readHistoryEntry(baseDir, files[0]!);
+      const result = ExecutionHistoryEntrySchema.safeParse(entry);
+      expect(result.success).toBe(true);
+    });
+
+    it('history entry contains all required fields', async () => {
+      const deps = makeDeps({ kataDir: baseDir });
+      const runner = new KiaiRunner(deps);
+      await runner.runStage('build');
+      const files = readHistoryFiles(baseDir);
+      const entry = readHistoryEntry(baseDir, files[0]!);
+
+      expect(entry.id).toBeDefined();
+      expect(entry.pipelineId).toBeDefined();
+      expect(entry.stageType).toBe('build');
+      expect(entry.stageIndex).toBe(0);
+      expect(entry.adapter).toBe('manual');
+      expect(entry.startedAt).toBeDefined();
+      expect(entry.completedAt).toBeDefined();
+      expect(entry.artifactNames).toEqual(expect.arrayContaining([expect.any(String)]));
+    });
+
+    it('history entry uses provided adapterName', async () => {
+      const deps = makeDeps({ kataDir: baseDir, adapterName: 'claude-cli' });
+      const runner = new KiaiRunner(deps);
+      await runner.runStage('build');
+      const files = readHistoryFiles(baseDir);
+      const entry = readHistoryEntry(baseDir, files[0]!);
+      expect(entry.adapter).toBe('claude-cli');
+    });
+
+    it('history entry includes cycleId and betId from bet context', async () => {
+      const deps = makeDeps({ kataDir: baseDir });
+      const runner = new KiaiRunner(deps);
+      const cycleId = '00000000-0000-4000-8000-000000000001';
+      const betId = '00000000-0000-4000-8000-000000000002';
+      await runner.runStage('build', { bet: { cycleId, id: betId } });
+      const files = readHistoryFiles(baseDir);
+      const entry = readHistoryEntry(baseDir, files[0]!);
+      expect(entry.cycleId).toBe(cycleId);
+      expect(entry.betId).toBe(betId);
+    });
+
+    it('dryRun does not write history entries', async () => {
+      const deps = makeDeps({ kataDir: baseDir });
+      const runner = new KiaiRunner(deps);
+      await runner.runStage('build', { dryRun: true });
+      const files = readHistoryFiles(baseDir);
+      expect(files).toHaveLength(0);
+    });
+
+    it('writes history entries for each stage in runPipeline', async () => {
+      const flavors = [
+        makeFlavor('research-standard', 'research'),
+        makeFlavor('build-standard', 'build'),
+      ];
+      const deps: KiaiRunnerDeps = {
+        flavorRegistry: makeFlavorRegistry(flavors),
+        decisionRegistry: makeDecisionRegistry(),
+        executor: makeExecutor(),
+        kataDir: baseDir,
+      };
+      const runner = new KiaiRunner(deps);
+      await runner.runPipeline(['research', 'build']);
+      const files = readHistoryFiles(baseDir);
+      expect(files).toHaveLength(2);
+
+      // Verify stageIndex is set correctly
+      const entries = files.map((f) => readHistoryEntry(baseDir, f));
+      const indices = entries.map((e: { stageIndex: number }) => e.stageIndex).sort();
+      expect(indices).toEqual([0, 1]);
+    });
+
+    it('pipeline history entries all pass schema validation', async () => {
+      const flavors = [
+        makeFlavor('research-standard', 'research'),
+        makeFlavor('plan-standard', 'plan'),
+        makeFlavor('build-standard', 'build'),
+      ];
+      const deps: KiaiRunnerDeps = {
+        flavorRegistry: makeFlavorRegistry(flavors),
+        decisionRegistry: makeDecisionRegistry(),
+        executor: makeExecutor(),
+        kataDir: baseDir,
+      };
+      const runner = new KiaiRunner(deps);
+      await runner.runPipeline(['research', 'plan', 'build']);
+      const files = readHistoryFiles(baseDir);
+      expect(files).toHaveLength(3);
+
+      for (const file of files) {
+        const entry = readHistoryEntry(baseDir, file);
+        const result = ExecutionHistoryEntrySchema.safeParse(entry);
+        expect(result.success).toBe(true);
+      }
+    });
+
+    it('dryRun pipeline does not write history entries', async () => {
+      const flavors = [
+        makeFlavor('research-standard', 'research'),
+        makeFlavor('build-standard', 'build'),
+      ];
+      const deps: KiaiRunnerDeps = {
+        flavorRegistry: makeFlavorRegistry(flavors),
+        decisionRegistry: makeDecisionRegistry(),
+        executor: makeExecutor(),
+        kataDir: baseDir,
+      };
+      const runner = new KiaiRunner(deps);
+      await runner.runPipeline(['research', 'build'], { dryRun: true });
+      const files = readHistoryFiles(baseDir);
+      expect(files).toHaveLength(0);
+    });
+
+    it('history entry has valid durationMs', async () => {
+      const deps = makeDeps({ kataDir: baseDir });
+      const runner = new KiaiRunner(deps);
+      await runner.runStage('build');
+      const files = readHistoryFiles(baseDir);
+      const entry = readHistoryEntry(baseDir, files[0]!);
+      expect(entry.durationMs).toBeGreaterThanOrEqual(0);
+    });
+
+    it('history entry timestamps are valid ISO 8601', async () => {
+      const deps = makeDeps({ kataDir: baseDir });
+      const runner = new KiaiRunner(deps);
+      await runner.runStage('build');
+      const files = readHistoryFiles(baseDir);
+      const entry = readHistoryEntry(baseDir, files[0]!);
+      expect(() => new Date(entry.startedAt)).not.toThrow();
+      expect(() => new Date(entry.completedAt)).not.toThrow();
+      expect(new Date(entry.startedAt).toISOString()).toBe(entry.startedAt);
+      expect(new Date(entry.completedAt).toISOString()).toBe(entry.completedAt);
     });
   });
 });
