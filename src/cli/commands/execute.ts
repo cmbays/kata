@@ -153,9 +153,22 @@ export function registerExecuteCommands(program: Command): void {
       let artifacts: Array<{ name: string; path?: string }> | undefined;
       if (localOpts.artifacts) {
         try {
-          artifacts = JSON.parse(localOpts.artifacts);
+          const parsed: unknown = JSON.parse(localOpts.artifacts);
+          if (!Array.isArray(parsed)) {
+            console.error('Error: --artifacts must be a JSON array');
+            process.exitCode = 1;
+            return;
+          }
+          for (const item of parsed) {
+            if (typeof item !== 'object' || item === null || typeof (item as Record<string, unknown>).name !== 'string') {
+              console.error('Error: each artifact must have a "name" string property');
+              process.exitCode = 1;
+              return;
+            }
+          }
+          artifacts = parsed as Array<{ name: string; path?: string }>;
         } catch {
-          console.error('Error: --artifacts must be valid JSON array');
+          console.error('Error: --artifacts must be valid JSON');
           process.exitCode = 1;
           return;
         }

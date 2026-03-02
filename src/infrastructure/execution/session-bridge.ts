@@ -14,26 +14,28 @@ import type { ExecutionManifest } from '@domain/types/manifest.js';
 import { ExecutionHistoryEntrySchema } from '@domain/types/history.js';
 import { CycleSchema, type Cycle } from '@domain/types/cycle.js';
 import { type Bet } from '@domain/types/bet.js';
+import { z } from 'zod/v4';
 import { JsonStore } from '@infra/persistence/json-store.js';
 import { KATA_DIRS } from '@shared/constants/paths.js';
 import { logger } from '@shared/lib/logger.js';
 
 /**
- * Metadata stored for an open (in-progress) bridge run.
- * Written to .kata/bridge-runs/<runId>.json so getCycleStatus() can find them.
+ * Schema for bridge-run metadata stored at .kata/bridge-runs/<runId>.json.
  */
-interface BridgeRunMeta {
-  runId: string;
-  betId: string;
-  betName: string;
-  cycleId: string;
-  cycleName: string;
-  stages: string[];
-  isolation: 'worktree' | 'shared';
-  startedAt: string;
-  completedAt?: string;
-  status: 'in-progress' | 'complete' | 'failed';
-}
+const BridgeRunMetaSchema = z.object({
+  runId: z.string(),
+  betId: z.string(),
+  betName: z.string(),
+  cycleId: z.string(),
+  cycleName: z.string(),
+  stages: z.array(z.string()),
+  isolation: z.enum(['worktree', 'shared']),
+  startedAt: z.string(),
+  completedAt: z.string().optional(),
+  status: z.enum(['in-progress', 'complete', 'failed']),
+});
+
+type BridgeRunMeta = z.infer<typeof BridgeRunMetaSchema>;
 
 /**
  * SessionExecutionBridge — splits the adapter lifecycle for in-session execution.
@@ -233,6 +235,10 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
         runId,
         error: err instanceof Error ? err.message : String(err),
       });
+      throw new Error(
+        `Bridge run ${runId} history entry failed to write: ${err instanceof Error ? err.message : String(err)}`,
+        { cause: err },
+      );
     }
 
     // Update bridge run metadata
@@ -478,7 +484,7 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
   // ── Bridge run metadata persistence ───────────────────────────────────
 
   private bridgeRunsDir(): string {
-    return join(this.kataDir, 'bridge-runs');
+    return join(this.kataDir, KATA_DIRS.bridgeRuns);
   }
 
   private writeBridgeRunMeta(meta: BridgeRunMeta): void {
@@ -494,7 +500,7 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
     const path = join(this.bridgeRunsDir(), `${runId}.json`);
     if (!existsSync(path)) return null;
     try {
-      return JSON.parse(readFileSync(path, 'utf-8'));
+      return BridgeRunMetaSchema.parse(JSON.parse(readFileSync(path, 'utf-8')));
     } catch {
       return null;
     }
@@ -508,7 +514,7 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
       .filter((f) => f.endsWith('.json'))
       .map((f) => {
         try {
-          const meta: BridgeRunMeta = JSON.parse(readFileSync(join(dir, f), 'utf-8'));
+          const meta = BridgeRunMetaSchema.parse(JSON.parse(readFileSync(join(dir, f), 'utf-8')));
           return meta.cycleId === cycleId ? meta : null;
         } catch {
           return null;

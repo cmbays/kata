@@ -21,6 +21,7 @@ export const KATA_DIRS = {
   diary: 'diary',
   sessions: 'sessions',
   kataka: 'kataka',
+  bridgeRuns: 'bridge-runs',
 } as const;
 
 export type KataDirKey = keyof typeof KATA_DIRS;
