@@ -64,11 +64,16 @@ export function withCommandContext(
   options?: { needsKataDir?: boolean },
 ): (...args: unknown[]) => Promise<void> {
   return async (...args: unknown[]) => {
-    const cmd = args[args.length - 1] as Command;
-    const positionalArgs = args.slice(0, -2);
-    const globalOpts = getGlobalOptions(cmd);
-
+    // Everything is inside the try/catch so no error can escape as an
+    // unhandled rejection (which Node.js would print, duplicating the
+    // message already emitted by handleCommandError).
+    let verbose = false;
     try {
+      const cmd = args[args.length - 1] as Command;
+      const positionalArgs = args.slice(0, -2);
+      const globalOpts = getGlobalOptions(cmd);
+      verbose = globalOpts.verbose;
+
       const kataDir = options?.needsKataDir === false
         ? ''
         : resolveKataDir(globalOpts.cwd);
@@ -83,7 +88,7 @@ export function withCommandContext(
       const ctx: CommandContext = { globalOpts: { ...globalOpts, plain }, kataDir, cmd };
       await handler(ctx, ...positionalArgs);
     } catch (error) {
-      handleCommandError(error, globalOpts.verbose);
+      handleCommandError(error, verbose);
     }
   };
 }
