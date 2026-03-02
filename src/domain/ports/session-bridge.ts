@@ -27,6 +27,11 @@ export interface PreparedRun {
   isolation: 'worktree' | 'shared';
   /** ISO timestamp when the run was opened */
   startedAt: string;
+  /**
+   * ID of the kataka (agent) driving this run.
+   * When set, written to run.json so observations auto-populate katakaId.
+   */
+  katakaId?: string;
 }
 
 /**
@@ -102,8 +107,11 @@ export interface AgentCompletionResult {
 export interface ISessionExecutionBridge {
   // ── Run-level primitives ──────────────────────────────────────────────
 
-  /** Prepare a single bet for execution. Opens a run, builds manifest. */
-  prepare(betId: string): PreparedRun;
+  /**
+   * Prepare a single bet for execution. Opens a run, builds manifest.
+   * @param katakaId — optional kataka ID to attribute this run to
+   */
+  prepare(betId: string, katakaId?: string): PreparedRun;
 
   /** Generate the agent context block from a prepared run. */
   formatAgentContext(prepared: PreparedRun): string;
@@ -128,8 +136,11 @@ export interface ISessionExecutionBridge {
 
   // ── Cycle-level convenience ───────────────────────────────────────────
 
-  /** Prepare all bets in a cycle. Returns all prepared runs at once. */
-  prepareCycle(cycleId: string): PreparedCycle;
+  /**
+   * Prepare all bets in a cycle. Returns all prepared runs at once.
+   * @param katakaId — optional kataka ID to attribute all runs to
+   */
+  prepareCycle(cycleId: string, katakaId?: string): PreparedCycle;
 
   /** Get aggregated status of all runs in a cycle. */
   getCycleStatus(cycleId: string): CycleExecutionStatus;

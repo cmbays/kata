@@ -35,6 +35,8 @@ const BridgeRunMetaSchema = z.object({
   startedAt: z.string(),
   completedAt: z.string().optional(),
   status: z.enum(['in-progress', 'complete', 'failed']),
+  /** Kataka (agent) ID driving this run — written to run.json on prepare. */
+  katakaId: z.string().uuid().optional(),
 });
 
 type BridgeRunMeta = z.infer<typeof BridgeRunMetaSchema>;
@@ -55,7 +57,7 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
 
   // ── Run-level primitives ──────────────────────────────────────────────
 
-  prepare(betId: string): PreparedRun {
+  prepare(betId: string, katakaId?: string): PreparedRun {
     const cycle = this.findCycleForBet(betId);
     const bet = cycle.bets.find((b) => b.id === betId);
     if (!bet) {
@@ -84,6 +86,7 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
       stages,
       isolation,
       startedAt,
+      katakaId,
     };
 
     // Persist bridge run metadata so getCycleStatus() can find it
@@ -97,13 +100,14 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
       isolation,
       startedAt,
       status: 'in-progress',
+      katakaId,
     });
 
     // Write run.json to runs/<run-id>/run.json so kata watch can discover
     // this run. BridgeRunMeta uses status "in-progress" but RunSchema requires
     // "running" — we map on write. Only valid StageCategory values are written
     // (filter guards against hypothetical custom stage strings).
-    this.writeRunJson(runId, bet.id, bet.description, cycle.id, stages, startedAt);
+    this.writeRunJson(runId, bet.id, bet.description, cycle.id, stages, startedAt, katakaId);
 
     return prepared;
   }
@@ -319,7 +323,7 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
 
   // ── Cycle-level convenience ───────────────────────────────────────────
 
-  prepareCycle(cycleId: string): PreparedCycle {
+  prepareCycle(cycleId: string, katakaId?: string): PreparedCycle {
     const cycle = this.loadCycle(cycleId);
     const pendingBets = cycle.bets.filter((b) => b.outcome === 'pending');
 
@@ -327,7 +331,7 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
       throw new Error(`No pending bets in cycle "${cycle.name ?? cycle.id}".`);
     }
 
-    const preparedRuns = pendingBets.map((bet) => this.prepare(bet.id));
+    const preparedRuns = pendingBets.map((bet) => this.prepare(bet.id, katakaId));
 
     return {
       cycleId: cycle.id,
@@ -617,6 +621,7 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
     cycleId: string,
     stages: string[],
     startedAt: string,
+    katakaId?: string,
   ): void {
     try {
       const validCategories = StageCategorySchema.options;
@@ -639,6 +644,7 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
         currentStage: finalSequence[0] ?? null,
         status: 'running',
         startedAt,
+        ...(katakaId ? { katakaId } : {}),
       });
     } catch (err) {
       // Non-critical: log a warning but do not abort prepare(). The bridge-run
