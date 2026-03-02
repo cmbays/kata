@@ -5,6 +5,7 @@ import { ConfigNotFoundError } from '@shared/lib/errors.js';
 import { KATA_DIRS, type KataDirKey } from '@shared/constants/paths.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
 import { KataConfigSchema } from '@domain/types/config.js';
+import { logger } from '@shared/lib/logger.js';
 
 /**
  * Resolve the .kata/ directory path from a given cwd (or process.cwd()).
@@ -100,7 +101,11 @@ function loadConfigOutputMode(kataDir: string): boolean {
   try {
     const config = JsonStore.read(configPath, KataConfigSchema);
     return config.outputMode === 'plain';
-  } catch {
+  } catch (err) {
+    logger.warn(
+      `Failed to parse .kata/config.json — falling back to default output mode. ` +
+      `Error: ${err instanceof Error ? err.message : String(err)}`,
+    );
     return false;
   }
 }

@@ -1,5 +1,6 @@
 import { join } from 'node:path';
 import type { Command } from 'commander';
+import { logger } from '@shared/lib/logger.js';
 import { CycleManager } from '@domain/services/cycle-manager.js';
 import { KnowledgeStore } from '@infra/knowledge/knowledge-store.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
@@ -683,6 +684,7 @@ export function registerCycleCommands(parent: Command): void {
 
         let synthesisProposals: import('@domain/types/synthesis.js').SynthesisProposal[] = [];
         const synthesisInputId: string = prepareResult.synthesisInputId;
+        let synthesisError: string | undefined;
 
         try {
           const { execFileSync } = await import('node:child_process');
@@ -728,8 +730,12 @@ export function registerCycleCommands(parent: Command): void {
             }
           }
         } catch (err) {
-          if (!ctx.globalOpts.json) {
-            console.warn(`Warning: claude synthesis failed (${err instanceof Error ? err.message : String(err)}). Completing without proposals.`);
+          const msg = `claude synthesis failed: ${err instanceof Error ? err.message : String(err)}`;
+          synthesisError = msg;
+          if (ctx.globalOpts.json) {
+            logger.warn(`--yolo synthesis failure: ${msg}. Completing without proposals.`);
+          } else {
+            console.warn(`Warning: ${msg}. Completing without proposals.`);
           }
         }
 
@@ -748,6 +754,7 @@ export function registerCycleCommands(parent: Command): void {
             report: yoloResult.report,
             proposals: yoloResult.proposals,
             synthesisProposals: yoloResult.synthesisProposals,
+            ...(synthesisError !== undefined ? { synthesisError } : {}),
           }, null, 2));
         } else {
           if (yoloResult.synthesisProposals && yoloResult.synthesisProposals.length > 0) {
