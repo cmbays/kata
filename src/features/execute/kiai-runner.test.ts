@@ -587,6 +587,26 @@ describe('KiaiRunner', () => {
       expect(indices).toEqual([0, 1]);
     });
 
+    it('pipeline history entries share the same pipelineId', async () => {
+      const flavors = [
+        makeFlavor('research-standard', 'research'),
+        makeFlavor('build-standard', 'build'),
+      ];
+      const deps: KiaiRunnerDeps = {
+        flavorRegistry: makeFlavorRegistry(flavors),
+        decisionRegistry: makeDecisionRegistry(),
+        executor: makeExecutor(),
+        kataDir: baseDir,
+      };
+      const runner = new KiaiRunner(deps);
+      await runner.runPipeline(['research', 'build']);
+      const files = readHistoryFiles(baseDir);
+      const entries = files.map((f) => readHistoryEntry(baseDir, f));
+      const pipelineIds = entries.map((e: { pipelineId: string }) => e.pipelineId);
+      expect(pipelineIds).toHaveLength(2);
+      expect(pipelineIds[0]).toBe(pipelineIds[1]);
+    });
+
     it('pipeline history entries all pass schema validation', async () => {
       const flavors = [
         makeFlavor('research-standard', 'research'),

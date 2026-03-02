@@ -177,6 +177,11 @@ export class KiaiRunner {
       ruleRegistry: this.deps.ruleRegistry,
     });
 
+    // One pipelineId shared across all stage entries so callers can correlate them.
+    // startedAt/completedAt/durationMs are pipeline-level (not per-stage) because
+    // MetaOrchestrator runs stages sequentially in a single call; per-stage timing
+    // would require deeper refactoring and is left for a future improvement.
+    const pipelineId = randomUUID();
     const startedAt = new Date().toISOString();
     const startMs = Date.now();
     const result = await metaOrchestrator.runPipeline(categories, options.bet, { yolo: options.yolo, flavorHints: options.flavorHints, katakaId: options.katakaId });
@@ -198,6 +203,7 @@ export class KiaiRunner {
         }
 
         this.writeHistoryEntry({
+          pipelineId,
           stageType: stageResult.stageCategory,
           stageFlavor: stageResult.selectedFlavors.join(','),
           stageIndex: i,
@@ -239,6 +245,7 @@ export class KiaiRunner {
    * Non-critical — failures are logged but never crash the caller.
    */
   private writeHistoryEntry(params: {
+    pipelineId?: string;
     stageType: string;
     stageFlavor?: string;
     stageIndex: number;
@@ -253,7 +260,7 @@ export class KiaiRunner {
       const id = randomUUID();
       const entry = ExecutionHistoryEntrySchema.parse({
         id,
-        pipelineId: randomUUID(),
+        pipelineId: params.pipelineId ?? randomUUID(),
         stageType: params.stageType,
         stageFlavor: params.stageFlavor,
         stageIndex: params.stageIndex,
@@ -273,8 +280,9 @@ export class KiaiRunner {
         JSON.stringify(entry, null, 2) + '\n',
       );
     } catch (err) {
-      logger.warn('Failed to write history entry — non-fatal, continuing.', {
+      logger.error('Failed to write history entry — cooldown will have incomplete data.', {
         stageType: params.stageType,
+        errorType: err instanceof Error ? err.constructor.name : typeof err,
         error: err instanceof Error ? err.message : String(err),
       });
     }

@@ -34,9 +34,7 @@ describe('resolveRef', () => {
 
     it('throws when no items have createdAt', () => {
       const noTimestamps = [{ id: '550e8400-e29b-41d4-a716-446655440000', name: 'test' }];
-      expect(() => resolveRef('latest', noTimestamps, 'cycle')).toThrow(
-        'Cannot resolve "latest": no cycles have a createdAt timestamp.',
-      );
+      expect(() => resolveRef('latest', noTimestamps, 'cycle')).toThrow('Cycle "latest" not found.');
     });
   });
 
@@ -98,7 +96,7 @@ describe('resolveRef', () => {
 
   describe('error cases', () => {
     it('throws when items list is empty', () => {
-      expect(() => resolveRef('anything', [], 'cycle')).toThrow('No cycles found.');
+      expect(() => resolveRef('anything', [], 'cycle')).toThrow('Cycle "anything" not found.');
     });
 
     it('throws when nothing matches', () => {
@@ -108,7 +106,7 @@ describe('resolveRef', () => {
     });
 
     it('includes label in error messages', () => {
-      expect(() => resolveRef('nope', [], 'run')).toThrow('No runs found.');
+      expect(() => resolveRef('nope', [], 'run')).toThrow('Run "nope" not found.');
       expect(() => resolveRef('nope', ITEMS, 'bet')).toThrow('Bet "nope" not found.');
     });
   });
