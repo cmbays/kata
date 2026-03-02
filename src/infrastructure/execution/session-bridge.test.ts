@@ -232,6 +232,67 @@ describe('SessionExecutionBridge', () => {
         expect(existsSync(stateJson)).toBe(true);
       }
     });
+
+    it('should write katakaId to run.json when provided (#kataka-attribution)', () => {
+      const cycle = createCycle(kataDir);
+      const betId = cycle.bets[0]!.id;
+      const bridge = new SessionExecutionBridge(kataDir);
+      const katakaId = randomUUID();
+
+      const prepared = bridge.prepare(betId, katakaId);
+
+      // katakaId should be on the PreparedRun
+      expect(prepared.katakaId).toBe(katakaId);
+
+      // katakaId should be written to run.json
+      const runJsonPath = join(kataDir, 'runs', prepared.runId, 'run.json');
+      const run = RunSchema.parse(JSON.parse(readFileSync(runJsonPath, 'utf-8')));
+      expect(run.katakaId).toBe(katakaId);
+    });
+
+    it('should write katakaId to bridge-run metadata when provided (#kataka-attribution)', () => {
+      const cycle = createCycle(kataDir);
+      const betId = cycle.bets[0]!.id;
+      const bridge = new SessionExecutionBridge(kataDir);
+      const katakaId = randomUUID();
+
+      const prepared = bridge.prepare(betId, katakaId);
+
+      const metaPath = join(kataDir, 'bridge-runs', `${prepared.runId}.json`);
+      const meta = JSON.parse(readFileSync(metaPath, 'utf-8'));
+      expect(meta.katakaId).toBe(katakaId);
+    });
+
+    it('should omit katakaId from run.json when not provided (#kataka-attribution)', () => {
+      const cycle = createCycle(kataDir);
+      const betId = cycle.bets[0]!.id;
+      const bridge = new SessionExecutionBridge(kataDir);
+
+      const prepared = bridge.prepare(betId);
+
+      // katakaId should be absent when not provided
+      expect(prepared.katakaId).toBeUndefined();
+
+      const runJsonPath = join(kataDir, 'runs', prepared.runId, 'run.json');
+      const run = RunSchema.parse(JSON.parse(readFileSync(runJsonPath, 'utf-8')));
+      expect(run.katakaId).toBeUndefined();
+    });
+
+    it('prepareCycle() should propagate katakaId to all prepared runs (#kataka-attribution)', () => {
+      const cycle = createCycle(kataDir);
+      const bridge = new SessionExecutionBridge(kataDir);
+      const katakaId = randomUUID();
+
+      const prepared = bridge.prepareCycle(cycle.id, katakaId);
+
+      expect(prepared.preparedRuns).toHaveLength(2);
+      for (const run of prepared.preparedRuns) {
+        expect(run.katakaId).toBe(katakaId);
+        const runJsonPath = join(kataDir, 'runs', run.runId, 'run.json');
+        const runJson = RunSchema.parse(JSON.parse(readFileSync(runJsonPath, 'utf-8')));
+        expect(runJson.katakaId).toBe(katakaId);
+      }
+    });
   });
 
   describe('formatAgentContext()', () => {

@@ -77,9 +77,10 @@ export function registerExecuteCommands(program: Command): void {
     .option('--prepare', 'Prepare all pending bets in the cycle for agent dispatch')
     .option('--status', 'Get aggregated status of all runs in the cycle')
     .option('--complete', 'Complete all in-progress runs in the cycle')
+    .option('--kataka <id>', 'Kataka (agent) ID to attribute all prepared runs to (only used with --prepare)')
     .option('--json', 'Output as JSON')
     .action(withCommandContext(async (ctx, cycleRef: string) => {
-      const localOpts = ctx.cmd.opts() as { prepare?: boolean; status?: boolean; complete?: boolean; json?: boolean };
+      const localOpts = ctx.cmd.opts() as { prepare?: boolean; status?: boolean; complete?: boolean; kataka?: string; json?: boolean };
       const isJson = !!(localOpts.json || ctx.globalOpts.json);
       const bridge = new SessionExecutionBridge(ctx.kataDir);
 
@@ -88,7 +89,24 @@ export function registerExecuteCommands(program: Command): void {
       const cycleId = resolveRef(cycleRef, manager.list(), 'cycle').id;
 
       if (localOpts.prepare) {
-        const result = bridge.prepareCycle(cycleId);
+        // Validate --kataka if provided
+        if (localOpts.kataka) {
+          try {
+            const katakaRegistry = new KatakaRegistry(join(ctx.kataDir, KATA_DIRS.kataka));
+            katakaRegistry.get(localOpts.kataka);
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            if (msg.includes('not found')) {
+              console.error(`Error: kataka "${localOpts.kataka}" not found. Use "kata agent list" to see registered kataka.`);
+            } else {
+              console.error(`Error: Failed to load kataka "${localOpts.kataka}": ${msg}`);
+            }
+            process.exitCode = 1;
+            return;
+          }
+        }
+
+        const result = bridge.prepareCycle(cycleId, localOpts.kataka);
         if (isJson) {
           console.log(JSON.stringify(result, null, 2));
         } else {
@@ -212,13 +230,31 @@ export function registerExecuteCommands(program: Command): void {
     .command('prepare')
     .description('Prepare a single bet for agent execution (session bridge)')
     .requiredOption('--bet <bet-id>', 'Bet ID to prepare')
+    .option('--kataka <id>', 'Kataka (agent) ID to attribute this run to — written to run.json so observations auto-populate katakaId')
     .option('--json', 'Output as JSON')
     .action(withCommandContext(async (ctx) => {
-      const localOpts = ctx.cmd.opts() as { bet: string; json?: boolean };
+      const localOpts = ctx.cmd.opts() as { bet: string; kataka?: string; json?: boolean };
       const isJson = !!(localOpts.json || ctx.globalOpts.json);
       const bridge = new SessionExecutionBridge(ctx.kataDir);
 
-      const result = bridge.prepare(localOpts.bet);
+      // Validate --kataka if provided
+      if (localOpts.kataka) {
+        try {
+          const katakaRegistry = new KatakaRegistry(join(ctx.kataDir, KATA_DIRS.kataka));
+          katakaRegistry.get(localOpts.kataka);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          if (msg.includes('not found')) {
+            console.error(`Error: kataka "${localOpts.kataka}" not found. Use "kata agent list" to see registered kataka.`);
+          } else {
+            console.error(`Error: Failed to load kataka "${localOpts.kataka}": ${msg}`);
+          }
+          process.exitCode = 1;
+          return;
+        }
+      }
+
+      const result = bridge.prepare(localOpts.bet, localOpts.kataka);
       if (isJson) {
         console.log(JSON.stringify(result, null, 2));
       } else {
