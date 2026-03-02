@@ -84,14 +84,24 @@ Behavior:
 1. Run `kata kiai cycle <id> --prepare --json`
 2. Present the execution plan: which bets, which stages, which isolation mode
 3. **Wait for user confirmation** — never spawn agents without explicit approval
-4. For each prepared run, spawn an agent using the `agentContext` from the prepared run:
+4. For each prepared run, generate a **fresh** agent context at dispatch time and spawn:
+
+   ```bash
+   # Fetch the current-binary agent context for this run (late-bind — always up to date)
+   kata kiai context <run-id>
    ```
+
+   ```text
    Agent(
-     prompt = preparedRun.agentContext,
+     prompt = output of "kata kiai context <run-id>",
      isolation = preparedRun.isolation === "worktree" ? "worktree" : undefined,
      subagent_type = "general-purpose"
    )
    ```
+   > **Why late-bind?** `agentContext` is no longer stored in the prepared-run metadata.
+   > Generating fresh at dispatch time means agents always receive instructions from the
+   > current binary, eliminating the bootstrap ordering problem (#243) where agents
+   > inherited buggy context from the binary that was running at prepare time.
 5. Agents self-instrument via `kata kansatsu record`, `kata maki record`, `kata kime record`
 
 ### Execution Phase
@@ -269,7 +279,7 @@ The complete cycle lifecycle from the user's perspective:
    Sensei: kata kiai cycle <id> --prepare --json
    Sensei: presents execution plan, waits for confirmation
    User: "Go."
-   Sensei: spawns agents with agentContext from prepared runs
+   Sensei: for each run, calls `kata kiai context <run-id>` to get fresh agent context, then spawns agents
 
 4. [Agents execute, writing kansatsu/maki/kime to .kata/]
 

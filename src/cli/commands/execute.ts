@@ -187,6 +187,26 @@ export function registerExecuteCommands(program: Command): void {
       }
     }));
 
+  // ---- context <run-id> (generate fresh agent context at dispatch time) ----
+  execute
+    .command('context <run-id>')
+    .alias('ma-context')
+    .description('Generate a fresh agent context block for an already-prepared run (late-bind dispatch)')
+    .option('--json', 'Wrap output in a JSON object with a "agentContext" key')
+    .action(withCommandContext(async (ctx, runId: string) => {
+      const localOpts = ctx.cmd.opts() as { json?: boolean };
+      const isJson = !!(localOpts.json || ctx.globalOpts.json);
+      const bridge = new SessionExecutionBridge(ctx.kataDir);
+
+      const agentContext = bridge.getAgentContext(runId);
+
+      if (isJson) {
+        console.log(JSON.stringify({ runId, agentContext }, null, 2));
+      } else {
+        console.log(agentContext);
+      }
+    }));
+
   // ---- prepare --bet <bet-id> (prepare a single bet) ----
   execute
     .command('prepare')
@@ -208,8 +228,12 @@ export function registerExecuteCommands(program: Command): void {
         console.log(`  Stages: ${result.stages.join(', ')}`);
         console.log(`  Isolation: ${result.isolation}`);
         console.log('');
-        console.log('Agent context block:');
-        console.log(result.agentContext);
+        console.log('Agent context block (use "kata kiai context <run-id>" to fetch at dispatch time):');
+        try {
+          console.log(bridge.getAgentContext(result.runId));
+        } catch (err) {
+          console.log(`(context unavailable: ${err instanceof Error ? err.message : String(err)})`);
+        }
       }
     }));
 
