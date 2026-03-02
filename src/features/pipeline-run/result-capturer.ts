@@ -66,8 +66,11 @@ export class ResultCapturer {
 
   /**
    * Get all history entries.
+   *
+   * Uses warnOnInvalid: false to suppress validation warnings for legacy
+   * pre-schema history files in .kata/history/. See issue #238.
    */
   listAll(): ExecutionHistoryEntry[] {
-    return JsonStore.list(this.historyDir, ExecutionHistoryEntrySchema);
+    return JsonStore.list(this.historyDir, ExecutionHistoryEntrySchema, { warnOnInvalid: false });
   }
 }

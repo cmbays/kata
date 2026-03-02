@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { z } from 'zod/v4';
 import { JsonStore, JsonStoreError } from './json-store.js';
+import { logger } from '@shared/lib/logger.js';
 
 const TestSchema = z.object({
   id: z.string().uuid(),
@@ -153,6 +154,62 @@ describe('JsonStore.list', () => {
 
     const results = JsonStore.list(dir, TestSchema);
     expect(results).toHaveLength(1);
+  });
+
+  it('logs warn by default when a file fails validation', () => {
+    const dir = join(tempDir, 'warn-default');
+    JsonStore.ensureDir(dir);
+    writeFileSync(join(dir, 'bad.json'), JSON.stringify({ id: 'not-uuid', name: '' }));
+
+    const warnSpy = vi.spyOn(logger, 'warn');
+    const debugSpy = vi.spyOn(logger, 'debug');
+
+    JsonStore.list(dir, TestSchema);
+
+    expect(warnSpy).toHaveBeenCalledOnce();
+    expect(warnSpy.mock.calls[0]![0]).toContain('Skipping invalid file');
+    expect(debugSpy).not.toHaveBeenCalled();
+
+    warnSpy.mockRestore();
+    debugSpy.mockRestore();
+  });
+
+  it('logs debug instead of warn when warnOnInvalid is false', () => {
+    const dir = join(tempDir, 'silent-invalid');
+    JsonStore.ensureDir(dir);
+    writeFileSync(join(dir, 'bad.json'), JSON.stringify({ id: 'not-uuid', name: '' }));
+
+    const warnSpy = vi.spyOn(logger, 'warn');
+    const debugSpy = vi.spyOn(logger, 'debug');
+
+    const results = JsonStore.list(dir, TestSchema, { warnOnInvalid: false });
+
+    expect(results).toHaveLength(0);
+    expect(warnSpy).not.toHaveBeenCalled();
+    expect(debugSpy).toHaveBeenCalledOnce();
+    expect(debugSpy.mock.calls[0]![0]).toContain('Skipping invalid file');
+
+    warnSpy.mockRestore();
+    debugSpy.mockRestore();
+  });
+
+  it('still returns valid files when warnOnInvalid is false', () => {
+    const dir = join(tempDir, 'silent-mixed');
+    JsonStore.ensureDir(dir);
+
+    const id = crypto.randomUUID();
+    writeFileSync(join(dir, 'good.json'), JSON.stringify({ id, name: 'valid' }));
+    writeFileSync(join(dir, 'bad.json'), JSON.stringify({ id: 'not-uuid', name: '' }));
+    writeFileSync(join(dir, 'legacy.json'), JSON.stringify({ oldField: 'legacy-data' }));
+
+    const warnSpy = vi.spyOn(logger, 'warn');
+    const results = JsonStore.list(dir, TestSchema, { warnOnInvalid: false });
+
+    expect(results).toHaveLength(1);
+    expect(results[0]!.name).toBe('valid');
+    expect(warnSpy).not.toHaveBeenCalled();
+
+    warnSpy.mockRestore();
   });
 
   it('throws JsonStoreError when directory is not readable (EACCES)', () => {

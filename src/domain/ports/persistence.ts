@@ -14,6 +14,14 @@ export interface IPersistence {
   read<T>(filePath: string, schema: z.ZodType<T>): T;
   write<T>(filePath: string, data: T, schema: z.ZodType<T>): void;
   exists(filePath: string): boolean;
-  list<T>(dirPath: string, schema: z.ZodType<T>): T[];
+  /**
+   * List all entries in a directory, validating each against schema.
+   * Invalid entries are skipped.
+   *
+   * @param options.warnOnInvalid - When false, downgrades validation-failure
+   *   log messages from `warn` to `debug`. Use for directories that may
+   *   contain legacy/pre-schema files. Defaults to `true`.
+   */
+  list<T>(dirPath: string, schema: z.ZodType<T>, options?: { warnOnInvalid?: boolean }): T[];
   ensureDir(dirPath: string): void;
 }
