@@ -201,6 +201,9 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
     if (!meta) {
       throw new Error(`No bridge run found for run ID "${runId}". Was it prepared via the session bridge?`);
     }
+    if (meta.status === 'complete' || meta.status === 'failed') {
+      throw new Error(`Run "${runId}" is in terminal state "${meta.status}" and cannot be dispatched.`);
+    }
 
     // Reconstruct the minimal PreparedRun shape needed by formatAgentContext().
     // The manifest is rebuilt from stored metadata — it doesn't need to be the

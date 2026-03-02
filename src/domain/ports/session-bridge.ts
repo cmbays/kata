@@ -113,7 +113,7 @@ export interface ISessionExecutionBridge {
    *
    * This is the late-bind alternative to reading `preparedRun.agentContext` at
    * dispatch time. Because `agentContext` is no longer stored in the bridge-run
-   * metadata, this method reads the persisted `BridgeRunMeta` for `runId`,
+   * metadata, this method reads the persisted run metadata for `runId`,
    * reconstructs the minimal `PreparedRun` shape, calls `formatAgentContext()`,
    * and returns the result.
    *

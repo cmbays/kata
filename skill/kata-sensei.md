@@ -85,11 +85,13 @@ Behavior:
 2. Present the execution plan: which bets, which stages, which isolation mode
 3. **Wait for user confirmation** — never spawn agents without explicit approval
 4. For each prepared run, generate a **fresh** agent context at dispatch time and spawn:
+
    ```bash
    # Fetch the current-binary agent context for this run (late-bind — always up to date)
    kata kiai context <run-id>
    ```
-   ```
+
+   ```text
    Agent(
      prompt = output of "kata kiai context <run-id>",
      isolation = preparedRun.isolation === "worktree" ? "worktree" : undefined,

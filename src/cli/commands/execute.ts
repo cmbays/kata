@@ -190,6 +190,7 @@ export function registerExecuteCommands(program: Command): void {
   // ---- context <run-id> (generate fresh agent context at dispatch time) ----
   execute
     .command('context <run-id>')
+    .alias('ma-context')
     .description('Generate a fresh agent context block for an already-prepared run (late-bind dispatch)')
     .option('--json', 'Wrap output in a JSON object with a "agentContext" key')
     .action(withCommandContext(async (ctx, runId: string) => {
@@ -228,7 +229,11 @@ export function registerExecuteCommands(program: Command): void {
         console.log(`  Isolation: ${result.isolation}`);
         console.log('');
         console.log('Agent context block (use "kata kiai context <run-id>" to fetch at dispatch time):');
-        console.log(bridge.getAgentContext(result.runId));
+        try {
+          console.log(bridge.getAgentContext(result.runId));
+        } catch (err) {
+          console.log(`(context unavailable: ${err instanceof Error ? err.message : String(err)})`);
+        }
       }
     }));
 
