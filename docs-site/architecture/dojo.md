@@ -1,0 +1,1 @@
+../../docs/dojo-architecture.md

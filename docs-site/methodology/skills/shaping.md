@@ -1,0 +1,1 @@
+../../../docs/methodology/skills/shaping.md

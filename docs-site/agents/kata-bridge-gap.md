@@ -1,0 +1,1 @@
+../../skill/kata-bridge-gap.md
