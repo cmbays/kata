@@ -1,0 +1,1 @@
+../../skill/kata-scan-project.md

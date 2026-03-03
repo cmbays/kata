@@ -1,0 +1,141 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "name": "Kata",
+  "description": "Development Methodology Engine — encode methodology (Shape Up) as executable, composable stages with a self-improving knowledge system.",
+  "theme": "linden",
+  "colors": {
+    "primary": "#805ad5",
+    "light": "#b794f4",
+    "dark": "#553c9a"
+  },
+  "icons": {
+    "library": "lucide"
+  },
+  "navbar": {
+    "links": [
+      {
+        "label": "GitHub",
+        "href": "https://github.com/cmbays/kata"
+      }
+    ]
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/cmbays/kata"
+    }
+  },
+  "navigation": {
+    "groups": [
+      {
+        "group": "Getting Started",
+        "pages": [
+          "introduction",
+          "getting-started/project-setup"
+        ]
+      },
+      {
+        "group": "System Guide",
+        "pages": [
+          "guides/system-guide"
+        ]
+      },
+      {
+        "group": "Using Kata",
+        "pages": [
+          "guides/skill-overview",
+          "guides/cli-reference",
+          "guides/file-structure",
+          "guides/dojo"
+        ]
+      },
+      {
+        "group": "For Agents",
+        "pages": [
+          "agents/orchestration",
+          "agents/context-flow",
+          "agents/kata-orchestration",
+          "agents/kata-sensei",
+          "agents/kata-create-agent",
+          "agents/kata-create-skill",
+          "agents/kata-bridge-gap",
+          "agents/kata-scan-project",
+          "agents/kata-synthesis"
+        ]
+      },
+      {
+        "group": "Architecture",
+        "pages": [
+          "architecture/kataka",
+          "architecture/sensei-orchestration",
+          "architecture/meta-learning",
+          "architecture/dojo"
+        ]
+      },
+      {
+        "group": "Product Design",
+        "pages": [
+          "product-design/product-design",
+          "product-design/user-journeys",
+          "product-design/interaction-design",
+          "product-design/design-vision"
+        ]
+      },
+      {
+        "group": "Methodology",
+        "pages": [
+          "methodology/index",
+          "methodology/how-we-work"
+        ]
+      },
+      {
+        "group": "Skills",
+        "pages": [
+          "methodology/skills/shaping",
+          "methodology/skills/breadboarding",
+          "methodology/skills/breadboard-reflection",
+          "methodology/skills/learnings-synthesis"
+        ]
+      },
+      {
+        "group": "Quick Reference",
+        "pages": [
+          "methodology/reference/shaping-concepts",
+          "methodology/reference/breadboarding-concepts",
+          "methodology/reference/app-flow-standard"
+        ]
+      },
+      {
+        "group": "Templates",
+        "pages": [
+          "methodology/templates/frame-template",
+          "methodology/templates/shaping-template",
+          "methodology/templates/breadboard-template"
+        ]
+      },
+      {
+        "group": "Vision",
+        "pages": [
+          "vision/knowledge-graph",
+          "vision/rust-port"
+        ]
+      },
+      {
+        "group": "Roadmap",
+        "pages": [
+          "roadmap/unified-roadmap",
+          "roadmap/dogfooding-roadmap"
+        ]
+      },
+      {
+        "group": "Project",
+        "pages": [
+          "project/release-history",
+          "project/contributing"
+        ]
+      }
+    ]
+  },
+  "contextual": {
+    "options": ["copy", "view", "claude"]
+  }
+}

@@ -1,0 +1,1 @@
+../../skill/kata-orchestration.md
