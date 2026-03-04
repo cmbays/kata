@@ -116,7 +116,9 @@
         "group": "Vision",
         "pages": [
           "vision/knowledge-graph",
-          "vision/rust-port"
+          "vision/rust-port",
+          "vision/three-space",
+          "vision/san-so"
         ]
       },
       {
