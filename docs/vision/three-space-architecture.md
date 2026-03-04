@@ -220,6 +220,77 @@ The loop is: **load → execute → promote → understand → crystallize → l
 
 ---
 
+## Companion Principle: Agent Context Injection (San-Sō 三層)
+
+San-Ma (三間) governs how Kata *stores* knowledge across sessions. The same three-space principle applies to what gets *loaded* into an agent's context on every turn — this is **San-Sō (三層)**, the context strata.
+
+> **San (三)** = three. **Sō (層)** = stratum — geological depth metaphor: bedrock, sediment, surface.
+
+The failure mode is identical in both domains: when you mix data of different durabilities in the same place, you pay to reload stale context on every message, and durable knowledge gets buried under temporal noise. The same structural solution applies.
+
+### The Three Context Strata
+
+| Stratum | Name | Durability | Load pattern | Files |
+|---------|------|------------|--------------|-------|
+| **Self** | shin (心) | Permanent | Always injected | `CLAUDE.md` (global + project) |
+| **Knowledge** | chi (智) | Stable, grows | On demand — read when topic is relevant | Memory topic files, `docs/` |
+| **Ops** | do (動) | Temporal, decays | Always injected but ruthlessly thin | `MEMORY.md` |
+
+**Self** answers "who am I and how do I work?" A fresh session breaks without it. Behavioral rules, build commands, architectural non-negotiables. Changes only through deliberate methodology evolution.
+
+**Knowledge** answers "what have we learned and where do I look?" CLI lexicons, vision docs, design decisions, roadmaps. Not needed on every turn — read explicitly when the task touches that domain. Never inline in always-injected files.
+
+**Ops** answers "what's happening right now?" Current cycle state, open issues, recent decisions, workflow shortcuts. Valid for roughly one session to one cycle. Anything older than two cycles without being referenced should be removed or promoted to a knowledge file.
+
+### The Reference Map Pattern
+
+`MEMORY.md` (ops) holds a pointer table rather than inlining knowledge content:
+
+```markdown
+## Reference Map
+
+| Topic | Location |
+|-------|----------|
+| CLI lexicon | `memory/lexicon.md` |
+| Three-space architecture | `docs/vision/three-space-architecture.md` |
+| Dogfooding roadmap | `docs/dogfooding-roadmap.md` |
+```
+
+When a topic is needed, read the file directly. You don't pay to re-read it on turns where it's irrelevant.
+
+### Sizing Targets
+
+| File | Stratum | Target |
+|------|---------|--------|
+| Global `CLAUDE.md` | self | < 120 lines |
+| Project `CLAUDE.md` | self | < 80 lines |
+| `MEMORY.md` | ops | < 80 lines |
+| Topic files | knowledge | Read on demand, no size constraint |
+
+### Audit Checklist
+
+For each section in an always-injected file:
+
+1. **Self or not?** Would a fresh session break without this? If no — remove from `CLAUDE.md`.
+2. **Ops or knowledge?** Does this change session-to-session, or is it stable reference? Stable → topic file.
+3. **Exists elsewhere?** Is this a summary of a doc that already exists? Remove the summary, add a pointer.
+4. **Readable from source?** Is this a list of methods or paths readable from the codebase? Remove it.
+5. **Still current?** Is this reflecting the actual state, or what was true two cycles ago? Update or remove.
+
+### Mapping: San-Ma to San-Sō
+
+The two principles mirror each other structurally:
+
+| San-Ma (storage) | San-Sō (context injection) |
+|------------------|---------------------------|
+| `self/` — project identity and methodology | `CLAUDE.md` — always-injected rules and constraints |
+| `knowledge/` — durable learnings, promoted wisdom | Topic files — read on demand when relevant |
+| `ops/` — active cycles and temporal execution data | `MEMORY.md` — thin working state, decays aggressively |
+
+Knowledge promotion in San-Ma (ops → knowledge/ during cooldown) has a direct analogue in San-Sō: when an ops entry in `MEMORY.md` proves durable enough to matter across multiple cycles, it gets promoted to a topic file or project doc.
+
+---
+
 ## User Journey: The Solo Developer
 
 ### Day 1: Init

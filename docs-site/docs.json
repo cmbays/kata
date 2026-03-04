@@ -115,6 +115,7 @@
       {
         "group": "Vision",
         "pages": [
+          "vision/three-space",
           "vision/knowledge-graph",
           "vision/rust-port"
         ]
