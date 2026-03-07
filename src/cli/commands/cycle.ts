@@ -82,12 +82,12 @@ export function registerCycleCommands(parent: Command): void {
           timeBudget = await input({ message: 'Time budget (e.g., "2 weeks", press Enter to skip):', default: '' }) || undefined;
         }
 
-        const cycle = manager.create(
-          { tokenBudget, timeBudget },
-          cycleName,
-        );
+        // Collect all bet data in memory before writing anything to disk.
+        // This prevents orphan cycle files if the user interrupts (Ctrl+C) mid-prompt.
+        type PendingBet = Omit<import('@domain/types/bet.js').Bet, 'id'>;
+        const pendingBets: PendingBet[] = [];
 
-        // Loop: add bets
+        // Loop: collect bets
         let addMore = await confirm({ message: 'Add a bet?', default: true });
         while (addMore) {
           const description = await input({ message: 'Bet description:' });
@@ -145,19 +145,29 @@ export function registerCycleCommands(parent: Command): void {
             });
           }
 
+          pendingBets.push({
+            description,
+            appetite,
+            outcome: 'pending',
+            issueRefs: [],
+            ...(domainTags ? { domainTags } : {}),
+          });
+
+          addMore = await confirm({ message: 'Add another bet?', default: false });
+        }
+
+        // All prompts completed successfully — now write to disk atomically.
+        const cycle = manager.create(
+          { tokenBudget, timeBudget },
+          cycleName,
+        );
+
+        for (const betData of pendingBets) {
           try {
-            manager.addBet(cycle.id, {
-              description,
-              appetite,
-              outcome: 'pending',
-              issueRefs: [],
-              ...(domainTags ? { domainTags } : {}),
-            });
+            manager.addBet(cycle.id, betData);
           } catch (error) {
             console.error(`  Warning: ${error instanceof Error ? error.message : String(error)}`);
           }
-
-          addMore = await confirm({ message: 'Add another bet?', default: false });
         }
 
         const updatedCycle = manager.get(cycle.id);
