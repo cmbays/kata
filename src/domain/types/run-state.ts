@@ -270,15 +270,15 @@ export type ArtifactIndexType = z.infer<typeof ArtifactIndexTypeSchema>;
 /**
  * An entry appended to artifact-index.jsonl (run-level and flavor-level).
  *
- * Cross-field invariant: `flavor` must be non-null when `type` is `'artifact'`.
- * Stage-level synthesis entries (`type === 'synthesis'`) may have `flavor: null`.
+ * `flavor` is nullable for both artifact and synthesis types — omitted when the
+ * artifact is recorded without flavor classification (stage-level placement).
  */
 export const ArtifactIndexEntrySchema = z.object({
   /** UUID generated at record time. */
   id: z.string().uuid(),
   /** Stage the artifact was produced in. */
   stageCategory: StageCategorySchema,
-  /** Flavor that produced the artifact. Null for stage-level synthesis artifacts. */
+  /** Flavor that produced the artifact. Null when recorded without flavor classification. */
   flavor: z.string().min(1).nullable(),
   /** Step that produced the artifact (nullable for synthesis artifacts). */
   step: z.string().nullable(),
@@ -292,14 +292,6 @@ export const ArtifactIndexEntrySchema = z.object({
   type: ArtifactIndexTypeSchema,
   /** ISO 8601 timestamp when the artifact was recorded. */
   recordedAt: z.string().datetime(),
-}).superRefine((val, ctx) => {
-  if (val.type === 'artifact' && val.flavor === null) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ['flavor'],
-      message: 'flavor must be non-null for type "artifact"',
-    });
-  }
 });
 
 export type ArtifactIndexEntry = z.infer<typeof ArtifactIndexEntrySchema>;

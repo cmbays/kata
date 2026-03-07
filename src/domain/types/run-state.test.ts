@@ -293,13 +293,9 @@ describe('ArtifactIndexEntrySchema', () => {
     expect(result.success).toBe(true);
   });
 
-  it('rejects null flavor for artifact type (cross-field invariant)', () => {
+  it('accepts null flavor for artifact type (stage-level recording without flavor classification)', () => {
     const result = ArtifactIndexEntrySchema.safeParse({ ...valid, flavor: null });
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      const flavorError = result.error.issues.find((i) => i.path.includes('flavor'));
-      expect(flavorError?.message).toContain('non-null');
-    }
+    expect(result.success).toBe(true);
   });
 
   it('rejects invalid type', () => {
