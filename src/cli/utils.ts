@@ -1,4 +1,4 @@
-import { join, dirname } from 'node:path';
+import { join, dirname, resolve } from 'node:path';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import type { Command } from 'commander';
 import { ConfigNotFoundError } from '@shared/lib/errors.js';
@@ -24,10 +24,11 @@ export function resolveKataDir(cwd?: string): string {
   // 1. KATA_DIR env var takes highest precedence
   const envKataDir = process.env['KATA_DIR'];
   if (envKataDir) {
-    if (!existsSync(envKataDir)) {
-      throw new ConfigNotFoundError(envKataDir);
+    const absKataDir = resolve(envKataDir);
+    if (!existsSync(absKataDir) || !statSync(absKataDir).isDirectory()) {
+      throw new ConfigNotFoundError(absKataDir);
     }
-    return envKataDir;
+    return absKataDir;
   }
 
   // 2 & 3. Explicit cwd or process.cwd()
@@ -73,9 +74,10 @@ function resolveKataDirFromWorktree(startDir: string): string | null {
           const content = readFileSync(dotGit, 'utf8').trim();
           // Format: "gitdir: /path/to/main/.git/worktrees/<name>"
           const match = content.match(/^gitdir:\s*(.+)$/);
-          if (!match) break;
+          if (!match || !match[1]) break;
 
-          const worktreeGitDir = match[1].trim();
+          // Resolve relative gitdir paths against the worktree directory
+          const worktreeGitDir = resolve(dir, match[1].trim());
           // Main repo .git dir is two levels up: .git/worktrees/<name> → .git/
           const mainGitDir = dirname(dirname(worktreeGitDir));
           // Main repo root is the parent of .git/
