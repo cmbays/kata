@@ -181,9 +181,9 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
     lines.push('### Record as you work');
     lines.push('Use these commands at natural checkpoints — when a decision matters, when something surprises you, when you hit resistance:');
     lines.push('');
-    lines.push(`  kata kansatsu record <type> "..." --run ${prepared.runId}`);
-    lines.push(`  kata maki record <name> <path> --run ${prepared.runId}`);
-    lines.push(`  kata kime record --decision "..." --rationale "..." --run ${prepared.runId}`);
+    lines.push(`  kata --cwd ${prepared.kataDir} kansatsu record <type> "..." --run ${prepared.runId}`);
+    lines.push(`  kata --cwd ${prepared.kataDir} maki record <name> <path> --run ${prepared.runId}`);
+    lines.push(`  kata --cwd ${prepared.kataDir} kime record --decision "..." --rationale "..." --run ${prepared.runId}`);
     lines.push('');
     lines.push('**Observation types** — pick the most specific:');
     lines.push('  decision    — a choice between real alternatives; always include WHY you chose this path');
@@ -194,7 +194,14 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
     lines.push('  outcome     — factual result after a decision or prediction resolves');
     lines.push('  insight     — non-obvious learning that would change your approach in a similar situation');
     lines.push('');
-    lines.push('**Friction taxonomy** (--taxonomy <value>):');
+    lines.push('**FRICTION — record immediately, before continuing:**');
+    lines.push('When you hit a wall, get blocked, or need a workaround — record it as friction BEFORE resuming work.');
+    lines.push('Do not defer to the summary. Friction recorded mid-run is the signal; friction in prose is noise.');
+    lines.push('');
+    lines.push('Example friction record (copy-paste and fill in):');
+    lines.push(`  kata --cwd ${prepared.kataDir} kansatsu record friction "lint-staged reverted my edits to execute.ts between two Edit calls" --run ${prepared.runId} --taxonomy tool-mismatch`);
+    lines.push('');
+    lines.push('**Friction taxonomy** (--taxonomy <value> — required for friction type):');
     lines.push('  stale-learning   — your expected pattern was outdated or wrong in this context');
     lines.push('  config-drift     — actual env/files/settings do not match documented expectations');
     lines.push('  convention-clash — established code convention conflicts with the natural approach');
@@ -224,6 +231,10 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
 
     // When you're done
     lines.push('### When you\'re done');
+    lines.push('Before reporting back — did you record all friction events?');
+    lines.push('Check: rate limits hit, unexpected tool behavior, workarounds needed, anything that took more than one try.');
+    lines.push('If any of those happened and you have not recorded them yet, record them now before continuing.');
+    lines.push('');
     lines.push('Report back to the sensei with a summary of:');
     lines.push('- What you produced (artifacts)');
     lines.push('- Any decisions you made and why');

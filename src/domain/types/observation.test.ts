@@ -59,9 +59,9 @@ describe('ObservationSchema — prediction', () => {
 });
 
 describe('ObservationSchema — friction', () => {
-  it('parses a friction with all 5 taxonomy values', () => {
+  it('parses a friction with all 6 taxonomy values', () => {
     const taxonomies = FrictionTaxonomy.options;
-    expect(taxonomies).toHaveLength(5);
+    expect(taxonomies).toHaveLength(6);
 
     for (const taxonomy of taxonomies) {
       const obs = ObservationSchema.parse({ ...BASE, type: 'friction', taxonomy });

@@ -308,17 +308,24 @@ describe('SessionExecutionBridge', () => {
       expect(context).toContain(`- **Bet ID**: ${prepared.betId}`);
       expect(context).toContain(`- **Kata dir**: ${kataDir}`);
       expect(context).toContain('### Record as you work');
-      // kansatsu: positional type + content, --run flag (not --run-id)
-      expect(context).toContain(`kata kansatsu record <type> "..." --run ${prepared.runId}`);
+      // commands include --cwd so agents don't need to be in the repo directory
+      expect(context).toContain(`kata --cwd ${kataDir} kansatsu record <type> "..." --run ${prepared.runId}`);
       // observation types and quality guide present
       expect(context).toContain('**Observation types**');
       expect(context).toContain('**Friction taxonomy**');
       expect(context).toContain('**Quality bar**');
-      // maki: positional name + path, --run flag
-      expect(context).toContain(`kata maki record <name> <path> --run ${prepared.runId}`);
-      // kime: named flags only, --run flag (not --run-id)
-      expect(context).toContain(`kata kime record --decision "..." --rationale "..." --run ${prepared.runId}`);
+      // maki and kime commands also include --cwd
+      expect(context).toContain(`kata --cwd ${kataDir} maki record <name> <path> --run ${prepared.runId}`);
+      expect(context).toContain(`kata --cwd ${kataDir} kime record --decision "..." --rationale "..." --run ${prepared.runId}`);
+      // friction urgency block
+      expect(context).toContain('**FRICTION — record immediately, before continuing:**');
+      expect(context).toContain('record it as friction BEFORE resuming work');
+      // concrete friction example with full command
+      expect(context).toContain(`kata --cwd ${kataDir} kansatsu record friction`);
+      expect(context).toContain('--taxonomy tool-mismatch');
+      // pre-reporting checklist in "When you're done"
       expect(context).toContain("### When you're done");
+      expect(context).toContain('did you record all friction events?');
       expect(context).toContain('Do NOT close the run yourself');
     });
 
