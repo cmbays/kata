@@ -2,7 +2,7 @@ import { join } from 'node:path';
 import { unlinkSync } from 'node:fs';
 import { FlavorSchema, type Flavor, type FlavorStepRef } from '@domain/types/flavor.js';
 import type { Step } from '@domain/types/step.js';
-import type { StageCategory } from '@domain/types/stage.js';
+import { StageCategorySchema, type StageCategory } from '@domain/types/stage.js';
 import type {
   IFlavorRegistry,
   FlavorValidationResult,
@@ -11,6 +11,13 @@ import type {
 import { JsonStore } from '@infra/persistence/json-store.js';
 import { KataError, FlavorNotFoundError } from '@shared/lib/errors.js';
 import { logger } from '@shared/lib/logger.js';
+
+/**
+ * Canonical pipeline stage order — earlier index means earlier in the pipeline.
+ * A flavor whose stageCategory has index > 0 may legitimately depend on artifacts
+ * produced by any stage with a lower index.
+ */
+const STAGE_PIPELINE_ORDER: StageCategory[] = StageCategorySchema.options as StageCategory[];
 
 /**
  * Build the in-memory cache key for a flavor: `{stageCategory}:{name}`.
@@ -269,11 +276,24 @@ export class FlavorRegistry implements IFlavorRegistry {
               );
 
               if (!producerRef) {
-                errors.push(
-                  `Step "${stepRef.stepName}" requires artifact "${condition.artifactName}" ` +
-                    `which is not produced by any step in this flavor and is not a stage input. ` +
-                    `If this artifact comes from a prior stage, add sourceStage to the condition.`,
-                );
+                // If this flavor's stage is not the first in the pipeline, the artifact
+                // may legitimately come from a prior stage. Treat as a warning, not an error.
+                const stageIndex = STAGE_PIPELINE_ORDER.indexOf(flavor.stageCategory);
+                if (stageIndex > 0) {
+                  warnings.push(
+                    `Step "${stepRef.stepName}" requires artifact "${condition.artifactName}" ` +
+                      `which is not produced by any step in this flavor. ` +
+                      `This may be a cross-stage dependency from a prior stage ` +
+                      `(e.g., ${STAGE_PIPELINE_ORDER.slice(0, stageIndex).join(', ')}). ` +
+                      `To silence this warning, add sourceStage to the condition.`,
+                  );
+                } else {
+                  errors.push(
+                    `Step "${stepRef.stepName}" requires artifact "${condition.artifactName}" ` +
+                      `which is not produced by any step in this flavor and is not a stage input. ` +
+                      `If this artifact comes from a prior stage, add sourceStage to the condition.`,
+                  );
+                }
               } else {
                 errors.push(
                   `Step "${stepRef.stepName}" requires artifact "${condition.artifactName}" ` +
