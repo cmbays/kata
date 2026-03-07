@@ -92,7 +92,7 @@ export function listActiveRuns(runsDir: string, cycleId?: string): WatchRun[] {
       try {
         stageState = readStageState(runsDir, runId, category);
       } catch (err: unknown) {
-        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+        if (!(err instanceof JsonStoreError && err.message.startsWith('File not found:'))) {
           logger.warn('kata watch: unreadable stage state treated as pending', { runId, category, error: String(err) });
         }
         stageState = undefined;
