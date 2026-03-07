@@ -17,7 +17,7 @@ import { type Bet } from '@domain/types/bet.js';
 import { StageCategorySchema } from '@domain/types/stage.js';
 import { z } from 'zod/v4';
 import { JsonStore } from '@infra/persistence/json-store.js';
-import { createRunTree } from '@infra/persistence/run-store.js';
+import { createRunTree, readRun, writeRun, runPaths } from '@infra/persistence/run-store.js';
 import { KATA_DIRS } from '@shared/constants/paths.js';
 import { logger } from '@shared/lib/logger.js';
 
@@ -37,6 +37,15 @@ const BridgeRunMetaSchema = z.object({
   status: z.enum(['in-progress', 'complete', 'failed']),
   /** Kataka (agent) ID driving this run — written to run.json on prepare. */
   katakaId: z.string().uuid().optional(),
+  /**
+   * Token usage for this run — populated by complete() when the agent
+   * reports token counts via AgentCompletionResult.tokenUsage.
+   */
+  tokenUsage: z.object({
+    inputTokens: z.number().int().min(0),
+    outputTokens: z.number().int().min(0),
+    totalTokens: z.number().int().min(0),
+  }).optional(),
 });
 
 type BridgeRunMeta = z.infer<typeof BridgeRunMetaSchema>;
@@ -330,10 +339,21 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
       );
     }
 
-    // Update bridge run metadata
+    // Update bridge run metadata (includes tokenUsage when provided)
     meta.completedAt = completedAt;
     meta.status = result.success ? 'complete' : 'failed';
+    if (result.tokenUsage) {
+      meta.tokenUsage = {
+        inputTokens: result.tokenUsage.inputTokens ?? 0,
+        outputTokens: result.tokenUsage.outputTokens ?? 0,
+        totalTokens: result.tokenUsage.total ?? 0,
+      };
+    }
     this.writeBridgeRunMeta(meta);
+
+    // Update run.json with completion status and token usage so kata watch
+    // can display final state (#254 partial fix: run.json reflects completion).
+    this.updateRunJsonOnComplete(runId, completedAt, result.success, result.tokenUsage);
 
     // Update the bet outcome in the cycle JSON so CycleManager.generateCooldown()
     // sees correct completion data (fixes #216: 0% completion rate in cooldown).
@@ -671,6 +691,48 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
       // metadata was already written and the agent can still execute. kata watch
       // will simply not see this run until the issue is resolved.
       logger.warn('Failed to write run.json for bridge run — kata watch will not see this run.', {
+        runId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  // ── run.json completion update ────────────────────────────────────────
+
+  /**
+   * Update run.json on completion: set status, completedAt, and tokenUsage.
+   *
+   * Non-critical: errors are logged as warnings — run.json is supplementary
+   * to the history entry (which is the canonical completion record). If this
+   * fails, cooldown token utilization simply won't reflect this run's tokens.
+   */
+  private updateRunJsonOnComplete(
+    runId: string,
+    completedAt: string,
+    success: boolean,
+    tokenUsage?: { inputTokens?: number; outputTokens?: number; total?: number },
+  ): void {
+    try {
+      const runsDir = join(this.kataDir, KATA_DIRS.runs);
+      const paths = runPaths(runsDir, runId);
+      if (!existsSync(paths.runJson)) return;
+
+      const run = readRun(runsDir, runId);
+      const updated = {
+        ...run,
+        status: (success ? 'completed' : 'failed') as 'completed' | 'failed',
+        completedAt,
+        ...(tokenUsage ? {
+          tokenUsage: {
+            inputTokens: tokenUsage.inputTokens,
+            outputTokens: tokenUsage.outputTokens,
+            totalTokens: tokenUsage.total,
+          },
+        } : {}),
+      };
+      writeRun(runsDir, updated);
+    } catch (err) {
+      logger.warn('Failed to update run.json on complete — token utilization may be incomplete.', {
         runId,
         error: err instanceof Error ? err.message : String(err),
       });
