@@ -6,6 +6,12 @@ import type { CommandContext } from './utils.js';
 import { ConfigNotFoundError } from '@shared/lib/errors.js';
 import { Command } from 'commander';
 
+const { warnMock } = vi.hoisted(() => ({ warnMock: vi.fn() }));
+vi.mock('@shared/lib/logger.js', () => ({
+  logger: { debug: vi.fn(), info: vi.fn(), warn: warnMock, error: vi.fn() },
+  setLoggerOptions: vi.fn(),
+}));
+
 describe('resolveKataDir', () => {
   const testDir = join(tmpdir(), `kata-utils-test-${Date.now()}`);
   const kataDir = join(testDir, '.kata');
@@ -239,7 +245,8 @@ describe('withCommandContext', () => {
   // Issue #228 — loadConfigOutputMode should warn on malformed config.json
   it('emits a logger warn and falls back when config.json is malformed', async () => {
     // Write a malformed config.json
-    writeFileSync(join(testDir, '.kata', 'config.json'), 'not-valid-json{{{');
+    const configPath = join(testDir, '.kata', 'config.json');
+    writeFileSync(configPath, 'not-valid-json{{{');
 
     let captured: CommandContext | undefined;
     const handler = withCommandContext(async (ctx) => { captured = ctx; });
@@ -247,14 +254,18 @@ describe('withCommandContext', () => {
     const cmd = makeCmd(testDir);
     const localOpts = {};
 
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    warnMock.mockClear();
     await handler(localOpts, cmd);
-    warnSpy.mockRestore();
 
     // Command should still succeed (falls back to default)
     expect(captured).toBeDefined();
     // plain should remain false (default fallback)
     expect(captured!.globalOpts.plain).toBe(false);
+    // logger.warn must have been called with the config path and fallback message
+    expect(warnMock).toHaveBeenCalledOnce();
+    const [message] = warnMock.mock.calls[0]!;
+    expect(message).toContain(configPath);
+    expect(message).toContain('falling back to default output mode');
   });
 
   it('reads outputMode from valid config.json when set to plain', async () => {
