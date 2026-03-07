@@ -13,6 +13,7 @@ import { DiaryStore } from '@infra/dojo/diary-store.js';
 import { logger } from '@shared/lib/logger.js';
 import { loadRunSummary } from './run-summary-loader.js';
 import { ProposalGenerator, type CycleProposal, type ProposalGeneratorDeps } from './proposal-generator.js';
+import { NextKeikoProposalGenerator, type NextKeikoProposalGeneratorDeps, type NextKeikoResult } from './next-keiko-proposal-generator.js';
 import type { RunSummary } from './types.js';
 import { PredictionMatcher } from '@features/self-improvement/prediction-matcher.js';
 import { CalibrationDetector } from '@features/self-improvement/calibration-detector.js';
@@ -121,6 +122,23 @@ export interface CooldownSessionDeps {
    * Optional path to .kata/kataka/ directory. Required when katakaConfidenceCalculator is provided.
    */
   katakaDir?: string;
+  /**
+   * Optional injected NextKeikoProposalGenerator for testability.
+   * When omitted and runsDir is set, a NextKeikoProposalGenerator is constructed automatically.
+   * Backward compatible — omitting this field skips next-keiko proposal generation.
+   */
+  nextKeikoProposalGenerator?: Pick<NextKeikoProposalGenerator, 'generate'>;
+  /**
+   * Optional milestone name for next-keiko proposals.
+   * When provided, open issues in this milestone are fetched via `gh issue list` and
+   * included in the synthesis prompt.
+   */
+  nextKeikoMilestoneName?: string;
+  /**
+   * Optional injectable NextKeikoProposalGeneratorDeps for the auto-constructed generator.
+   * Primarily used for testing to inject mock claude/gh invocations.
+   */
+  nextKeikoGeneratorDeps?: NextKeikoProposalGeneratorDeps;
 }
 
 /**
@@ -167,6 +185,11 @@ export interface CooldownSessionResult {
    * Always present (may be empty array) when runsDir is configured.
    */
   incompleteRuns?: IncompleteRunInfo[];
+  /**
+   * LLM-generated next-keiko bet proposals. Present when runsDir is configured
+   * and NextKeikoProposalGenerator ran successfully during complete().
+   */
+  nextKeikoResult?: NextKeikoResult;
 }
 
 /**
@@ -208,6 +231,7 @@ export class CooldownSession {
   private readonly calibrationDetector: Pick<CalibrationDetector, 'detect'> | null;
   private readonly hierarchicalPromoter: Pick<HierarchicalPromoter, 'promoteStepToFlavor' | 'promoteFlavorToStage' | 'promoteStageToCategory'>;
   private readonly frictionAnalyzer: Pick<FrictionAnalyzer, 'analyze'> | null;
+  private readonly _nextKeikoProposalGenerator: Pick<NextKeikoProposalGenerator, 'generate'> | null;
 
   constructor(deps: CooldownSessionDeps) {
     this.deps = deps;
@@ -222,6 +246,12 @@ export class CooldownSession {
     this.calibrationDetector = deps.calibrationDetector ?? (deps.runsDir ? new CalibrationDetector(deps.runsDir) : null);
     this.hierarchicalPromoter = deps.hierarchicalPromoter ?? new HierarchicalPromoter(deps.knowledgeStore);
     this.frictionAnalyzer = deps.frictionAnalyzer ?? (deps.runsDir ? new FrictionAnalyzer(deps.runsDir, deps.knowledgeStore) : null);
+    // NextKeikoProposalGenerator is opt-in: only activated when explicitly provided
+    // via nextKeikoProposalGenerator dep OR when nextKeikoGeneratorDeps is provided.
+    // Auto-construction from runsDir alone would cause all existing tests to call
+    // `claude --print` unexpectedly.
+    this._nextKeikoProposalGenerator = deps.nextKeikoProposalGenerator
+      ?? (deps.nextKeikoGeneratorDeps ? new NextKeikoProposalGenerator(deps.nextKeikoGeneratorDeps) : null);
   }
 
   /**
@@ -351,6 +381,9 @@ export class CooldownSession {
         });
       }
 
+      // 8g. Generate LLM-driven next-keiko proposals (non-critical)
+      const nextKeikoResult = this.runNextKeikoProposals(cycle);
+
       // 9. Transition to complete
       this.deps.cycleManager.updateState(cycleId, 'complete');
 
@@ -366,6 +399,7 @@ export class CooldownSession {
         synthesisProposals: undefined,
         beltResult,
         incompleteRuns: this.deps.runsDir ? incompleteRuns : undefined,
+        nextKeikoResult,
       };
     } catch (error) {
       // Attempt to roll back to previous state so the user can retry
@@ -595,6 +629,9 @@ export class CooldownSession {
       }
     }
 
+    // 8g. Generate LLM-driven next-keiko proposals (non-critical)
+    const nextKeikoResult = this.runNextKeikoProposals(cycle);
+
     // Transition to complete
     this.deps.cycleManager.updateState(cycleId, 'complete');
 
@@ -608,6 +645,7 @@ export class CooldownSession {
       synthesisInputId,
       synthesisProposals,
       beltResult,
+      nextKeikoResult,
     };
   }
 
@@ -1126,5 +1164,32 @@ export class CooldownSession {
     }
 
     return lines.join('\n').trimEnd();
+  }
+
+  /**
+   * Generate LLM-driven next-keiko proposals using NextKeikoProposalGenerator.
+   * Non-critical: errors are caught and logged; returns undefined on failure.
+   * No-op when runsDir is not configured or _nextKeikoProposalGenerator is null.
+   */
+  private runNextKeikoProposals(cycle: Cycle): NextKeikoResult | undefined {
+    if (!this._nextKeikoProposalGenerator || !this.deps.runsDir) return undefined;
+
+    try {
+      const completedBets = cycle.bets
+        .filter((b) => b.outcome === 'complete' || b.outcome === 'partial')
+        .map((b) => b.description);
+
+      return this._nextKeikoProposalGenerator.generate({
+        cycle,
+        runsDir: this.deps.runsDir,
+        milestoneName: this.deps.nextKeikoMilestoneName,
+        completedBets,
+      });
+    } catch (err) {
+      logger.warn(
+        `Next-keiko proposal generation failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return undefined;
+    }
   }
 }
