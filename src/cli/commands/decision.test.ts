@@ -4,10 +4,10 @@ import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { Command } from 'commander';
 import { registerDecisionCommands } from './decision.js';
-import { createRunTree, readStageState } from '@infra/persistence/run-store.js';
+import { createRunTree, readStageState, runPaths } from '@infra/persistence/run-store.js';
 import { JsonlStore } from '@infra/persistence/jsonl-store.js';
 import { DecisionEntrySchema, DecisionOutcomeEntrySchema } from '@domain/types/run-state.js';
-import type { Run } from '@domain/types/run-state.js';
+import type { Run, DecisionEntry } from '@domain/types/run-state.js';
 
 function tempBase(): string {
   return join(tmpdir(), `kata-decision-test-${randomUUID()}`);
@@ -707,5 +707,146 @@ describe('registerDecisionCommands — decision update', () => {
     ]);
 
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Invalid outcome'));
+  });
+});
+
+describe('registerDecisionCommands — decision list', () => {
+  let baseDir: string;
+  let kataDir: string;
+  let runsDir: string;
+  let consoleSpy: ReturnType<typeof vi.spyOn>;
+  let errorSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    baseDir = tempBase();
+    kataDir = join(baseDir, '.kata');
+    runsDir = join(kataDir, 'runs');
+    mkdirSync(runsDir, { recursive: true });
+    consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    rmSync(baseDir, { recursive: true, force: true });
+    consoleSpy.mockRestore();
+    errorSpy.mockRestore();
+    vi.clearAllMocks();
+  });
+
+  function createProgram(): Command {
+    const program = new Command();
+    program.option('--json').option('--verbose').option('--cwd <path>');
+    program.exitOverride();
+    registerDecisionCommands(program);
+    return program;
+  }
+
+  function makeDecisionEntry(overrides: Partial<DecisionEntry> = {}): DecisionEntry {
+    return {
+      id: randomUUID(),
+      stageCategory: 'research',
+      flavor: null,
+      step: null,
+      decisionType: 'flavor-selection',
+      context: {},
+      options: ['a', 'b'],
+      selection: 'a',
+      reasoning: 'Best fit',
+      confidence: 0.9,
+      decidedAt: new Date().toISOString(),
+      ...overrides,
+    };
+  }
+
+  it('lists decisions for a single run via --run', async () => {
+    const run = makeRun();
+    createRunTree(runsDir, run);
+    const paths = runPaths(runsDir, run.id);
+
+    const entry = makeDecisionEntry();
+    JsonlStore.append(paths.decisionsJsonl, entry, DecisionEntrySchema);
+
+    const program = createProgram();
+    await program.parseAsync([
+      'node', 'test', '--json', '--cwd', baseDir,
+      'decision', 'list', '--run', run.id,
+    ]);
+
+    const output = consoleSpy.mock.calls[0]?.[0] as string;
+    const parsed = JSON.parse(output) as Array<{ id: string; runId: string }>;
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].id).toBe(entry.id);
+    expect(parsed[0].runId).toBe(run.id);
+  });
+
+  it('lists decisions across all runs in a cycle via --cycle', async () => {
+    const cycleId = randomUUID();
+    const run1 = makeRun({ cycleId });
+    const run2 = makeRun({ cycleId });
+    createRunTree(runsDir, run1);
+    createRunTree(runsDir, run2);
+
+    const d1 = makeDecisionEntry({ decisionType: 'flavor-selection' });
+    const d2 = makeDecisionEntry({ decisionType: 'execution-mode' });
+
+    JsonlStore.append(runPaths(runsDir, run1.id).decisionsJsonl, d1, DecisionEntrySchema);
+    JsonlStore.append(runPaths(runsDir, run2.id).decisionsJsonl, d2, DecisionEntrySchema);
+
+    const program = createProgram();
+    await program.parseAsync([
+      'node', 'test', '--json', '--cwd', baseDir,
+      'decision', 'list', '--cycle', cycleId,
+    ]);
+
+    const output = consoleSpy.mock.calls[0]?.[0] as string;
+    const parsed = JSON.parse(output) as Array<{ id: string; runId: string }>;
+    expect(parsed).toHaveLength(2);
+    const ids = parsed.map((d) => d.id);
+    expect(ids).toContain(d1.id);
+    expect(ids).toContain(d2.id);
+  });
+
+  it('filters by --type when --cycle is provided', async () => {
+    const cycleId = randomUUID();
+    const run = makeRun({ cycleId });
+    createRunTree(runsDir, run);
+
+    const d1 = makeDecisionEntry({ decisionType: 'flavor-selection' });
+    const d2 = makeDecisionEntry({ decisionType: 'execution-mode' });
+    const paths = runPaths(runsDir, run.id);
+    JsonlStore.append(paths.decisionsJsonl, d1, DecisionEntrySchema);
+    JsonlStore.append(paths.decisionsJsonl, d2, DecisionEntrySchema);
+
+    const program = createProgram();
+    await program.parseAsync([
+      'node', 'test', '--json', '--cwd', baseDir,
+      'decision', 'list', '--cycle', cycleId, '--type', 'flavor-selection',
+    ]);
+
+    const output = consoleSpy.mock.calls[0]?.[0] as string;
+    const parsed = JSON.parse(output) as Array<{ decisionType: string }>;
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].decisionType).toBe('flavor-selection');
+  });
+
+  it('shows empty message when no runs exist for cycle', async () => {
+    const program = createProgram();
+    await program.parseAsync([
+      'node', 'test', '--cwd', baseDir,
+      'decision', 'list', '--cycle', randomUUID(),
+    ]);
+
+    const output = consoleSpy.mock.calls[0]?.[0] as string;
+    expect(output).toContain('No runs found');
+  });
+
+  it('errors when neither --run nor --cycle is provided', async () => {
+    const program = createProgram();
+    await program.parseAsync([
+      'node', 'test', '--cwd', baseDir,
+      'decision', 'list',
+    ]);
+
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('--run'));
   });
 });

@@ -11,6 +11,7 @@ import {
   appendObservation,
   readObservations,
   readAllObservationsForRun,
+  listRunsForCycle,
   runPaths,
   type ObservationTarget,
 } from '@infra/persistence/run-store.js';
@@ -234,8 +235,9 @@ export function registerObserveCommands(parent: Command): void {
   // ---------------------------------------------------------------------------
   observe
     .command('list')
-    .description('List observations for a run')
-    .requiredOption('--run <id>', 'Run ID')
+    .description('List observations for a run or across all runs in a cycle')
+    .option('--run <id>', 'Run ID (required unless --cycle is provided)')
+    .option('--cycle <id>', 'Cycle ID — aggregate observations across all runs in the cycle')
     .option('--stage <category>', 'Filter to stage-level observations')
     .option('--flavor <name>', 'Filter to flavor-level observations (requires --stage)')
     .option('--step <name>', 'Filter to step-level observations (requires --stage and --flavor)')
@@ -245,8 +247,63 @@ export function registerObserveCommands(parent: Command): void {
       const localOpts = ctx.cmd.opts();
       const lex = getLexicon(ctx.globalOpts.plain);
       const runsDir = join(ctx.kataDir, KATA_DIRS.runs);
-      const runId = localOpts.run as string;
 
+      if (!localOpts.run && !localOpts.cycle) {
+        console.error('Error: --run <id> or --cycle <id> is required');
+        process.exitCode = 1;
+        return;
+      }
+
+      // ---------------------------------------------------------------------------
+      // --cycle mode: aggregate across all runs in the cycle
+      // ---------------------------------------------------------------------------
+      if (localOpts.cycle) {
+        const cycleId = localOpts.cycle as string;
+        const runs = listRunsForCycle(runsDir, cycleId);
+
+        if (runs.length === 0) {
+          console.log(`No runs found for cycle ${cycleId.slice(0, 8)}.`);
+          return;
+        }
+
+        interface ObsWithRun { runId: string; betPrompt: string; obs: ReturnType<typeof readAllObservationsForRun>[number] }
+        const allEntries: ObsWithRun[] = [];
+
+        for (const run of runs) {
+          const runObs = readAllObservationsForRun(runsDir, run.id, run.stageSequence);
+          for (const obs of runObs) {
+            allEntries.push({ runId: run.id, betPrompt: run.betPrompt, obs });
+          }
+        }
+
+        let filtered = allEntries;
+        if (localOpts.type) {
+          filtered = filtered.filter((e) => e.obs.type === localOpts.type);
+        }
+
+        if (ctx.globalOpts.json) {
+          console.log(JSON.stringify(filtered.map((e) => ({ ...e.obs, runId: e.runId })), null, 2));
+          return;
+        }
+
+        if (filtered.length === 0) {
+          console.log(`No ${lex.observation} found for cycle ${cycleId.slice(0, 8)}.`);
+          return;
+        }
+
+        console.log(`${lex.observation.charAt(0).toUpperCase() + lex.observation.slice(1)} for cycle ${cycleId.slice(0, 8)} (${filtered.length}):\n`);
+        for (const entry of filtered) {
+          console.log(`  run: ${entry.runId.slice(0, 8)} — ${entry.betPrompt}`);
+          console.log(formatObservation(entry.obs, ctx.globalOpts.plain).replace(/^/gm, '  '));
+          console.log('');
+        }
+        return;
+      }
+
+      // ---------------------------------------------------------------------------
+      // --run mode (original behaviour)
+      // ---------------------------------------------------------------------------
+      const runId = localOpts.run as string;
       let observations;
 
       if (localOpts.all) {
