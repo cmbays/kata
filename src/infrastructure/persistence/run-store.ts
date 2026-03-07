@@ -383,3 +383,38 @@ export function readAllObservationsForRun(
 
   return allObservations;
 }
+
+/**
+ * Scan all run directories and return Run objects whose cycleId matches the given cycle ID.
+ * Returns runs sorted by startedAt ascending (oldest first — chronological order for cross-run display).
+ */
+export function listRunsForCycle(runsDir: string, cycleId: string): Run[] {
+  if (!existsSync(runsDir)) return [];
+
+  let dirNames: string[];
+  try {
+    dirNames = readdirSync(runsDir, { withFileTypes: true })
+      .filter((d) => d.isDirectory())
+      .map((d) => d.name);
+  } catch {
+    return [];
+  }
+
+  const runs: Run[] = [];
+  for (const dirName of dirNames) {
+    const runJsonPath = join(runsDir, dirName, 'run.json');
+    if (!existsSync(runJsonPath)) continue;
+    try {
+      const run = JsonStore.read(runJsonPath, RunSchema);
+      if (run.cycleId === cycleId) {
+        runs.push(run);
+      }
+    } catch {
+      // Skip invalid/corrupt run files
+    }
+  }
+
+  // Sort by startedAt ascending (chronological — oldest run first)
+  runs.sort((a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime());
+  return runs;
+}

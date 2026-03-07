@@ -9,12 +9,12 @@ import { runPaths } from '@infra/persistence/run-store.js';
 import { KATA_DIRS } from '@shared/constants/paths.js';
 
 /** Write a minimal run.json so observe.ts can auto-populate katakaId from it. */
-function writeRunJson(runsDir: string, runId: string, katakaId?: string): void {
+function writeRunJson(runsDir: string, runId: string, katakaId?: string, cycleId?: string): void {
   const runDir = join(runsDir, runId);
   mkdirSync(runDir, { recursive: true });
   const run = {
     id: runId,
-    cycleId: randomUUID(),
+    cycleId: cycleId ?? randomUUID(),
     betId: randomUUID(),
     betPrompt: 'test bet',
     stageSequence: ['build'],
@@ -415,5 +415,104 @@ describe('kata observe list --all (aggregation across all levels)', () => {
 
     const parsed = JSON.parse(stdout);
     expect(parsed).toEqual([]);
+  });
+});
+
+describe('kata observe list --cycle (cross-run aggregation)', () => {
+  it('aggregates observations from multiple runs in the same cycle', async () => {
+    const { kataDir, runsDir } = makeKataDir();
+    const cycleId = randomUUID();
+    const runId1 = randomUUID();
+    const runId2 = randomUUID();
+
+    writeRunJson(runsDir, runId1, undefined, cycleId);
+    writeRunJson(runsDir, runId2, undefined, cycleId);
+
+    const paths1 = runPaths(runsDir, runId1);
+    const paths2 = runPaths(runsDir, runId2);
+
+    const obs1 = { id: randomUUID(), type: 'insight', content: 'observation from run 1', timestamp: '2026-01-01T01:00:00.000Z' };
+    const obs2 = { id: randomUUID(), type: 'friction', taxonomy: 'convention-clash', content: 'friction from run 2', timestamp: '2026-01-01T02:00:00.000Z' };
+
+    JsonlStore.append(paths1.observationsJsonl, obs1, ObservationSchema);
+    JsonlStore.append(paths2.observationsJsonl, obs2, ObservationSchema);
+
+    const { stdout } = await runCli([
+      '--json', 'observe', 'list', '--cycle', cycleId,
+    ], join(kataDir, '..'));
+
+    const parsed = JSON.parse(stdout) as Array<{ content: string; runId: string }>;
+    expect(Array.isArray(parsed)).toBe(true);
+    expect(parsed).toHaveLength(2);
+    const contents = parsed.map((o) => o.content);
+    expect(contents).toContain('observation from run 1');
+    expect(contents).toContain('friction from run 2');
+    // Each entry should have a runId field
+    expect(parsed[0].runId).toBeDefined();
+  });
+
+  it('filters by --type when --cycle is provided', async () => {
+    const { kataDir, runsDir } = makeKataDir();
+    const cycleId = randomUUID();
+    const runId = randomUUID();
+
+    writeRunJson(runsDir, runId, undefined, cycleId);
+    const paths = runPaths(runsDir, runId);
+
+    const insightObs = { id: randomUUID(), type: 'insight', content: 'an insight', timestamp: '2026-01-01T01:00:00.000Z' };
+    const frictionObs = { id: randomUUID(), type: 'friction', taxonomy: 'convention-clash', content: 'a friction', timestamp: '2026-01-01T02:00:00.000Z' };
+    JsonlStore.append(paths.observationsJsonl, insightObs, ObservationSchema);
+    JsonlStore.append(paths.observationsJsonl, frictionObs, ObservationSchema);
+
+    const { stdout } = await runCli([
+      '--json', 'observe', 'list', '--cycle', cycleId, '--type', 'insight',
+    ], join(kataDir, '..'));
+
+    const parsed = JSON.parse(stdout) as Array<{ type: string }>;
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].type).toBe('insight');
+  });
+
+  it('returns empty message when no runs exist for cycle', async () => {
+    const { kataDir } = makeKataDir();
+    const cycleId = randomUUID();
+
+    const { stdout } = await runCli([
+      'observe', 'list', '--cycle', cycleId,
+    ], join(kataDir, '..'));
+
+    expect(stdout).toContain('No runs found');
+  });
+
+  it('errors when neither --run nor --cycle is provided', async () => {
+    const { kataDir } = makeKataDir();
+    const errLines: string[] = [];
+    const origErr = console.error;
+    console.error = (...args: unknown[]) => errLines.push(args.map(String).join(' '));
+
+    await runCli([
+      'observe', 'list',
+    ], join(kataDir, '..'));
+
+    console.error = origErr;
+    expect(errLines.join('\n')).toContain('--run');
+  });
+
+  it('does not include runs from a different cycle', async () => {
+    const { kataDir, runsDir } = makeKataDir();
+    const cycleId = randomUUID();
+    const otherCycleId = randomUUID();
+    const runId = randomUUID();
+
+    writeRunJson(runsDir, runId, undefined, otherCycleId);
+    const paths = runPaths(runsDir, runId);
+    const obs = { id: randomUUID(), type: 'insight', content: 'other cycle obs', timestamp: '2026-01-01T01:00:00.000Z' };
+    JsonlStore.append(paths.observationsJsonl, obs, ObservationSchema);
+
+    const { stdout } = await runCli([
+      'observe', 'list', '--cycle', cycleId,
+    ], join(kataDir, '..'));
+
+    expect(stdout).toContain('No runs found');
   });
 });
