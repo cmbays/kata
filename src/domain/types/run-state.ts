@@ -218,8 +218,8 @@ export const DecisionEntrySchema = z.object({
   options: z.array(z.string()),
   /** The chosen option. */
   selection: z.string().min(1),
-  /** Orchestrator's reasoning for the selection. */
-  reasoning: z.string().min(1),
+  /** Orchestrator's reasoning for the selection (empty string when omitted). */
+  reasoning: z.string(),
   /** Confidence in the selection: [0, 1]. */
   confidence: z.number().min(0).max(1),
   /** ISO 8601 timestamp when the decision was made. */
