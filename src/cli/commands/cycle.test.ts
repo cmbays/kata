@@ -744,6 +744,81 @@ describe('registerCycleCommands', () => {
       // confirmed by code inspection: synthesisError is spread into the output when set.
     }, 60000);
 
+    // Issue #257 — --yolo --json must emit a valid JSON object even when synthesis fails.
+    // Synthesis failure is simulated by writing no result file (the subprocess call will fail
+    // with ENOENT for 'claude', caught internally, and the yolo block must still emit JSON).
+    it('--yolo --json emits valid JSON with synthesisProposals key when claude is unavailable', async () => {
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 50000 }, 'Yolo Failure JSON Test');
+
+      const synthesisDir = join(kataDir, 'synthesis');
+      mkdirSync(synthesisDir, { recursive: true });
+
+      // PATH manipulation makes 'claude' unavailable — execFileSync throws ENOENT,
+      // which the --yolo handler catches and converts into synthesisError in JSON output.
+      const originalPath = process.env['PATH'];
+      process.env['PATH'] = '';
+
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--json', '--cwd', baseDir,
+        'cooldown', cycle.id, '--yolo',
+      ]);
+
+      process.env['PATH'] = originalPath;
+      warnSpy.mockRestore();
+
+      // Must have emitted exactly one JSON object to stdout (#257 fix)
+      const firstCall = consoleSpy.mock.calls[0]?.[0] as string;
+      expect(firstCall).toBeDefined();
+      const parsed = JSON.parse(firstCall);
+
+      // Core fields always present
+      expect(parsed.synthesisProposals).toEqual([]);
+      // report is present because complete() succeeded despite synthesis failure
+      expect(parsed.report).toBeDefined();
+      expect(parsed.proposals).toBeDefined();
+      // synthesisError surfaces the failure message
+      expect(typeof parsed.synthesisError).toBe('string');
+
+      // Cycle must still be complete
+      const updated = manager.get(cycle.id);
+      expect(updated.state).toBe('complete');
+    }, 30000);
+
+    // Issue #227 — non-JSON --yolo mode must surface synthesis errors to the user.
+    it('--yolo non-JSON mode surfaces synthesis failure via console.warn', async () => {
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 50000 }, 'Yolo Failure Non-JSON Test');
+
+      const synthesisDir = join(kataDir, 'synthesis');
+      mkdirSync(synthesisDir, { recursive: true });
+
+      const originalPath = process.env['PATH'];
+      process.env['PATH'] = '';
+
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--plain', '--cwd', baseDir,
+        'cooldown', cycle.id, '--yolo',
+      ]);
+
+      const warnCalls = warnSpy.mock.calls.map((c) => c[0] as string).join('\n');
+      process.env['PATH'] = originalPath;
+      warnSpy.mockRestore();
+
+      // User-visible warning must mention the failure (#227)
+      expect(warnCalls).toContain('synthesis failure');
+
+      // Cycle must still complete
+      const updated = manager.get(cycle.id);
+      expect(updated.state).toBe('complete');
+    }, 30000);
+
     it('--auto-accept-suggestions includes suggestionReview in --json output', async () => {
       const { RuleRegistry } = await import('@infra/registries/rule-registry.js');
       const rulesDir = join(kataDir, 'rules');
