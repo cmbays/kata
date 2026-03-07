@@ -103,7 +103,7 @@ function loadConfigOutputMode(kataDir: string): boolean {
     return config.outputMode === 'plain';
   } catch (err) {
     logger.warn(
-      `Failed to parse .kata/config.json — falling back to default output mode. ` +
+      `Failed to parse ${configPath} — falling back to default output mode. ` +
       `Error: ${err instanceof Error ? err.message : String(err)}`,
     );
     return false;
