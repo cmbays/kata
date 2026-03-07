@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import { existsSync, readdirSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import type {
   ISessionExecutionBridge,
@@ -114,6 +114,8 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
 
   formatAgentContext(prepared: PreparedRun): string {
     const lines: string[] = [];
+    // --cwd takes the repo root (parent of .kata/), used in all kata CLI invocations
+    const repoRoot = dirname(prepared.kataDir);
 
     lines.push('## Kata Run Context');
     lines.push('');
@@ -181,9 +183,9 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
     lines.push('### Record as you work');
     lines.push('Use these commands at natural checkpoints — when a decision matters, when something surprises you, when you hit resistance:');
     lines.push('');
-    lines.push(`  kata kansatsu record <type> "..." --run ${prepared.runId}`);
-    lines.push(`  kata maki record <name> <path> --run ${prepared.runId}`);
-    lines.push(`  kata kime record --decision "..." --rationale "..." --run ${prepared.runId}`);
+    lines.push(`  kata --cwd ${repoRoot} kansatsu record <type> "..." --run ${prepared.runId}`);
+    lines.push(`  kata --cwd ${repoRoot} maki record <name> <path> --run ${prepared.runId}`);
+    lines.push(`  kata --cwd ${repoRoot} kime record --decision "..." --rationale "..." --run ${prepared.runId}`);
     lines.push('');
     lines.push('**Observation types** — pick the most specific:');
     lines.push('  decision    — a choice between real alternatives; always include WHY you chose this path');

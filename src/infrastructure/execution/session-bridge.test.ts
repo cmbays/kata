@@ -308,16 +308,17 @@ describe('SessionExecutionBridge', () => {
       expect(context).toContain(`- **Bet ID**: ${prepared.betId}`);
       expect(context).toContain(`- **Kata dir**: ${kataDir}`);
       expect(context).toContain('### Record as you work');
-      // kansatsu: positional type + content, --run flag (not --run-id)
-      expect(context).toContain(`kata kansatsu record <type> "..." --run ${prepared.runId}`);
+      // kansatsu: --cwd pre-filled + positional type + content + --run flag
+      expect(context).toContain(`kata --cwd `);
+      expect(context).toContain(`kansatsu record <type> "..." --run ${prepared.runId}`);
       // observation types and quality guide present
       expect(context).toContain('**Observation types**');
       expect(context).toContain('**Friction taxonomy**');
       expect(context).toContain('**Quality bar**');
-      // maki: positional name + path, --run flag
-      expect(context).toContain(`kata maki record <name> <path> --run ${prepared.runId}`);
-      // kime: named flags only, --run flag (not --run-id)
-      expect(context).toContain(`kata kime record --decision "..." --rationale "..." --run ${prepared.runId}`);
+      // maki: --cwd pre-filled + positional name + path + --run flag
+      expect(context).toContain(`maki record <name> <path> --run ${prepared.runId}`);
+      // kime: --cwd pre-filled + named flags + --run flag
+      expect(context).toContain(`kime record --decision "..." --rationale "..." --run ${prepared.runId}`);
       expect(context).toContain("### When you're done");
       expect(context).toContain('Do NOT close the run yourself');
     });
