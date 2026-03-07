@@ -73,8 +73,9 @@ export class DiaryWriter {
     } else {
       for (const bet of input.betOutcomes) {
         const icon = bet.outcome === 'complete' ? '✓' : bet.outcome === 'partial' ? '~' : bet.outcome === 'abandoned' ? '✗' : '·';
+        const label = bet.betDescription ?? `bet ${bet.betId.slice(0, 8)}`;
         const notes = bet.notes ? ` — ${bet.notes}` : '';
-        lines.push(`  ${icon} [${bet.outcome}] bet ${bet.betId.slice(0, 8)}${notes}`);
+        lines.push(`  ${icon} [${bet.outcome}] ${label}${notes}`);
       }
       const complete = input.betOutcomes.filter((b) => b.outcome === 'complete').length;
       lines.push(`  Completion rate: ${complete}/${input.betOutcomes.length} bets (${Math.round((complete / input.betOutcomes.length) * 100)}%)`);
@@ -158,8 +159,9 @@ export class DiaryWriter {
     return input.betOutcomes
       .filter((b) => b.outcome === 'complete')
       .map((b) => {
+        const label = b.betDescription ?? 'Completed bet';
         const notes = b.notes ? ` — ${b.notes}` : '';
-        return `Completed bet${notes}`;
+        return `${label}${notes}`;
       });
   }
 

@@ -55,4 +55,12 @@ export class MemoryPersistence implements IPersistence {
 
   /** No-op — in-memory storage has no directory concept. */
   ensureDir(_dirPath: string): void {}
+
+  /** Delete the entry at the given path. Throws if it does not exist. */
+  delete(filePath: string): void {
+    if (!this.store.has(filePath)) {
+      throw new Error(`MemoryPersistence: file not found: ${filePath}`);
+    }
+    this.store.delete(filePath);
+  }
 }

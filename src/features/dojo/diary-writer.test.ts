@@ -163,6 +163,31 @@ describe('DiaryWriter', () => {
       expect(entry.wins[1]).toBe('Completed bet');
     });
 
+    it('uses betDescription as the win label when provided (#302)', () => {
+      const input = makeInput({
+        betOutcomes: [
+          makeBetOutcome({ outcome: 'complete', betDescription: 'Implement auth flow' }),
+          makeBetOutcome({ outcome: 'complete', betDescription: 'Ship dashboard', notes: 'minor polish needed' }),
+        ],
+      });
+
+      const entry = writer.write(input);
+
+      expect(entry.wins).toHaveLength(2);
+      expect(entry.wins[0]).toBe('Implement auth flow');
+      expect(entry.wins[1]).toBe('Ship dashboard — minor polish needed');
+    });
+
+    it('falls back to "Completed bet" when betDescription is absent (#302)', () => {
+      const input = makeInput({
+        betOutcomes: [makeBetOutcome({ outcome: 'complete' })],
+      });
+
+      const entry = writer.write(input);
+
+      expect(entry.wins[0]).toBe('Completed bet');
+    });
+
     it('returns empty wins when no bets are complete', () => {
       const input = makeInput({
         betOutcomes: [makeBetOutcome({ outcome: 'partial' })],
@@ -572,6 +597,33 @@ describe('DiaryWriter', () => {
       });
       expect(summary).toContain('Test Cycle');
       expect(summary).toContain('[complete]');
+    });
+
+    it('rawDataSummary uses betDescription instead of short betId (#303)', () => {
+      const betId = crypto.randomUUID();
+      const input = makeInput({
+        betOutcomes: [
+          { betId, outcome: 'complete', betDescription: 'Migrate the auth service' },
+          { betId: crypto.randomUUID(), outcome: 'partial', betDescription: 'Refactor pipeline', notes: 'ran out of time' },
+        ],
+        proposals: [],
+        learningsCaptured: 0,
+      });
+      const entry = writer.write(input);
+      expect(entry.rawDataSummary).toContain('Migrate the auth service');
+      expect(entry.rawDataSummary).toContain('Refactor pipeline');
+      expect(entry.rawDataSummary).not.toContain(betId.slice(0, 8));
+    });
+
+    it('rawDataSummary falls back to short betId when betDescription is absent (#303)', () => {
+      const betId = 'aaa-bbb-ccc-ddd';
+      const input = makeInput({
+        betOutcomes: [{ betId, outcome: 'complete' }],
+        proposals: [],
+        learningsCaptured: 0,
+      });
+      const entry = writer.write(input);
+      expect(entry.rawDataSummary).toContain(`bet ${betId.slice(0, 8)}`);
     });
   });
 });

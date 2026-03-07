@@ -529,6 +529,274 @@ describe('registerCycleCommands', () => {
     });
   });
 
+  describe('cycle staged', () => {
+    it('shows "no staged cycle" message when none exists', async () => {
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'cycle', 'staged']);
+
+      const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('No staged cycle found.');
+      expect(output).toContain('kata cycle new');
+    });
+
+    it('shows the staged cycle when one exists in planning state', async () => {
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 50000 }, 'Next Sprint');
+      manager.addBet(cycle.id, { description: 'Build auth', appetite: 30, outcome: 'pending', issueRefs: [] });
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'cycle', 'staged']);
+
+      const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('Staged cycle');
+      expect(output).toContain('Next Sprint');
+      expect(output).toContain('Next steps:');
+    });
+
+    it('shows hint to add bets when staged cycle has no bets', async () => {
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      manager.create({ tokenBudget: 50000 }, 'Empty Staged');
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'cycle', 'staged']);
+
+      const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('No bets yet');
+    });
+
+    it('returns JSON with --json flag', async () => {
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      manager.create({ tokenBudget: 50000 }, 'JSON Staged');
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--json', '--cwd', baseDir, 'cycle', 'staged']);
+
+      const raw = consoleSpy.mock.calls[0]?.[0] as string;
+      const parsed = JSON.parse(raw);
+      expect(parsed.cycle).toBeDefined();
+      expect(parsed.cycle.name).toBe('JSON Staged');
+      expect(parsed.cycle.state).toBe('planning');
+    });
+
+    it('ignores active cycles when showing staged cycle', async () => {
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const activeCycle = manager.create({ tokenBudget: 50000 }, 'Active Cycle');
+      manager.updateState(activeCycle.id, 'active');
+      manager.create({ tokenBudget: 30000 }, 'Staged Cycle');
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'cycle', 'staged']);
+
+      const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('Staged Cycle');
+      expect(output).not.toContain('Active Cycle');
+    });
+  });
+
+  describe('cycle staged add-bet', () => {
+    it('adds a bet to the staged cycle', async () => {
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 50000 }, 'Sprint X');
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir,
+        'cycle', 'staged', 'add-bet', 'Implement search',
+        '--appetite', '25',
+      ]);
+
+      expect(consoleSpy).toHaveBeenCalledWith('Bet added to staged cycle!');
+      const updated = manager.get(cycle.id);
+      expect(updated.bets).toHaveLength(1);
+      expect(updated.bets[0]!.description).toBe('Implement search');
+      expect(updated.bets[0]!.appetite).toBe(25);
+    });
+
+    it('adds a bet with --gyo kata assignment', async () => {
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 50000 });
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir,
+        'cycle', 'staged', 'add-bet', 'Quick fix',
+        '--gyo', 'build,review',
+      ]);
+
+      const updated = manager.get(cycle.id);
+      expect(updated.bets[0]!.kata).toEqual({ type: 'ad-hoc', stages: ['build', 'review'] });
+    });
+
+    it('errors when no staged cycle exists', async () => {
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir,
+        'cycle', 'staged', 'add-bet', 'Orphan bet',
+      ]);
+
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('No staged cycle found'));
+    });
+
+    it('errors when --kata and --gyo are both given', async () => {
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      manager.create({ tokenBudget: 50000 });
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir,
+        'cycle', 'staged', 'add-bet', 'Bad',
+        '--kata', 'full-feature', '--gyo', 'build',
+      ]);
+
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('mutually exclusive'));
+    });
+  });
+
+  describe('cycle staged remove-bet', () => {
+    it('removes a bet from the staged cycle', async () => {
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 50000 }, 'Remove Test');
+      const withBet = manager.addBet(cycle.id, {
+        description: 'To be removed', appetite: 20, outcome: 'pending', issueRefs: [],
+      });
+      const betId = withBet.bets[0]!.id;
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir,
+        'cycle', 'staged', 'remove-bet', betId,
+      ]);
+
+      expect(consoleSpy).toHaveBeenCalledWith('Bet removed from staged cycle.');
+      expect(manager.get(cycle.id).bets).toHaveLength(0);
+    });
+
+    it('errors when bet ID is not found', async () => {
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      manager.create({ tokenBudget: 50000 });
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir,
+        'cycle', 'staged', 'remove-bet', crypto.randomUUID(),
+      ]);
+
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('not found'));
+    });
+  });
+
+  describe('cycle staged clear', () => {
+    it('clears an empty staged cycle without --force', async () => {
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 50000 }, 'To Clear');
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'cycle', 'staged', 'clear']);
+
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('cleared'));
+      // Cycle should be gone
+      expect(() => manager.get(cycle.id)).toThrow();
+    });
+
+    it('refuses to clear a cycle with bets without --force', async () => {
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 50000 }, 'Has Bets');
+      manager.addBet(cycle.id, { description: 'Existing bet', appetite: 20, outcome: 'pending', issueRefs: [] });
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'cycle', 'staged', 'clear']);
+
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('--force'));
+      // Cycle should still exist
+      expect(manager.get(cycle.id)).toBeDefined();
+    });
+
+    it('clears a cycle with bets when --force is given', async () => {
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 50000 }, 'Force Clear');
+      manager.addBet(cycle.id, { description: 'Bet', appetite: 20, outcome: 'pending', issueRefs: [] });
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir,
+        'cycle', 'staged', 'clear', '--force',
+      ]);
+
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('cleared'));
+      expect(() => manager.get(cycle.id)).toThrow();
+    });
+
+    it('shows "No staged cycle to clear" when none exists', async () => {
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'cycle', 'staged', 'clear']);
+
+      expect(consoleSpy).toHaveBeenCalledWith('No staged cycle to clear.');
+    });
+
+    it('outputs JSON with --json flag', async () => {
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 50000 }, 'JSON Clear');
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--json', '--cwd', baseDir, 'cycle', 'staged', 'clear']);
+
+      const raw = consoleSpy.mock.calls[0]?.[0] as string;
+      const parsed = JSON.parse(raw);
+      expect(parsed.cleared).toBe(true);
+      expect(parsed.cycleId).toBe(cycle.id);
+    });
+  });
+
+  describe('cycle-manager removeBet', () => {
+    it('removes a bet from a planning cycle', () => {
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 50000 });
+      const withBet = manager.addBet(cycle.id, {
+        description: 'Test bet', appetite: 20, outcome: 'pending', issueRefs: [],
+      });
+      const betId = withBet.bets[0]!.id;
+
+      const result = manager.removeBet(cycle.id, betId);
+      expect(result.bets).toHaveLength(0);
+    });
+
+    it('throws when bet not found', () => {
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 50000 });
+      expect(() => manager.removeBet(cycle.id, crypto.randomUUID())).toThrow('not found');
+    });
+
+    it('throws when cycle is not in planning state', () => {
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 50000 });
+      const withBet = manager.addBet(cycle.id, {
+        description: 'Test bet', appetite: 20, outcome: 'pending', issueRefs: [],
+      });
+      const betId = withBet.bets[0]!.id;
+      manager.updateState(cycle.id, 'active');
+
+      expect(() => manager.removeBet(cycle.id, betId)).toThrow('planning cycles');
+    });
+  });
+
+  describe('cycle-manager deleteCycle', () => {
+    it('deletes a planning-state cycle', () => {
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 50000 });
+
+      manager.deleteCycle(cycle.id);
+      expect(() => manager.get(cycle.id)).toThrow();
+    });
+
+    it('throws when cycle is not in planning state', () => {
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 50000 });
+      manager.updateState(cycle.id, 'active');
+
+      expect(() => manager.deleteCycle(cycle.id)).toThrow('planning-state');
+    });
+  });
+
   describe('cooldown', () => {
     it('generates cooldown session result with --skip-prompts', async () => {
       const manager = new CycleManager(cyclesDir, JsonStore);
