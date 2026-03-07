@@ -258,12 +258,15 @@ export class CooldownSession {
 
     try {
       // 2. Auto-sync pending bet outcomes from bridge-run metadata (non-critical)
-      this.autoSyncBetOutcomesFromBridgeRuns(cycleId);
+      const syncedOutcomes = this.autoSyncBetOutcomesFromBridgeRuns(cycleId);
 
       // 3. Record bet outcomes if provided (explicit outcomes override auto-sync)
       if (betOutcomes.length > 0) {
         this.recordBetOutcomes(cycleId, betOutcomes);
       }
+
+      // Effective outcomes for the result: explicit > auto-synced
+      const effectiveBetOutcomes: BetOutcomeRecord[] = betOutcomes.length > 0 ? betOutcomes : syncedOutcomes;
 
       // 4. Generate the base cooldown report
       let report = this.deps.cycleManager.generateCooldown(cycleId);
@@ -336,11 +339,6 @@ export class CooldownSession {
 
       // 8.5. Write dojo diary entry (non-critical — failure never aborts cooldown)
       if (this.deps.dojoDir) {
-        const effectiveBetOutcomes: BetOutcomeRecord[] = betOutcomes.length > 0
-          ? betOutcomes
-          : cycle.bets
-              .filter((b) => b.outcome !== 'pending')
-              .map((b) => ({ betId: b.id, outcome: b.outcome as BetOutcomeRecord['outcome'], notes: b.outcomeNotes }));
         this.writeDiaryEntry({
           cycleId,
           cycleName: cycle.name,
@@ -357,7 +355,7 @@ export class CooldownSession {
 
       return {
         report,
-        betOutcomes,
+        betOutcomes: effectiveBetOutcomes,
         proposals,
         learningsCaptured,
         runSummaries,
@@ -410,7 +408,7 @@ export class CooldownSession {
       // 2. Auto-sync pending bet outcomes from bridge-run metadata (non-critical)
       this.autoSyncBetOutcomesFromBridgeRuns(cycleId);
 
-      // 3. Record bet outcomes if provided (explicit outcomes override auto-sync)
+      // 3. Record explicit bet outcomes (override auto-sync)
       if (betOutcomes.length > 0) {
         this.recordBetOutcomes(cycleId, betOutcomes);
       }
@@ -720,9 +718,9 @@ export class CooldownSession {
    * Non-critical: any errors are swallowed so a missing/corrupt bridge-run file
    * does not abort the cooldown.
    */
-  private autoSyncBetOutcomesFromBridgeRuns(cycleId: string): void {
+  private autoSyncBetOutcomesFromBridgeRuns(cycleId: string): BetOutcomeRecord[] {
     const bridgeRunsDir = this.deps.bridgeRunsDir;
-    if (!bridgeRunsDir) return;
+    if (!bridgeRunsDir) return [];
 
     const cycle = this.deps.cycleManager.get(cycleId);
     const toSync: Array<{ betId: string; outcome: 'complete' | 'partial'; notes?: string }> = [];
@@ -748,6 +746,8 @@ export class CooldownSession {
     if (toSync.length > 0) {
       this.recordBetOutcomes(cycleId, toSync);
     }
+
+    return toSync;
   }
 
   /**

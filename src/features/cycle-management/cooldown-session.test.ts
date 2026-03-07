@@ -1050,6 +1050,7 @@ describe('CooldownSession', () => {
 
     it('prefers bridge-run metadata over run.json when bridgeRunsDir is provided', () => {
       const bridgeRunsDir = join(baseDir, 'bridge-runs-check');
+      const runsDir = join(baseDir, 'runs-bridge-check');
       mkdirSync(bridgeRunsDir, { recursive: true });
 
       const cycle = cycleManager.create({ tokenBudget: 50000 });
@@ -1058,14 +1059,22 @@ describe('CooldownSession', () => {
       const runId = randomUUID();
       cycleManager.setRunId(cycle.id, bet.id, runId);
 
-      // Write bridge-run file as 'complete'
-      
+      // Write a stale run.json that still shows 'running' (as it always would without bridge-run support)
+      const runDir = join(runsDir, runId);
+      mkdirSync(runDir, { recursive: true });
+      writeFileSync(join(runDir, 'run.json'), JSON.stringify({
+        id: runId, cycleId: cycle.id, betId: bet.id, betPrompt: 'Bridge bet',
+        stageSequence: ['build'], currentStage: null, status: 'running',
+        startedAt: new Date().toISOString(),
+      }));
+
+      // Write bridge-run file as 'complete' — should take precedence over stale run.json
       writeFileSync(join(bridgeRunsDir, `${runId}.json`), JSON.stringify({ runId, betId: bet.id, cycleId: cycle.id, cycleName: 'Test', stages: ['build'], isolation: 'shared', startedAt: new Date().toISOString(), status: 'complete' }));
 
       const sessionWithBridge = new CooldownSession({
-        cycleManager, knowledgeStore, persistence: JsonStore, pipelineDir, historyDir, bridgeRunsDir,
+        cycleManager, knowledgeStore, persistence: JsonStore, pipelineDir, historyDir, bridgeRunsDir, runsDir,
       });
-      // Bridge-run is 'complete', so no incomplete runs
+      // Bridge-run 'complete' takes precedence over stale run.json 'running' → no incomplete runs
       const result = sessionWithBridge.checkIncompleteRuns(cycle.id);
       expect(result).toEqual([]);
     });
@@ -1154,18 +1163,17 @@ describe('CooldownSession', () => {
       expect(result.report.completionRate).toBe(0); // partial doesn't count as complete
     });
 
-    it('does not override manually-set bet outcomes', async () => {
-      
-
+    it('explicit bet outcome passed to run() takes precedence over bridge-run auto-sync', async () => {
       const cycle = cycleManager.create({ tokenBudget: 50000 });
-      const withBet = cycleManager.addBet(cycle.id, { description: 'Manual outcome bet', appetite: 80, outcome: 'abandoned', issueRefs: [] });
+      // Bet starts as pending — auto-sync would set it to 'complete' from bridge-run
+      const withBet = cycleManager.addBet(cycle.id, { description: 'Explicit override bet', appetite: 80, outcome: 'pending', issueRefs: [] });
       const bet = withBet.bets[0]!;
       const runId = randomUUID();
       cycleManager.setRunId(cycle.id, bet.id, runId);
 
-      // Bridge run says complete but bet was manually marked abandoned
+      // Bridge-run says 'complete' — but the sensei explicitly passes 'abandoned'
       writeFileSync(join(bridgeRunsDir, `${runId}.json`), JSON.stringify({
-        runId, betId: bet.id, cycleId: cycle.id, cycleName: 'Test', betName: 'Manual outcome bet',
+        runId, betId: bet.id, cycleId: cycle.id, cycleName: 'Test', betName: 'Explicit override bet',
         stages: ['build'], isolation: 'shared', startedAt: new Date().toISOString(), status: 'complete',
       }));
 
@@ -1174,10 +1182,12 @@ describe('CooldownSession', () => {
       });
 
       cycleManager.updateState(cycle.id, 'active');
-      const result = await sessionWithBridge.run(cycle.id, [], { force: true });
+      // Explicit 'abandoned' should win over bridge-run 'complete'
+      const result = await sessionWithBridge.run(cycle.id, [{ betId: bet.id, outcome: 'abandoned' }], { force: true });
 
-      // Manually set 'abandoned' should be preserved
       expect(result.report.bets[0]!.outcome).toBe('abandoned');
+      // effectiveBetOutcomes should reflect the explicit outcome, not the auto-synced one
+      expect(result.betOutcomes[0]!.outcome).toBe('abandoned');
     });
   });
 
