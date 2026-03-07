@@ -1,6 +1,7 @@
 import { readdirSync } from 'node:fs';
 import { runPaths, readRun, readStageState } from '@infra/persistence/run-store.js';
 import { JsonlStore } from '@infra/persistence/jsonl-store.js';
+import { JsonStoreError } from '@infra/persistence/json-store.js';
 import {
   DecisionEntrySchema,
   ArtifactIndexEntrySchema,
@@ -58,7 +59,10 @@ export function listActiveRuns(runsDir: string, cycleId?: string): WatchRun[] {
     try {
       run = readRun(runsDir, runId);
     } catch (err: unknown) {
-      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+      // Runs missing run.json predate the feature — skip silently.
+      // Only warn for unexpected read/parse errors.
+      const isMissing = err instanceof JsonStoreError && err.message.startsWith('File not found:');
+      if (!isMissing) {
         logger.warn('kata watch: skipping run with unreadable run.json', { runId, error: String(err) });
       }
       continue;
@@ -88,7 +92,7 @@ export function listActiveRuns(runsDir: string, cycleId?: string): WatchRun[] {
       try {
         stageState = readStageState(runsDir, runId, category);
       } catch (err: unknown) {
-        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+        if (!(err instanceof JsonStoreError && err.message.startsWith('File not found:'))) {
           logger.warn('kata watch: unreadable stage state treated as pending', { runId, category, error: String(err) });
         }
         stageState = undefined;

@@ -179,6 +179,16 @@ describe('listActiveRuns', () => {
     expect(listActiveRuns(runsDir)).toEqual([]);
   });
 
+  it('silently skips run directories with no run.json (pre-feature runs)', () => {
+    const runsDir = join(tmpDir, 'runs');
+    mkdirSync(runsDir);
+    // Create a run directory with no run.json — simulates old runs that predate the feature
+    mkdirSync(join(runsDir, 'old-run-id'));
+
+    expect(() => listActiveRuns(runsDir)).not.toThrow();
+    expect(listActiveRuns(runsDir)).toEqual([]);
+  });
+
   it('returns correct currentStage from run', () => {
     const runsDir = join(tmpDir, 'runs');
     mkdirSync(runsDir);
