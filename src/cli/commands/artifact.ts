@@ -4,8 +4,9 @@ import { randomUUID } from 'node:crypto';
 import type { Command } from 'commander';
 import { withCommandContext, kataDirPath } from '@cli/utils.js';
 import { JsonlStore } from '@infra/persistence/jsonl-store.js';
-import { readRun, readFlavorState, writeFlavorState, runPaths } from '@infra/persistence/run-store.js';
+import { readRun, readFlavorState, writeFlavorState, runPaths, listRunsForCycle } from '@infra/persistence/run-store.js';
 import { ArtifactIndexEntrySchema } from '@domain/types/run-state.js';
+import type { ArtifactIndexEntry } from '@domain/types/run-state.js';
 import type { StageCategory } from '@domain/types/stage.js';
 import { StageCategorySchema } from '@domain/types/stage.js';
 
@@ -182,6 +183,89 @@ export function registerArtifactCommands(parent: Command): void {
         }
         console.log(`  Dest:   ${destPath}`);
         console.log(`  ID:     ${entry.id}`);
+      }
+    }));
+
+  // ---------------------------------------------------------------------------
+  // kata artifact list
+  // ---------------------------------------------------------------------------
+  artifact
+    .command('list')
+    .description('List artifacts for a run or across all runs in a cycle')
+    .option('--run <id>', 'Run ID (required unless --cycle is provided)')
+    .option('--cycle <id>', 'Cycle ID — aggregate artifacts across all runs in the cycle')
+    .option('--type <type>', 'Filter by artifact type (artifact | synthesis)')
+    .action(withCommandContext((ctx) => {
+      const localOpts = ctx.cmd.opts();
+      const runsDir = kataDirPath(ctx.kataDir, 'runs');
+
+      if (!localOpts.run && !localOpts.cycle) {
+        console.error('Error: --run <id> or --cycle <id> is required');
+        process.exitCode = 1;
+        return;
+      }
+
+      interface EntryWithRun { runId: string; betPrompt: string; entry: ArtifactIndexEntry }
+
+      let results: EntryWithRun[];
+
+      if (localOpts.cycle) {
+        const cycleId = localOpts.cycle as string;
+        const runs = listRunsForCycle(runsDir, cycleId);
+
+        if (runs.length === 0) {
+          console.log(`No runs found for cycle ${cycleId.slice(0, 8)}.`);
+          return;
+        }
+
+        results = [];
+        for (const run of runs) {
+          const paths = runPaths(runsDir, run.id);
+          const entries = JsonlStore.readAll(paths.artifactIndexJsonl, ArtifactIndexEntrySchema);
+          for (const e of entries) {
+            results.push({ runId: run.id, betPrompt: run.betPrompt, entry: e });
+          }
+        }
+      } else {
+        const runId = localOpts.run as string;
+        const paths = runPaths(runsDir, runId);
+        const run = readRun(runsDir, runId);
+        const entries = JsonlStore.readAll(paths.artifactIndexJsonl, ArtifactIndexEntrySchema);
+        results = entries.map((e) => ({ runId, betPrompt: run.betPrompt, entry: e }));
+      }
+
+      if (localOpts.type) {
+        results = results.filter((r) => r.entry.type === localOpts.type);
+      }
+
+      if (ctx.globalOpts.json) {
+        console.log(JSON.stringify(results.map((r) => ({ ...r.entry, runId: r.runId })), null, 2));
+        return;
+      }
+
+      if (results.length === 0) {
+        console.log('No artifacts found.');
+        return;
+      }
+
+      const isCycle = !!(localOpts.cycle as string | undefined);
+      const label = isCycle
+        ? `Artifacts for cycle ${(localOpts.cycle as string).slice(0, 8)} (${results.length})`
+        : `Artifacts (${results.length})`;
+      console.log(`${label}:\n`);
+
+      for (const r of results) {
+        if (isCycle) {
+          console.log(`  run: ${r.runId.slice(0, 8)} — ${r.betPrompt}`);
+        }
+        const indent = isCycle ? '  ' : '';
+        console.log(`${indent}[${r.entry.type}] ${r.entry.fileName} — ${r.entry.summary}`);
+        console.log(`${indent}  id:    ${r.entry.id}`);
+        console.log(`${indent}  stage: ${r.entry.stageCategory}`);
+        if (r.entry.flavor) console.log(`${indent}  flavor: ${r.entry.flavor}`);
+        if (r.entry.step) console.log(`${indent}  step:  ${r.entry.step}`);
+        console.log(`${indent}  at:    ${r.entry.recordedAt}`);
+        console.log('');
       }
     }));
 }

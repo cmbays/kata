@@ -4,11 +4,12 @@ import { withCommandContext, kataDirPath } from '@cli/utils.js';
 import { getLexicon } from '@cli/lexicon.js';
 import { JsonlStore } from '@infra/persistence/jsonl-store.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
-import { readRun, readStageState, writeStageState, runPaths } from '@infra/persistence/run-store.js';
+import { readRun, readStageState, writeStageState, runPaths, listRunsForCycle } from '@infra/persistence/run-store.js';
 import {
   DecisionEntrySchema,
   DecisionOutcomeEntrySchema,
 } from '@domain/types/run-state.js';
+import type { DecisionEntry } from '@domain/types/run-state.js';
 import { StageCategorySchema } from '@domain/types/stage.js';
 import type { StageCategory } from '@domain/types/stage.js';
 import { DecisionTypeSchema } from '@domain/types/decision.js';
@@ -254,6 +255,92 @@ export function registerDecisionCommands(parent: Command): void {
         console.log(`  Decision: ${decisionId}`);
         console.log(`  Outcome:  ${entry.outcome}`);
         if (entry.notes) console.log(`  Notes:    ${entry.notes}`);
+      }
+    }));
+
+  // ---------------------------------------------------------------------------
+  // kata decision list
+  // ---------------------------------------------------------------------------
+  decision
+    .command('list')
+    .description('List decisions for a run or across all runs in a cycle')
+    .option('--run <id>', 'Run ID (required unless --cycle is provided)')
+    .option('--cycle <id>', 'Cycle ID — aggregate decisions across all runs in the cycle')
+    .option('--type <decision-type>', 'Filter by decision type')
+    .action(withCommandContext((ctx) => {
+      const localOpts = ctx.cmd.opts();
+      const lex = getLexicon(ctx.globalOpts.plain);
+      const runsDir = kataDirPath(ctx.kataDir, 'runs');
+
+      if (!localOpts.run && !localOpts.cycle) {
+        console.error('Error: --run <id> or --cycle <id> is required');
+        process.exitCode = 1;
+        return;
+      }
+
+      interface DecisionWithRun { runId: string; betPrompt: string; entry: DecisionEntry }
+
+      let results: DecisionWithRun[];
+
+      if (localOpts.cycle) {
+        const cycleId = localOpts.cycle as string;
+        const runs = listRunsForCycle(runsDir, cycleId);
+
+        if (runs.length === 0) {
+          console.log(`No runs found for cycle ${cycleId.slice(0, 8)}.`);
+          return;
+        }
+
+        results = [];
+        for (const run of runs) {
+          const paths = runPaths(runsDir, run.id);
+          const entries = JsonlStore.readAll(paths.decisionsJsonl, DecisionEntrySchema);
+          for (const e of entries) {
+            results.push({ runId: run.id, betPrompt: run.betPrompt, entry: e });
+          }
+        }
+      } else {
+        const runId = localOpts.run as string;
+        const run = readRun(runsDir, runId);
+        const paths = runPaths(runsDir, runId);
+        const entries = JsonlStore.readAll(paths.decisionsJsonl, DecisionEntrySchema);
+        results = entries.map((e) => ({ runId, betPrompt: run.betPrompt, entry: e }));
+      }
+
+      if (localOpts.type) {
+        results = results.filter((r) => r.entry.decisionType === localOpts.type);
+      }
+
+      if (ctx.globalOpts.json) {
+        console.log(JSON.stringify(results.map((r) => ({ ...r.entry, runId: r.runId })), null, 2));
+        return;
+      }
+
+      if (results.length === 0) {
+        console.log(`No ${lex.decision} found.`);
+        return;
+      }
+
+      const isCycle = !!(localOpts.cycle as string | undefined);
+      const label = isCycle
+        ? `${lex.decision.charAt(0).toUpperCase() + lex.decision.slice(1)} for cycle ${(localOpts.cycle as string).slice(0, 8)} (${results.length})`
+        : `${lex.decision.charAt(0).toUpperCase() + lex.decision.slice(1)} (${results.length})`;
+      console.log(`${label}:\n`);
+
+      for (const r of results) {
+        if (isCycle) {
+          console.log(`  run: ${r.runId.slice(0, 8)} — ${r.betPrompt}`);
+        }
+        const indent = isCycle ? '  ' : '';
+        console.log(`${indent}[${r.entry.decisionType}] ${r.entry.selection}`);
+        console.log(`${indent}  id:         ${r.entry.id}`);
+        console.log(`${indent}  ${lex.stage}:      ${r.entry.stageCategory}`);
+        if (r.entry.flavor) console.log(`${indent}  ${lex.flavor}:     ${r.entry.flavor}`);
+        if (r.entry.step) console.log(`${indent}  ${lex.step}:       ${r.entry.step}`);
+        console.log(`${indent}  confidence: ${r.entry.confidence}`);
+        if (r.entry.reasoning) console.log(`${indent}  reasoning:  ${r.entry.reasoning}`);
+        console.log(`${indent}  at:         ${r.entry.decidedAt}`);
+        console.log('');
       }
     }));
 }

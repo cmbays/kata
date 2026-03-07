@@ -18,6 +18,7 @@ import {
   readAllObservationsForRun,
   appendReflection,
   readReflections,
+  listRunsForCycle,
   runPaths,
   type ObservationTarget,
 } from './run-store.js';
@@ -601,5 +602,77 @@ describe('readAllObservationsForRun', () => {
     expect(all).toHaveLength(2);
     expect(all.map((o) => o.content)).toContain('research stage');
     expect(all.map((o) => o.content)).toContain('build stage');
+  });
+});
+
+describe('listRunsForCycle', () => {
+  it('returns empty array when runsDir does not exist', () => {
+    const nonExistent = join(tmpdir(), `no-such-dir-${randomUUID()}`);
+    expect(listRunsForCycle(nonExistent, VALID_UUID())).toEqual([]);
+  });
+
+  it('returns only runs matching the given cycleId', () => {
+    const runsDir = tempRunsDir();
+    const targetCycleId = VALID_UUID();
+    const otherCycleId = VALID_UUID();
+
+    const run1 = makeRun({ cycleId: targetCycleId, startedAt: '2026-01-01T01:00:00.000Z' });
+    const run2 = makeRun({ cycleId: targetCycleId, startedAt: '2026-01-01T02:00:00.000Z' });
+    const run3 = makeRun({ cycleId: otherCycleId, startedAt: '2026-01-01T03:00:00.000Z' });
+
+    createRunTree(runsDir, run1);
+    createRunTree(runsDir, run2);
+    createRunTree(runsDir, run3);
+
+    const results = listRunsForCycle(runsDir, targetCycleId);
+    expect(results).toHaveLength(2);
+    const ids = results.map((r) => r.id);
+    expect(ids).toContain(run1.id);
+    expect(ids).toContain(run2.id);
+    expect(ids).not.toContain(run3.id);
+  });
+
+  it('returns runs sorted by startedAt ascending', () => {
+    const runsDir = tempRunsDir();
+    const cycleId = VALID_UUID();
+
+    const runA = makeRun({ cycleId, startedAt: '2026-01-01T03:00:00.000Z' });
+    const runB = makeRun({ cycleId, startedAt: '2026-01-01T01:00:00.000Z' });
+    const runC = makeRun({ cycleId, startedAt: '2026-01-01T02:00:00.000Z' });
+
+    createRunTree(runsDir, runA);
+    createRunTree(runsDir, runB);
+    createRunTree(runsDir, runC);
+
+    const results = listRunsForCycle(runsDir, cycleId);
+    expect(results).toHaveLength(3);
+    expect(results[0].id).toBe(runB.id); // earliest
+    expect(results[1].id).toBe(runC.id);
+    expect(results[2].id).toBe(runA.id); // latest
+  });
+
+  it('returns empty array when no runs match the cycleId', () => {
+    const runsDir = tempRunsDir();
+    const run = makeRun({ cycleId: VALID_UUID() });
+    createRunTree(runsDir, run);
+
+    const results = listRunsForCycle(runsDir, VALID_UUID());
+    expect(results).toEqual([]);
+  });
+
+  it('skips directories without run.json', () => {
+    const runsDir = tempRunsDir();
+    const cycleId = VALID_UUID();
+
+    // Create a valid run
+    const run = makeRun({ cycleId });
+    createRunTree(runsDir, run);
+
+    // Create a bare directory with no run.json
+    mkdirSync(join(runsDir, 'orphan-dir'), { recursive: true });
+
+    const results = listRunsForCycle(runsDir, cycleId);
+    expect(results).toHaveLength(1);
+    expect(results[0].id).toBe(run.id);
   });
 });

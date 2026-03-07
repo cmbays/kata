@@ -24,4 +24,9 @@ export interface IPersistence {
    */
   list<T>(dirPath: string, schema: z.ZodType<T>, options?: { warnOnInvalid?: boolean }): T[];
   ensureDir(dirPath: string): void;
+  /**
+   * Delete a file at the given path.
+   * @throws if the file does not exist or deletion fails
+   */
+  delete(filePath: string): void;
 }

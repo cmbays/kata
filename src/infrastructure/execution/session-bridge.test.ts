@@ -308,17 +308,26 @@ describe('SessionExecutionBridge', () => {
       expect(context).toContain(`- **Bet ID**: ${prepared.betId}`);
       expect(context).toContain(`- **Kata dir**: ${kataDir}`);
       expect(context).toContain('### Record as you work');
-      // kansatsu: positional type + content, --run flag (not --run-id)
-      expect(context).toContain(`kata kansatsu record <type> "..." --run ${prepared.runId}`);
+      // kansatsu: --cwd pre-filled + positional type + content + --run flag
+      expect(context).toContain(`kata --cwd `);
+      expect(context).toContain(`kansatsu record <type> "..." --run ${prepared.runId}`);
       // observation types and quality guide present
       expect(context).toContain('**Observation types**');
       expect(context).toContain('**Friction taxonomy**');
       expect(context).toContain('**Quality bar**');
-      // maki: positional name + path, --run flag
-      expect(context).toContain(`kata maki record <name> <path> --run ${prepared.runId}`);
-      // kime: named flags only, --run flag (not --run-id)
-      expect(context).toContain(`kata kime record --decision "..." --rationale "..." --run ${prepared.runId}`);
+      // maki: --cwd pre-filled + positional name + path + --run flag
+      expect(context).toContain(`maki record <name> <path> --run ${prepared.runId}`);
+      // kime: --cwd pre-filled + named flags + --run flag
+      expect(context).toContain(`kime record --decision "..." --rationale "..." --run ${prepared.runId}`);
+      // friction urgency block
+      expect(context).toContain('**FRICTION — record immediately, before continuing:**');
+      expect(context).toContain('record it as friction BEFORE resuming work');
+      // concrete friction example with full command
+      expect(context).toContain(`kansatsu record friction`);
+      expect(context).toContain('--taxonomy tool-mismatch');
+      // pre-reporting checklist in "When you're done"
       expect(context).toContain("### When you're done");
+      expect(context).toContain('did you record all friction events?');
       expect(context).toContain('Do NOT close the run yourself');
     });
 
@@ -535,6 +544,63 @@ describe('SessionExecutionBridge', () => {
       expect(bet2.outcome).toBe('pending');
     });
 
+    it('should update run.json status to "completed" on success (#254)', () => {
+      const cycle = createCycle(kataDir);
+      const bridge = new SessionExecutionBridge(kataDir);
+      const prepared = bridge.prepare(cycle.bets[0]!.id);
+
+      bridge.complete(prepared.runId, { success: true });
+
+      const runJsonPath = join(kataDir, 'runs', prepared.runId, 'run.json');
+      const run = RunSchema.parse(JSON.parse(readFileSync(runJsonPath, 'utf-8')));
+      expect(run.status).toBe('completed');
+      expect(run.completedAt).toBeTruthy();
+    });
+
+    it('should update run.json status to "failed" on failure (#254)', () => {
+      const cycle = createCycle(kataDir);
+      const bridge = new SessionExecutionBridge(kataDir);
+      const prepared = bridge.prepare(cycle.bets[0]!.id);
+
+      bridge.complete(prepared.runId, { success: false, notes: 'Build failed' });
+
+      const runJsonPath = join(kataDir, 'runs', prepared.runId, 'run.json');
+      const run = RunSchema.parse(JSON.parse(readFileSync(runJsonPath, 'utf-8')));
+      expect(run.status).toBe('failed');
+      expect(run.completedAt).toBeTruthy();
+    });
+
+    it('completed run should NOT appear in listActiveRuns (kata watch drops off) (#254)', () => {
+      const cycle = createCycle(kataDir);
+      const bridge = new SessionExecutionBridge(kataDir);
+      const prepared = bridge.prepare(cycle.bets[0]!.id);
+
+      // Before complete: run should be visible as running
+      const runsDir = join(kataDir, 'runs');
+      const activeBeforeComplete = readdirSync(runsDir, { withFileTypes: true })
+        .filter((e) => e.isDirectory())
+        .filter((e) => {
+          try {
+            const run = RunSchema.parse(JSON.parse(readFileSync(join(runsDir, e.name, 'run.json'), 'utf-8')));
+            return run.status === 'running';
+          } catch { return false; }
+        });
+      expect(activeBeforeComplete.length).toBe(1);
+
+      bridge.complete(prepared.runId, { success: true });
+
+      // After complete: no running runs remain
+      const activeAfterComplete = readdirSync(runsDir, { withFileTypes: true })
+        .filter((e) => e.isDirectory())
+        .filter((e) => {
+          try {
+            const run = RunSchema.parse(JSON.parse(readFileSync(join(runsDir, e.name, 'run.json'), 'utf-8')));
+            return run.status === 'running';
+          } catch { return false; }
+        });
+      expect(activeAfterComplete.length).toBe(0);
+    });
+
     it('should record token usage in history entry', () => {
       const cycle = createCycle(kataDir);
       const bridge = new SessionExecutionBridge(kataDir);
@@ -551,6 +617,91 @@ describe('SessionExecutionBridge', () => {
       expect(entry.tokenUsage.total).toBe(7000);
       expect(entry.tokenUsage.inputTokens).toBe(5000);
       expect(entry.tokenUsage.outputTokens).toBe(2000);
+    });
+
+    it('should persist tokenUsage to bridge-run metadata (#312)', () => {
+      const cycle = createCycle(kataDir);
+      const bridge = new SessionExecutionBridge(kataDir);
+      const prepared = bridge.prepare(cycle.bets[0]!.id);
+
+      bridge.complete(prepared.runId, {
+        success: true,
+        tokenUsage: { inputTokens: 3000, outputTokens: 1500, total: 4500 },
+      });
+
+      const metaPath = join(kataDir, 'bridge-runs', `${prepared.runId}.json`);
+      const meta = JSON.parse(readFileSync(metaPath, 'utf-8'));
+      expect(meta.tokenUsage).toBeDefined();
+      expect(meta.tokenUsage.inputTokens).toBe(3000);
+      expect(meta.tokenUsage.outputTokens).toBe(1500);
+      expect(meta.tokenUsage.totalTokens).toBe(4500);
+    });
+
+    it('should not write tokenUsage to bridge-run metadata when not provided (#312)', () => {
+      const cycle = createCycle(kataDir);
+      const bridge = new SessionExecutionBridge(kataDir);
+      const prepared = bridge.prepare(cycle.bets[0]!.id);
+
+      bridge.complete(prepared.runId, { success: true });
+
+      const metaPath = join(kataDir, 'bridge-runs', `${prepared.runId}.json`);
+      const meta = JSON.parse(readFileSync(metaPath, 'utf-8'));
+      expect(meta.tokenUsage).toBeUndefined();
+    });
+
+    it('should update run.json status to "completed" on success (#312)', () => {
+      const cycle = createCycle(kataDir);
+      const bridge = new SessionExecutionBridge(kataDir);
+      const prepared = bridge.prepare(cycle.bets[0]!.id);
+
+      bridge.complete(prepared.runId, { success: true });
+
+      const runJsonPath = join(kataDir, 'runs', prepared.runId, 'run.json');
+      const run = RunSchema.parse(JSON.parse(readFileSync(runJsonPath, 'utf-8')));
+      expect(run.status).toBe('completed');
+      expect(run.completedAt).toBeTruthy();
+    });
+
+    it('should update run.json status to "failed" on failure (#312)', () => {
+      const cycle = createCycle(kataDir);
+      const bridge = new SessionExecutionBridge(kataDir);
+      const prepared = bridge.prepare(cycle.bets[0]!.id);
+
+      bridge.complete(prepared.runId, { success: false });
+
+      const runJsonPath = join(kataDir, 'runs', prepared.runId, 'run.json');
+      const run = RunSchema.parse(JSON.parse(readFileSync(runJsonPath, 'utf-8')));
+      expect(run.status).toBe('failed');
+    });
+
+    it('should write tokenUsage to run.json when tokens are provided (#312)', () => {
+      const cycle = createCycle(kataDir);
+      const bridge = new SessionExecutionBridge(kataDir);
+      const prepared = bridge.prepare(cycle.bets[0]!.id);
+
+      bridge.complete(prepared.runId, {
+        success: true,
+        tokenUsage: { inputTokens: 8000, outputTokens: 3000, total: 11000 },
+      });
+
+      const runJsonPath = join(kataDir, 'runs', prepared.runId, 'run.json');
+      const run = RunSchema.parse(JSON.parse(readFileSync(runJsonPath, 'utf-8')));
+      expect(run.tokenUsage).toBeDefined();
+      expect(run.tokenUsage!.inputTokens).toBe(8000);
+      expect(run.tokenUsage!.outputTokens).toBe(3000);
+      expect(run.tokenUsage!.totalTokens).toBe(11000);
+    });
+
+    it('should not write tokenUsage to run.json when not provided (#312)', () => {
+      const cycle = createCycle(kataDir);
+      const bridge = new SessionExecutionBridge(kataDir);
+      const prepared = bridge.prepare(cycle.bets[0]!.id);
+
+      bridge.complete(prepared.runId, { success: true });
+
+      const runJsonPath = join(kataDir, 'runs', prepared.runId, 'run.json');
+      const run = RunSchema.parse(JSON.parse(readFileSync(runJsonPath, 'utf-8')));
+      expect(run.tokenUsage).toBeUndefined();
     });
   });
 

@@ -7,7 +7,7 @@ import { registerArtifactCommands } from './artifact.js';
 import { createRunTree, runPaths } from '@infra/persistence/run-store.js';
 import { JsonlStore } from '@infra/persistence/jsonl-store.js';
 import { ArtifactIndexEntrySchema } from '@domain/types/run-state.js';
-import type { Run } from '@domain/types/run-state.js';
+import type { Run, ArtifactIndexEntry } from '@domain/types/run-state.js';
 
 function tempBase(): string {
   return join(tmpdir(), `kata-artifact-test-${randomUUID()}`);
@@ -452,5 +452,156 @@ describe('registerArtifactCommands — artifact record', () => {
     const entries = JsonlStore.readAll(runIndexPath, ArtifactIndexEntrySchema);
     expect(entries).toHaveLength(1);
     expect(entries[0]!.katakaId).toBeUndefined();
+  });
+});
+
+describe('registerArtifactCommands — artifact list', () => {
+  let baseDir: string;
+  let kataDir: string;
+  let runsDir: string;
+  let consoleSpy: ReturnType<typeof vi.spyOn>;
+  let errorSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    baseDir = tempBase();
+    kataDir = join(baseDir, '.kata');
+    runsDir = join(kataDir, 'runs');
+    mkdirSync(runsDir, { recursive: true });
+    consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    rmSync(baseDir, { recursive: true, force: true });
+    consoleSpy.mockRestore();
+    errorSpy.mockRestore();
+    vi.clearAllMocks();
+  });
+
+  function createProgram(): Command {
+    const program = new Command();
+    program.option('--json').option('--verbose').option('--cwd <path>');
+    program.exitOverride();
+    registerArtifactCommands(program);
+    return program;
+  }
+
+  it('lists artifacts for a single run via --run', async () => {
+    const run = makeRun();
+    createRunTree(runsDir, run);
+    const paths = runPaths(runsDir, run.id);
+
+    const entry: ArtifactIndexEntry = {
+      id: randomUUID(),
+      stageCategory: 'research',
+      flavor: 'tech',
+      step: 'gather',
+      fileName: 'output.md',
+      filePath: 'stages/research/flavors/tech/artifacts/output.md',
+      summary: 'Research output',
+      type: 'artifact',
+      recordedAt: new Date().toISOString(),
+    };
+    JsonlStore.append(paths.artifactIndexJsonl, entry, ArtifactIndexEntrySchema);
+
+    const program = createProgram();
+    await program.parseAsync([
+      'node', 'test', '--json', '--cwd', baseDir,
+      'artifact', 'list', '--run', run.id,
+    ]);
+
+    const output = consoleSpy.mock.calls[0]?.[0] as string;
+    const parsed = JSON.parse(output) as Array<{ id: string; runId: string }>;
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].id).toBe(entry.id);
+    expect(parsed[0].runId).toBe(run.id);
+  });
+
+  it('lists artifacts across all runs in a cycle via --cycle', async () => {
+    const cycleId = randomUUID();
+    const run1 = makeRun({ cycleId });
+    const run2 = makeRun({ cycleId });
+    createRunTree(runsDir, run1);
+    createRunTree(runsDir, run2);
+
+    const entry1: ArtifactIndexEntry = {
+      id: randomUUID(), stageCategory: 'research', flavor: null, step: null,
+      fileName: 'file1.md', filePath: 'stages/research/artifacts/file1.md',
+      summary: 'Run 1 artifact', type: 'artifact', recordedAt: new Date().toISOString(),
+    };
+    const entry2: ArtifactIndexEntry = {
+      id: randomUUID(), stageCategory: 'build', flavor: null, step: null,
+      fileName: 'file2.md', filePath: 'stages/build/artifacts/file2.md',
+      summary: 'Run 2 artifact', type: 'artifact', recordedAt: new Date().toISOString(),
+    };
+
+    JsonlStore.append(runPaths(runsDir, run1.id).artifactIndexJsonl, entry1, ArtifactIndexEntrySchema);
+    JsonlStore.append(runPaths(runsDir, run2.id).artifactIndexJsonl, entry2, ArtifactIndexEntrySchema);
+
+    const program = createProgram();
+    await program.parseAsync([
+      'node', 'test', '--json', '--cwd', baseDir,
+      'artifact', 'list', '--cycle', cycleId,
+    ]);
+
+    const output = consoleSpy.mock.calls[0]?.[0] as string;
+    const parsed = JSON.parse(output) as Array<{ id: string; runId: string }>;
+    expect(parsed).toHaveLength(2);
+    const ids = parsed.map((e) => e.id);
+    expect(ids).toContain(entry1.id);
+    expect(ids).toContain(entry2.id);
+  });
+
+  it('filters by --type when --cycle is provided', async () => {
+    const cycleId = randomUUID();
+    const run = makeRun({ cycleId });
+    createRunTree(runsDir, run);
+
+    const artifactEntry: ArtifactIndexEntry = {
+      id: randomUUID(), stageCategory: 'research', flavor: null, step: 'gather',
+      fileName: 'output.md', filePath: 'stages/research/artifacts/output.md',
+      summary: 'An artifact', type: 'artifact', recordedAt: new Date().toISOString(),
+    };
+    const synthesisEntry: ArtifactIndexEntry = {
+      id: randomUUID(), stageCategory: 'research', flavor: null, step: null,
+      fileName: 'synthesis.md', filePath: 'stages/research/synthesis.md',
+      summary: 'A synthesis', type: 'synthesis', recordedAt: new Date().toISOString(),
+    };
+
+    const paths = runPaths(runsDir, run.id);
+    JsonlStore.append(paths.artifactIndexJsonl, artifactEntry, ArtifactIndexEntrySchema);
+    JsonlStore.append(paths.artifactIndexJsonl, synthesisEntry, ArtifactIndexEntrySchema);
+
+    const program = createProgram();
+    await program.parseAsync([
+      'node', 'test', '--json', '--cwd', baseDir,
+      'artifact', 'list', '--cycle', cycleId, '--type', 'synthesis',
+    ]);
+
+    const output = consoleSpy.mock.calls[0]?.[0] as string;
+    const parsed = JSON.parse(output) as Array<{ type: string }>;
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].type).toBe('synthesis');
+  });
+
+  it('shows empty message when no runs exist for cycle', async () => {
+    const program = createProgram();
+    await program.parseAsync([
+      'node', 'test', '--cwd', baseDir,
+      'artifact', 'list', '--cycle', randomUUID(),
+    ]);
+
+    const output = consoleSpy.mock.calls[0]?.[0] as string;
+    expect(output).toContain('No runs found');
+  });
+
+  it('errors when neither --run nor --cycle is provided', async () => {
+    const program = createProgram();
+    await program.parseAsync([
+      'node', 'test', '--cwd', baseDir,
+      'artifact', 'list',
+    ]);
+
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('--run'));
   });
 });
