@@ -148,4 +148,12 @@ export const JsonStore = {
       mkdirSync(dir, { recursive: true });
     }
   },
+
+  /**
+   * Delete a file at the given path (satisfies IPersistence.delete).
+   * @throws JsonStoreError if the file does not exist or deletion fails
+   */
+  delete(path: string): void {
+    JsonStore.remove(path);
+  },
 };

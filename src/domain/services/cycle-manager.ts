@@ -320,6 +320,47 @@ export class CycleManager {
     };
   }
 
+  /**
+   * Remove a bet from a cycle by bet ID.
+   * Only allowed on planning-state cycles.
+   * Throws if the bet is not found.
+   */
+  removeBet(cycleId: string, betId: string): Cycle {
+    const cycle = this.get(cycleId);
+
+    if (cycle.state !== 'planning') {
+      throw new Error(
+        `Cannot remove a bet from cycle "${cycleId}": cycle is in state "${cycle.state}". Only planning cycles support bet removal.`,
+      );
+    }
+
+    const betIndex = cycle.bets.findIndex((b) => b.id === betId);
+    if (betIndex === -1) {
+      throw new Error(`Bet "${betId}" not found in cycle "${cycleId}"`);
+    }
+
+    cycle.bets.splice(betIndex, 1);
+    cycle.updatedAt = new Date().toISOString();
+    this.save(cycle);
+    return cycle;
+  }
+
+  /**
+   * Delete a cycle entirely. Only allowed on planning-state cycles.
+   * Throws if the cycle is not in planning state.
+   */
+  deleteCycle(cycleId: string): void {
+    const cycle = this.get(cycleId);
+
+    if (cycle.state !== 'planning') {
+      throw new Error(
+        `Cannot delete cycle "${cycleId}": cycle is in state "${cycle.state}". Only planning-state cycles can be deleted.`,
+      );
+    }
+
+    this.persistence.delete(this.cyclePath(cycleId));
+  }
+
   private cyclePath(cycleId: string): string {
     return join(this.basePath, `${cycleId}.json`);
   }
