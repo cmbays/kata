@@ -34,6 +34,7 @@ export function registerArtifactCommands(parent: Command): void {
     .requiredOption('--file <path>', 'Path to the source artifact file')
     .requiredOption('--summary <description>', 'Short summary of the artifact content')
     .option('--type <type>', 'Artifact type: "artifact" (default) or "synthesis"', 'artifact')
+    .option('--kataka <id>', 'Kataka (agent) ID recording this artifact')
     .action(withCommandContext(async (ctx, runId: string) => {
       const localOpts = ctx.cmd.opts();
       const runsDir = kataDirPath(ctx.kataDir, 'runs');
@@ -74,6 +75,12 @@ export function registerArtifactCommands(parent: Command): void {
       }
 
       const paths = runPaths(runsDir, runId);
+
+      // Auto-populate katakaId from run.json if not explicitly provided
+      let katakaId: string | undefined = localOpts.kataka as string | undefined;
+      if (!katakaId) {
+        katakaId = run.katakaId;
+      }
       const flavor = (localOpts.flavor as string | undefined) ?? null;
 
       // Synthesis artifacts are always named synthesis.md regardless of source filename
@@ -135,6 +142,7 @@ export function registerArtifactCommands(parent: Command): void {
         summary: localOpts.summary as string,
         type: artifactType as 'artifact' | 'synthesis',
         recordedAt: new Date().toISOString(),
+        ...(katakaId ? { katakaId } : {}),
       };
 
       // Append to flavor-level (or stage-level) artifact-index.jsonl

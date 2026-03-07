@@ -37,6 +37,7 @@ export function registerDecisionCommands(parent: Command): void {
     .option('--confidence <number>', 'Confidence in the selection [0-1] (default: 1.0)', parseFloat)
     .option('--reasoning <text>', 'Orchestrator\'s reasoning for the selection')
     .option('--yolo', 'Bypass the confidence gate even if confidence is below threshold')
+    .option('--kataka <id>', 'Kataka (agent) ID recording this decision')
     .action(withCommandContext(async (ctx, runId: string) => {
       const localOpts = ctx.cmd.opts();
       const runsDir = kataDirPath(ctx.kataDir, 'runs');
@@ -104,9 +105,16 @@ export function registerDecisionCommands(parent: Command): void {
       }
 
       // Validate run exists
-      readRun(runsDir, runId);
+      const runData = readRun(runsDir, runId);
 
       const paths = runPaths(runsDir, runId);
+
+      // Auto-populate katakaId from run.json if not explicitly provided
+      let katakaId: string | undefined = localOpts.kataka as string | undefined;
+      if (!katakaId) {
+        katakaId = runData.katakaId;
+      }
+
       const id = randomUUID();
       const now = new Date().toISOString();
 
@@ -138,6 +146,7 @@ export function registerDecisionCommands(parent: Command): void {
         confidence,
         decidedAt: now,
         ...(isLowConfidence ? { lowConfidence: true } : {}),
+        ...(katakaId ? { katakaId } : {}),
       };
 
       // Append to run-level decisions.jsonl
