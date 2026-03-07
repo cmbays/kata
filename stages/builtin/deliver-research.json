@@ -1,0 +1,23 @@
+{
+  "type": "deliver-research",
+  "stageCategory": "research",
+  "description": "Deliver the completed research summary to Tankyu (knowledge graph) and Renshin (inbox). Formats the artifact for each destination and confirms delivery. No new research is done in this step.",
+  "entryGate": {
+    "type": "entry",
+    "conditions": [
+      {
+        "type": "artifact-exists",
+        "description": "Research summary must be completed before delivery",
+        "artifactName": "research-summary"
+      }
+    ],
+    "required": true
+  },
+  "artifacts": [],
+  "promptTemplate": "../prompts/deliver-research.md",
+  "learningHooks": [],
+  "config": {
+    "tankyuWebhookUrl": "http://127.0.0.1:2357",
+    "renshinInboxDir": "~/Github/renshin/inbox"
+  }
+}
