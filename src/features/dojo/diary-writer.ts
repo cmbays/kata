@@ -15,12 +15,17 @@ export interface DiaryWriterInput {
   runSummaries?: RunSummary[];
   learningsCaptured: number;
   ruleSuggestions?: RuleSuggestion[];
+  /** Part 2 — sensei narrative or synthesis summary. Absent in --prepare mode. */
+  agentPerspective?: string;
+  /** Part 3 — human input captured during collaborative cooldown. Absent in --yolo mode. */
+  humanPerspective?: string;
 }
 
 export class DiaryWriter {
   constructor(private readonly store: DiaryStore) {}
 
   write(input: DiaryWriterInput): DojoDiaryEntry {
+    const rawDataSummary = this.buildRawDataSummary(input);
     const narrative = input.narrative ?? this.generateNarrative(input);
     const wins = this.extractWins(input);
     const painPoints = this.extractPainPoints(input);
@@ -38,12 +43,97 @@ export class DiaryWriter {
       openQuestions,
       mood,
       tags,
+      rawDataSummary,
+      agentPerspective: input.agentPerspective,
+      humanPerspective: input.humanPerspective,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });
 
     this.store.write(entry);
     return entry;
+  }
+
+  /**
+   * Build Part 1 of the three-part diary: a deterministic structured summary
+   * of all cycle data — observations, decisions, gaps, bet outcomes, learnings.
+   * This is the factual foundation; no interpretation.
+   */
+  buildRawDataSummary(input: DiaryWriterInput): string {
+    const lines: string[] = [];
+    const name = input.cycleName ?? input.cycleId;
+
+    lines.push(`## Cycle: ${name}`);
+    lines.push('');
+
+    // Bet outcomes
+    lines.push('### Bet Outcomes');
+    if (input.betOutcomes.length === 0) {
+      lines.push('No bets recorded.');
+    } else {
+      for (const bet of input.betOutcomes) {
+        const icon = bet.outcome === 'complete' ? '✓' : bet.outcome === 'partial' ? '~' : bet.outcome === 'abandoned' ? '✗' : '·';
+        const notes = bet.notes ? ` — ${bet.notes}` : '';
+        lines.push(`  ${icon} [${bet.outcome}] bet ${bet.betId.slice(0, 8)}${notes}`);
+      }
+      const complete = input.betOutcomes.filter((b) => b.outcome === 'complete').length;
+      lines.push(`  Completion rate: ${complete}/${input.betOutcomes.length} bets (${Math.round((complete / input.betOutcomes.length) * 100)}%)`);
+    }
+
+    // Per-run data from runSummaries
+    if (input.runSummaries && input.runSummaries.length > 0) {
+      lines.push('');
+      lines.push('### Run Data');
+      for (const summary of input.runSummaries) {
+        lines.push(`  Run ${summary.runId.slice(0, 8)}:`);
+
+        // Gaps by severity
+        const { high, medium, low } = summary.gapsBySeverity;
+        if (high + medium + low > 0) {
+          lines.push(`    Gaps: ${high} high, ${medium} medium, ${low} low`);
+        }
+
+        // Stage details
+        if (summary.stageDetails && summary.stageDetails.length > 0) {
+          const stages = summary.stageDetails.map((s) => s.category).join(', ');
+          lines.push(`    Stages: ${stages}`);
+        }
+
+        // Decision quality
+        if (summary.avgConfidence !== null) {
+          lines.push(`    Avg decision confidence: ${(summary.avgConfidence * 100).toFixed(0)}%`);
+        }
+        if (summary.yoloDecisionCount > 0) {
+          lines.push(`    Decisions bypassed with --yolo: ${summary.yoloDecisionCount}`);
+        }
+        if (summary.artifactPaths.length > 0) {
+          lines.push(`    Artifacts: ${summary.artifactPaths.length}`);
+        }
+      }
+    }
+
+    // Learnings captured
+    lines.push('');
+    lines.push('### Intelligence');
+    lines.push(`  Learnings captured: ${input.learningsCaptured}`);
+
+    // Next-cycle proposals
+    if (input.proposals.length > 0) {
+      lines.push(`  Next-cycle proposals: ${input.proposals.length}`);
+      for (const p of input.proposals.slice(0, 5)) {
+        lines.push(`    · [${p.priority}] ${p.description}`);
+      }
+      if (input.proposals.length > 5) {
+        lines.push(`    … and ${input.proposals.length - 5} more`);
+      }
+    }
+
+    // Rule suggestions
+    if (input.ruleSuggestions && input.ruleSuggestions.length > 0) {
+      lines.push(`  Pending rule suggestions: ${input.ruleSuggestions.length}`);
+    }
+
+    return lines.join('\n');
   }
 
   private generateNarrative(input: DiaryWriterInput): string {

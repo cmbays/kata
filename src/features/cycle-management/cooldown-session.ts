@@ -234,7 +234,7 @@ export class CooldownSession {
    *
    * @param force When true, skips the incomplete-run guard and proceeds even if runs are in-progress.
    */
-  async run(cycleId: string, betOutcomes: BetOutcomeRecord[] = [], { force = false }: { force?: boolean } = {}): Promise<CooldownSessionResult> {
+  async run(cycleId: string, betOutcomes: BetOutcomeRecord[] = [], { force = false, humanPerspective }: { force?: boolean; humanPerspective?: string } = {}): Promise<CooldownSessionResult> {
     // 0. Check for incomplete runs before any state mutation
     const incompleteRuns = this.checkIncompleteRuns(cycleId);
     if (incompleteRuns.length > 0 && !force) {
@@ -339,6 +339,7 @@ export class CooldownSession {
           runSummaries,
           learningsCaptured,
           ruleSuggestions,
+          humanPerspective,
         });
       }
 
@@ -551,6 +552,9 @@ export class CooldownSession {
         runSummaries,
         learningsCaptured: 0,
         ruleSuggestions,
+        agentPerspective: synthesisProposals && synthesisProposals.length > 0
+          ? CooldownSession.buildAgentPerspectiveFromProposals(synthesisProposals)
+          : undefined,
       });
     }
 
@@ -994,14 +998,59 @@ export class CooldownSession {
     runSummaries?: RunSummary[];
     learningsCaptured: number;
     ruleSuggestions?: RuleSuggestion[];
+    /** Part 2 — synthesis proposals summary or sensei reflection. */
+    agentPerspective?: string;
+    /** Part 3 — human input captured during collaborative cooldown. */
+    humanPerspective?: string;
   }): void {
     try {
       const diaryDir = join(this.deps.dojoDir!, 'diary');
       const store = new DiaryStore(diaryDir);
       const writer = new DiaryWriter(store);
-      writer.write(input);
+      writer.write({
+        ...input,
+        agentPerspective: input.agentPerspective,
+        humanPerspective: input.humanPerspective,
+      });
     } catch (err) {
       logger.warn(`Failed to write dojo diary entry: ${err instanceof Error ? err.message : String(err)}`);
     }
+  }
+
+  /**
+   * Build a text summary of synthesis proposals for use as the diary's agentPerspective.
+   * Returns undefined when there are no proposals.
+   */
+  static buildAgentPerspectiveFromProposals(proposals: SynthesisProposal[]): string | undefined {
+    if (proposals.length === 0) return undefined;
+
+    const lines: string[] = ['## Agent Perspective (Synthesis)'];
+    lines.push('');
+
+    for (const p of proposals) {
+      switch (p.type) {
+        case 'new-learning':
+          lines.push(`**New learning** [${p.proposedTier}/${p.proposedCategory}] (confidence: ${p.confidence.toFixed(2)}):`);
+          lines.push(`  ${p.proposedContent}`);
+          break;
+        case 'update-learning':
+          lines.push(`**Updated learning** (confidence delta: ${p.confidenceDelta > 0 ? '+' : ''}${p.confidenceDelta.toFixed(2)}):`);
+          lines.push(`  ${p.proposedContent}`);
+          break;
+        case 'promote':
+          lines.push(`**Promoted learning** to ${p.toTier} tier.`);
+          break;
+        case 'archive':
+          lines.push(`**Archived learning**: ${p.reason}`);
+          break;
+        case 'methodology-recommendation':
+          lines.push(`**Methodology recommendation** (${p.area}):`);
+          lines.push(`  ${p.recommendation}`);
+          break;
+      }
+      lines.push('');
+    }
+
+    return lines.join('\n').trimEnd();
   }
 }
