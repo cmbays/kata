@@ -7,14 +7,15 @@ This step is a thin wrapper — all delivery logic lives in the skill.
 
 ## Process
 
-1. Read the `research-summary` artifact from this ryu's artifact directory
-2. Invoke the `/send-research` skill:
+1. Read the `research-summary` artifact from this ryu's artifact directory into context. Its content is now available for the skill.
+
+2. Invoke the `/send-research` skill with the title and metadata. The skill reads the research content from the most recent research summary in context (step 1 above):
 
 ```text
 /send-research "<research-summary title>" --topic "<research topic>" --project "<KATA_PROJECT>"
 ```
 
-Pass the full content of the `research-summary` artifact as the research content.
+The artifact content from step 1 must be in context when the skill is invoked — the skill picks it up automatically as the most recent research summary. Do not truncate or summarize it first.
 
 The skill handles:
 - Tankyu webhook POST (graceful skip if server is offline)
