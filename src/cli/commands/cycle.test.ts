@@ -603,9 +603,9 @@ describe('registerCycleCommands', () => {
       const _betId = updatedCycle.bets[0]!.id;
 
       // Mock inquirer prompts
-      const { select, input: _input } = await import('@inquirer/prompts');
+      const { select, input } = await import('@inquirer/prompts');
       (select as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce('complete');
-      // input should not be called for complete outcome (no notes prompt)
+      (input as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce(''); // human perspective — skip
 
       const program = createProgram();
       await program.parseAsync(['node', 'test', '--cwd', baseDir, 'cooldown', cycle.id]);
@@ -636,6 +636,7 @@ describe('registerCycleCommands', () => {
       const { select, input } = await import('@inquirer/prompts');
       (select as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce('partial');
       (input as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce('Half done');
+      (input as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce(''); // human perspective — skip
 
       const program = createProgram();
       await program.parseAsync(['node', 'test', '--cwd', baseDir, 'cooldown', cycle.id]);
