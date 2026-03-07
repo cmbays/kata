@@ -59,6 +59,16 @@ export const RunSchema = z.object({
    * via auto-detection or LLM inference.
    */
   domainTags: DomainTagsSchema.optional(),
+  /**
+   * Token usage for this run — populated by SessionExecutionBridge.complete()
+   * when the agent reports token counts. Enables non-zero utilization in
+   * cooldown reports. All fields optional so partial data is accepted.
+   */
+  tokenUsage: z.object({
+    inputTokens: z.number().int().min(0).optional(),
+    outputTokens: z.number().int().min(0).optional(),
+    totalTokens: z.number().int().min(0).optional(),
+  }).optional(),
 });
 
 export type Run = z.infer<typeof RunSchema>;

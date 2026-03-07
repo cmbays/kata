@@ -162,9 +162,19 @@ export function registerExecuteCommands(program: Command): void {
     .option('--failed', 'Mark run as failed')
     .option('--artifacts <json>', 'JSON array of artifacts: [{"name":"...","path":"..."}]')
     .option('--notes <text>', 'Free-form notes from the agent')
+    .option('--input-tokens <n>', 'Input token count consumed by the agent (enables cooldown utilization)', parseInt)
+    .option('--output-tokens <n>', 'Output token count produced by the agent (enables cooldown utilization)', parseInt)
     .option('--json', 'Output as JSON')
     .action(withCommandContext(async (ctx, runId: string) => {
-      const localOpts = ctx.cmd.opts() as { success?: boolean; failed?: boolean; artifacts?: string; notes?: string; json?: boolean };
+      const localOpts = ctx.cmd.opts() as {
+        success?: boolean;
+        failed?: boolean;
+        artifacts?: string;
+        notes?: string;
+        inputTokens?: number;
+        outputTokens?: number;
+        json?: boolean;
+      };
       const isJson = !!(localOpts.json || ctx.globalOpts.json);
       const bridge = new SessionExecutionBridge(ctx.kataDir);
 
@@ -192,16 +202,47 @@ export function registerExecuteCommands(program: Command): void {
         }
       }
 
+      // Validate token counts if provided
+      if (localOpts.inputTokens !== undefined && (isNaN(localOpts.inputTokens) || localOpts.inputTokens < 0)) {
+        console.error('Error: --input-tokens must be a non-negative integer');
+        process.exitCode = 1;
+        return;
+      }
+      if (localOpts.outputTokens !== undefined && (isNaN(localOpts.outputTokens) || localOpts.outputTokens < 0)) {
+        console.error('Error: --output-tokens must be a non-negative integer');
+        process.exitCode = 1;
+        return;
+      }
+
+      const inputTokens = localOpts.inputTokens;
+      const outputTokens = localOpts.outputTokens;
+      const hasTokens = inputTokens !== undefined || outputTokens !== undefined;
+      const totalTokens = hasTokens ? (inputTokens ?? 0) + (outputTokens ?? 0) : undefined;
+
       bridge.complete(runId, {
         success: !localOpts.failed,
         artifacts,
         notes: localOpts.notes,
+        ...(hasTokens ? {
+          tokenUsage: {
+            inputTokens,
+            outputTokens,
+            total: totalTokens,
+          },
+        } : {}),
       });
 
       if (isJson) {
-        console.log(JSON.stringify({ runId, status: localOpts.failed ? 'failed' : 'complete' }));
+        console.log(JSON.stringify({
+          runId,
+          status: localOpts.failed ? 'failed' : 'complete',
+          ...(hasTokens ? { tokenUsage: { inputTokens, outputTokens, total: totalTokens } } : {}),
+        }));
       } else {
-        console.log(`Run ${runId} marked as ${localOpts.failed ? 'failed' : 'complete'}.`);
+        const tokenLine = hasTokens
+          ? ` (tokens: ${totalTokens ?? 0} total, ${inputTokens ?? 0} in, ${outputTokens ?? 0} out)`
+          : '';
+        console.log(`Run ${runId} marked as ${localOpts.failed ? 'failed' : 'complete'}.${tokenLine}`);
       }
     }));
 
