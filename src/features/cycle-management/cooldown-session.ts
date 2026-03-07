@@ -139,6 +139,8 @@ export interface BetOutcomeRecord {
   betId: string;
   outcome: 'complete' | 'partial' | 'abandoned';
   notes?: string;
+  /** Human-readable bet description, for display in diary entries. */
+  betDescription?: string;
 }
 
 /**
@@ -339,10 +341,15 @@ export class CooldownSession {
 
       // 8.5. Write dojo diary entry (non-critical — failure never aborts cooldown)
       if (this.deps.dojoDir) {
+        const betDescriptionMap = new Map(cycle.bets.map((b) => [b.id, b.description]));
+        const enrichedBetOutcomes = effectiveBetOutcomes.map((b) => ({
+          ...b,
+          betDescription: b.betDescription ?? betDescriptionMap.get(b.betId),
+        }));
         this.writeDiaryEntry({
           cycleId,
           cycleName: cycle.name,
-          betOutcomes: effectiveBetOutcomes,
+          betOutcomes: enrichedBetOutcomes,
           proposals,
           runSummaries,
           learningsCaptured,
@@ -554,7 +561,7 @@ export class CooldownSession {
     if (this.deps.dojoDir) {
       const effectiveBetOutcomes: BetOutcomeRecord[] = cycle.bets
         .filter((b) => b.outcome !== 'pending')
-        .map((b) => ({ betId: b.id, outcome: b.outcome as BetOutcomeRecord['outcome'], notes: b.outcomeNotes }));
+        .map((b) => ({ betId: b.id, outcome: b.outcome as BetOutcomeRecord['outcome'], notes: b.outcomeNotes, betDescription: b.description }));
       this.writeDiaryEntry({
         cycleId,
         cycleName: cycle.name,

@@ -350,28 +350,91 @@ describe('FlavorRegistry', () => {
       expect(result.errors.some((e) => e.includes('shaping'))).toBe(true);
     });
 
-    it('fails when required artifact is not produced by any step in the flavor', () => {
+    it('fails when required artifact is not produced by any step in a first-stage (research) flavor', () => {
+      // research is the first pipeline stage — no prior stages exist, so dangling artifact deps are errors.
       const stepWithDanglingRequirement = makeStep({
-        type: 'build',
+        type: 'research',
         entryGate: {
           type: 'entry',
           conditions: [{ type: 'artifact-exists', artifactName: 'nonexistent-artifact' }],
           required: true,
         },
-        artifacts: [{ name: 'build-output', required: true }],
+        artifacts: [{ name: 'research-output', required: true }],
       });
 
       const stepResolver = () => stepWithDanglingRequirement;
 
       const flavor = makeFlavor({
-        steps: [{ stepName: 'building', stepType: 'build' }],
-        synthesisArtifact: 'build-output',
+        stageCategory: 'research',
+        steps: [{ stepName: 'researching', stepType: 'research' }],
+        synthesisArtifact: 'research-output',
       });
 
       const result = registry.validate(flavor, stepResolver);
       assert(!result.valid);
       expect(result.errors.some((e) => e.includes('nonexistent-artifact'))).toBe(true);
       expect(result.errors.some((e) => e.includes('not produced by any step'))).toBe(true);
+    });
+
+    it('warns (not errors) when artifact is missing from a non-first-stage (plan/build/review) flavor — may be cross-stage dep (issue #250)', () => {
+      // plan/build/review can legitimately depend on artifacts from prior stages.
+      // An unresolvable artifact in these flavors is a warning, not an error.
+      const stepWithCrossStageDep = makeStep({
+        type: 'build',
+        entryGate: {
+          type: 'entry',
+          conditions: [{ type: 'artifact-exists', artifactName: 'prior-stage-output' }],
+          required: true,
+        },
+        artifacts: [{ name: 'build-output', required: true }],
+      });
+
+      const stepResolver = () => stepWithCrossStageDep;
+
+      const flavor = makeFlavor({
+        stageCategory: 'build',
+        steps: [{ stepName: 'building', stepType: 'build' }],
+        synthesisArtifact: 'build-output',
+      });
+
+      const result = registry.validate(flavor, stepResolver);
+      expect(result.valid).toBe(true);
+      expect(result.warnings).toBeDefined();
+      expect(result.warnings!.some((w) => w.includes('prior-stage-output'))).toBe(true);
+      expect(result.warnings!.some((w) => w.includes('cross-stage dependency'))).toBe(true);
+    });
+
+    it('review flavor depending on build-stage artifact passes validation with a warning (issue #250 regression)', () => {
+      // Canonical scenario from issue #250: review flavor has a step depending on 'build-output'
+      // produced in the build stage. Without sourceStage declared, the old validator errored.
+      const codeQualityStep = makeStep({
+        type: 'review',
+        entryGate: {
+          type: 'entry',
+          conditions: [
+            { type: 'artifact-exists', artifactName: 'build-output' },
+          ],
+          required: true,
+        },
+        artifacts: [{ name: 'code-quality-report', required: true }],
+      });
+
+      const stepResolver = () => codeQualityStep;
+
+      const flavor: Flavor = {
+        name: 'code-quality',
+        stageCategory: 'review',
+        steps: [{ stepName: 'quality-check', stepType: 'review' }],
+        synthesisArtifact: 'code-quality-report',
+      };
+
+      const result = registry.validate(flavor, stepResolver);
+      // Should pass — build-output legitimately comes from the prior build stage
+      expect(result.valid).toBe(true);
+      expect(result.warnings).toBeDefined();
+      expect(result.warnings!.some((w) => w.includes('build-output'))).toBe(true);
+      // Warning mentions prior stages (research, plan, build)
+      expect(result.warnings!.some((w) => w.includes('build'))).toBe(true);
     });
 
     it('fails when synthesisArtifact is not produced by any step', () => {
@@ -504,15 +567,16 @@ describe('FlavorRegistry', () => {
       expect(result.warnings!.some((w) => w.includes('plan'))).toBe(true);
     });
 
-    it('includes both warnings and errors when both are present', () => {
+    it('both explicit sourceStage and inferred cross-stage deps are warnings in a non-first stage', () => {
+      // build is non-first: both declared (sourceStage) and undeclared missing artifacts → warnings
       const buildStep = makeStep({
         type: 'build',
         entryGate: {
           type: 'entry',
           conditions: [
-            // cross-stage → warning
+            // explicitly declared cross-stage → warning (existing behavior)
             { type: 'artifact-exists', artifactName: 'plan-output.md', sourceStage: 'plan' },
-            // undeclared → error
+            // undeclared but non-first stage → inferred cross-stage warning (new behavior)
             { type: 'artifact-exists', artifactName: 'mystery-file.md' },
           ],
           required: true,
@@ -529,14 +593,42 @@ describe('FlavorRegistry', () => {
       });
 
       const result = registry.validate(flavor, stepResolver);
+      expect(result.valid).toBe(true);
+      expect(result.warnings).toBeDefined();
+      expect(result.warnings!.some((w) => w.includes('plan-output.md'))).toBe(true);
+      expect(result.warnings!.some((w) => w.includes('mystery-file.md'))).toBe(true);
+    });
+
+    it('undeclared artifact in first stage (research) is still an error', () => {
+      // research has no prior stages — dangling deps are hard errors, not warnings
+      const researchStep = makeStep({
+        type: 'research',
+        entryGate: {
+          type: 'entry',
+          conditions: [
+            { type: 'artifact-exists', artifactName: 'mystery-file.md' },
+          ],
+          required: true,
+        },
+        artifacts: [{ name: 'research-output', required: true }],
+      });
+
+      const stepResolver = () => researchStep;
+
+      const flavor = makeFlavor({
+        stageCategory: 'research',
+        steps: [{ stepName: 'research-step', stepType: 'research' }],
+        synthesisArtifact: 'research-output',
+      });
+
+      const result = registry.validate(flavor, stepResolver);
       expect(result.valid).toBe(false);
       assert(!result.valid);
       expect(result.errors.some((e) => e.includes('mystery-file.md'))).toBe(true);
-      expect(result.warnings).toBeDefined();
-      expect(result.warnings!.some((w) => w.includes('plan-output.md'))).toBe(true);
     });
 
-    it('includes sourceStage hint in error message for undeclared cross-stage deps', () => {
+    it('includes sourceStage hint in warning for undeclared cross-stage deps in non-first stages', () => {
+      // build is a non-first stage — dangling artifacts become warnings that suggest adding sourceStage
       const buildStep = makeStep({
         type: 'build',
         entryGate: {
@@ -553,6 +645,32 @@ describe('FlavorRegistry', () => {
         stageCategory: 'build',
         steps: [{ stepName: 'build-step', stepType: 'build' }],
         synthesisArtifact: 'build-output',
+      });
+
+      const result = registry.validate(flavor, stepResolver);
+      expect(result.valid).toBe(true);
+      expect(result.warnings).toBeDefined();
+      expect(result.warnings!.some((w) => w.includes('sourceStage'))).toBe(true);
+    });
+
+    it('includes sourceStage hint in error for undeclared deps in first stage (research)', () => {
+      // research has no prior stages — dangling deps are errors that suggest adding sourceStage
+      const researchStep = makeStep({
+        type: 'research',
+        entryGate: {
+          type: 'entry',
+          conditions: [{ type: 'artifact-exists', artifactName: 'mystery-file.md' }],
+          required: true,
+        },
+        artifacts: [{ name: 'research-output', required: true }],
+      });
+
+      const stepResolver = () => researchStep;
+
+      const flavor = makeFlavor({
+        stageCategory: 'research',
+        steps: [{ stepName: 'research-step', stepType: 'research' }],
+        synthesisArtifact: 'research-output',
       });
 
       const result = registry.validate(flavor, stepResolver);
@@ -610,43 +728,45 @@ describe('FlavorRegistry', () => {
       expect(result.errors.some((e) => e.includes('"shaping"'))).toBe(false);
     });
 
-    it('handles multiple artifact-exists conditions in one gate — reports only unsatisfied ones', () => {
+    it('handles multiple artifact-exists conditions in one gate — reports only unsatisfied ones (research stage)', () => {
+      // Using research (first stage) so dangling artifact-exists conditions are errors, not warnings.
       const step1 = makeStep({
-        type: 'shape',
-        artifacts: [{ name: 'shape-document', required: true }],
+        type: 'research',
+        artifacts: [{ name: 'context-doc', required: true }],
       });
       const step2 = makeStep({
-        type: 'breadboard',
+        type: 'research',
         entryGate: {
           type: 'entry',
           conditions: [
-            { type: 'artifact-exists', artifactName: 'shape-document' },   // satisfied
-            { type: 'artifact-exists', artifactName: 'missing-artifact' }, // not satisfied
+            { type: 'artifact-exists', artifactName: 'context-doc' },      // satisfied by step1
+            { type: 'artifact-exists', artifactName: 'missing-artifact' }, // not satisfied — error in first stage
           ],
           required: true,
         },
-        artifacts: [{ name: 'breadboard-sketch', required: true }],
+        artifacts: [{ name: 'research-output', required: true }],
       });
 
       const stepResolver = ({ stepName }: FlavorStepRef) => {
-        if (stepName === 'shaping') return step1;
-        if (stepName === 'breadboarding') return step2;
+        if (stepName === 'gathering') return step1;
+        if (stepName === 'analyzing') return step2;
         return undefined;
       };
 
       const flavor = makeFlavor({
+        stageCategory: 'research',
         steps: [
-          { stepName: 'shaping', stepType: 'shape' },
-          { stepName: 'breadboarding', stepType: 'breadboard' },
+          { stepName: 'gathering', stepType: 'research' },
+          { stepName: 'analyzing', stepType: 'research' },
         ],
-        synthesisArtifact: 'breadboard-sketch',
+        synthesisArtifact: 'research-output',
       });
 
       const result = registry.validate(flavor, stepResolver);
       assert(!result.valid);
       // Only the unsatisfied artifact produces an error
       expect(result.errors.some((e) => e.includes('missing-artifact'))).toBe(true);
-      expect(result.errors.some((e) => e.includes('shape-document'))).toBe(false);
+      expect(result.errors.some((e) => e.includes('context-doc'))).toBe(false);
       expect(result.errors).toHaveLength(1);
     });
 

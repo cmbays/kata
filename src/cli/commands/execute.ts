@@ -365,6 +365,7 @@ export function registerExecuteCommands(program: Command): void {
     .option('--yolo', 'Skip confidence gate checks — all decisions proceed without human approval')
     .option('--bridge-gaps', 'Capture identified gaps as step-tier learnings; block on high-severity gaps')
     .option('--hint <spec>', 'Per-stage flavor hint: stage:flavor1,flavor2[:strategy] — guides orchestrator selection (can be repeated)', collect, [])
+    .option('--explain', 'Print per-flavor scoring breakdown showing why each flavor was scored and which was selected')
     .option('--next', 'Auto-select the first pending bet from the active cycle as the run target')
     .action(withCommandContext(async (ctx, categories: string[]) => {
       const localOpts = ctx.cmd.opts();
@@ -480,6 +481,7 @@ export function registerExecuteCommands(program: Command): void {
         yolo: localOpts.yolo as boolean | undefined,
         bridgeGaps: localOpts.bridgeGaps as boolean | undefined,
         flavorHints: mergedHints,
+        explain: localOpts.explain as boolean | undefined,
       });
     }));
 }
@@ -502,6 +504,60 @@ interface RunOptions {
   bridgeGaps?: boolean;
   /** Parsed flavor hints (from saved kata or --hint flags). */
   flavorHints?: Record<string, FlavorHint>;
+  /** Print flavor scoring breakdown before results. */
+  explain?: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Explain formatter
+// ---------------------------------------------------------------------------
+
+/**
+ * Format a per-flavor scoring breakdown for a single stage result.
+ * Prints all scored flavors with their scores, and marks the selected flavor(s).
+ */
+function formatExplain(
+  stageCategory: string,
+  selectedFlavors: readonly string[],
+  matchReports?: Array<{ flavorName: string; score: number; keywordHits: number; ruleAdjustments: number; learningBoost: number; reasoning: string }>,
+): string {
+  const lines: string[] = [];
+  const selectedSet = new Set(selectedFlavors);
+
+  lines.push(`Flavor scoring for stage: ${stageCategory}`);
+
+  if (!matchReports || matchReports.length === 0) {
+    lines.push(`  Selected: ${selectedFlavors.join(', ')} (no scoring data — flavor was pinned or vocabulary unavailable)`);
+    return lines.join('\n');
+  }
+
+  // Sort by score descending
+  const sorted = [...matchReports].sort((a, b) => b.score - a.score);
+
+  lines.push('');
+  lines.push('  Flavor scores:');
+  for (const report of sorted) {
+    const selected = selectedSet.has(report.flavorName) ? '  <- selected' : '';
+    lines.push(`    ${report.flavorName.padEnd(24)}  score: ${report.score.toFixed(2)}${selected}`);
+  }
+
+  lines.push('');
+  lines.push('  Scoring factors:');
+  for (const report of sorted) {
+    if (!selectedSet.has(report.flavorName) && report.score === 0 && sorted[0]!.score > 0) continue;
+    lines.push(`    ${report.flavorName}:`);
+    lines.push(`      keyword hits:      ${report.keywordHits}`);
+    if (report.learningBoost > 0) {
+      lines.push(`      learning boost:    +${report.learningBoost.toFixed(2)}`);
+    }
+    if (report.ruleAdjustments !== 0) {
+      const sign = report.ruleAdjustments > 0 ? '+' : '';
+      lines.push(`      rule adjustments:  ${sign}${report.ruleAdjustments.toFixed(2)}`);
+    }
+    lines.push(`      reasoning:         ${report.reasoning}`);
+  }
+
+  return lines.join('\n');
 }
 
 async function runCategories(
@@ -581,6 +637,10 @@ async function runCategories(
     if (isJson) {
       console.log(JSON.stringify(result, null, 2));
     } else {
+      if (opts.explain) {
+        console.log(formatExplain(result.stageCategory, result.selectedFlavors, result.matchReports));
+        console.log('');
+      }
       console.log(`Stage: ${result.stageCategory}`);
       console.log(`Execution mode: ${result.executionMode}`);
       console.log(`Selected flavors: ${result.selectedFlavors.join(', ')}`);
@@ -623,6 +683,12 @@ async function runCategories(
     if (isJson) {
       console.log(JSON.stringify(result, null, 2));
     } else {
+      if (opts.explain) {
+        for (const stageResult of result.stageResults) {
+          console.log(formatExplain(stageResult.stageCategory, stageResult.selectedFlavors, stageResult.matchReports));
+          console.log('');
+        }
+      }
       console.log(`Pipeline: ${categories.join(' -> ')}`);
       console.log(`Stages completed: ${result.stageResults.length}`);
       console.log(`Overall quality: ${result.pipelineReflection.overallQuality}`);
