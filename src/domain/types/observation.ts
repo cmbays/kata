@@ -42,11 +42,12 @@ const PredictionObservationSchema = ObservationBaseSchema.extend({
 // ---------------------------------------------------------------------------
 
 export const FrictionTaxonomy = z.enum([
-  'stale-learning',
-  'config-drift',
-  'convention-clash',
-  'tool-mismatch',
-  'scope-creep',
+  'stale-learning',   // Agent's expected pattern was outdated or wrong in this context
+  'config-drift',     // Actual env/files/settings don't match what's documented or expected
+  'convention-clash', // Established code convention conflicts with how you'd naturally approach it
+  'tool-mismatch',    // Available tool required workarounds — not quite right for the job
+  'scope-creep',      // Work expanded beyond the original bet boundary during execution
+  'agent-override',   // User directed a different approach from what the agent would have chosen
 ]);
 
 export type FrictionTaxonomy = z.infer<typeof FrictionTaxonomy>;

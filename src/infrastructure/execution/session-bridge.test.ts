@@ -310,8 +310,10 @@ describe('SessionExecutionBridge', () => {
       expect(context).toContain('### Record as you work');
       // kansatsu: positional type + content, --run flag (not --run-id)
       expect(context).toContain(`kata kansatsu record <type> "..." --run ${prepared.runId}`);
-      // valid types listed in context comment
-      expect(context).toContain('decision | prediction | friction | gap | outcome | assumption | insight');
+      // observation types and quality guide present
+      expect(context).toContain('**Observation types**');
+      expect(context).toContain('**Friction taxonomy**');
+      expect(context).toContain('**Quality bar**');
       // maki: positional name + path, --run flag
       expect(context).toContain(`kata maki record <name> <path> --run ${prepared.runId}`);
       // kime: named flags only, --run flag (not --run-id)
