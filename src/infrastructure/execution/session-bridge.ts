@@ -17,7 +17,7 @@ import { type Bet } from '@domain/types/bet.js';
 import { StageCategorySchema } from '@domain/types/stage.js';
 import { z } from 'zod/v4';
 import { JsonStore } from '@infra/persistence/json-store.js';
-import { createRunTree } from '@infra/persistence/run-store.js';
+import { createRunTree, readRun, writeRun } from '@infra/persistence/run-store.js';
 import { KATA_DIRS } from '@shared/constants/paths.js';
 import { logger } from '@shared/lib/logger.js';
 
@@ -334,6 +334,11 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
     meta.completedAt = completedAt;
     meta.status = result.success ? 'complete' : 'failed';
     this.writeBridgeRunMeta(meta);
+
+    // Update run.json so kata watch drops this run off the active list (#254).
+    // run.json status uses "completed"/"failed" (RunStatusSchema) — not the
+    // BridgeRunMeta values "complete"/"failed".
+    this.updateRunJsonStatus(runId, result.success ? 'completed' : 'failed', completedAt);
 
     // Update the bet outcome in the cycle JSON so CycleManager.generateCooldown()
     // sees correct completion data (fixes #216: 0% completion rate in cooldown).
@@ -672,6 +677,35 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
       // will simply not see this run until the issue is resolved.
       logger.warn('Failed to write run.json for bridge run — kata watch will not see this run.', {
         runId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  /**
+   * Update run.json status and completedAt after a bridge run completes (#254).
+   *
+   * kata watch filters by `run.status === 'running'`, so setting status to
+   * "completed" or "failed" causes the run to drop off the active list.
+   *
+   * Non-critical: logs a warning on failure but does not abort complete() —
+   * the history entry and bridge-run metadata were already written.
+   */
+  private updateRunJsonStatus(
+    runId: string,
+    status: 'completed' | 'failed',
+    completedAt: string,
+  ): void {
+    try {
+      const runsDir = join(this.kataDir, KATA_DIRS.runs);
+      const run = readRun(runsDir, runId);
+      run.status = status;
+      run.completedAt = completedAt;
+      writeRun(runsDir, run);
+    } catch (err) {
+      logger.warn('Failed to update run.json status after bridge complete — kata watch may still show this run.', {
+        runId,
+        status,
         error: err instanceof Error ? err.message : String(err),
       });
     }
