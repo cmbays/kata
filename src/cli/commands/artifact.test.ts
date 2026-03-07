@@ -274,6 +274,88 @@ describe('registerArtifactCommands — artifact record', () => {
     expect(entries[0].step).toBe('gather-context');
   });
 
+  it('records an artifact without --flavor at stage level', async () => {
+    const run = makeRun();
+    createRunTree(runsDir, run);
+
+    const srcFile = join(baseDir, 'output.md');
+    writeFileSync(srcFile, '# Output', 'utf-8');
+
+    const program = createProgram();
+    await program.parseAsync([
+      'node', 'test', '--cwd', baseDir,
+      'artifact', 'record', run.id,
+      '--stage', 'research',
+      // No --flavor
+      '--step', 'gather',
+      '--file', srcFile,
+      '--summary', 'Flavorless output',
+    ]);
+
+    const runIndexPath = join(runsDir, run.id, 'artifact-index.jsonl');
+    const entries = JsonlStore.readAll(runIndexPath, ArtifactIndexEntrySchema);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].flavor).toBeNull();
+    expect(entries[0].step).toBe('gather');
+    expect(entries[0].type).toBe('artifact');
+    expect(entries[0].summary).toBe('Flavorless output');
+    // File goes to stage-level artifacts dir
+    expect(entries[0].filePath).toContain(join('stages', 'research', 'artifacts'));
+    const absoluteFilePath = join(runsDir, run.id, entries[0].filePath);
+    expect(existsSync(absoluteFilePath)).toBe(true);
+  });
+
+  it('records a synthesis without --flavor at stage level', async () => {
+    const run = makeRun();
+    createRunTree(runsDir, run);
+
+    const srcFile = join(baseDir, 'synthesis.md');
+    writeFileSync(srcFile, '# Synthesis', 'utf-8');
+
+    const program = createProgram();
+    await program.parseAsync([
+      'node', 'test', '--cwd', baseDir,
+      'artifact', 'record', run.id,
+      '--stage', 'research',
+      // No --flavor
+      '--file', srcFile,
+      '--summary', 'Stage synthesis',
+      '--type', 'synthesis',
+    ]);
+
+    const runIndexPath = join(runsDir, run.id, 'artifact-index.jsonl');
+    const entries = JsonlStore.readAll(runIndexPath, ArtifactIndexEntrySchema);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].flavor).toBeNull();
+    expect(entries[0].type).toBe('synthesis');
+    expect(entries[0].fileName).toBe('synthesis.md');
+    // Synthesis goes to stage-level synthesis.md
+    expect(entries[0].filePath).toBe(join('stages', 'research', 'synthesis.md'));
+  });
+
+  it('outputs JSON without Flavor field when --flavor is omitted', async () => {
+    const run = makeRun();
+    createRunTree(runsDir, run);
+
+    const srcFile = join(baseDir, 'out.md');
+    writeFileSync(srcFile, '# Out', 'utf-8');
+
+    const program = createProgram();
+    await program.parseAsync([
+      'node', 'test', '--json', '--cwd', baseDir,
+      'artifact', 'record', run.id,
+      '--stage', 'research',
+      '--step', 'gather',
+      '--file', srcFile,
+      '--summary', 'No flavor',
+    ]);
+
+    const output = consoleSpy.mock.calls[0]?.[0] as string;
+    const parsed = JSON.parse(output);
+    expect(parsed.flavor).toBeNull();
+    expect(parsed.type).toBe('artifact');
+  });
+
   it('throws on invalid --type value', async () => {
     const run = makeRun();
     createRunTree(runsDir, run);

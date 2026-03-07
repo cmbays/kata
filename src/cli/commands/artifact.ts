@@ -9,6 +9,15 @@ import { ArtifactIndexEntrySchema } from '@domain/types/run-state.js';
 import type { StageCategory } from '@domain/types/stage.js';
 import { StageCategorySchema } from '@domain/types/stage.js';
 
+/** Paths for a stage-level (flavorless) artifact. */
+function stageLevelPaths(paths: ReturnType<typeof runPaths>, stage: StageCategory) {
+  return {
+    artifactsDir: join(paths.runDir, 'stages', stage, 'artifacts'),
+    synthesisDest: join(paths.runDir, 'stages', stage, 'synthesis.md'),
+    artifactIndexJsonl: join(paths.runDir, 'stages', stage, 'artifact-index.jsonl'),
+  };
+}
+
 export function registerArtifactCommands(parent: Command): void {
   const artifact = parent
     .command('artifact')
@@ -20,7 +29,7 @@ export function registerArtifactCommands(parent: Command): void {
     .command('record <run-id>')
     .description('Record an artifact file into a run\'s state')
     .requiredOption('--stage <category>', 'Stage category (research|plan|build|review)')
-    .requiredOption('--flavor <name>', 'Flavor that produced the artifact')
+    .option('--flavor <name>', 'Flavor that produced the artifact (optional — omit to record at stage level)')
     .option('--step <name>', 'Step that produced the artifact (omit for synthesis type)')
     .requiredOption('--file <path>', 'Path to the source artifact file')
     .requiredOption('--summary <description>', 'Short summary of the artifact content')
@@ -65,24 +74,43 @@ export function registerArtifactCommands(parent: Command): void {
       }
 
       const paths = runPaths(runsDir, runId);
-      const flavorDir = paths.flavorDir(stage, localOpts.flavor as string);
-      const flavorStateFile = paths.flavorStateJson(stage, localOpts.flavor as string);
-
-      // Ensure flavor directory exists (flavor may not have been explicitly initialized)
-      mkdirSync(flavorDir, { recursive: true });
+      const flavor = (localOpts.flavor as string | undefined) ?? null;
 
       // Synthesis artifacts are always named synthesis.md regardless of source filename
       const fileName = artifactType === 'synthesis' ? 'synthesis.md' : basename(sourcePath);
       let destPath: string;
+      let flavorIndexJsonl: string;
+      let flavorStateFile: string | null = null;
 
-      if (artifactType === 'synthesis') {
-        // Synthesis artifacts go at the flavor root as synthesis.md
-        destPath = paths.flavorSynthesis(stage, localOpts.flavor as string);
+      if (flavor !== null) {
+        const flavorDir = paths.flavorDir(stage, flavor);
+        flavorStateFile = paths.flavorStateJson(stage, flavor);
+
+        // Ensure flavor directory exists (flavor may not have been explicitly initialized)
+        mkdirSync(flavorDir, { recursive: true });
+
+        if (artifactType === 'synthesis') {
+          destPath = paths.flavorSynthesis(stage, flavor);
+        } else {
+          const artifactsDir = paths.flavorArtifactsDir(stage, flavor);
+          mkdirSync(artifactsDir, { recursive: true });
+          destPath = join(artifactsDir, fileName);
+        }
+
+        flavorIndexJsonl = paths.flavorArtifactIndexJsonl(stage, flavor);
       } else {
-        // Regular artifacts go in the artifacts/ subdirectory
-        const artifactsDir = paths.flavorArtifactsDir(stage, localOpts.flavor as string);
-        mkdirSync(artifactsDir, { recursive: true });
-        destPath = join(artifactsDir, fileName);
+        // No flavor — route to stage-level directories
+        const stagePaths = stageLevelPaths(paths, stage);
+
+        if (artifactType === 'synthesis') {
+          mkdirSync(join(paths.runDir, 'stages', stage), { recursive: true });
+          destPath = stagePaths.synthesisDest;
+        } else {
+          mkdirSync(stagePaths.artifactsDir, { recursive: true });
+          destPath = join(stagePaths.artifactsDir, fileName);
+        }
+
+        flavorIndexJsonl = stagePaths.artifactIndexJsonl;
       }
 
       // Copy the file
@@ -100,7 +128,7 @@ export function registerArtifactCommands(parent: Command): void {
       const entry = {
         id: randomUUID(),
         stageCategory: stage,
-        flavor: localOpts.flavor as string,
+        flavor,
         step: artifactType === 'synthesis' ? null : ((localOpts.step as string | undefined) ?? null),
         fileName,
         filePath: relFilePath,
@@ -109,27 +137,23 @@ export function registerArtifactCommands(parent: Command): void {
         recordedAt: new Date().toISOString(),
       };
 
-      // Append to flavor-level artifact-index.jsonl
-      JsonlStore.append(
-        paths.flavorArtifactIndexJsonl(stage, localOpts.flavor as string),
-        entry,
-        ArtifactIndexEntrySchema,
-      );
+      // Append to flavor-level (or stage-level) artifact-index.jsonl
+      JsonlStore.append(flavorIndexJsonl, entry, ArtifactIndexEntrySchema);
 
       // Append to run-level artifact-index.jsonl
       JsonlStore.append(paths.artifactIndexJsonl, entry, ArtifactIndexEntrySchema);
 
-      // Update flavor state.json step artifacts if applicable
-      if (artifactType === 'artifact' && existsSync(flavorStateFile)) {
+      // Update flavor state.json step artifacts if applicable (only when flavor is known)
+      if (artifactType === 'artifact' && flavor !== null && flavorStateFile !== null && existsSync(flavorStateFile)) {
         // existsSync guard ensures the file exists, so non-null assertion is safe
-        const flavorState = readFlavorState(runsDir, runId, stage, localOpts.flavor as string)!;
+        const flavorState = readFlavorState(runsDir, runId, stage, flavor)!;
         const stepName = localOpts.step as string; // non-null validated above
         const stepIndex = flavorState.steps.findIndex((s) => s.type === stepName);
 
         if (stepIndex === -1) {
           const known = flavorState.steps.map((s) => s.type).join(', ') || '(none)';
           throw new Error(
-            `Step "${stepName}" not found in flavor "${localOpts.flavor as string}" state. Known steps: ${known}`,
+            `Step "${stepName}" not found in flavor "${flavor}" state. Known steps: ${known}`,
           );
         }
         flavorState.steps[stepIndex]!.artifacts.push(relFilePath);
@@ -142,7 +166,9 @@ export function registerArtifactCommands(parent: Command): void {
         const label = artifactType === 'synthesis' ? 'synthesis' : `artifact`;
         console.log(`Recorded ${label}: ${fileName}`);
         console.log(`  Stage:  ${stage}`);
-        console.log(`  Flavor: ${localOpts.flavor as string}`);
+        if (flavor !== null) {
+          console.log(`  Flavor: ${flavor}`);
+        }
         if (artifactType === 'artifact' && localOpts.step) {
           console.log(`  Step:   ${localOpts.step as string}`);
         }
