@@ -1,6 +1,5 @@
 import { join } from 'node:path';
 import type { Command } from 'commander';
-import { logger } from '@shared/lib/logger.js';
 import { CycleManager } from '@domain/services/cycle-manager.js';
 import { KnowledgeStore } from '@infra/knowledge/knowledge-store.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
@@ -683,7 +682,21 @@ export function registerCycleCommands(parent: Command): void {
 
       // --- --yolo mode: prepare + claude for synthesis + apply high-confidence proposals ---
       if (localOpts.yolo) {
-        const prepareResult = await session.prepare(cycleId, [], localOpts.depth, { force });
+        // Outer try/catch: ensures --json mode always emits a valid JSON object to
+        // stdout even when prepare() or complete() throw (fixes #257 — silent failure).
+        let prepareResult: Awaited<ReturnType<typeof session.prepare>>;
+        try {
+          prepareResult = await session.prepare(cycleId, [], localOpts.depth, { force });
+        } catch (prepareErr) {
+          const msg = prepareErr instanceof Error ? prepareErr.message : String(prepareErr);
+          if (ctx.globalOpts.json) {
+            console.log(JSON.stringify({ synthesisProposals: [], error: msg }, null, 2));
+          } else {
+            console.error(`Error: cooldown prepare failed: ${msg}`);
+          }
+          process.exitCode = 1;
+          return;
+        }
 
         if (!ctx.globalOpts.json) {
           if (prepareResult.incompleteRuns && prepareResult.incompleteRuns.length > 0) {
@@ -744,11 +757,9 @@ export function registerCycleCommands(parent: Command): void {
         } catch (err) {
           const msg = `claude synthesis failed: ${err instanceof Error ? err.message : String(err)}`;
           synthesisError = msg;
-          if (ctx.globalOpts.json) {
-            logger.warn(`--yolo synthesis failure: ${msg}. Completing without proposals.`);
-          } else {
-            console.warn(`Warning: ${msg}. Completing without proposals.`);
-          }
+          // Both modes surface the error — non-JSON to stderr, JSON carries it in the
+          // synthesisError field of the output object (emitted below after complete()).
+          console.warn(`Warning: --yolo synthesis failure: ${msg}. Completing without proposals.`);
         }
 
         // Apply only high-confidence proposals (confidence > 0.8)
@@ -756,7 +767,23 @@ export function registerCycleCommands(parent: Command): void {
           .filter((p) => p.confidence > 0.8)
           .map((p) => p.id);
 
-        const yoloResult = await session.complete(cycleId, synthesisInputId, highConfidenceIds);
+        let yoloResult: Awaited<ReturnType<typeof session.complete>>;
+        try {
+          yoloResult = await session.complete(cycleId, synthesisInputId, highConfidenceIds);
+        } catch (completeErr) {
+          const msg = completeErr instanceof Error ? completeErr.message : String(completeErr);
+          if (ctx.globalOpts.json) {
+            console.log(JSON.stringify({
+              synthesisProposals: [],
+              error: msg,
+              ...(synthesisError !== undefined ? { synthesisError } : {}),
+            }, null, 2));
+          } else {
+            console.error(`Error: cooldown complete failed: ${msg}`);
+          }
+          process.exitCode = 1;
+          return;
+        }
 
         // Fire-and-forget belt discovery hook
         ProjectStateUpdater.markDiscovery(join(ctx.kataDir, 'project-state.json'), 'completedFirstCycleCooldown');
