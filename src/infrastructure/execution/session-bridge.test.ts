@@ -319,7 +319,15 @@ describe('SessionExecutionBridge', () => {
       expect(context).toContain(`maki record <name> <path> --run ${prepared.runId}`);
       // kime: --cwd pre-filled + named flags + --run flag
       expect(context).toContain(`kime record --decision "..." --rationale "..." --run ${prepared.runId}`);
+      // friction urgency block
+      expect(context).toContain('**FRICTION — record immediately, before continuing:**');
+      expect(context).toContain('record it as friction BEFORE resuming work');
+      // concrete friction example with full command
+      expect(context).toContain(`kansatsu record friction`);
+      expect(context).toContain('--taxonomy tool-mismatch');
+      // pre-reporting checklist in "When you're done"
       expect(context).toContain("### When you're done");
+      expect(context).toContain('did you record all friction events?');
       expect(context).toContain('Do NOT close the run yourself');
     });
 
