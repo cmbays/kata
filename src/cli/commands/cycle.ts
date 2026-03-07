@@ -856,7 +856,34 @@ export function registerCycleCommands(parent: Command): void {
         }
       }
 
-      const result = await session.run(cycleId, betOutcomes, { force });
+      // --- Collaborative reflection: ask human for their perspective (#219) ---
+      let humanPerspective: string | undefined;
+      if (!localOpts.skipPrompts) {
+        const { input: inquirerInput } = await import('@inquirer/prompts');
+
+        // Show a brief cycle summary before asking for reflection
+        const previewReport = manager.generateCooldown(cycleId);
+        const complete = previewReport.bets.filter((b) => b.outcome === 'complete').length;
+        const total = previewReport.bets.length;
+
+        console.log('');
+        console.log('--- Collaborative Reflection ---');
+        if (total > 0) {
+          console.log(`Cycle summary: ${complete}/${total} bets complete (${previewReport.completionRate.toFixed(0)}%)`);
+        }
+        console.log('');
+        console.log('Your perspective helps make the diary entry meaningful for future dojo sessions.');
+
+        const rawPerspective = await inquirerInput({
+          message: 'How did this cycle feel? Any observations the data missed? (Enter to skip)',
+          default: '',
+        });
+
+        humanPerspective = rawPerspective.trim() || undefined;
+        console.log('');
+      }
+
+      const result = await session.run(cycleId, betOutcomes, { force, humanPerspective });
 
       // Fire-and-forget belt discovery hook
       ProjectStateUpdater.markDiscovery(join(ctx.kataDir, 'project-state.json'), 'completedFirstCycleCooldown');
