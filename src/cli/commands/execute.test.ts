@@ -539,6 +539,186 @@ describe('registerExecuteCommands', () => {
     });
   });
 
+  // ---- --explain ----
+
+  describe('--explain', () => {
+    it('registers --explain option on the execute command', () => {
+      const program = createProgram();
+      const executeCmd = program.commands.find((c) => c.name() === 'execute');
+      expect(executeCmd).toBeDefined();
+      const explainOpt = executeCmd!.options.find((o) => o.long === '--explain');
+      expect(explainOpt).toBeDefined();
+    });
+
+    it('prints flavor scoring breakdown for a single stage when --explain is set', async () => {
+      mockRunStage.mockResolvedValue({
+        ...makeSingleResult('build'),
+        matchReports: [
+          {
+            flavorName: 'typescript-tdd',
+            score: 0.87,
+            keywordHits: 3,
+            ruleAdjustments: 0,
+            learningBoost: 0,
+            reasoning: 'Score 0.87: 3 keyword hit(s), learning boost 0.00, rule adj 0.00.',
+          },
+          {
+            flavorName: 'quick-fix',
+            score: 0.42,
+            keywordHits: 1,
+            ruleAdjustments: 0,
+            learningBoost: 0,
+            reasoning: 'Score 0.42: 1 keyword hit(s), learning boost 0.00, rule adj 0.00.',
+          },
+        ],
+      });
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', 'build', '--explain']);
+
+      const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('Flavor scoring for stage: build');
+      expect(output).toContain('typescript-tdd');
+      expect(output).toContain('0.87');
+      expect(output).toContain('<- selected');
+      expect(output).toContain('quick-fix');
+      expect(output).toContain('0.42');
+    });
+
+    it('still prints normal stage output after the explain block', async () => {
+      mockRunStage.mockResolvedValue({
+        ...makeSingleResult('build'),
+        matchReports: [
+          {
+            flavorName: 'typescript-tdd',
+            score: 0.87,
+            keywordHits: 3,
+            ruleAdjustments: 0,
+            learningBoost: 0,
+            reasoning: 'Score 0.87: 3 keyword hit(s).',
+          },
+        ],
+      });
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', 'build', '--explain']);
+
+      const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('Stage: build');
+      expect(output).toContain('Selected flavors: typescript-tdd');
+    });
+
+    it('prints scoring breakdown for each stage in a multi-stage pipeline when --explain is set', async () => {
+      mockRunPipeline.mockResolvedValue({
+        stageResults: [
+          {
+            stageCategory: 'research',
+            selectedFlavors: ['deep-dive'],
+            executionMode: 'sequential',
+            stageArtifact: { name: 'research-synthesis', content: 'output', timestamp: new Date().toISOString() },
+            decisions: [],
+            matchReports: [
+              {
+                flavorName: 'deep-dive',
+                score: 0.75,
+                keywordHits: 2,
+                ruleAdjustments: 0,
+                learningBoost: 0,
+                reasoning: 'Score 0.75: 2 keyword hit(s).',
+              },
+            ],
+          },
+          {
+            stageCategory: 'build',
+            selectedFlavors: ['typescript-tdd'],
+            executionMode: 'sequential',
+            stageArtifact: { name: 'build-synthesis', content: 'output', timestamp: new Date().toISOString() },
+            decisions: [],
+            matchReports: [
+              {
+                flavorName: 'typescript-tdd',
+                score: 0.90,
+                keywordHits: 4,
+                ruleAdjustments: 0.1,
+                learningBoost: 0.1,
+                reasoning: 'Score 0.90: 4 keyword hit(s), learning boost 0.10, rule adj 0.10.',
+              },
+            ],
+          },
+        ],
+        pipelineReflection: { overallQuality: 'good', learnings: [] },
+      });
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', 'research', 'build', '--explain']);
+
+      const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('Flavor scoring for stage: research');
+      expect(output).toContain('Flavor scoring for stage: build');
+      expect(output).toContain('deep-dive');
+      expect(output).toContain('typescript-tdd');
+    });
+
+    it('prints fallback message when matchReports is absent (pinned/no-vocabulary)', async () => {
+      mockRunStage.mockResolvedValue({
+        ...makeSingleResult('build'),
+        matchReports: undefined,
+      });
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', 'build', '--explain']);
+
+      const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('Flavor scoring for stage: build');
+      expect(output).toContain('no scoring data');
+    });
+
+    it('prints learning boost and rule adjustments when non-zero', async () => {
+      mockRunStage.mockResolvedValue({
+        ...makeSingleResult('build'),
+        matchReports: [
+          {
+            flavorName: 'typescript-tdd',
+            score: 0.90,
+            keywordHits: 2,
+            ruleAdjustments: 0.15,
+            learningBoost: 0.10,
+            reasoning: 'Score 0.90: 2 keyword hit(s), learning boost 0.10, rule adj 0.15.',
+          },
+        ],
+      });
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', 'build', '--explain']);
+
+      const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('learning boost');
+      expect(output).toContain('rule adjustments');
+    });
+
+    it('does not print explain block when --explain is not set', async () => {
+      mockRunStage.mockResolvedValue({
+        ...makeSingleResult('build'),
+        matchReports: [
+          {
+            flavorName: 'typescript-tdd',
+            score: 0.87,
+            keywordHits: 3,
+            ruleAdjustments: 0,
+            learningBoost: 0,
+            reasoning: 'Score 0.87.',
+          },
+        ],
+      });
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', 'build']);
+
+      const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).not.toContain('Flavor scoring for stage');
+    });
+  });
+
   // ---- --next flag (Issue #191) ----
 
   describe('--next', () => {
