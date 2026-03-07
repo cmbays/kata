@@ -24,6 +24,7 @@ Read the `research-summary` artifact. Do not modify it.
 POST the research to the Tankyu webhook server.
 
 **Check if Tankyu is running first:**
+
 ```bash
 curl -sf http://127.0.0.1:2357/health || echo "TANKYU_OFFLINE"
 ```
@@ -31,6 +32,7 @@ curl -sf http://127.0.0.1:2357/health || echo "TANKYU_OFFLINE"
 If `TANKYU_OFFLINE`: skip Tankyu delivery, note it in output, continue to Renshin.
 
 **POST the report:**
+
 ```bash
 curl -s -X POST http://127.0.0.1:2357/report \
   -H "Content-Type: application/json" \
@@ -53,6 +55,7 @@ Write the research summary to Renshin's inbox using the Renshin provenance forma
 **Filename:** `YYYY-MM-DD-<slugified-title>.md` — use today's date.
 
 **Format:**
+
 ```markdown
 ---
 description: <1-2 sentence summary of key findings from the research>
@@ -73,7 +76,7 @@ Write this file to `~/Github/renshin/inbox/` (expand `~` to the actual home dire
 
 Output a clean summary:
 
-```
+```text
 Research delivered
 
   Tankyu:  entry_id abc123  (or: skipped — server offline)
