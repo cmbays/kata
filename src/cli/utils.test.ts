@@ -38,6 +38,87 @@ describe('resolveKataDir', () => {
       rmSync(noKataDir, { recursive: true, force: true });
     }
   });
+
+  describe('KATA_DIR env var', () => {
+    const savedEnv = process.env['KATA_DIR'];
+
+    afterEach(() => {
+      if (savedEnv === undefined) {
+        delete process.env['KATA_DIR'];
+      } else {
+        process.env['KATA_DIR'] = savedEnv;
+      }
+    });
+
+    it('uses KATA_DIR env var when set and directory exists', () => {
+      process.env['KATA_DIR'] = kataDir;
+      const result = resolveKataDir('/some/other/path');
+      expect(result).toBe(kataDir);
+    });
+
+    it('throws ConfigNotFoundError when KATA_DIR points to a non-existent path', () => {
+      process.env['KATA_DIR'] = '/nonexistent/.kata';
+      expect(() => resolveKataDir()).toThrow(ConfigNotFoundError);
+    });
+
+    it('KATA_DIR takes precedence over cwd', () => {
+      // kataDir exists; /some/other/path does not have .kata
+      process.env['KATA_DIR'] = kataDir;
+      const result = resolveKataDir('/tmp');
+      expect(result).toBe(kataDir);
+    });
+  });
+
+  describe('git worktree auto-detection', () => {
+    let mainRepoDir: string;
+    let mainKataDir: string;
+    let worktreeDir: string;
+
+    beforeEach(() => {
+      const base = join(tmpdir(), `kata-worktree-test-${Date.now()}`);
+      // Main repo: has .git/ dir and .kata/
+      mainRepoDir = join(base, 'main');
+      mainKataDir = join(mainRepoDir, '.kata');
+      mkdirSync(join(mainRepoDir, '.git'), { recursive: true });
+      mkdirSync(mainKataDir, { recursive: true });
+
+      // Worktree dir: has a .git FILE pointing to main/.git/worktrees/wt1
+      worktreeDir = join(base, 'worktree');
+      mkdirSync(worktreeDir, { recursive: true });
+      const worktreesDir = join(mainRepoDir, '.git', 'worktrees', 'wt1');
+      mkdirSync(worktreesDir, { recursive: true });
+      writeFileSync(join(worktreeDir, '.git'), `gitdir: ${worktreesDir}`);
+    });
+
+    afterEach(() => {
+      // Clean up via the worktree dir's parent (the base temp dir)
+      const parent = join(worktreeDir, '..');
+      try { rmSync(parent, { recursive: true, force: true }); } catch { /* ignore */ }
+    });
+
+    it('resolves .kata/ from main repo when cwd is a linked worktree', () => {
+      const result = resolveKataDir(worktreeDir);
+      expect(result).toBe(mainKataDir);
+    });
+
+    it('does NOT auto-resolve when cwd is the main worktree (has .git directory)', () => {
+      // The main repo has .kata/ — direct resolution should succeed normally
+      const result = resolveKataDir(mainRepoDir);
+      expect(result).toBe(mainKataDir);
+    });
+
+    it('throws ConfigNotFoundError when worktree points to a main repo with no .kata/', () => {
+      // Remove .kata/ from main repo
+      rmSync(mainKataDir, { recursive: true, force: true });
+      expect(() => resolveKataDir(worktreeDir)).toThrow(ConfigNotFoundError);
+    });
+
+    it('throws ConfigNotFoundError when .git file content is malformed', () => {
+      // Overwrite .git file with garbage
+      writeFileSync(join(worktreeDir, '.git'), 'not-a-gitdir-line');
+      expect(() => resolveKataDir(worktreeDir)).toThrow(ConfigNotFoundError);
+    });
+  });
 });
 
 describe('getGlobalOptions', () => {
