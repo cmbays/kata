@@ -17,7 +17,7 @@ import {
   formatBetList,
 } from '@cli/formatters/cycle-formatter.js';
 import { SavedKataSchema } from '@domain/types/saved-kata.js';
-import type { KataAssignment } from '@domain/types/bet.js';
+import type { KataAssignment, Bet } from '@domain/types/bet.js';
 import { DomainArea, WorkType, WorkNovelty, DomainTagsSchema } from '@domain/types/domain-tags.js';
 import type { DomainTags } from '@domain/types/domain-tags.js';
 import { detectTags } from '@features/domain-confidence/domain-tagger.js';
@@ -84,7 +84,7 @@ export function registerCycleCommands(parent: Command): void {
 
         // Collect all bet data in memory before writing anything to disk.
         // This prevents orphan cycle files if the user interrupts (Ctrl+C) mid-prompt.
-        type PendingBet = Omit<import('@domain/types/bet.js').Bet, 'id'>;
+        type PendingBet = Omit<Bet, 'id'>;
         const pendingBets: PendingBet[] = [];
 
         // Loop: collect bets
@@ -156,7 +156,7 @@ export function registerCycleCommands(parent: Command): void {
           addMore = await confirm({ message: 'Add another bet?', default: false });
         }
 
-        // All prompts completed successfully — now write to disk atomically.
+        // All prompts completed successfully — create cycle, then add bets sequentially.
         const cycle = manager.create(
           { tokenBudget, timeBudget },
           cycleName,
