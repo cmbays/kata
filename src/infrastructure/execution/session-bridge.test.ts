@@ -535,6 +535,63 @@ describe('SessionExecutionBridge', () => {
       expect(bet2.outcome).toBe('pending');
     });
 
+    it('should update run.json status to "completed" on success (#254)', () => {
+      const cycle = createCycle(kataDir);
+      const bridge = new SessionExecutionBridge(kataDir);
+      const prepared = bridge.prepare(cycle.bets[0]!.id);
+
+      bridge.complete(prepared.runId, { success: true });
+
+      const runJsonPath = join(kataDir, 'runs', prepared.runId, 'run.json');
+      const run = RunSchema.parse(JSON.parse(readFileSync(runJsonPath, 'utf-8')));
+      expect(run.status).toBe('completed');
+      expect(run.completedAt).toBeTruthy();
+    });
+
+    it('should update run.json status to "failed" on failure (#254)', () => {
+      const cycle = createCycle(kataDir);
+      const bridge = new SessionExecutionBridge(kataDir);
+      const prepared = bridge.prepare(cycle.bets[0]!.id);
+
+      bridge.complete(prepared.runId, { success: false, notes: 'Build failed' });
+
+      const runJsonPath = join(kataDir, 'runs', prepared.runId, 'run.json');
+      const run = RunSchema.parse(JSON.parse(readFileSync(runJsonPath, 'utf-8')));
+      expect(run.status).toBe('failed');
+      expect(run.completedAt).toBeTruthy();
+    });
+
+    it('completed run should NOT appear in listActiveRuns (kata watch drops off) (#254)', () => {
+      const cycle = createCycle(kataDir);
+      const bridge = new SessionExecutionBridge(kataDir);
+      const prepared = bridge.prepare(cycle.bets[0]!.id);
+
+      // Before complete: run should be visible as running
+      const runsDir = join(kataDir, 'runs');
+      const activeBeforeComplete = readdirSync(runsDir, { withFileTypes: true })
+        .filter((e) => e.isDirectory())
+        .filter((e) => {
+          try {
+            const run = RunSchema.parse(JSON.parse(readFileSync(join(runsDir, e.name, 'run.json'), 'utf-8')));
+            return run.status === 'running';
+          } catch { return false; }
+        });
+      expect(activeBeforeComplete.length).toBe(1);
+
+      bridge.complete(prepared.runId, { success: true });
+
+      // After complete: no running runs remain
+      const activeAfterComplete = readdirSync(runsDir, { withFileTypes: true })
+        .filter((e) => e.isDirectory())
+        .filter((e) => {
+          try {
+            const run = RunSchema.parse(JSON.parse(readFileSync(join(runsDir, e.name, 'run.json'), 'utf-8')));
+            return run.status === 'running';
+          } catch { return false; }
+        });
+      expect(activeAfterComplete.length).toBe(0);
+    });
+
     it('should record token usage in history entry', () => {
       const cycle = createCycle(kataDir);
       const bridge = new SessionExecutionBridge(kataDir);
