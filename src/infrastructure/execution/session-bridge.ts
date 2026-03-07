@@ -179,12 +179,32 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
 
     // Record as you work
     lines.push('### Record as you work');
-    lines.push('Use these commands at natural checkpoints (not after every line of code):');
+    lines.push('Use these commands at natural checkpoints — when a decision matters, when something surprises you, when you hit resistance:');
     lines.push('');
-    lines.push('  # kansatsu record — type is one of: decision | prediction | friction | gap | outcome | assumption | insight');
-    lines.push(`  kata kansatsu record <type> "..." --run ${prepared.runId} --severity info`);
+    lines.push(`  kata kansatsu record <type> "..." --run ${prepared.runId}`);
     lines.push(`  kata maki record <name> <path> --run ${prepared.runId}`);
     lines.push(`  kata kime record --decision "..." --rationale "..." --run ${prepared.runId}`);
+    lines.push('');
+    lines.push('**Observation types** — pick the most specific:');
+    lines.push('  decision    — a choice between real alternatives; always include WHY you chose this path');
+    lines.push('  prediction  — a testable bet about future behavior (state what would falsify it)');
+    lines.push('  assumption  — something you are treating as true but have not verified');
+    lines.push('  friction    — something that slowed you down; requires --taxonomy (see below)');
+    lines.push('  gap         — missing capability, coverage, or information; requires --severity critical|major|minor');
+    lines.push('  outcome     — factual result after a decision or prediction resolves');
+    lines.push('  insight     — non-obvious learning that would change your approach in a similar situation');
+    lines.push('');
+    lines.push('**Friction taxonomy** (--taxonomy <value>):');
+    lines.push('  stale-learning   — your expected pattern was outdated or wrong in this context');
+    lines.push('  config-drift     — actual env/files/settings do not match documented expectations');
+    lines.push('  convention-clash — established code convention conflicts with the natural approach');
+    lines.push('  tool-mismatch    — available tool required workarounds; not quite right for the job');
+    lines.push('  scope-creep      — work expanded beyond the original bet boundary during execution');
+    lines.push('  agent-override   — user directed a different approach from what you would have chosen');
+    lines.push('');
+    lines.push('**Quality bar** — ask: would a future agent reading this understand what happened and why?');
+    lines.push('  weak:   "Features already in main, issues can be closed"');
+    lines.push('  strong: "Bets silently become redundant when issues stay open after merging — triage needs a closed-issue pre-flight"');
     lines.push('');
 
     // Injected learnings
