@@ -484,6 +484,70 @@ describe('registerDecisionCommands — decision record', () => {
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('context'));
   });
 
+  it('auto-populates katakaId from run.json when --kataka is not provided', async () => {
+    const katakaId = randomUUID();
+    const run = makeRun({ katakaId });
+    createRunTree(runsDir, run);
+
+    const program = createProgram();
+    await program.parseAsync([
+      'node', 'test', '--json', '--cwd', baseDir,
+      'decision', 'record', run.id,
+      '--stage', 'research',
+      '--type', 'flavor-selection',
+      '--selected', 'technical-research',
+      '--confidence', '0.9',
+    ]);
+
+    const decisionsPath = join(runsDir, run.id, 'decisions.jsonl');
+    const entries = JsonlStore.readAll(decisionsPath, DecisionEntrySchema);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]!.katakaId).toBe(katakaId);
+  });
+
+  it('explicit --kataka flag overrides katakaId from run.json', async () => {
+    const runKatakaId = randomUUID();
+    const explicitKatakaId = randomUUID();
+    const run = makeRun({ katakaId: runKatakaId });
+    createRunTree(runsDir, run);
+
+    const program = createProgram();
+    await program.parseAsync([
+      'node', 'test', '--json', '--cwd', baseDir,
+      'decision', 'record', run.id,
+      '--stage', 'research',
+      '--type', 'flavor-selection',
+      '--selected', 'technical-research',
+      '--confidence', '0.9',
+      '--kataka', explicitKatakaId,
+    ]);
+
+    const decisionsPath = join(runsDir, run.id, 'decisions.jsonl');
+    const entries = JsonlStore.readAll(decisionsPath, DecisionEntrySchema);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]!.katakaId).toBe(explicitKatakaId);
+  });
+
+  it('leaves katakaId undefined when run.json has no katakaId and --kataka is not provided', async () => {
+    const run = makeRun();
+    createRunTree(runsDir, run);
+
+    const program = createProgram();
+    await program.parseAsync([
+      'node', 'test', '--json', '--cwd', baseDir,
+      'decision', 'record', run.id,
+      '--stage', 'research',
+      '--type', 'flavor-selection',
+      '--selected', 'technical-research',
+      '--confidence', '0.9',
+    ]);
+
+    const decisionsPath = join(runsDir, run.id, 'decisions.jsonl');
+    const entries = JsonlStore.readAll(decisionsPath, DecisionEntrySchema);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]!.katakaId).toBeUndefined();
+  });
+
   it('does not create a second gate when pendingGate already exists', async () => {
     const run = makeRun();
     createRunTree(runsDir, run);

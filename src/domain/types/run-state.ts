@@ -230,6 +230,8 @@ export const DecisionEntrySchema = z.object({
    * decision log is fully self-describing.
    */
   lowConfidence: z.boolean().optional(),
+  /** ID of the kataka (agent) that recorded this decision. Auto-populated from run.json; overrideable with --kataka. */
+  katakaId: z.string().uuid().optional(),
 });
 
 export type DecisionEntry = z.infer<typeof DecisionEntrySchema>;
@@ -292,6 +294,8 @@ export const ArtifactIndexEntrySchema = z.object({
   type: ArtifactIndexTypeSchema,
   /** ISO 8601 timestamp when the artifact was recorded. */
   recordedAt: z.string().datetime(),
+  /** ID of the kataka (agent) that recorded this artifact. Auto-populated from run.json; overrideable with --kataka. */
+  katakaId: z.string().uuid().optional(),
 });
 
 export type ArtifactIndexEntry = z.infer<typeof ArtifactIndexEntrySchema>;

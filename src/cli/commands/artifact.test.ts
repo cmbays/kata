@@ -377,4 +377,80 @@ describe('registerArtifactCommands — artifact record', () => {
 
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Invalid --type'));
   });
+
+  it('auto-populates katakaId from run.json when --kataka is not provided', async () => {
+    const katakaId = randomUUID();
+    const run = makeRun({ katakaId });
+    createRunTree(runsDir, run);
+
+    const srcFile = join(baseDir, 'context.md');
+    writeFileSync(srcFile, '# Context', 'utf-8');
+
+    const program = createProgram();
+    await program.parseAsync([
+      'node', 'test', '--json', '--cwd', baseDir,
+      'artifact', 'record', run.id,
+      '--stage', 'research',
+      '--flavor', 'technical-research',
+      '--step', 'gather-context',
+      '--file', srcFile,
+      '--summary', 'Context output',
+    ]);
+
+    const runIndexPath = join(runsDir, run.id, 'artifact-index.jsonl');
+    const entries = JsonlStore.readAll(runIndexPath, ArtifactIndexEntrySchema);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]!.katakaId).toBe(katakaId);
+  });
+
+  it('explicit --kataka flag overrides katakaId from run.json', async () => {
+    const runKatakaId = randomUUID();
+    const explicitKatakaId = randomUUID();
+    const run = makeRun({ katakaId: runKatakaId });
+    createRunTree(runsDir, run);
+
+    const srcFile = join(baseDir, 'context.md');
+    writeFileSync(srcFile, '# Context', 'utf-8');
+
+    const program = createProgram();
+    await program.parseAsync([
+      'node', 'test', '--json', '--cwd', baseDir,
+      'artifact', 'record', run.id,
+      '--stage', 'research',
+      '--flavor', 'technical-research',
+      '--step', 'gather-context',
+      '--file', srcFile,
+      '--summary', 'Context output',
+      '--kataka', explicitKatakaId,
+    ]);
+
+    const runIndexPath = join(runsDir, run.id, 'artifact-index.jsonl');
+    const entries = JsonlStore.readAll(runIndexPath, ArtifactIndexEntrySchema);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]!.katakaId).toBe(explicitKatakaId);
+  });
+
+  it('leaves katakaId undefined when run.json has no katakaId and --kataka is not provided', async () => {
+    const run = makeRun();
+    createRunTree(runsDir, run);
+
+    const srcFile = join(baseDir, 'context.md');
+    writeFileSync(srcFile, '# Context', 'utf-8');
+
+    const program = createProgram();
+    await program.parseAsync([
+      'node', 'test', '--json', '--cwd', baseDir,
+      'artifact', 'record', run.id,
+      '--stage', 'research',
+      '--flavor', 'technical-research',
+      '--step', 'gather-context',
+      '--file', srcFile,
+      '--summary', 'Context output',
+    ]);
+
+    const runIndexPath = join(runsDir, run.id, 'artifact-index.jsonl');
+    const entries = JsonlStore.readAll(runIndexPath, ArtifactIndexEntrySchema);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]!.katakaId).toBeUndefined();
+  });
 });
