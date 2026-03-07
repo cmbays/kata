@@ -534,6 +534,259 @@ export function registerCycleCommands(parent: Command): void {
     }));
 
   // ---------------------------------------------------------------------------
+  // kata cycle staged — staged cycle subcommand group
+  // A "staged cycle" is the most recent cycle in `planning` state.
+  // It persists across sessions so the sensei can resume work on the next cycle.
+  // ---------------------------------------------------------------------------
+  const staged = cycle
+    .command('staged')
+    .description('Manage the staged (next) cycle — a planning-state cycle ready for launch');
+
+  // kata cycle staged — show the staged cycle (default action)
+  staged
+    .action(withCommandContext((ctx) => {
+      const manager = new CycleManager(kataDirPath(ctx.kataDir, 'cycles'), JsonStore);
+      const cycles = manager.list();
+      const stagedCycle = cycles
+        .filter((c) => c.state === 'planning')
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+
+      if (!stagedCycle) {
+        console.log('No staged cycle found.');
+        console.log('');
+        console.log('Run "kata cycle new --skip-prompts" to create one, then add bets with:');
+        console.log('  kata cycle staged add-bet "<description>" [--appetite N] [--gyo <stages>]');
+        return;
+      }
+
+      if (ctx.globalOpts.json) {
+        const status = manager.getBudgetStatus(stagedCycle.id);
+        console.log(formatCycleStatusJson(status, stagedCycle));
+      } else {
+        const status = manager.getBudgetStatus(stagedCycle.id);
+        console.log('Staged cycle (ready to launch):');
+        console.log('');
+        console.log(formatCycleStatus(status, stagedCycle, ctx.globalOpts.plain));
+        console.log('');
+        if (stagedCycle.bets.length > 0) {
+          console.log('Next steps:');
+          console.log('  Add more bets:  kata cycle staged add-bet "<description>"');
+          console.log('  Launch:         kata cycle staged launch');
+          console.log('  Discard:        kata cycle staged clear');
+        } else {
+          console.log('No bets yet. Add one:');
+          console.log('  kata cycle staged add-bet "<description>" [--appetite N] [--gyo <stages>]');
+        }
+      }
+    }));
+
+  // kata cycle staged add-bet "<description>"
+  staged
+    .command('add-bet <description>')
+    .description('Add a bet to the staged cycle')
+    .option('-a, --appetite <pct>', 'Appetite percentage (default: 20)', parseInt)
+    .option('--gyo <stages>', 'Ad-hoc stage list (comma-separated, e.g. "research,build")')
+    .option('--kata <name>', 'Named kata pattern (e.g. "full-feature")')
+    .option('--domain <area>', 'Domain area tag')
+    .option('--work-type <type>', 'Work type tag')
+    .option('--novelty <level>', 'Novelty level (familiar, novel, experimental)')
+    .action(withCommandContext(async (ctx, description: string) => {
+      const localOpts = ctx.cmd.opts();
+      const manager = new CycleManager(kataDirPath(ctx.kataDir, 'cycles'), JsonStore);
+      const cycles = manager.list();
+      const stagedCycle = cycles
+        .filter((c) => c.state === 'planning')
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+
+      if (!stagedCycle) {
+        throw new Error(
+          'No staged cycle found. Run "kata cycle new --skip-prompts" to create one first.',
+        );
+      }
+
+      if (localOpts.kata && localOpts.gyo) {
+        throw new Error('--kata and --gyo are mutually exclusive');
+      }
+
+      let kata: KataAssignment | undefined;
+      if (localOpts.kata) {
+        kata = { type: 'named', pattern: localOpts.kata as string };
+      } else if (localOpts.gyo) {
+        const stages = (localOpts.gyo as string).split(',').map((s) => s.trim()).filter(Boolean);
+        if (stages.length === 0) {
+          throw new Error('--gyo requires at least one stage');
+        }
+        kata = { type: 'ad-hoc', stages: stages as ['research' | 'plan' | 'build' | 'review', ...('research' | 'plan' | 'build' | 'review')[]] };
+      }
+
+      const appetite: number = localOpts.appetite ?? 20;
+
+      let domainTags: DomainTags | undefined;
+      if (localOpts.domain || localOpts.workType || localOpts.novelty) {
+        const rawTags: Record<string, string> = { source: 'user' };
+        if (localOpts.domain) rawTags['domain'] = localOpts.domain as string;
+        if (localOpts.workType) rawTags['workType'] = localOpts.workType as string;
+        if (localOpts.novelty) rawTags['novelty'] = localOpts.novelty as string;
+        domainTags = DomainTagsSchema.parse(rawTags);
+      }
+
+      const updatedCycle = manager.addBet(stagedCycle.id, {
+        description,
+        appetite,
+        outcome: 'pending',
+        issueRefs: [],
+        ...(kata ? { kata } : {}),
+        ...(domainTags ? { domainTags } : {}),
+      });
+
+      const status = manager.getBudgetStatus(stagedCycle.id);
+
+      if (ctx.globalOpts.json) {
+        console.log(formatCycleStatusJson(status, updatedCycle));
+      } else {
+        console.log('Bet added to staged cycle!');
+        console.log('');
+        console.log(formatCycleStatus(status, updatedCycle, ctx.globalOpts.plain));
+      }
+    }));
+
+  // kata cycle staged remove-bet <bet-id>
+  staged
+    .command('remove-bet <bet-id>')
+    .description('Remove a bet from the staged cycle')
+    .action(withCommandContext((ctx, betId: string) => {
+      const manager = new CycleManager(kataDirPath(ctx.kataDir, 'cycles'), JsonStore);
+      const cycles = manager.list();
+      const stagedCycle = cycles
+        .filter((c) => c.state === 'planning')
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+
+      if (!stagedCycle) {
+        throw new Error(
+          'No staged cycle found. Run "kata cycle new --skip-prompts" to create one first.',
+        );
+      }
+
+      const matchedBet = stagedCycle.bets.find((b) => b.id === betId || b.id.startsWith(betId));
+      if (!matchedBet) {
+        throw new Error(`Bet "${betId}" not found in the staged cycle.`);
+      }
+
+      const updatedCycle = manager.removeBet(stagedCycle.id, matchedBet.id);
+      const status = manager.getBudgetStatus(stagedCycle.id);
+
+      if (ctx.globalOpts.json) {
+        console.log(formatCycleStatusJson(status, updatedCycle));
+      } else {
+        console.log('Bet removed from staged cycle.');
+        console.log('');
+        console.log(formatCycleStatus(status, updatedCycle, ctx.globalOpts.plain));
+      }
+    }));
+
+  // kata cycle staged launch — prepares all runs, transitions to active
+  staged
+    .command('launch')
+    .description('Launch the staged cycle — prepare all runs and transition to active')
+    .option('--kataka <id>', 'Kataka (agent) ID to attribute all prepared runs to')
+    .action(withCommandContext(async (ctx) => {
+      const localOpts = ctx.cmd.opts() as { kataka?: string };
+      const manager = new CycleManager(kataDirPath(ctx.kataDir, 'cycles'), JsonStore);
+      const cycles = manager.list();
+      const stagedCycle = cycles
+        .filter((c) => c.state === 'planning')
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+
+      if (!stagedCycle) {
+        throw new Error(
+          'No staged cycle found. Run "kata cycle new --skip-prompts" to create one first.',
+        );
+      }
+
+      if (stagedCycle.bets.length === 0) {
+        throw new Error(
+          'Cannot launch a cycle with no bets. Add bets first:\n  kata cycle staged add-bet "<description>"',
+        );
+      }
+
+      // Delegate to the session bridge (same as kata kiai cycle <id> --prepare)
+      const { SessionExecutionBridge } = await import('@infra/execution/session-bridge.js');
+      const bridge = new SessionExecutionBridge(ctx.kataDir);
+
+      if (localOpts.kataka) {
+        const { KatakaRegistry } = await import('@infra/registries/kataka-registry.js');
+        const { join: pathJoin } = await import('node:path');
+        const { KATA_DIRS: kataDirs } = await import('@shared/constants/paths.js');
+        try {
+          const katakaRegistry = new KatakaRegistry(pathJoin(ctx.kataDir, kataDirs.kataka));
+          katakaRegistry.get(localOpts.kataka);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          if (msg.includes('not found')) {
+            console.error(`Error: kataka "${localOpts.kataka}" not found. Use "kata agent list" to see registered kataka.`);
+          } else {
+            console.error(`Error: Failed to load kataka "${localOpts.kataka}": ${msg}`);
+          }
+          process.exitCode = 1;
+          return;
+        }
+      }
+
+      const result = bridge.prepareCycle(stagedCycle.id, localOpts.kataka);
+
+      if (ctx.globalOpts.json) {
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        console.log(`Launched! Prepared ${result.preparedRuns.length} run(s) for cycle "${result.cycleName}"`);
+        for (const run of result.preparedRuns) {
+          console.log(`\n  Bet:    ${run.betName}`);
+          console.log(`  Run ID: ${run.runId}`);
+          console.log(`  Stages: ${run.stages.join(', ')}`);
+        }
+        console.log('');
+        console.log('Next step: dispatch each run to an agent:');
+        for (const run of result.preparedRuns) {
+          console.log(`  kata kiai context ${run.runId}`);
+        }
+      }
+    }));
+
+  // kata cycle staged clear — discard the staged cycle
+  staged
+    .command('clear')
+    .description('Discard the staged cycle (removes the planning-state cycle)')
+    .option('--force', 'Skip confirmation check when cycle has bets')
+    .action(withCommandContext((ctx) => {
+      const localOpts = ctx.cmd.opts() as { force?: boolean };
+      const manager = new CycleManager(kataDirPath(ctx.kataDir, 'cycles'), JsonStore);
+      const cycles = manager.list();
+      const stagedCycle = cycles
+        .filter((c) => c.state === 'planning')
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+
+      if (!stagedCycle) {
+        console.log('No staged cycle to clear.');
+        return;
+      }
+
+      if (!localOpts.force && stagedCycle.bets.length > 0) {
+        console.error(
+          `Staged cycle "${stagedCycle.name ?? stagedCycle.id}" has ${stagedCycle.bets.length} bet(s). Use --force to confirm discard.`,
+        );
+        process.exitCode = 1;
+        return;
+      }
+
+      manager.deleteCycle(stagedCycle.id);
+
+      if (ctx.globalOpts.json) {
+        console.log(JSON.stringify({ cleared: true, cycleId: stagedCycle.id }));
+      } else {
+        console.log(`Staged cycle "${stagedCycle.name ?? stagedCycle.id}" cleared.`);
+      }
+    }));
+
+  // ---------------------------------------------------------------------------
   // kata cooldown — main command (alias: ma)
   // Subcommands: complete
   // Options: --prepare, --yolo, --skip-prompts, --auto-accept-suggestions
