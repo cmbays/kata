@@ -3,7 +3,8 @@
   "description": "Investigate technical options, evaluate trade-offs, and produce a technical summary for planning.",
   "stageCategory": "research",
   "steps": [
-    { "stepName": "research", "stepType": "research-general" }
+    { "stepName": "research", "stepType": "research-general" },
+    { "stepName": "deliver", "stepType": "deliver-research" }
   ],
   "synthesisArtifact": "research-summary"
 }
