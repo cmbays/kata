@@ -15,6 +15,16 @@ export const DojoDiaryEntrySchema = z.object({
   openQuestions: z.array(z.string()).default([]),
   mood: DojoMood.optional(),
   tags: z.array(z.string()).default([]),
+  /**
+   * Three-part diary fields (#218).
+   * All optional for backward compatibility with existing diary entries.
+   */
+  /** Part 1 — deterministic extraction of all cycle data (observations, decisions, gaps, outcomes). */
+  rawDataSummary: z.string().optional(),
+  /** Part 2 — sensei narrative reflection / synthesis proposals summary. Absent in --prepare mode. */
+  agentPerspective: z.string().optional(),
+  /** Part 3 — human input captured during collaborative cooldown. Absent in --yolo mode. */
+  humanPerspective: z.string().optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime().optional(),
 });

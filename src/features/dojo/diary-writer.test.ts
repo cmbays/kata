@@ -492,4 +492,86 @@ describe('DiaryWriter', () => {
       expect(entry.createdAt).toBeDefined();
     });
   });
+
+  describe('three-part diary (#218)', () => {
+    it('populates rawDataSummary with bet outcomes section', () => {
+      const input = makeInput({
+        betOutcomes: [
+          { betId: 'aaa', outcome: 'complete' },
+          { betId: 'bbb', outcome: 'partial', notes: 'ran out of time' },
+        ],
+        proposals: [],
+        learningsCaptured: 0,
+      });
+      const entry = writer.write(input);
+      expect(entry.rawDataSummary).toBeDefined();
+      expect(entry.rawDataSummary).toContain('Bet Outcomes');
+      expect(entry.rawDataSummary).toContain('[complete]');
+      expect(entry.rawDataSummary).toContain('[partial]');
+      expect(entry.rawDataSummary).toContain('ran out of time');
+      expect(entry.rawDataSummary).toContain('Completion rate: 1/2');
+    });
+
+    it('rawDataSummary includes run gap data from runSummaries', () => {
+      const input = makeInput({
+        betOutcomes: [],
+        proposals: [],
+        learningsCaptured: 0,
+        runSummaries: [
+          makeRunSummary({
+            gapsBySeverity: { low: 1, medium: 2, high: 3 },
+            stageDetails: [{ category: 'build', selectedFlavors: [], gaps: [] }],
+          }),
+        ],
+      });
+      const entry = writer.write(input);
+      expect(entry.rawDataSummary).toContain('3 high');
+      expect(entry.rawDataSummary).toContain('build');
+    });
+
+    it('rawDataSummary includes learning and proposal counts', () => {
+      const input = makeInput({
+        betOutcomes: [],
+        proposals: [
+          { description: 'Refactor the cycle manager', priority: 'high', type: 'improvement', source: 'gap-analysis', rationale: 'high gap count' },
+        ],
+        learningsCaptured: 5,
+      });
+      const entry = writer.write(input);
+      expect(entry.rawDataSummary).toContain('Learnings captured: 5');
+      expect(entry.rawDataSummary).toContain('[high] Refactor the cycle manager');
+    });
+
+    it('stores agentPerspective when provided', () => {
+      const input = makeInput({ betOutcomes: [], proposals: [], learningsCaptured: 0, agentPerspective: 'This cycle showed strong execution discipline.' });
+      const entry = writer.write(input);
+      expect(entry.agentPerspective).toBe('This cycle showed strong execution discipline.');
+    });
+
+    it('stores humanPerspective when provided', () => {
+      const input = makeInput({ betOutcomes: [], proposals: [], learningsCaptured: 0, humanPerspective: 'Felt productive but the review stage was rushed.' });
+      const entry = writer.write(input);
+      expect(entry.humanPerspective).toBe('Felt productive but the review stage was rushed.');
+    });
+
+    it('agentPerspective and humanPerspective are undefined when not provided', () => {
+      const input = makeInput({ betOutcomes: [], proposals: [], learningsCaptured: 0 });
+      const entry = writer.write(input);
+      expect(entry.agentPerspective).toBeUndefined();
+      expect(entry.humanPerspective).toBeUndefined();
+    });
+
+    it('buildRawDataSummary is exported and callable directly', () => {
+      const writerInstance = new DiaryWriter(store);
+      const summary = writerInstance.buildRawDataSummary({
+        cycleId: 'test-cycle',
+        cycleName: 'Test Cycle',
+        betOutcomes: [{ betId: 'x', outcome: 'complete' }],
+        proposals: [],
+        learningsCaptured: 1,
+      });
+      expect(summary).toContain('Test Cycle');
+      expect(summary).toContain('[complete]');
+    });
+  });
 });
