@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { mkdirSync, rmSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { CycleManager } from '@domain/services/cycle-manager.js';
@@ -1046,6 +1046,148 @@ describe('CooldownSession', () => {
 
       expect(result).toHaveLength(1);
       expect(result[0]!.betId).toBe(bet2.id);
+    });
+
+    it('prefers bridge-run metadata over run.json when bridgeRunsDir is provided', () => {
+      const bridgeRunsDir = join(baseDir, 'bridge-runs-check');
+      const runsDir = join(baseDir, 'runs-bridge-check');
+      mkdirSync(bridgeRunsDir, { recursive: true });
+
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      const withBet = cycleManager.addBet(cycle.id, { description: 'Bridge bet', appetite: 30, outcome: 'pending', issueRefs: [] });
+      const bet = withBet.bets[0]!;
+      const runId = randomUUID();
+      cycleManager.setRunId(cycle.id, bet.id, runId);
+
+      // Write a stale run.json that still shows 'running' (as it always would without bridge-run support)
+      const runDir = join(runsDir, runId);
+      mkdirSync(runDir, { recursive: true });
+      writeFileSync(join(runDir, 'run.json'), JSON.stringify({
+        id: runId, cycleId: cycle.id, betId: bet.id, betPrompt: 'Bridge bet',
+        stageSequence: ['build'], currentStage: null, status: 'running',
+        startedAt: new Date().toISOString(),
+      }));
+
+      // Write bridge-run file as 'complete' — should take precedence over stale run.json
+      writeFileSync(join(bridgeRunsDir, `${runId}.json`), JSON.stringify({ runId, betId: bet.id, cycleId: cycle.id, cycleName: 'Test', stages: ['build'], isolation: 'shared', startedAt: new Date().toISOString(), status: 'complete' }));
+
+      const sessionWithBridge = new CooldownSession({
+        cycleManager, knowledgeStore, persistence: JsonStore, pipelineDir, historyDir, bridgeRunsDir, runsDir,
+      });
+      // Bridge-run 'complete' takes precedence over stale run.json 'running' → no incomplete runs
+      const result = sessionWithBridge.checkIncompleteRuns(cycle.id);
+      expect(result).toEqual([]);
+    });
+
+    it('reports incomplete when bridge-run status is in-progress', () => {
+      const bridgeRunsDir = join(baseDir, 'bridge-runs-inprogress');
+      mkdirSync(bridgeRunsDir, { recursive: true });
+
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      const withBet = cycleManager.addBet(cycle.id, { description: 'In-progress bridge bet', appetite: 30, outcome: 'pending', issueRefs: [] });
+      const bet = withBet.bets[0]!;
+      const runId = randomUUID();
+      cycleManager.setRunId(cycle.id, bet.id, runId);
+
+      
+      writeFileSync(join(bridgeRunsDir, `${runId}.json`), JSON.stringify({ runId, betId: bet.id, cycleId: cycle.id, cycleName: 'Test', stages: ['build'], isolation: 'shared', startedAt: new Date().toISOString(), status: 'in-progress' }));
+
+      const sessionWithBridge = new CooldownSession({
+        cycleManager, knowledgeStore, persistence: JsonStore, pipelineDir, historyDir, bridgeRunsDir,
+      });
+      const result = sessionWithBridge.checkIncompleteRuns(cycle.id);
+      expect(result).toHaveLength(1);
+      expect(result[0]!.runId).toBe(runId);
+      expect(result[0]!.status).toBe('running');
+    });
+  });
+
+  describe('autoSyncBetOutcomesFromBridgeRuns (via run)', () => {
+    const bridgeRunsDir = join(baseDir, 'bridge-runs-autosync');
+
+    beforeEach(() => {
+      mkdirSync(bridgeRunsDir, { recursive: true });
+    });
+
+    it('auto-completes pending bets when bridge-run metadata shows complete', async () => {
+      
+
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      const withBet = cycleManager.addBet(cycle.id, { description: 'Auto-sync bet', appetite: 80, outcome: 'pending', issueRefs: [] });
+      const bet = withBet.bets[0]!;
+      const runId = randomUUID();
+      cycleManager.setRunId(cycle.id, bet.id, runId);
+
+      // Write bridge-run file as 'complete' (what kiai complete does)
+      writeFileSync(join(bridgeRunsDir, `${runId}.json`), JSON.stringify({
+        runId, betId: bet.id, cycleId: cycle.id, cycleName: 'Test', betName: 'Auto-sync bet',
+        stages: ['build'], isolation: 'shared', startedAt: new Date().toISOString(), status: 'complete',
+      }));
+
+      const sessionWithBridge = new CooldownSession({
+        cycleManager, knowledgeStore, persistence: JsonStore, pipelineDir, historyDir, bridgeRunsDir,
+      });
+
+      // Start cycle first
+      cycleManager.updateState(cycle.id, 'active');
+
+      const result = await sessionWithBridge.run(cycle.id, [], { force: true });
+
+      // Bet should be auto-completed
+      expect(result.report.completionRate).toBe(100);
+      expect(result.report.bets[0]!.outcome).toBe('complete');
+    });
+
+    it('auto-marks failed bridge runs as partial', async () => {
+      
+
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      const withBet = cycleManager.addBet(cycle.id, { description: 'Failed bet', appetite: 80, outcome: 'pending', issueRefs: [] });
+      const bet = withBet.bets[0]!;
+      const runId = randomUUID();
+      cycleManager.setRunId(cycle.id, bet.id, runId);
+
+      writeFileSync(join(bridgeRunsDir, `${runId}.json`), JSON.stringify({
+        runId, betId: bet.id, cycleId: cycle.id, cycleName: 'Test', betName: 'Failed bet',
+        stages: ['build'], isolation: 'shared', startedAt: new Date().toISOString(), status: 'failed',
+      }));
+
+      const sessionWithBridge = new CooldownSession({
+        cycleManager, knowledgeStore, persistence: JsonStore, pipelineDir, historyDir, bridgeRunsDir,
+      });
+
+      cycleManager.updateState(cycle.id, 'active');
+      const result = await sessionWithBridge.run(cycle.id, [], { force: true });
+
+      expect(result.report.bets[0]!.outcome).toBe('partial');
+      expect(result.report.completionRate).toBe(0); // partial doesn't count as complete
+    });
+
+    it('explicit bet outcome passed to run() takes precedence over bridge-run auto-sync', async () => {
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      // Bet starts as pending — auto-sync would set it to 'complete' from bridge-run
+      const withBet = cycleManager.addBet(cycle.id, { description: 'Explicit override bet', appetite: 80, outcome: 'pending', issueRefs: [] });
+      const bet = withBet.bets[0]!;
+      const runId = randomUUID();
+      cycleManager.setRunId(cycle.id, bet.id, runId);
+
+      // Bridge-run says 'complete' — but the sensei explicitly passes 'abandoned'
+      writeFileSync(join(bridgeRunsDir, `${runId}.json`), JSON.stringify({
+        runId, betId: bet.id, cycleId: cycle.id, cycleName: 'Test', betName: 'Explicit override bet',
+        stages: ['build'], isolation: 'shared', startedAt: new Date().toISOString(), status: 'complete',
+      }));
+
+      const sessionWithBridge = new CooldownSession({
+        cycleManager, knowledgeStore, persistence: JsonStore, pipelineDir, historyDir, bridgeRunsDir,
+      });
+
+      cycleManager.updateState(cycle.id, 'active');
+      // Explicit 'abandoned' should win over bridge-run 'complete'
+      const result = await sessionWithBridge.run(cycle.id, [{ betId: bet.id, outcome: 'abandoned' }], { force: true });
+
+      expect(result.report.bets[0]!.outcome).toBe('abandoned');
+      // effectiveBetOutcomes should reflect the explicit outcome, not the auto-synced one
+      expect(result.betOutcomes[0]!.outcome).toBe('abandoned');
     });
   });
 
