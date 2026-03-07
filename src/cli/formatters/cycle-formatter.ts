@@ -212,6 +212,12 @@ export function formatCooldownSessionResult(
     lines.push(`No proposals generated for the next ${lex.cycle}.`);
   }
 
+  // LLM-driven next-keiko proposals section
+  if (result.nextKeikoResult) {
+    lines.push('');
+    lines.push(result.nextKeikoResult.text);
+  }
+
   return lines.join('\n').trimEnd();
 }
 

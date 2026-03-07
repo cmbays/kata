@@ -5,6 +5,7 @@ import { KnowledgeStore } from '@infra/knowledge/knowledge-store.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
 import { RuleRegistry } from '@infra/registries/rule-registry.js';
 import { CooldownSession, type BetOutcomeRecord } from '@features/cycle-management/cooldown-session.js';
+import { NextKeikoProposalGenerator } from '@features/cycle-management/next-keiko-proposal-generator.js';
 import type { SuggestionReviewRecord } from '@features/cycle-management/types.js';
 import { withCommandContext, kataDirPath } from '@cli/utils.js';
 import { resolveRef } from '@cli/resolve-ref.js';
@@ -802,6 +803,7 @@ export function registerCycleCommands(parent: Command): void {
     .description('Finalize cooldown after LLM synthesis (called after --prepare + sensei review)')
     .option('--synthesis-input <id>', 'ID of the pending synthesis input file')
     .option('--accepted <ids>', 'Comma-separated list of proposal IDs to apply')
+    .option('--milestone <name>', 'Milestone name to query for next-keiko proposals')
     .action(withCommandContext(async (ctx, rawCycleId: string) => {
       const localOpts = ctx.cmd.opts();
       const cyclesDir = kataDirPath(ctx.kataDir, 'cycles');
@@ -839,6 +841,8 @@ export function registerCycleCommands(parent: Command): void {
           katakaDir,
         }),
         katakaDir,
+        nextKeikoMilestoneName: localOpts.milestone as string | undefined,
+        nextKeikoProposalGenerator: new NextKeikoProposalGenerator(),
       });
 
       const synthesisInputId: string | undefined = localOpts.synthesisInput;
@@ -856,6 +860,7 @@ export function registerCycleCommands(parent: Command): void {
           report: completeResult.report,
           proposals: completeResult.proposals,
           synthesisProposals: completeResult.synthesisProposals,
+          nextKeikoResult: completeResult.nextKeikoResult,
         }, null, 2));
       } else {
         console.log(`Cooldown complete for cycle ${cycleId}.`);
@@ -875,6 +880,7 @@ export function registerCycleCommands(parent: Command): void {
     .option('--yolo', 'Prepare synthesis input, invoke claude --print for synthesis, apply high-confidence proposals, then complete')
     .option('--depth <level>', 'Synthesis depth: quick | standard | thorough', 'standard')
     .option('--force', 'Proceed with cooldown even if runs are still in progress (bypasses incomplete-run warning)')
+    .option('--milestone <name>', 'Milestone name to query for next-keiko proposals (e.g. "Dogfooding & Stabilization (鍛錬)")')
     .action(withCommandContext(async (ctx, rawCycleId: string) => {
       const localOpts = ctx.cmd.opts();
       const cyclesDir = kataDirPath(ctx.kataDir, 'cycles');
@@ -914,6 +920,8 @@ export function registerCycleCommands(parent: Command): void {
           katakaDir,
         }),
         katakaDir,
+        nextKeikoMilestoneName: localOpts.milestone as string | undefined,
+        nextKeikoProposalGenerator: new NextKeikoProposalGenerator(),
       });
 
       const force: boolean = Boolean(localOpts.force);
