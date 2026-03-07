@@ -633,6 +633,7 @@ export function registerCycleCommands(parent: Command): void {
 
       const runsDir = kataDirPath(ctx.kataDir, 'runs');
       const katakaDir = join(ctx.kataDir, KATA_DIRS.kataka);
+      const bridgeRunsDir = join(ctx.kataDir, KATA_DIRS.bridgeRuns);
       const session = new CooldownSession({
         cycleManager: manager,
         knowledgeStore,
@@ -640,6 +641,7 @@ export function registerCycleCommands(parent: Command): void {
         pipelineDir: kataDirPath(ctx.kataDir, 'pipelines'),
         historyDir: kataDirPath(ctx.kataDir, 'history'),
         runsDir,
+        bridgeRunsDir,
         ruleRegistry,
         dojoDir: kataDirPath(ctx.kataDir, 'dojo'),
         synthesisDir,

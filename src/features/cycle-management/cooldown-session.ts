@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import type { CycleManager, CooldownReport } from '@domain/services/cycle-manager.js';
 import type { IKnowledgeStore } from '@domain/ports/knowledge-store.js';
 import type { IPersistence } from '@domain/ports/persistence.js';
@@ -95,6 +95,13 @@ export interface CooldownSessionDeps {
    * Defaults to 'standard'.
    */
   synthesisDepth?: import('@domain/types/synthesis.js').SynthesisDepth;
+  /**
+   * Optional path to .kata/bridge-runs/ directory. When provided, CooldownSession
+   * auto-syncs pending bet outcomes from bridge-run metadata before generating the
+   * cooldown report, and uses bridge-run status (not run.json) in checkIncompleteRuns.
+   * Backward compatible — omitting this field leaves existing behavior unchanged.
+   */
+  bridgeRunsDir?: string;
   /**
    * Optional BeltCalculator for computing belt level after cooldown.
    * Backward compatible — omitting skips belt computation.
@@ -250,18 +257,21 @@ export class CooldownSession {
     this.deps.cycleManager.updateState(cycleId, 'cooldown');
 
     try {
-      // 2. Record bet outcomes if provided
+      // 2. Auto-sync pending bet outcomes from bridge-run metadata (non-critical)
+      this.autoSyncBetOutcomesFromBridgeRuns(cycleId);
+
+      // 3. Record bet outcomes if provided (explicit outcomes override auto-sync)
       if (betOutcomes.length > 0) {
         this.recordBetOutcomes(cycleId, betOutcomes);
       }
 
-      // 3. Generate the base cooldown report
+      // 4. Generate the base cooldown report
       let report = this.deps.cycleManager.generateCooldown(cycleId);
 
-      // 4. Enrich with actual token usage
+      // 5. Enrich with actual token usage
       report = this.enrichReportWithTokens(report, cycleId);
 
-      // 5. Load run summaries when runsDir provided (enrich proposals)
+      // 6. Load run summaries when runsDir provided (enrich proposals)
       const cycle = this.deps.cycleManager.get(cycleId);
       const runSummaries = this.deps.runsDir
         ? this.loadRunSummaries(cycle)
@@ -397,24 +407,27 @@ export class CooldownSession {
     this.deps.cycleManager.updateState(cycleId, 'cooldown');
 
     try {
-      // 2. Record bet outcomes if provided
+      // 2. Auto-sync pending bet outcomes from bridge-run metadata (non-critical)
+      this.autoSyncBetOutcomesFromBridgeRuns(cycleId);
+
+      // 3. Record bet outcomes if provided (explicit outcomes override auto-sync)
       if (betOutcomes.length > 0) {
         this.recordBetOutcomes(cycleId, betOutcomes);
       }
 
-      // 3. Generate the base cooldown report
+      // 4. Generate the base cooldown report
       let report = this.deps.cycleManager.generateCooldown(cycleId);
 
-      // 4. Enrich with actual token usage
+      // 5. Enrich with actual token usage
       report = this.enrichReportWithTokens(report, cycleId);
 
-      // 5. Load run summaries when runsDir provided
+      // 6. Load run summaries when runsDir provided
       const cycle = this.deps.cycleManager.get(cycleId);
       const runSummaries = this.deps.runsDir
         ? this.loadRunSummaries(cycle)
         : undefined;
 
-      // 6. Generate next-cycle proposals
+      // 7. Generate next-cycle proposals
       const proposals = this.proposalGenerator.generate(cycleId, runSummaries);
 
       // 7. Load pending rule suggestions
@@ -698,6 +711,46 @@ export class CooldownSession {
   }
 
   /**
+   * Auto-derive bet outcomes from bridge-run metadata for any bets still marked 'pending'.
+   *
+   * bridge-run/<runId>.json is updated by `kiai complete`, unlike run.json which is
+   * written once as "running" and never updated. This ensures cooldown always reflects
+   * actual run completion even if the caller passed empty betOutcomes (fixes #216).
+   *
+   * Non-critical: any errors are swallowed so a missing/corrupt bridge-run file
+   * does not abort the cooldown.
+   */
+  private autoSyncBetOutcomesFromBridgeRuns(cycleId: string): void {
+    const bridgeRunsDir = this.deps.bridgeRunsDir;
+    if (!bridgeRunsDir) return;
+
+    const cycle = this.deps.cycleManager.get(cycleId);
+    const toSync: Array<{ betId: string; outcome: 'complete' | 'partial'; notes?: string }> = [];
+
+    for (const bet of cycle.bets) {
+      if (bet.outcome !== 'pending') continue; // already resolved — don't overwrite
+      if (!bet.runId) continue;
+
+      const bridgeRunPath = join(bridgeRunsDir, `${bet.runId}.json`);
+      try {
+        if (!existsSync(bridgeRunPath)) continue;
+        const raw = JSON.parse(readFileSync(bridgeRunPath, 'utf-8')) as { status?: string };
+        if (raw.status === 'complete') {
+          toSync.push({ betId: bet.id, outcome: 'complete' });
+        } else if (raw.status === 'failed') {
+          toSync.push({ betId: bet.id, outcome: 'partial' });
+        }
+      } catch {
+        // Non-critical — skip this bet silently
+      }
+    }
+
+    if (toSync.length > 0) {
+      this.recordBetOutcomes(cycleId, toSync);
+    }
+  }
+
+  /**
    * Apply bet outcomes to the cycle via CycleManager.
    * Logs a warning for any unmatched bet IDs.
    */
@@ -841,20 +894,41 @@ export class CooldownSession {
    * Read errors for individual run files are swallowed (the run is skipped silently).
    */
   checkIncompleteRuns(cycleId: string): IncompleteRunInfo[] {
-    if (!this.deps.runsDir) return [];
+    if (!this.deps.runsDir && !this.deps.bridgeRunsDir) return [];
 
     const cycle = this.deps.cycleManager.get(cycleId);
     const incomplete: IncompleteRunInfo[] = [];
 
     for (const bet of cycle.bets) {
       if (!bet.runId) continue;
-      try {
-        const run = readRun(this.deps.runsDir, bet.runId);
-        if (run.status === 'pending' || run.status === 'running') {
-          incomplete.push({ runId: bet.runId, betId: bet.id, status: run.status });
+
+      // Prefer bridge-run metadata — it's updated by kiai complete, unlike run.json
+      if (this.deps.bridgeRunsDir) {
+        const bridgeRunPath = join(this.deps.bridgeRunsDir, `${bet.runId}.json`);
+        try {
+          if (existsSync(bridgeRunPath)) {
+            const raw = JSON.parse(readFileSync(bridgeRunPath, 'utf-8')) as { status?: string };
+            // 'in-progress' = still running; 'complete'/'failed' = done
+            if (raw.status === 'in-progress') {
+              incomplete.push({ runId: bet.runId, betId: bet.id, status: 'running' });
+            }
+            continue; // bridge-run file found — don't fall through to run.json
+          }
+        } catch {
+          // fall through to run.json check
         }
-      } catch {
-        // Run file missing or invalid — skip silently (run may not have started yet)
+      }
+
+      // Fall back to run.json only when bridge-run file is absent
+      if (this.deps.runsDir) {
+        try {
+          const run = readRun(this.deps.runsDir, bet.runId);
+          if (run.status === 'pending' || run.status === 'running') {
+            incomplete.push({ runId: bet.runId, betId: bet.id, status: run.status });
+          }
+        } catch {
+          // Run file missing or invalid — skip silently (run may not have started yet)
+        }
       }
     }
 
