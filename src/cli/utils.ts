@@ -1,5 +1,5 @@
-import { join } from 'node:path';
-import { existsSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import type { Command } from 'commander';
 import { ConfigNotFoundError } from '@shared/lib/errors.js';
 import { KATA_DIRS, type KataDirKey } from '@shared/constants/paths.js';
@@ -8,15 +8,98 @@ import { KataConfigSchema } from '@domain/types/config.js';
 import { logger } from '@shared/lib/logger.js';
 
 /**
- * Resolve the .kata/ directory path from a given cwd (or process.cwd()).
- * Throws ConfigNotFoundError if the directory does not exist.
+ * Resolve the .kata/ directory path.
+ *
+ * Precedence:
+ *  1. KATA_DIR env var (absolute path to .kata/ directory)
+ *  2. Explicit cwd argument (from --cwd flag)
+ *  3. process.cwd()
+ *  4. Git worktree auto-detection: if .kata/ is absent at cwd and the cwd
+ *     is a linked git worktree, locate the main repo root via the .git file
+ *     and look for .kata/ there.
+ *
+ * Throws ConfigNotFoundError if .kata/ cannot be found by any strategy.
  */
 export function resolveKataDir(cwd?: string): string {
-  const dir = join(cwd ?? process.cwd(), KATA_DIRS.root);
-  if (!existsSync(dir)) {
-    throw new ConfigNotFoundError(dir);
+  // 1. KATA_DIR env var takes highest precedence
+  const envKataDir = process.env['KATA_DIR'];
+  if (envKataDir) {
+    if (!existsSync(envKataDir)) {
+      throw new ConfigNotFoundError(envKataDir);
+    }
+    return envKataDir;
   }
-  return dir;
+
+  // 2 & 3. Explicit cwd or process.cwd()
+  const base = cwd ?? process.cwd();
+  const dir = join(base, KATA_DIRS.root);
+  if (existsSync(dir)) {
+    return dir;
+  }
+
+  // 4. Git worktree auto-detection
+  const worktreeKataDir = resolveKataDirFromWorktree(base);
+  if (worktreeKataDir) {
+    return worktreeKataDir;
+  }
+
+  throw new ConfigNotFoundError(dir);
+}
+
+/**
+ * If `startDir` is inside a linked git worktree, find the main repo root
+ * and return the .kata/ path within it — or null if not found.
+ *
+ * A linked worktree has a .git FILE (not directory) at the repo root.
+ * Its content is: `gitdir: /absolute/path/to/main/.git/worktrees/<name>`
+ * The main repo root is two levels up from that gitdir path.
+ */
+function resolveKataDirFromWorktree(startDir: string): string | null {
+  try {
+    // Walk up to find the repo root (where .git lives)
+    let dir = startDir;
+    while (true) {
+      const dotGit = join(dir, '.git');
+      if (existsSync(dotGit)) {
+        let stat: ReturnType<typeof statSync>;
+        try {
+          stat = statSync(dotGit);
+        } catch {
+          break;
+        }
+
+        if (stat.isFile()) {
+          // Linked worktree: .git is a file
+          const content = readFileSync(dotGit, 'utf8').trim();
+          // Format: "gitdir: /path/to/main/.git/worktrees/<name>"
+          const match = content.match(/^gitdir:\s*(.+)$/);
+          if (!match) break;
+
+          const worktreeGitDir = match[1].trim();
+          // Main repo .git dir is two levels up: .git/worktrees/<name> → .git/
+          const mainGitDir = dirname(dirname(worktreeGitDir));
+          // Main repo root is the parent of .git/
+          const mainRepoRoot = dirname(mainGitDir);
+
+          const kataDir = join(mainRepoRoot, KATA_DIRS.root);
+          if (existsSync(kataDir)) {
+            logger.debug(`[resolveKataDir] worktree detected — using main repo .kata/ at ${kataDir}`);
+            return kataDir;
+          }
+        }
+        // .git is a directory (main worktree) — no auto-resolution needed
+        break;
+      }
+
+      const parent = dirname(dir);
+      if (parent === dir) break; // Hit filesystem root
+      dir = parent;
+    }
+  } catch {
+    // Any unexpected error — fall through to throw ConfigNotFoundError
+  }
+
+  return null;
 }
 
 /**
