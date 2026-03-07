@@ -442,7 +442,7 @@ describe('registerDecisionCommands — decision record', () => {
     expect(output.context).toEqual({});
     expect(output.options).toEqual([]);
     expect(output.confidence).toBe(1.0);
-    expect(output.reasoning).toBe('(no reasoning provided)');
+    expect(output.reasoning).toBe('');
     expect(output.selection).toBe('fast-path');
   });
 

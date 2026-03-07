@@ -134,7 +134,7 @@ export function registerDecisionCommands(parent: Command): void {
         context,
         options,
         selection: selected,
-        reasoning: (localOpts.reasoning as string | undefined) ?? '(no reasoning provided)',
+        reasoning: (localOpts.reasoning as string | undefined) ?? '',
         confidence,
         decidedAt: now,
         ...(isLowConfidence ? { lowConfidence: true } : {}),
