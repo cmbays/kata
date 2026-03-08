@@ -26,6 +26,8 @@ import type { Run } from '@domain/types/run-state.js';
 import { BeltCalculator, ProjectStateUpdater } from '@features/belt/belt-calculator.js';
 import { KatakaConfidenceCalculator } from '@features/kataka/kataka-confidence-calculator.js';
 import { KATA_DIRS } from '@shared/constants/paths.js';
+import { SessionBuilder } from '@features/dojo/session-builder.js';
+import { SessionStore } from '@infra/dojo/session-store.js';
 import {
   checkBetsForIssueRefs,
   formatStalenessWarnings,
@@ -856,6 +858,10 @@ export function registerCycleCommands(parent: Command): void {
 
       const runsDir = kataDirPath(ctx.kataDir, 'runs');
       const katakaDir = join(ctx.kataDir, KATA_DIRS.kataka);
+      const dojoDir = kataDirPath(ctx.kataDir, 'dojo');
+      const dojoSessionBuilder = new SessionBuilder({
+        sessionStore: new SessionStore(join(dojoDir, 'sessions')),
+      });
       const completeSession = new CooldownSession({
         cycleManager: manager,
         knowledgeStore,
@@ -864,8 +870,9 @@ export function registerCycleCommands(parent: Command): void {
         historyDir: kataDirPath(ctx.kataDir, 'history'),
         runsDir,
         ruleRegistry,
-        dojoDir: kataDirPath(ctx.kataDir, 'dojo'),
+        dojoDir,
         synthesisDir,
+        dojoSessionBuilder,
         beltCalculator: new BeltCalculator({
           cyclesDir: kataDirPath(ctx.kataDir, 'cycles'),
           knowledgeDir: kataDirPath(ctx.kataDir, 'knowledge'),
@@ -873,7 +880,7 @@ export function registerCycleCommands(parent: Command): void {
           flavorsDir: kataDirPath(ctx.kataDir, 'flavors'),
           savedKataDir: kataDirPath(ctx.kataDir, 'katas'),
           synthesisDir,
-          dojoSessionsDir: join(kataDirPath(ctx.kataDir, 'dojo'), 'sessions'),
+          dojoSessionsDir: join(dojoDir, 'sessions'),
         }),
         projectStateFile: join(ctx.kataDir, 'project-state.json'),
         katakaConfidenceCalculator: new KatakaConfidenceCalculator({
@@ -934,6 +941,10 @@ export function registerCycleCommands(parent: Command): void {
       const runsDir = kataDirPath(ctx.kataDir, 'runs');
       const katakaDir = join(ctx.kataDir, KATA_DIRS.kataka);
       const bridgeRunsDir = join(ctx.kataDir, KATA_DIRS.bridgeRuns);
+      const dojoDir = kataDirPath(ctx.kataDir, 'dojo');
+      const dojoSessionBuilder = new SessionBuilder({
+        sessionStore: new SessionStore(join(dojoDir, 'sessions')),
+      });
       const session = new CooldownSession({
         cycleManager: manager,
         knowledgeStore,
@@ -943,8 +954,9 @@ export function registerCycleCommands(parent: Command): void {
         runsDir,
         bridgeRunsDir,
         ruleRegistry,
-        dojoDir: kataDirPath(ctx.kataDir, 'dojo'),
+        dojoDir,
         synthesisDir,
+        dojoSessionBuilder,
         beltCalculator: new BeltCalculator({
           cyclesDir,
           knowledgeDir: kataDirPath(ctx.kataDir, 'knowledge'),
@@ -952,7 +964,7 @@ export function registerCycleCommands(parent: Command): void {
           flavorsDir: kataDirPath(ctx.kataDir, 'flavors'),
           savedKataDir: kataDirPath(ctx.kataDir, 'katas'),
           synthesisDir,
-          dojoSessionsDir: join(kataDirPath(ctx.kataDir, 'dojo'), 'sessions'),
+          dojoSessionsDir: join(dojoDir, 'sessions'),
         }),
         projectStateFile: join(ctx.kataDir, 'project-state.json'),
         katakaConfidenceCalculator: new KatakaConfidenceCalculator({

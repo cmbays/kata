@@ -55,7 +55,7 @@ export class BeltCalculator {
     const flavorsTotal = this.countJsonFiles(this.deps.flavorsDir);
     const decisionOutcomePairs = this.countDecisionOutcomes();
     const katasSaved = this.countJsonFiles(this.deps.savedKataDir);
-    const dojoSessionsGenerated = this.countJsonFiles(this.deps.dojoSessionsDir);
+    const dojoSessionsGenerated = this.countDojoSessions(this.deps.dojoSessionsDir);
     const { synthesisApplied, methodologyRecommendationsApplied } = this.readSynthesisMetrics();
 
     const cyclesCompleted = cycles.filter((c) => c.state === 'complete').length;
@@ -326,6 +326,20 @@ export class BeltCalculator {
     if (!dir || !existsSync(dir)) return 0;
     try {
       return readdirSync(dir).filter((f) => f.endsWith('.json')).length;
+    } catch { return 0; }
+  }
+
+  /**
+   * Count dojo sessions by scanning for subdirectories that contain a meta.json file.
+   * SessionStore stores each session as <sessionsDir>/<uuid>/meta.json — not as a
+   * flat .json file — so countJsonFiles() would only find index.json (always 1).
+   */
+  private countDojoSessions(dir?: string): number {
+    if (!dir || !existsSync(dir)) return 0;
+    try {
+      return readdirSync(dir, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory() && existsSync(join(dir, entry.name, 'meta.json')))
+        .length;
     } catch { return 0; }
   }
 }
