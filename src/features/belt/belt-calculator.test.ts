@@ -278,11 +278,11 @@ describe('BeltCalculator', () => {
 
       // 2 decision observations + 2 outcome observations → 2 pairs
       const obsLines = [
-        JSON.stringify({ id: randomUUID(), type: 'decision', content: 'Chose approach A', timestamp: new Date().toISOString() }),
-        JSON.stringify({ id: randomUUID(), type: 'decision', content: 'Chose approach B', timestamp: new Date().toISOString() }),
-        JSON.stringify({ id: randomUUID(), type: 'outcome', content: 'Approach A worked well', timestamp: new Date().toISOString() }),
-        JSON.stringify({ id: randomUUID(), type: 'outcome', content: 'Approach B was partial', timestamp: new Date().toISOString() }),
-        JSON.stringify({ id: randomUUID(), type: 'friction', content: 'Some friction', timestamp: new Date().toISOString(), taxonomy: 'tool-mismatch' }),
+        JSON.stringify({ id: randomUUID(), type: 'decision', content: 'Chose approach A', observedAt: new Date().toISOString() }),
+        JSON.stringify({ id: randomUUID(), type: 'decision', content: 'Chose approach B', observedAt: new Date().toISOString() }),
+        JSON.stringify({ id: randomUUID(), type: 'outcome', content: 'Approach A worked well', observedAt: new Date().toISOString() }),
+        JSON.stringify({ id: randomUUID(), type: 'outcome', content: 'Approach B was partial', observedAt: new Date().toISOString() }),
+        JSON.stringify({ id: randomUUID(), type: 'friction', content: 'Some friction', observedAt: new Date().toISOString(), taxonomy: 'tool-mismatch' }),
       ];
       writeFileSync(join(runsDir, runId, 'observations.jsonl'), obsLines.join('\n'));
 
@@ -298,10 +298,10 @@ describe('BeltCalculator', () => {
 
       // 3 decisions, 1 outcome → only 1 matched pair
       const obsLines = [
-        JSON.stringify({ id: randomUUID(), type: 'decision', content: 'D1', timestamp: new Date().toISOString() }),
-        JSON.stringify({ id: randomUUID(), type: 'decision', content: 'D2', timestamp: new Date().toISOString() }),
-        JSON.stringify({ id: randomUUID(), type: 'decision', content: 'D3', timestamp: new Date().toISOString() }),
-        JSON.stringify({ id: randomUUID(), type: 'outcome', content: 'O1', timestamp: new Date().toISOString() }),
+        JSON.stringify({ id: randomUUID(), type: 'decision', content: 'D1', observedAt: new Date().toISOString() }),
+        JSON.stringify({ id: randomUUID(), type: 'decision', content: 'D2', observedAt: new Date().toISOString() }),
+        JSON.stringify({ id: randomUUID(), type: 'decision', content: 'D3', observedAt: new Date().toISOString() }),
+        JSON.stringify({ id: randomUUID(), type: 'outcome', content: 'O1', observedAt: new Date().toISOString() }),
       ];
       writeFileSync(join(runsDir, runId, 'observations.jsonl'), obsLines.join('\n'));
 
@@ -324,12 +324,12 @@ describe('BeltCalculator', () => {
 
       // run2: 3 kansatsu pairs (observations.jsonl: 3 decisions, 3 outcomes)
       const kansatsuLines = [
-        JSON.stringify({ id: randomUUID(), type: 'decision', content: 'D1', timestamp: new Date().toISOString() }),
-        JSON.stringify({ id: randomUUID(), type: 'decision', content: 'D2', timestamp: new Date().toISOString() }),
-        JSON.stringify({ id: randomUUID(), type: 'decision', content: 'D3', timestamp: new Date().toISOString() }),
-        JSON.stringify({ id: randomUUID(), type: 'outcome', content: 'O1', timestamp: new Date().toISOString() }),
-        JSON.stringify({ id: randomUUID(), type: 'outcome', content: 'O2', timestamp: new Date().toISOString() }),
-        JSON.stringify({ id: randomUUID(), type: 'outcome', content: 'O3', timestamp: new Date().toISOString() }),
+        JSON.stringify({ id: randomUUID(), type: 'decision', content: 'D1', observedAt: new Date().toISOString() }),
+        JSON.stringify({ id: randomUUID(), type: 'decision', content: 'D2', observedAt: new Date().toISOString() }),
+        JSON.stringify({ id: randomUUID(), type: 'decision', content: 'D3', observedAt: new Date().toISOString() }),
+        JSON.stringify({ id: randomUUID(), type: 'outcome', content: 'O1', observedAt: new Date().toISOString() }),
+        JSON.stringify({ id: randomUUID(), type: 'outcome', content: 'O2', observedAt: new Date().toISOString() }),
+        JSON.stringify({ id: randomUUID(), type: 'outcome', content: 'O3', observedAt: new Date().toISOString() }),
       ];
       writeFileSync(join(runsDir, runId2, 'observations.jsonl'), kansatsuLines.join('\n'));
 
@@ -349,10 +349,10 @@ describe('BeltCalculator', () => {
 
       // 2 kansatsu pairs
       const obsLines = [
-        JSON.stringify({ id: randomUUID(), type: 'decision', content: 'D1', timestamp: new Date().toISOString() }),
-        JSON.stringify({ id: randomUUID(), type: 'decision', content: 'D2', timestamp: new Date().toISOString() }),
-        JSON.stringify({ id: randomUUID(), type: 'outcome', content: 'O1', timestamp: new Date().toISOString() }),
-        JSON.stringify({ id: randomUUID(), type: 'outcome', content: 'O2', timestamp: new Date().toISOString() }),
+        JSON.stringify({ id: randomUUID(), type: 'decision', content: 'D1', observedAt: new Date().toISOString() }),
+        JSON.stringify({ id: randomUUID(), type: 'decision', content: 'D2', observedAt: new Date().toISOString() }),
+        JSON.stringify({ id: randomUUID(), type: 'outcome', content: 'O1', observedAt: new Date().toISOString() }),
+        JSON.stringify({ id: randomUUID(), type: 'outcome', content: 'O2', observedAt: new Date().toISOString() }),
       ];
       writeFileSync(join(runsDir, runId, 'observations.jsonl'), obsLines.join('\n'));
 
