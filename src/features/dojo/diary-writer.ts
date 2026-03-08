@@ -50,7 +50,10 @@ export class DiaryWriter {
       updatedAt: new Date().toISOString(),
     });
 
-    this.store.write(entry);
+    // Use upsert so re-running cooldown on the same cycle merges rather than overwrites (#331).
+    // On first write this behaves identically to write(); on subsequent writes it preserves
+    // the original `id`/`createdAt` and fills in perspective fields only when provided.
+    this.store.upsert(entry);
     return entry;
   }
 

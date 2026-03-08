@@ -111,6 +111,96 @@ describe('DiaryStore', () => {
     });
   });
 
+  describe('upsert', () => {
+    it('writes a new entry when none exists for the cycleId', () => {
+      const entry = makeDiaryEntry({ narrative: 'First pass' });
+      store.upsert(entry);
+
+      const result = store.readByCycleId(entry.cycleId);
+      expect(result).not.toBeNull();
+      expect(result!.narrative).toBe('First pass');
+      expect(result!.id).toBe(entry.id);
+    });
+
+    it('preserves id and createdAt from the original entry on update (#331)', () => {
+      const cycleId = crypto.randomUUID();
+      const originalCreatedAt = '2026-01-01T00:00:00.000Z';
+      const first = makeDiaryEntry({ cycleId, createdAt: originalCreatedAt, narrative: 'First pass' });
+      store.upsert(first);
+
+      const second = makeDiaryEntry({ cycleId, narrative: 'Second pass' });
+      store.upsert(second);
+
+      const result = store.readByCycleId(cycleId);
+      expect(result!.id).toBe(first.id);
+      expect(result!.createdAt).toBe(originalCreatedAt);
+    });
+
+    it('overwrites deterministic fields with the latest values', () => {
+      const cycleId = crypto.randomUUID();
+      const first = makeDiaryEntry({ cycleId, narrative: 'First', wins: ['win1'], painPoints: ['pain1'], tags: ['a'] });
+      store.upsert(first);
+
+      const second = makeDiaryEntry({ cycleId, narrative: 'Second', wins: ['win2'], painPoints: [], tags: ['b', 'c'] });
+      store.upsert(second);
+
+      const result = store.readByCycleId(cycleId);
+      expect(result!.narrative).toBe('Second');
+      expect(result!.wins).toEqual(['win2']);
+      expect(result!.painPoints).toEqual([]);
+      expect(result!.tags).toEqual(['b', 'c']);
+    });
+
+    it('preserves agentPerspective from earlier write when the new entry has none', () => {
+      const cycleId = crypto.randomUUID();
+      const first = makeDiaryEntry({ cycleId, agentPerspective: 'Agent insight from prepare' });
+      store.upsert(first);
+
+      const second = makeDiaryEntry({ cycleId, agentPerspective: undefined });
+      store.upsert(second);
+
+      const result = store.readByCycleId(cycleId);
+      expect(result!.agentPerspective).toBe('Agent insight from prepare');
+    });
+
+    it('updates agentPerspective when the new entry provides it', () => {
+      const cycleId = crypto.randomUUID();
+      const first = makeDiaryEntry({ cycleId, agentPerspective: 'Old agent insight' });
+      store.upsert(first);
+
+      const second = makeDiaryEntry({ cycleId, agentPerspective: 'New agent insight from synthesis' });
+      store.upsert(second);
+
+      const result = store.readByCycleId(cycleId);
+      expect(result!.agentPerspective).toBe('New agent insight from synthesis');
+    });
+
+    it('preserves humanPerspective from earlier write when the new entry has none', () => {
+      const cycleId = crypto.randomUUID();
+      const first = makeDiaryEntry({ cycleId, humanPerspective: 'Human reflection' });
+      store.upsert(first);
+
+      const second = makeDiaryEntry({ cycleId, humanPerspective: undefined });
+      store.upsert(second);
+
+      const result = store.readByCycleId(cycleId);
+      expect(result!.humanPerspective).toBe('Human reflection');
+    });
+
+    it('sets updatedAt on merge to a value >= createdAt', () => {
+      const cycleId = crypto.randomUUID();
+      const first = makeDiaryEntry({ cycleId, createdAt: '2026-01-01T00:00:00.000Z' });
+      store.upsert(first);
+
+      const second = makeDiaryEntry({ cycleId });
+      store.upsert(second);
+
+      const result = store.readByCycleId(cycleId);
+      expect(result!.updatedAt).toBeDefined();
+      expect(result!.updatedAt! >= result!.createdAt).toBe(true);
+    });
+  });
+
   describe('list', () => {
     it('returns an empty array when no entries exist', () => {
       const result = store.list();

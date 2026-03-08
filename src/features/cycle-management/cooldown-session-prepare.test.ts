@@ -622,4 +622,51 @@ describe('CooldownSession.prepare() — observation wiring', () => {
     const input = SynthesisInputSchema.parse(JSON.parse(raw));
     expect(input.observations).toHaveLength(0);
   });
+
+  describe('stale synthesis input cleanup (#330)', () => {
+    it('removes a previous pending file for the same cycleId before writing a new one', async () => {
+      const cycle = cycleManager.create({ tokenBudget: 50000 }, 'Stale Cleanup Test');
+      const sessionA = new CooldownSession(makeDeps());
+
+      // First --prepare run
+      const first = await sessionA.prepare(cycle.id);
+      expect(existsSync(first.synthesisInputPath)).toBe(true);
+
+      // Reset to active so we can prepare again
+      cycleManager.updateState(cycle.id, 'active');
+
+      // Second --prepare run — stale file from first run should be removed
+      const sessionA2 = new CooldownSession(makeDeps());
+      const second = await sessionA2.prepare(cycle.id);
+      expect(existsSync(second.synthesisInputPath)).toBe(true);
+      expect(first.synthesisInputId).not.toBe(second.synthesisInputId);
+
+      // The first pending file must be gone
+      expect(existsSync(first.synthesisInputPath)).toBe(false);
+    });
+
+    it('only removes pending files matching the current cycleId, not other cycles', async () => {
+      const cycleA = cycleManager.create({ tokenBudget: 50000 }, 'Cycle A');
+      const cycleB = cycleManager.create({ tokenBudget: 50000 }, 'Cycle B');
+      const sessionA = new CooldownSession(makeDeps());
+      const sessionB = new CooldownSession(makeDeps());
+
+      const resultA = await sessionA.prepare(cycleA.id);
+      const resultB = await sessionB.prepare(cycleB.id);
+
+      // Both pending files should still exist at this point
+      expect(existsSync(resultA.synthesisInputPath)).toBe(true);
+      expect(existsSync(resultB.synthesisInputPath)).toBe(true);
+
+      // Re-prepare cycleA — should only remove cycleA's stale file
+      cycleManager.updateState(cycleA.id, 'active');
+      const sessionA2 = new CooldownSession(makeDeps());
+      const resultA2 = await sessionA2.prepare(cycleA.id);
+
+      expect(existsSync(resultA.synthesisInputPath)).toBe(false);
+      expect(existsSync(resultA2.synthesisInputPath)).toBe(true);
+      // CycleB's file must remain untouched
+      expect(existsSync(resultB.synthesisInputPath)).toBe(true);
+    });
+  });
 });
