@@ -808,6 +808,55 @@ describe('registerCycleCommands', () => {
       expect(updated.state).toBe('active');
     });
 
+    it('sets cycle name from --name flag at launch time (#346)', async () => {
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 50000 });
+      manager.addBet(cycle.id, { description: 'Named launch bet', appetite: 20, outcome: 'pending', issueRefs: [] });
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'cycle', 'staged', 'launch', '--name', 'Keiko 10 — Belt & Self-Improvement']);
+
+      const updated = manager.get(cycle.id);
+      expect(updated.state).toBe('active');
+      expect(updated.name).toBe('Keiko 10 — Belt & Self-Improvement');
+    });
+
+    it('uses --name in the launch output when provided (#346)', async () => {
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 50000 });
+      manager.addBet(cycle.id, { description: 'Name output bet', appetite: 20, outcome: 'pending', issueRefs: [] });
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'cycle', 'staged', 'launch', '--name', 'My Named Cycle']);
+
+      const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('My Named Cycle');
+    });
+
+    it('--name overrides existing cycle name set at creation time (#346)', async () => {
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 50000 }, 'Old Name');
+      manager.addBet(cycle.id, { description: 'Override name bet', appetite: 20, outcome: 'pending', issueRefs: [] });
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'cycle', 'staged', 'launch', '--name', 'New Name']);
+
+      const updated = manager.get(cycle.id);
+      expect(updated.name).toBe('New Name');
+    });
+
+    it('preserves original cycle name when --name is not provided (#346)', async () => {
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 50000 }, 'Preserved Name');
+      manager.addBet(cycle.id, { description: 'Preserve name bet', appetite: 20, outcome: 'pending', issueRefs: [] });
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'cycle', 'staged', 'launch']);
+
+      const updated = manager.get(cycle.id);
+      expect(updated.name).toBe('Preserved Name');
+    });
+
   });
 
   describe('cycle-manager removeBet', () => {

@@ -810,6 +810,38 @@ describe('SessionExecutionBridge', () => {
       const updatedCycle = CycleSchema.parse(JSON.parse(readFileSync(cyclePath, 'utf-8')));
       expect(updatedCycle.state).toBe('active');
     });
+
+    it('should write name to cycle record when name param provided (#346)', () => {
+      const cycle = createCycle(kataDir, { state: 'planning' });
+      const bridge = new SessionExecutionBridge(kataDir);
+
+      const result = bridge.prepareCycle(cycle.id, undefined, 'Keiko 10 — Belt & Self-Improvement');
+
+      expect(result.cycleName).toBe('Keiko 10 — Belt & Self-Improvement');
+
+      const cyclePath = join(kataDir, 'cycles', `${cycle.id}.json`);
+      const updatedCycle = CycleSchema.parse(JSON.parse(readFileSync(cyclePath, 'utf-8')));
+      expect(updatedCycle.name).toBe('Keiko 10 — Belt & Self-Improvement');
+    });
+
+    it('should use name param in cycleName overriding existing name (#346)', () => {
+      const cycle = createCycle(kataDir, { state: 'planning', name: 'Old Name' });
+      const bridge = new SessionExecutionBridge(kataDir);
+
+      const result = bridge.prepareCycle(cycle.id, undefined, 'New Name At Launch');
+      expect(result.cycleName).toBe('New Name At Launch');
+    });
+
+    it('should preserve existing cycle name when name param not provided (#346)', () => {
+      const cycle = createCycle(kataDir, { name: 'My Cycle' });
+      const bridge = new SessionExecutionBridge(kataDir);
+
+      bridge.prepareCycle(cycle.id);
+
+      const cyclePath = join(kataDir, 'cycles', `${cycle.id}.json`);
+      const updatedCycle = CycleSchema.parse(JSON.parse(readFileSync(cyclePath, 'utf-8')));
+      expect(updatedCycle.name).toBe('My Cycle');
+    });
   });
 
   describe('getCycleStatus()', () => {

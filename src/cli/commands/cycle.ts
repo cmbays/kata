@@ -694,10 +694,11 @@ export function registerCycleCommands(parent: Command): void {
     .command('launch')
     .description('Launch the staged cycle — prepare all runs and transition to active')
     .option('--kataka <id>', 'Kataka (agent) ID to attribute all prepared runs to')
+    .option('--name <name>', 'Human-readable name for the cycle (set at launch time)')
     .option('--force', 'Skip staleness check entirely and launch without warnings')
     .option('--block-on-refs', 'Block launch (exit 1) when any bet references a GitHub issue number')
     .action(withCommandContext(async (ctx) => {
-      const localOpts = ctx.cmd.opts() as { kataka?: string; force?: boolean; blockOnRefs?: boolean };
+      const localOpts = ctx.cmd.opts() as { kataka?: string; name?: string; force?: boolean; blockOnRefs?: boolean };
       const manager = new CycleManager(kataDirPath(ctx.kataDir, 'cycles'), JsonStore);
       const cycles = manager.list();
       const stagedCycle = cycles
@@ -770,7 +771,8 @@ export function registerCycleCommands(parent: Command): void {
       }
 
       // prepareCycle() transitions planning → active via updateCycleState internally
-      const result = bridge.prepareCycle(stagedCycle.id, localOpts.kataka);
+      // Pass --name if provided so it's written to the cycle record at launch time (#346).
+      const result = bridge.prepareCycle(stagedCycle.id, localOpts.kataka, localOpts.name);
 
       if (ctx.globalOpts.json) {
         console.log(JSON.stringify(result, null, 2));
