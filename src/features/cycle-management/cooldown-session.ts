@@ -10,6 +10,8 @@ import type { RuleSuggestion } from '@domain/types/rule.js';
 import { ExecutionHistoryEntrySchema } from '@domain/types/history.js';
 import { DiaryWriter } from '@features/dojo/diary-writer.js';
 import { DiaryStore } from '@infra/dojo/diary-store.js';
+import type { SessionBuilder } from '@features/dojo/session-builder.js';
+import { DataAggregator } from '@features/dojo/data-aggregator.js';
 import { logger } from '@shared/lib/logger.js';
 import { loadRunSummary } from './run-summary-loader.js';
 import { ProposalGenerator, type CycleProposal, type ProposalGeneratorDeps } from './proposal-generator.js';
@@ -139,6 +141,13 @@ export interface CooldownSessionDeps {
    * Primarily used for testing to inject mock claude/gh invocations.
    */
   nextKeikoGeneratorDeps?: NextKeikoProposalGeneratorDeps;
+  /**
+   * Optional SessionBuilder for generating a dojo session during cooldown complete.
+   * When provided (alongside dojoDir), CooldownSession generates a DojoSession that
+   * satisfies the belt criterion dojoSessionsGenerated >= N.
+   * Backward compatible — omitting this field skips dojo session generation.
+   */
+  dojoSessionBuilder?: Pick<SessionBuilder, 'build'>;
 }
 
 /**
@@ -388,6 +397,11 @@ export class CooldownSession {
         });
       }
 
+      // 8.6. Generate dojo session (non-critical — satisfies belt criterion dojoSessionsGenerated)
+      if (this.deps.dojoDir && this.deps.dojoSessionBuilder) {
+        this.writeDojoSession(cycleId, cycle.name);
+      }
+
       // 8g. Generate LLM-driven next-keiko proposals (non-critical)
       const nextKeikoResult = this.runNextKeikoProposals(cycle);
 
@@ -608,6 +622,11 @@ export class CooldownSession {
           ? CooldownSession.buildAgentPerspectiveFromProposals(synthesisProposals)
           : undefined,
       });
+    }
+
+    // Generate dojo session (non-critical — satisfies belt criterion dojoSessionsGenerated)
+    if (this.deps.dojoDir && this.deps.dojoSessionBuilder) {
+      this.writeDojoSession(cycleId, cycle.name);
     }
 
     // 8e. Compute belt advancement (non-critical)
@@ -1190,6 +1209,40 @@ export class CooldownSession {
       });
     } catch (err) {
       logger.warn(`Failed to write dojo diary entry: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  /**
+   * Generate a DojoSession record for this cooldown.
+   *
+   * Constructs a DataAggregator from available deps, gathers cycle data, then
+   * delegates to the injected dojoSessionBuilder (already wired with its SessionStore).
+   * Non-critical — any error is caught and logged so it never aborts cooldown.
+   *
+   * Requires: dojoDir and dojoSessionBuilder both set in deps.
+   */
+  private writeDojoSession(cycleId: string, cycleName?: string): void {
+    try {
+      const dojoDir = this.deps.dojoDir!;
+      const diaryDir = join(dojoDir, 'diary');
+      const diaryStore = new DiaryStore(diaryDir);
+
+      const aggregator = new DataAggregator({
+        knowledgeStore: this.deps.knowledgeStore as import('@features/dojo/data-aggregator.js').IDojoKnowledgeStore,
+        diaryStore,
+        cycleManager: this.deps.cycleManager,
+        runsDir: this.deps.runsDir ?? join(dojoDir, '..', 'runs'),
+      });
+
+      const data = aggregator.gather({ maxDiaries: 5 });
+
+      const title = cycleName
+        ? `Cooldown — ${cycleName}`
+        : `Cooldown — ${cycleId.slice(0, 8)}`;
+
+      this.deps.dojoSessionBuilder!.build(data, { title });
+    } catch (err) {
+      logger.warn(`Failed to generate dojo session: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 

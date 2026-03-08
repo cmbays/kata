@@ -185,12 +185,20 @@ describe('BeltCalculator', () => {
       expect(snap.flavorsTotal).toBe(2);
     });
 
-    it('counts dojo sessions', () => {
+    it('counts dojo sessions by subdirectory (each session is a dir with meta.json)', () => {
       const dojoSessionsDir = join(base, 'dojo', 'sessions');
-      mkdirSync(dojoSessionsDir, { recursive: true });
-      writeFileSync(join(dojoSessionsDir, 's1.json'), '{}');
-      writeFileSync(join(dojoSessionsDir, 's2.json'), '{}');
-      writeFileSync(join(dojoSessionsDir, 's3.json'), '{}');
+      // SessionStore creates <sessionsDir>/<uuid>/meta.json for each session
+      const id1 = randomUUID();
+      const id2 = randomUUID();
+      const id3 = randomUUID();
+      mkdirSync(join(dojoSessionsDir, id1), { recursive: true });
+      writeFileSync(join(dojoSessionsDir, id1, 'meta.json'), '{}');
+      mkdirSync(join(dojoSessionsDir, id2), { recursive: true });
+      writeFileSync(join(dojoSessionsDir, id2, 'meta.json'), '{}');
+      mkdirSync(join(dojoSessionsDir, id3), { recursive: true });
+      writeFileSync(join(dojoSessionsDir, id3, 'meta.json'), '{}');
+      // index.json at root should NOT be counted as a session
+      writeFileSync(join(dojoSessionsDir, 'index.json'), '{}');
 
       const calc = new BeltCalculator({ cyclesDir, knowledgeDir, dojoSessionsDir });
       const snap = calc.computeSnapshot();

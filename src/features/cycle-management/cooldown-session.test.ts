@@ -770,6 +770,125 @@ describe('CooldownSession', () => {
     });
   });
 
+  describe('run with dojoSessionBuilder (dojo session generation)', () => {
+    const dojoDir = join(baseDir, 'dojo-session-gen');
+    const sessionsDir = join(dojoDir, 'sessions');
+
+    beforeEach(() => {
+      mkdirSync(sessionsDir, { recursive: true });
+      mkdirSync(join(dojoDir, 'diary'), { recursive: true });
+    });
+
+    it('generates a dojo session on run() when dojoSessionBuilder is provided', async () => {
+      const { SessionStore } = await import('@infra/dojo/session-store.js');
+      const { SessionBuilder } = await import('@features/dojo/session-builder.js');
+      const sessionStore = new SessionStore(sessionsDir);
+      const dojoSessionBuilder = new SessionBuilder({ sessionStore });
+
+      const cycle = cycleManager.create({ tokenBudget: 50000 }, 'Session Gen Cycle');
+
+      const sessionWithDojo = new CooldownSession({
+        cycleManager,
+        knowledgeStore,
+        persistence: JsonStore,
+        pipelineDir,
+        historyDir,
+        dojoDir,
+        dojoSessionBuilder,
+      });
+
+      await sessionWithDojo.run(cycle.id);
+
+      const sessions = sessionStore.list();
+      expect(sessions.length).toBe(1);
+      expect(sessions[0]!.title).toContain('Session Gen Cycle');
+    });
+
+    it('does not generate a dojo session when dojoSessionBuilder is omitted (backward compat)', async () => {
+      const { SessionStore } = await import('@infra/dojo/session-store.js');
+      const sessionStore = new SessionStore(sessionsDir);
+
+      const cycle = cycleManager.create({ tokenBudget: 50000 }, 'No Session');
+
+      const sessionWithDojoNoBuilder = new CooldownSession({
+        cycleManager,
+        knowledgeStore,
+        persistence: JsonStore,
+        pipelineDir,
+        historyDir,
+        dojoDir,
+        // no dojoSessionBuilder
+      });
+
+      await sessionWithDojoNoBuilder.run(cycle.id);
+
+      const sessions = sessionStore.list();
+      expect(sessions.length).toBe(0);
+    });
+
+    it('does not abort cooldown when dojo session generation fails', async () => {
+      const failingBuilder = {
+        build: () => { throw new Error('SessionBuilder exploded'); },
+      };
+
+      const cycle = cycleManager.create({ tokenBudget: 50000 }, 'Fail Session');
+
+      const sessionWithBadBuilder = new CooldownSession({
+        cycleManager,
+        knowledgeStore,
+        persistence: JsonStore,
+        pipelineDir,
+        historyDir,
+        dojoDir,
+        dojoSessionBuilder: failingBuilder,
+      });
+
+      // Should not throw
+      const result = await sessionWithBadBuilder.run(cycle.id);
+      expect(result.report).toBeDefined();
+      expect(cycleManager.get(cycle.id).state).toBe('complete');
+    });
+  });
+
+  describe('complete() with dojoSessionBuilder (dojo session generation)', () => {
+    const dojoDir = join(baseDir, 'dojo-session-complete');
+    const sessionsDir = join(dojoDir, 'sessions');
+    const synthesisDir = join(baseDir, 'synthesis-complete');
+
+    beforeEach(() => {
+      mkdirSync(sessionsDir, { recursive: true });
+      mkdirSync(join(dojoDir, 'diary'), { recursive: true });
+      mkdirSync(synthesisDir, { recursive: true });
+    });
+
+    it('generates a dojo session on complete() when dojoSessionBuilder is provided', async () => {
+      const { SessionStore } = await import('@infra/dojo/session-store.js');
+      const { SessionBuilder } = await import('@features/dojo/session-builder.js');
+      const sessionStore = new SessionStore(sessionsDir);
+      const dojoSessionBuilder = new SessionBuilder({ sessionStore });
+
+      // First prepare the cycle (transitions to cooldown state)
+      const cycle = cycleManager.create({ tokenBudget: 50000 }, 'Complete Session Cycle');
+      const sessionForComplete = new CooldownSession({
+        cycleManager,
+        knowledgeStore,
+        persistence: JsonStore,
+        pipelineDir,
+        historyDir,
+        dojoDir,
+        synthesisDir,
+        dojoSessionBuilder,
+      });
+
+      await sessionForComplete.prepare(cycle.id);
+      await sessionForComplete.complete(cycle.id);
+
+      const sessions = sessionStore.list();
+      expect(sessions.length).toBeGreaterThanOrEqual(1);
+      expect(sessions[0]!.title).toContain('Complete Session Cycle');
+    });
+  });
+
   describe('run with ruleRegistry (ruleSuggestions)', () => {
     const rulesDir = join(baseDir, 'rules');
 
