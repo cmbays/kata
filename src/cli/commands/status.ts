@@ -23,7 +23,7 @@ import { detectSessionContext } from '@shared/lib/session-context.js';
 // Core handlers (exported so `kata kiai status/stats` can delegate here)
 // ---------------------------------------------------------------------------
 
-export function handleStatus(ctx: { kataDir: string; globalOpts: { json?: boolean; plain?: boolean }; cwd?: string }): void {
+export function handleStatus(ctx: { kataDir: string; globalOpts: { json?: boolean; plain?: boolean; cwd?: string } }): void {
   const isJson = ctx.globalOpts.json;
 
   // Active cycle
@@ -76,7 +76,7 @@ export function handleStatus(ctx: { kataDir: string; globalOpts: { json?: boolea
   } catch { /* degraded: belt section unavailable */ }
 
   // Session context — detected from env vars and filesystem
-  const sessionCtx = detectSessionContext(ctx.cwd);
+  const sessionCtx = detectSessionContext(ctx.globalOpts.cwd);
 
   if (isJson) {
     const beltJson = projectState ? (() => {
@@ -415,14 +415,14 @@ export function registerStatusCommands(parent: Command): void {
       if (!ctx.kataDir) {
         try {
           const kataDir = resolveKataDir(ctx.globalOpts.cwd);
-          handleStatus({ kataDir, globalOpts: { ...ctx.globalOpts, json: isJson }, cwd: ctx.globalOpts.cwd });
+          handleStatus({ kataDir, globalOpts: { ...ctx.globalOpts, json: isJson } });
         } catch (err) {
           console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
           process.exitCode = 1;
         }
         return;
       }
-      handleStatus({ kataDir: ctx.kataDir, globalOpts: { ...ctx.globalOpts, json: isJson }, cwd: ctx.globalOpts.cwd });
+      handleStatus({ kataDir: ctx.kataDir, globalOpts: { ...ctx.globalOpts, json: isJson } });
     }, { needsKataDir: false }));
 
   // ---- kata stats ----

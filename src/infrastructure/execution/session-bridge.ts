@@ -136,7 +136,7 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
     lines.push(`- **Launch mode**: ${launchMode}`);
     lines.push(`- **In worktree**: ${sessionCtx.inWorktree ? 'yes' : 'no'}`);
     lines.push(`- **Kata dir resolved**: ${sessionCtx.kataDir ?? prepared.kataDir}`);
-    if (launchMode === 'agent' && !sessionCtx.inWorktree) {
+    if (launchMode !== 'interactive' && !sessionCtx.inWorktree) {
       lines.push('- **Note**: running as agent outside a git worktree — use `--cwd` to point kata commands at the main repo.');
     }
     lines.push('');
@@ -404,7 +404,7 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
 
     // Transition the cycle state from planning → active so that
     // `kata cycle status <id>` and downstream commands see the correct state.
-    this.updateCycleState(cycleId, 'active');
+    this.updateCycleState(cycle.id, 'active');
 
     return {
       cycleId: cycle.id,

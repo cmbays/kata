@@ -2,7 +2,7 @@ import { join } from 'node:path';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
-import { detectSessionContext, detectLaunchMode } from './session-context.js';
+import { detectSessionContext, detectLaunchMode } from '@shared/lib/session-context.js';
 import { CycleSchema } from '@domain/types/cycle.js';
 
 // ---------------------------------------------------------------------------
