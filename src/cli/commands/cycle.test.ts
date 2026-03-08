@@ -747,6 +747,69 @@ describe('registerCycleCommands', () => {
     });
   });
 
+  describe('cycle staged launch', () => {
+    it('transitions cycle state from planning to active', async () => {
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 50000 }, 'Launch Me');
+      manager.addBet(cycle.id, { description: 'Build feature X', appetite: 25, outcome: 'pending', issueRefs: [] });
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'cycle', 'staged', 'launch']);
+
+      const updated = manager.get(cycle.id);
+      expect(updated.state).toBe('active');
+    });
+
+    it('reports "Launched!" and lists prepared runs', async () => {
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 50000 }, 'Sprint Next');
+      manager.addBet(cycle.id, { description: 'Do the thing', appetite: 20, outcome: 'pending', issueRefs: [] });
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'cycle', 'staged', 'launch']);
+
+      const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('Launched!');
+      expect(output).toContain('Do the thing');
+    });
+
+    it('errors when no staged cycle exists', async () => {
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'cycle', 'staged', 'launch']);
+
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('No staged cycle found'));
+    });
+
+    it('errors when staged cycle has no bets', async () => {
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      manager.create({ tokenBudget: 50000 }, 'Empty Staged');
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'cycle', 'staged', 'launch']);
+
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('no bets'));
+    });
+
+    it('outputs JSON with --json flag and preserves cycleId', async () => {
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 50000 }, 'JSON Launch');
+      manager.addBet(cycle.id, { description: 'JSON bet', appetite: 20, outcome: 'pending', issueRefs: [] });
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--json', '--cwd', baseDir, 'cycle', 'staged', 'launch']);
+
+      const raw = consoleSpy.mock.calls[0]?.[0] as string;
+      const parsed = JSON.parse(raw);
+      expect(parsed.cycleId).toBe(cycle.id);
+      expect(parsed.preparedRuns).toHaveLength(1);
+
+      // State should still have transitioned even with --json
+      const updated = manager.get(cycle.id);
+      expect(updated.state).toBe('active');
+    });
+
+  });
+
   describe('cycle-manager removeBet', () => {
     it('removes a bet from a planning cycle', () => {
       const manager = new CycleManager(cyclesDir, JsonStore);

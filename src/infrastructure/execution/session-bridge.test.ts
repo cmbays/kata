@@ -751,6 +751,20 @@ describe('SessionExecutionBridge', () => {
       const result = bridge.prepareCycle(cycle.id);
       expect(result.cycleName).toBe('My Cycle');
     });
+
+    it('should transition cycle state from planning to active (#322)', () => {
+      // Regression test: prepareCycle() must write state="active" to the cycle
+      // JSON so that `kata cycle status` shows "active" after staged launch.
+      const cycle = createCycle(kataDir, { state: 'planning' });
+      const bridge = new SessionExecutionBridge(kataDir);
+
+      bridge.prepareCycle(cycle.id);
+
+      // Read cycle JSON directly to verify the state was persisted
+      const cyclePath = join(kataDir, 'cycles', `${cycle.id}.json`);
+      const updatedCycle = CycleSchema.parse(JSON.parse(readFileSync(cyclePath, 'utf-8')));
+      expect(updatedCycle.state).toBe('active');
+    });
   });
 
   describe('getCycleStatus()', () => {

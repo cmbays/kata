@@ -402,8 +402,9 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
 
     const preparedRuns = pendingBets.map((bet) => this.prepare(bet.id, katakaId));
 
-    // Transition the cycle state from planning → active so that
-    // `kata cycle status <id>` and downstream commands see the correct state.
+    // Transition cycle state planning → active so downstream commands
+    // (e.g. `kata cycle status`) reflect the launched state (#322).
+    // Use cycle.id (resolved UUID) not the raw cycleId param which may be a name.
     this.updateCycleState(cycle.id, 'active');
 
     return {
@@ -632,7 +633,7 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
 
   /**
    * Transition cycle state directly in the cycle JSON file.
-   * Called by prepareCycle() to move a cycle from planning → active.
+   * Called by prepareCycle() to move a planning cycle to active (#322).
    */
   private updateCycleState(cycleId: string, state: CycleState): void {
     try {
@@ -644,6 +645,15 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
       }
 
       const cycle = JsonStore.read(cyclePath, CycleSchema);
+      const ALLOWED_TRANSITIONS: Partial<Record<CycleState, CycleState>> = {
+        planning: 'active',
+        active: 'cooldown',
+        cooldown: 'complete',
+      };
+      if (ALLOWED_TRANSITIONS[cycle.state] !== state) {
+        logger.warn(`Cannot transition cycle "${cycleId}" from "${cycle.state}" to "${state}".`);
+        return;
+      }
       cycle.state = state;
       cycle.updatedAt = new Date().toISOString();
       JsonStore.write(cyclePath, cycle, CycleSchema);
