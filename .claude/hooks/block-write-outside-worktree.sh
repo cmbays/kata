@@ -140,11 +140,27 @@ fi
 # Read-only commands (cat, head, ls, grep…) are never blocked — reads are safe.
 if [[ "$TOOL_NAME" == "Bash" ]]; then
   COMMAND=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // ""')
+
+  # Allow git-only commands (optionally preceded by env-var exports like
+  # "export KATA_RUN_ID=...; git commit ..."). Git writes only to .git/
+  # internals — branch names containing '/' are not filesystem paths.
+  # Only bypasses when the remaining command after exports is a single git
+  # invocation with no shell chaining (no ; && || |).
+  _cmd_after_exports=$(printf '%s' "$COMMAND" \
+    | sed -E 's/^([[:space:]]*(export [A-Za-z_][A-Za-z0-9_]*=[^;]*;[[:space:]]*)*)//')
+  if printf '%s' "$_cmd_after_exports" | grep -qE '^git[[:space:]]' && \
+     ! printf '%s' "$_cmd_after_exports" | grep -qE '[;&|]'; then
+    exit 0
+  fi
+
   while IFS= read -r candidate; do
     [[ -z "$candidate" ]] && continue
+    # Exclude /dev/* — device files (e.g. /dev/null) are never real write targets
+    [[ "$candidate" == /dev/* ]] && continue
     is_outside_worktree "$candidate" || continue
+    # Write tokens: >> and > (but NOT >& which is fd duplication like 2>&1)
     if printf '%s' "$COMMAND" | grep -qE \
-        '(>>?|tee |cp |mv |touch |mkdir |ln |chmod |chown |sed -i|truncate |dd |install )'; then
+        '(>>|>[^&>]|tee |cp |mv |touch |mkdir |ln |chmod |chown |sed -i|truncate |dd |install )'; then
       deny "$candidate"
     fi
   done < <(printf '%s' "$COMMAND" | grep -oE '/[A-Za-z0-9_/.\-]+' | sort -u)
