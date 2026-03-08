@@ -106,10 +106,18 @@ describe('formatDojoDiaryTable', () => {
     expect(result).toContain('Pain points: 1');
   });
 
-  it('truncates long narratives to 80 chars', () => {
-    const longNarrative = 'A'.repeat(100);
+  it('truncates long narratives to 500 chars', () => {
+    const longNarrative = 'A'.repeat(600);
     const result = formatDojoDiaryTable([makeDiaryEntry({ narrative: longNarrative })]);
     expect(result).toContain('...');
+    // Verify truncation is at 500, not earlier
+    expect(result).toContain('A'.repeat(500));
+  });
+
+  it('does not truncate narratives under 500 chars', () => {
+    const shortNarrative = 'A'.repeat(400);
+    const result = formatDojoDiaryTable([makeDiaryEntry({ narrative: shortNarrative })]);
+    expect(result).not.toContain('...');
   });
 
   it('uses cycleId prefix when cycleName is absent', () => {

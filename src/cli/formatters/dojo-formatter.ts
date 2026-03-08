@@ -49,7 +49,7 @@ export function formatDojoDiaryTable(entries: DojoDiaryEntry[], plain?: boolean)
     const mood = e.mood ? ` (${e.mood})` : '';
     const name = e.cycleName ?? e.cycleId.slice(0, 8);
     lines.push(`  ${date}  ${name}${mood}`);
-    lines.push(`           ${e.narrative.slice(0, 80)}${e.narrative.length > 80 ? '...' : ''}`);
+    lines.push(`           ${e.narrative.slice(0, 500)}${e.narrative.length > 500 ? '...' : ''}`);
     if (e.wins.length > 0) lines.push(`           Wins: ${e.wins.length}`);
     if (e.painPoints.length > 0) lines.push(`           Pain points: ${e.painPoints.length}`);
   }

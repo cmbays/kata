@@ -1231,6 +1231,36 @@ describe('registerCycleCommands', () => {
       expect(state.ranWithYolo).toBe(true);
     }, 30000);
 
+    // Issue #336 — --yolo non-JSON mode must emit cycle header before any async ops.
+    // Previously the first stdout output was from formatCooldownSessionResult() — only
+    // visible after prepare() + synthesis completed. If complete() threw, there was zero
+    // stdout. Fix: emit "Cooldown (--yolo): <name> — N bet(s)" immediately (#336).
+    it('--yolo non-JSON mode emits cycle name and bet count as header before prepare', async () => {
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 50000 }, 'Yolo Header Test');
+
+      const synthesisDir = join(kataDir, 'synthesis');
+      mkdirSync(synthesisDir, { recursive: true });
+
+      const originalPath = process.env['PATH'];
+      process.env['PATH'] = '';
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--plain', '--cwd', baseDir,
+        'cooldown', cycle.id, '--yolo',
+      ]);
+
+      process.env['PATH'] = originalPath;
+      warnSpy.mockRestore();
+
+      // Cycle header must appear on stdout (first or early call)
+      const stdoutCalls = consoleSpy.mock.calls.map((c) => c[0] as string).join('\n');
+      expect(stdoutCalls).toContain('Cooldown (--yolo): Yolo Header Test');
+      expect(stdoutCalls).toContain('0 bet(s)');
+    }, 30000);
+
     it('--auto-accept-suggestions includes suggestionReview in --json output', async () => {
       const { RuleRegistry } = await import('@infra/registries/rule-registry.js');
       const rulesDir = join(kataDir, 'rules');
