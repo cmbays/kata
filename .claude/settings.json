@@ -7,6 +7,37 @@
           {
             "type": "command",
             "command": ".claude/hooks/block-commit-to-main.sh"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/block-write-outside-worktree.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/block-write-outside-worktree.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/block-write-outside-worktree.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/block-write-outside-worktree.sh"
           }
         ]
       }
