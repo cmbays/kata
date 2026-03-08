@@ -645,6 +645,15 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
       }
 
       const cycle = JsonStore.read(cyclePath, CycleSchema);
+      const ALLOWED_TRANSITIONS: Partial<Record<CycleState, CycleState>> = {
+        planning: 'active',
+        active: 'cooldown',
+        cooldown: 'complete',
+      };
+      if (ALLOWED_TRANSITIONS[cycle.state] !== state) {
+        logger.warn(`Cannot transition cycle "${cycleId}" from "${cycle.state}" to "${state}".`);
+        return;
+      }
       cycle.state = state;
       cycle.updatedAt = new Date().toISOString();
       JsonStore.write(cyclePath, cycle, CycleSchema);
