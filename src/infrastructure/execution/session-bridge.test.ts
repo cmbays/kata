@@ -102,6 +102,51 @@ describe('SessionExecutionBridge', () => {
       expect(meta.cycleId).toBe(cycle.id);
     });
 
+    it('should backfill bet.runId in cycle JSON after prepare() (#337)', () => {
+      const cycle = createCycle(kataDir);
+      const betId = cycle.bets[0]!.id;
+      const bridge = new SessionExecutionBridge(kataDir);
+
+      const prepared = bridge.prepare(betId);
+
+      // The cycle JSON should now have the runId on the bet
+      const cyclePath = join(kataDir, 'cycles', `${cycle.id}.json`);
+      const updatedCycle = CycleSchema.parse(JSON.parse(readFileSync(cyclePath, 'utf-8')));
+      const updatedBet = updatedCycle.bets.find((b) => b.id === betId);
+      expect(updatedBet?.runId).toBe(prepared.runId);
+    });
+
+    it('should not affect other bets when backfilling runId (#337)', () => {
+      const cycle = createCycle(kataDir);
+      const betId = cycle.bets[0]!.id;
+      const otherBetId = cycle.bets[1]!.id;
+      const bridge = new SessionExecutionBridge(kataDir);
+
+      bridge.prepare(betId);
+
+      const cyclePath = join(kataDir, 'cycles', `${cycle.id}.json`);
+      const updatedCycle = CycleSchema.parse(JSON.parse(readFileSync(cyclePath, 'utf-8')));
+      const otherBet = updatedCycle.bets.find((b) => b.id === otherBetId);
+      // The other bet should still have no runId
+      expect(otherBet?.runId).toBeUndefined();
+    });
+
+    it('prepareCycle() should backfill runId on all bet records (#337)', () => {
+      const cycle = createCycle(kataDir, { state: 'planning' });
+      const bridge = new SessionExecutionBridge(kataDir);
+
+      const prepared = bridge.prepareCycle(cycle.id);
+
+      const cyclePath = join(kataDir, 'cycles', `${cycle.id}.json`);
+      const updatedCycle = CycleSchema.parse(JSON.parse(readFileSync(cyclePath, 'utf-8')));
+
+      expect(prepared.preparedRuns).toHaveLength(2);
+      for (const run of prepared.preparedRuns) {
+        const updatedBet = updatedCycle.bets.find((b) => b.id === run.betId);
+        expect(updatedBet?.runId).toBe(run.runId);
+      }
+    });
+
     it('should throw for unknown bet ID', () => {
       createCycle(kataDir);
       const bridge = new SessionExecutionBridge(kataDir);

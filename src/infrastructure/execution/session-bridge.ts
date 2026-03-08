@@ -113,6 +113,12 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
       katakaId,
     });
 
+    // Backfill the runId onto the bet record in the cycle JSON so that queries
+    // and reports that look up "the run for a bet" can do O(1) forward lookup.
+    // Non-critical: errors are logged as warnings — a failed backfill should
+    // not abort prepare() since the bridge-run metadata was already persisted.
+    this.backfillRunIdInCycle(cycle.id, bet.id, runId);
+
     // Write run.json to runs/<run-id>/run.json so kata watch can discover
     // this run. BridgeRunMeta uses status "in-progress" but RunSchema requires
     // "running" — we map on write. Only valid StageCategory values are written
@@ -700,6 +706,41 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
       JsonStore.write(cyclePath, cycle, CycleSchema);
     } catch (err) {
       logger.warn(`Failed to update bet outcome in cycle "${cycleId}" for bet "${betId}": ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  /**
+   * Backfill the runId onto the bet record in the cycle JSON file.
+   *
+   * Called by prepare() after the bridge-run metadata and run.json are written.
+   * This is the staged-workflow equivalent of CycleManager.setRunId() used by
+   * `kata cycle start` — it enables O(1) forward lookup of "the run for a bet".
+   *
+   * Idempotent: overwrites any previously stored runId without error (safe on retry).
+   * Non-critical: errors are logged as warnings — the bridge-run metadata was already
+   * persisted and the agent can still execute.
+   */
+  private backfillRunIdInCycle(cycleId: string, betId: string, runId: string): void {
+    try {
+      const cyclesDir = join(this.kataDir, KATA_DIRS.cycles);
+      const cyclePath = join(cyclesDir, `${cycleId}.json`);
+      if (!existsSync(cyclePath)) {
+        logger.warn(`Cannot backfill bet.runId: cycle file not found for cycle "${cycleId}".`);
+        return;
+      }
+
+      const cycle = JsonStore.read(cyclePath, CycleSchema);
+      const bet = cycle.bets.find((b) => b.id === betId);
+      if (!bet) {
+        logger.warn(`Cannot backfill bet.runId: bet "${betId}" not found in cycle "${cycleId}".`);
+        return;
+      }
+
+      bet.runId = runId;
+      cycle.updatedAt = new Date().toISOString();
+      JsonStore.write(cyclePath, cycle, CycleSchema);
+    } catch (err) {
+      logger.warn(`Failed to backfill bet.runId in cycle "${cycleId}" for bet "${betId}": ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 

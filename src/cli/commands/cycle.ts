@@ -1097,8 +1097,10 @@ export function registerCycleCommands(parent: Command): void {
           return;
         }
 
-        // Fire-and-forget belt discovery hook
-        ProjectStateUpdater.markDiscovery(join(ctx.kataDir, 'project-state.json'), 'completedFirstCycleCooldown');
+        // Fire-and-forget belt discovery hooks
+        const projectStateFile = join(ctx.kataDir, 'project-state.json');
+        ProjectStateUpdater.markDiscovery(projectStateFile, 'completedFirstCycleCooldown');
+        ProjectStateUpdater.markRanWithYolo(projectStateFile);
 
         if (ctx.globalOpts.json) {
           console.log(JSON.stringify({
