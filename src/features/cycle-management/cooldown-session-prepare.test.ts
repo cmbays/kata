@@ -1,10 +1,14 @@
 import { join } from 'node:path';
-import { mkdirSync, rmSync, existsSync, readFileSync } from 'node:fs';
+import { mkdirSync, rmSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { randomUUID } from 'node:crypto';
 import { CycleManager } from '@domain/services/cycle-manager.js';
 import { KnowledgeStore } from '@infra/knowledge/knowledge-store.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
 import { SynthesisInputSchema } from '@domain/types/synthesis.js';
+import { appendObservation, createRunTree } from '@infra/persistence/run-store.js';
+import type { Run } from '@domain/types/run-state.js';
+import type { Observation } from '@domain/types/observation.js';
 import {
   CooldownSession,
   type CooldownSessionDeps,
@@ -434,5 +438,188 @@ describe('CooldownSession.complete()', () => {
 
     expect(cycleManager.get(cycle.id).state).toBe('complete');
     expect(result.synthesisProposals).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Observation wiring: synthesis input collects observations from runs (#335)
+// ---------------------------------------------------------------------------
+
+describe('CooldownSession.prepare() — observation wiring', () => {
+  const baseDir = join(tmpdir(), `kata-obs-wiring-test-${Date.now()}`);
+  const cyclesDir = join(baseDir, 'cycles');
+  const knowledgeDir = join(baseDir, 'knowledge');
+  const pipelineDir = join(baseDir, 'pipelines');
+  const historyDir = join(baseDir, 'history');
+  const synthesisDir = join(baseDir, 'synthesis');
+  const runsDir = join(baseDir, 'runs');
+  const bridgeRunsDir = join(baseDir, 'bridge-runs');
+
+  let cycleManager: CycleManager;
+  let knowledgeStore: KnowledgeStore;
+
+  function makeRun(cycleId: string, betId: string): Run {
+    return {
+      id: randomUUID(),
+      cycleId,
+      betId,
+      betPrompt: 'Test bet',
+      stageSequence: ['research', 'build'],
+      currentStage: null,
+      status: 'completed',
+      startedAt: new Date().toISOString(),
+    };
+  }
+
+  function makeObservation(content: string): Observation {
+    return {
+      id: randomUUID(),
+      timestamp: new Date().toISOString(),
+      type: 'insight',
+      content,
+    };
+  }
+
+  function writeBridgeRun(runId: string, betId: string, cycleId: string): void {
+    const meta = { runId, betId, cycleId, cycleName: cycleId, stages: ['research', 'build'], isolation: 'shared', startedAt: new Date().toISOString(), status: 'complete' };
+    writeFileSync(join(bridgeRunsDir, `${runId}.json`), JSON.stringify(meta, null, 2) + '\n');
+  }
+
+  function makeDeps(overrides: Partial<CooldownSessionDeps> = {}): CooldownSessionDeps {
+    return {
+      cycleManager,
+      knowledgeStore,
+      persistence: JsonStore,
+      pipelineDir,
+      historyDir,
+      synthesisDir,
+      runsDir,
+      bridgeRunsDir,
+      ...overrides,
+    };
+  }
+
+  beforeEach(() => {
+    for (const dir of [cyclesDir, knowledgeDir, pipelineDir, historyDir, synthesisDir, runsDir, bridgeRunsDir]) {
+      mkdirSync(dir, { recursive: true });
+    }
+    cycleManager = new CycleManager(cyclesDir, JsonStore);
+    knowledgeStore = new KnowledgeStore(knowledgeDir);
+  });
+
+  afterEach(() => {
+    rmSync(baseDir, { recursive: true, force: true });
+  });
+
+  it('includes run-level observations in synthesis input when bet.runId is set', async () => {
+    const cycle = cycleManager.create({ tokenBudget: 50000 }, 'Obs Test');
+    const withBet = cycleManager.addBet(cycle.id, { description: 'Bet A', appetite: 30, outcome: 'pending', issueRefs: [] });
+    const bet = withBet.bets[0]!;
+
+    const run = makeRun(cycle.id, bet.id);
+    createRunTree(runsDir, run);
+    cycleManager.setRunId(cycle.id, bet.id, run.id);
+
+    const obs = makeObservation('Insight from run');
+    appendObservation(runsDir, run.id, obs, { level: 'run' });
+
+    const session = new CooldownSession(makeDeps());
+    const result = await session.prepare(cycle.id);
+
+    const raw = readFileSync(result.synthesisInputPath, 'utf-8');
+    const input = SynthesisInputSchema.parse(JSON.parse(raw));
+    expect(input.observations).toHaveLength(1);
+    expect(input.observations[0]!.content).toBe('Insight from run');
+  });
+
+  it('finds observations via bridge-run lookup when bet.runId is missing (staged workflow fix — #335)', async () => {
+    // Simulate a staged-workflow cycle: bets have NO runId on the cycle record,
+    // but bridge-run files exist with the betId → runId mapping.
+    const cycle = cycleManager.create({ tokenBudget: 50000 }, 'Staged Obs Test');
+    const withBet = cycleManager.addBet(cycle.id, { description: 'Staged bet', appetite: 40, outcome: 'pending', issueRefs: [] });
+    const bet = withBet.bets[0]!;
+
+    // bet.runId is NOT set on the cycle (simulates pre-backfill staged launch)
+    expect(cycleManager.get(cycle.id).bets[0]!.runId).toBeUndefined();
+
+    const run = makeRun(cycle.id, bet.id);
+    createRunTree(runsDir, run);
+    // Write bridge-run file with the betId → runId mapping
+    writeBridgeRun(run.id, bet.id, cycle.id);
+
+    const obs = makeObservation('Discovered via bridge-run lookup');
+    appendObservation(runsDir, run.id, obs, { level: 'run' });
+
+    const session = new CooldownSession(makeDeps());
+    const result = await session.prepare(cycle.id);
+
+    const raw = readFileSync(result.synthesisInputPath, 'utf-8');
+    const input = SynthesisInputSchema.parse(JSON.parse(raw));
+    expect(input.observations).toHaveLength(1);
+    expect(input.observations[0]!.content).toBe('Discovered via bridge-run lookup');
+  });
+
+  it('collects stage-level observations in addition to run-level (#335)', async () => {
+    const cycle = cycleManager.create({ tokenBudget: 50000 }, 'All Levels Test');
+    const withBet = cycleManager.addBet(cycle.id, { description: 'Multi-level bet', appetite: 30, outcome: 'pending', issueRefs: [] });
+    const bet = withBet.bets[0]!;
+
+    const run = makeRun(cycle.id, bet.id);
+    createRunTree(runsDir, run);
+    cycleManager.setRunId(cycle.id, bet.id, run.id);
+
+    // Write observations at run level and stage level
+    appendObservation(runsDir, run.id, makeObservation('Run-level insight'), { level: 'run' });
+    appendObservation(runsDir, run.id, makeObservation('Research-stage insight'), { level: 'stage', category: 'research' });
+
+    const session = new CooldownSession(makeDeps());
+    const result = await session.prepare(cycle.id);
+
+    const raw = readFileSync(result.synthesisInputPath, 'utf-8');
+    const input = SynthesisInputSchema.parse(JSON.parse(raw));
+    expect(input.observations.length).toBeGreaterThanOrEqual(2);
+    const contents = input.observations.map((o) => o.content);
+    expect(contents).toContain('Run-level insight');
+    expect(contents).toContain('Research-stage insight');
+  });
+
+  it('aggregates observations from all bets in the cycle', async () => {
+    const cycle = cycleManager.create({ tokenBudget: 50000 }, 'Multi-Bet Test');
+    const withBetA = cycleManager.addBet(cycle.id, { description: 'Bet A', appetite: 25, outcome: 'pending', issueRefs: [] });
+    const withBetB = cycleManager.addBet(cycle.id, { description: 'Bet B', appetite: 25, outcome: 'pending', issueRefs: [] });
+    const betA = withBetA.bets[0]!;
+    const betB = withBetB.bets[1]!;
+
+    const runA = makeRun(cycle.id, betA.id);
+    const runB = makeRun(cycle.id, betB.id);
+    createRunTree(runsDir, runA);
+    createRunTree(runsDir, runB);
+    cycleManager.setRunId(cycle.id, betA.id, runA.id);
+    cycleManager.setRunId(cycle.id, betB.id, runB.id);
+
+    appendObservation(runsDir, runA.id, makeObservation('From bet A'), { level: 'run' });
+    appendObservation(runsDir, runB.id, makeObservation('From bet B'), { level: 'run' });
+
+    const session = new CooldownSession(makeDeps());
+    const result = await session.prepare(cycle.id);
+
+    const raw = readFileSync(result.synthesisInputPath, 'utf-8');
+    const input = SynthesisInputSchema.parse(JSON.parse(raw));
+    expect(input.observations.length).toBeGreaterThanOrEqual(2);
+    const contents = input.observations.map((o) => o.content);
+    expect(contents).toContain('From bet A');
+    expect(contents).toContain('From bet B');
+  });
+
+  it('returns 0 observations when no runs or bridge-runs exist', async () => {
+    const cycle = cycleManager.create({ tokenBudget: 50000 }, 'Empty Obs Test');
+    cycleManager.addBet(cycle.id, { description: 'No run bet', appetite: 30, outcome: 'pending', issueRefs: [] });
+
+    const session = new CooldownSession(makeDeps());
+    const result = await session.prepare(cycle.id);
+
+    const raw = readFileSync(result.synthesisInputPath, 'utf-8');
+    const input = SynthesisInputSchema.parse(JSON.parse(raw));
+    expect(input.observations).toHaveLength(0);
   });
 });

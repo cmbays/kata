@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import type { CycleManager, CooldownReport } from '@domain/services/cycle-manager.js';
 import type { IKnowledgeStore } from '@domain/ports/knowledge-store.js';
 import type { IPersistence } from '@domain/ports/persistence.js';
@@ -20,7 +20,7 @@ import { CalibrationDetector } from '@features/self-improvement/calibration-dete
 import { HierarchicalPromoter } from '@infra/knowledge/hierarchical-promoter.js';
 import { FrictionAnalyzer } from '@features/self-improvement/friction-analyzer.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
-import { readObservations, readRun } from '@infra/persistence/run-store.js';
+import { readAllObservationsForRun, readRun } from '@infra/persistence/run-store.js';
 import type { Observation } from '@domain/types/observation.js';
 import {
   SynthesisInputSchema,
@@ -697,10 +697,16 @@ export class CooldownSession {
   }
 
   /**
-   * Read all run-level observations for every bet in the cycle, then write
-   * a SynthesisInput file to .kata/synthesis/pending-<id>.json.
+   * Read all observations for every bet in the cycle (across all levels: run,
+   * stage, flavor, step), then write a SynthesisInput file to
+   * .kata/synthesis/pending-<id>.json.
    * Returns the synthesisInputId and synthesisInputPath.
    * Non-critical: if synthesisDir is not configured, returns placeholder values.
+   *
+   * Run ID resolution order for each bet:
+   *   1. bet.runId (set by CycleManager.setRunId / backfillRunIdInCycle on prepare)
+   *   2. Bridge-run lookup by cycleId+betId (fallback for staged-workflow cycles
+   *      launched before backfillRunIdInCycle was wired — fixes #337 / #335)
    */
   private writeSynthesisInput(
     cycleId: string,
@@ -718,15 +724,31 @@ export class CooldownSession {
     const id = crypto.randomUUID();
     const observations: Observation[] = [];
 
-    // Collect run-level observations for each bet that has a runId
+    // Build a betId → runId map from bridge-run files (fallback for missing bet.runId).
+    // Only loaded when bridgeRunsDir is configured — lazy, O(n bridge-runs) at most once.
+    const bridgeRunIdByBetId = this.deps.bridgeRunsDir
+      ? this.loadBridgeRunIdsByBetId(cycleId, this.deps.bridgeRunsDir)
+      : new Map<string, string>();
+
+    // Collect all observations across every level for each bet
     if (this.deps.runsDir) {
       for (const bet of cycle.bets) {
-        if (!bet.runId) continue;
+        // Prefer bet.runId (forward link set by prepare); fall back to bridge-run lookup
+        const runId = bet.runId ?? bridgeRunIdByBetId.get(bet.id);
+        if (!runId) continue;
         try {
-          const runObs = readObservations(this.deps.runsDir, bet.runId, { level: 'run' });
+          // Read run.json to get stageSequence for full-tree observation scan
+          let stageSequence: import('@domain/types/stage.js').StageCategory[] = [];
+          try {
+            const run = readRun(this.deps.runsDir, runId);
+            stageSequence = run.stageSequence;
+          } catch {
+            // run.json not found — fall back to run-level only
+          }
+          const runObs = readAllObservationsForRun(this.deps.runsDir, runId, stageSequence);
           observations.push(...runObs);
         } catch (err) {
-          logger.warn(`Failed to read observations for run ${bet.runId}: ${err instanceof Error ? err.message : String(err)}`);
+          logger.warn(`Failed to read observations for run ${runId} (bet ${bet.id}): ${err instanceof Error ? err.message : String(err)}`);
         }
       }
     }
@@ -755,6 +777,41 @@ export class CooldownSession {
     JsonStore.write(filePath, synthesisInput, SynthesisInputSchema);
 
     return { synthesisInputId: id, synthesisInputPath: filePath };
+  }
+
+  /**
+   * Build a betId → runId map by scanning bridge-run files for the given cycle.
+   *
+   * This is the fallback lookup used by writeSynthesisInput() when bet.runId is
+   * not set on the cycle record (e.g., staged-workflow cycles launched before
+   * backfillRunIdInCycle was introduced in SessionExecutionBridge — fixes #335).
+   *
+   * Returns an empty Map when bridgeRunsDir is missing or unreadable.
+   */
+  private loadBridgeRunIdsByBetId(cycleId: string, bridgeRunsDir: string): Map<string, string> {
+    const result = new Map<string, string>();
+    if (!existsSync(bridgeRunsDir)) return result;
+
+    let files: string[];
+    try {
+      files = readdirSync(bridgeRunsDir).filter((f) => f.endsWith('.json'));
+    } catch {
+      return result;
+    }
+
+    for (const file of files) {
+      try {
+        const raw = readFileSync(join(bridgeRunsDir, file), 'utf-8');
+        const meta = JSON.parse(raw) as { cycleId?: string; betId?: string; runId?: string };
+        if (meta.cycleId === cycleId && meta.betId && meta.runId) {
+          result.set(meta.betId, meta.runId);
+        }
+      } catch {
+        // Skip unreadable / invalid bridge-run files
+      }
+    }
+
+    return result;
   }
 
   /**

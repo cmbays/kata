@@ -1151,6 +1151,37 @@ describe('registerCycleCommands', () => {
       expect(updated.state).toBe('complete');
     }, 30000);
 
+    // Issue #329 — ranWithYolo must be set after --yolo cooldown completes.
+    // Belt progression checks project-state.json for ranWithYolo=true; if it
+    // is never written, go-kyu advancement is permanently blocked.
+    it('--yolo sets ranWithYolo=true in project-state.json after complete()', async () => {
+      const { loadProjectState } = await import('@features/belt/belt-calculator.js');
+
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 50000 }, 'Yolo RanWithYolo Test');
+
+      const synthesisDir = join(kataDir, 'synthesis');
+      mkdirSync(synthesisDir, { recursive: true });
+
+      const originalPath = process.env['PATH'];
+      process.env['PATH'] = '';
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir,
+        'cooldown', cycle.id, '--yolo',
+      ]);
+
+      process.env['PATH'] = originalPath;
+      warnSpy.mockRestore();
+
+      // project-state.json must record ranWithYolo=true (#329 fix)
+      const stateFile = join(kataDir, 'project-state.json');
+      const state = loadProjectState(stateFile);
+      expect(state.ranWithYolo).toBe(true);
+    }, 30000);
+
     it('--auto-accept-suggestions includes suggestionReview in --json output', async () => {
       const { RuleRegistry } = await import('@infra/registries/rule-registry.js');
       const rulesDir = join(kataDir, 'rules');
