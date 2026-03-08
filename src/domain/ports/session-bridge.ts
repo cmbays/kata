@@ -139,8 +139,9 @@ export interface ISessionExecutionBridge {
   /**
    * Prepare all bets in a cycle. Returns all prepared runs at once.
    * @param katakaId — optional kataka ID to attribute all runs to
+   * @param name — optional human-readable name to set on the cycle at launch time
    */
-  prepareCycle(cycleId: string, katakaId?: string): PreparedCycle;
+  prepareCycle(cycleId: string, katakaId?: string, name?: string): PreparedCycle;
 
   /** Get aggregated status of all runs in a cycle. */
   getCycleStatus(cycleId: string): CycleExecutionStatus;

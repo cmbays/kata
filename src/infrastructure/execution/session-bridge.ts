@@ -398,7 +398,7 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
 
   // ── Cycle-level convenience ───────────────────────────────────────────
 
-  prepareCycle(cycleId: string, katakaId?: string): PreparedCycle {
+  prepareCycle(cycleId: string, katakaId?: string, name?: string): PreparedCycle {
     const cycle = this.loadCycle(cycleId);
     const pendingBets = cycle.bets.filter((b) => b.outcome === 'pending');
 
@@ -411,11 +411,13 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
     // Transition cycle state planning → active so downstream commands
     // (e.g. `kata cycle status`) reflect the launched state (#322).
     // Use cycle.id (resolved UUID) not the raw cycleId param which may be a name.
-    this.updateCycleState(cycle.id, 'active');
+    // If --name was provided, also write it to the cycle record at launch time (#346).
+    this.updateCycleState(cycle.id, 'active', name);
 
+    const resolvedName = name ?? cycle.name ?? cycle.id;
     return {
       cycleId: cycle.id,
-      cycleName: cycle.name ?? cycle.id,
+      cycleName: resolvedName,
       preparedRuns,
     };
   }
@@ -640,8 +642,9 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
   /**
    * Transition cycle state directly in the cycle JSON file.
    * Called by prepareCycle() to move a planning cycle to active (#322).
+   * Optionally sets a human-readable name on the cycle at launch time (#346).
    */
-  private updateCycleState(cycleId: string, state: CycleState): void {
+  private updateCycleState(cycleId: string, state: CycleState, name?: string): void {
     try {
       const cyclesDir = join(this.kataDir, KATA_DIRS.cycles);
       const cyclePath = join(cyclesDir, `${cycleId}.json`);
@@ -661,6 +664,9 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
         return;
       }
       cycle.state = state;
+      if (name !== undefined) {
+        cycle.name = name;
+      }
       cycle.updatedAt = new Date().toISOString();
       JsonStore.write(cyclePath, cycle, CycleSchema);
     } catch (err) {
