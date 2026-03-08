@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { readdirSync, existsSync } from 'node:fs';
+import { readdirSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Cycle } from '@domain/types/cycle.js';
 import type { Observation } from '@domain/types/observation.js';
@@ -20,6 +20,12 @@ export interface MilestoneIssue {
 export interface NextKeikoInput {
   cycle: Cycle;
   runsDir: string;
+  /**
+   * Path to `.kata/bridge-runs/` directory.
+   * When provided, bets whose `bet.runId` is null/undefined will be resolved
+   * via bridge-run file lookup (same fallback as writeSynthesisInput — fixes #348).
+   */
+  bridgeRunsDir?: string;
   /** Milestone name to query for open issues. When omitted, issue list is skipped. */
   milestoneName?: string;
   /** Completed bet descriptions (for context). */
@@ -94,7 +100,7 @@ export class NextKeikoProposalGenerator {
    */
   generate(input: NextKeikoInput): NextKeikoResult {
     // 1. Collect observations from all cycle runs
-    const observations = this.collectObservations(input.cycle, input.runsDir);
+    const observations = this.collectObservations(input.cycle, input.runsDir, input.bridgeRunsDir);
 
     const frictionObs = observations.filter((o) => o.type === 'friction');
     const gapObs = observations.filter((o) => o.type === 'gap');
@@ -159,16 +165,27 @@ export class NextKeikoProposalGenerator {
    * Collect all observations from `.kata/runs/<run-id>/observations.jsonl`
    * for every bet in the cycle that has a runId.
    *
+   * When `bet.runId` is null/undefined, falls back to a bridge-run file lookup
+   * (same pattern as writeSynthesisInput — fixes #348).
+   *
    * Falls back to scanning all level-specific observation files when
    * run-level observations.jsonl is absent (forward compatible).
    */
-  private collectObservations(cycle: Cycle, runsDir: string): Observation[] {
+  private collectObservations(cycle: Cycle, runsDir: string, bridgeRunsDir?: string): Observation[] {
     const all: Observation[] = [];
 
-    for (const bet of cycle.bets) {
-      if (!bet.runId) continue;
+    // Build betId → runId fallback map from bridge-run files when bet.runId is missing.
+    // Only loaded when bridgeRunsDir is provided — lazy, scanned at most once.
+    const bridgeRunIdByBetId: Map<string, string> = bridgeRunsDir
+      ? loadBridgeRunIdsByBetId(cycle.id, bridgeRunsDir)
+      : new Map();
 
-      const runDir = join(runsDir, bet.runId);
+    for (const bet of cycle.bets) {
+      // Prefer bet.runId (forward link set by prepare); fall back to bridge-run lookup
+      const runId = bet.runId ?? bridgeRunIdByBetId.get(bet.id);
+      if (!runId) continue;
+
+      const runDir = join(runsDir, runId);
       if (!existsSync(runDir)) continue;
 
       // Run-level observations (primary source)
@@ -200,6 +217,46 @@ export class NextKeikoProposalGenerator {
 
     return all;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Bridge-run fallback helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a betId → runId map by scanning bridge-run files for the given cycle.
+ *
+ * This is the fallback used by collectObservations() when bet.runId is not set
+ * on the cycle record (e.g., staged-workflow cycles launched before
+ * backfillRunIdInCycle was wired — mirrors the fix in writeSynthesisInput,
+ * fixes #348).
+ *
+ * Returns an empty Map when bridgeRunsDir is missing or unreadable.
+ */
+function loadBridgeRunIdsByBetId(cycleId: string, bridgeRunsDir: string): Map<string, string> {
+  const result = new Map<string, string>();
+  if (!existsSync(bridgeRunsDir)) return result;
+
+  let files: string[];
+  try {
+    files = readdirSync(bridgeRunsDir).filter((f) => f.endsWith('.json'));
+  } catch {
+    return result;
+  }
+
+  for (const file of files) {
+    try {
+      const raw = readFileSync(join(bridgeRunsDir, file), 'utf-8');
+      const meta = JSON.parse(raw) as { cycleId?: string; betId?: string; runId?: string };
+      if (meta.cycleId === cycleId && meta.betId && meta.runId) {
+        result.set(meta.betId, meta.runId);
+      }
+    } catch {
+      // Skip unreadable / invalid bridge-run files
+    }
+  }
+
+  return result;
 }
 
 // ---------------------------------------------------------------------------

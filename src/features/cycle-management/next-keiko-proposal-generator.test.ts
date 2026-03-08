@@ -386,3 +386,206 @@ describe('NextKeikoProposalGenerator', () => {
     expect(result.text).toContain('2 open milestone issues');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Bridge-run fallback — collectObservations resolves runId via bridge-run file
+// ---------------------------------------------------------------------------
+
+describe('NextKeikoProposalGenerator — bridge-run fallback (#348)', () => {
+  const baseDir = join(tmpdir(), `next-keiko-bridge-test-${Date.now()}`);
+  const runsDir = join(baseDir, 'runs');
+  const bridgeRunsDir = join(baseDir, 'bridge-runs');
+
+  beforeEach(() => {
+    mkdirSync(runsDir, { recursive: true });
+    mkdirSync(bridgeRunsDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(baseDir, { recursive: true, force: true });
+  });
+
+  it('collects observations for bets with null runId via bridge-run lookup', () => {
+    const cycleId = randomUUID();
+    const betId = randomUUID();
+    const runId = randomUUID();
+
+    // Create run directory with observations
+    const runDir = join(runsDir, runId);
+    mkdirSync(runDir, { recursive: true });
+    writeObsFile(runDir, [
+      makeObs('friction', 'Bridge fallback friction'),
+      makeObs('gap', 'Bridge fallback gap'),
+    ]);
+
+    // Write bridge-run file (bet.runId is null — only the bridge-run file has the mapping)
+    writeFileSync(
+      join(bridgeRunsDir, `${runId}.json`),
+      JSON.stringify({ cycleId, betId, runId, status: 'complete' }),
+      'utf-8',
+    );
+
+    // Bet has NO runId — this is the bug scenario
+    const cycle = {
+      id: cycleId,
+      name: 'Test Cycle',
+      state: 'complete' as const,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      bets: [
+        {
+          id: betId,
+          description: 'Bet without runId',
+          appetite: 20,
+          outcome: 'complete' as const,
+          issueRefs: [],
+          runId: undefined, // null — triggers the bug without the fix
+        },
+      ],
+      pipelineMappings: [],
+      budget: {},
+    } as unknown as Cycle;
+
+    const mockClaude = vi.fn().mockReturnValue(
+      '=== Next Keiko Proposals ===\n\nRecommended bets (ranked):\n  1. Fixed bet    appetite: S    signal: Bridge fallback worked\n',
+    );
+
+    const gen = new NextKeikoProposalGenerator({ invokeClaude: mockClaude });
+
+    // Without bridgeRunsDir — should find 0 observations (old broken behaviour)
+    const resultWithout = gen.generate({ cycle, runsDir, completedBets: [] });
+    expect(resultWithout.observationCounts.total).toBe(0);
+
+    // With bridgeRunsDir — should resolve via bridge-run file and find 2 observations
+    const resultWith = gen.generate({ cycle, runsDir, bridgeRunsDir, completedBets: [] });
+    expect(resultWith.observationCounts.total).toBe(2);
+    expect(resultWith.observationCounts.friction).toBe(1);
+    expect(resultWith.observationCounts.gap).toBe(1);
+  });
+
+  it('ignores bridge-run files for other cycles', () => {
+    const cycleId = randomUUID();
+    const otherCycleId = randomUUID();
+    const betId = randomUUID();
+    const runId = randomUUID();
+
+    const runDir = join(runsDir, runId);
+    mkdirSync(runDir, { recursive: true });
+    writeObsFile(runDir, [makeObs('friction', 'Should not appear')]);
+
+    // Bridge-run belongs to a different cycle
+    writeFileSync(
+      join(bridgeRunsDir, `${runId}.json`),
+      JSON.stringify({ cycleId: otherCycleId, betId, runId, status: 'complete' }),
+      'utf-8',
+    );
+
+    const cycle = {
+      id: cycleId,
+      name: 'Test Cycle',
+      state: 'complete' as const,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      bets: [
+        {
+          id: betId,
+          description: 'Bet without runId',
+          appetite: 20,
+          outcome: 'complete' as const,
+          issueRefs: [],
+          runId: undefined,
+        },
+      ],
+      pipelineMappings: [],
+      budget: {},
+    } as unknown as Cycle;
+
+    const mockClaude = vi.fn().mockReturnValue('=== Next Keiko Proposals ===\n\nRecommended bets (ranked):\n  1. x    appetite: S    signal: y\n');
+    const gen = new NextKeikoProposalGenerator({ invokeClaude: mockClaude });
+
+    const result = gen.generate({ cycle, runsDir, bridgeRunsDir, completedBets: [] });
+    expect(result.observationCounts.total).toBe(0);
+  });
+
+  it('handles missing bridgeRunsDir gracefully', () => {
+    const cycle = {
+      id: randomUUID(),
+      name: 'Test Cycle',
+      state: 'complete' as const,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      bets: [
+        {
+          id: randomUUID(),
+          description: 'Bet without runId',
+          appetite: 20,
+          outcome: 'complete' as const,
+          issueRefs: [],
+          runId: undefined,
+        },
+      ],
+      pipelineMappings: [],
+      budget: {},
+    } as unknown as Cycle;
+
+    const mockClaude = vi.fn().mockReturnValue('=== Next Keiko Proposals ===\n\nRecommended bets (ranked):\n  1. x    appetite: S    signal: y\n');
+    const gen = new NextKeikoProposalGenerator({ invokeClaude: mockClaude });
+
+    // bridgeRunsDir points to non-existent path — should not throw
+    expect(() =>
+      gen.generate({ cycle, runsDir, bridgeRunsDir: join(baseDir, 'no-such-dir'), completedBets: [] }),
+    ).not.toThrow();
+  });
+
+  it('prefers bet.runId over bridge-run lookup when both are present', () => {
+    const cycleId = randomUUID();
+    const betId = randomUUID();
+    const directRunId = randomUUID(); // The one bet.runId points to
+    const bridgeRunId = randomUUID(); // The one the bridge-run file points to
+
+    // Create both run directories with different observations
+    const directRunDir = join(runsDir, directRunId);
+    mkdirSync(directRunDir, { recursive: true });
+    writeObsFile(directRunDir, [makeObs('friction', 'From direct runId')]);
+
+    const bridgeRunDir = join(runsDir, bridgeRunId);
+    mkdirSync(bridgeRunDir, { recursive: true });
+    writeObsFile(bridgeRunDir, [makeObs('gap', 'From bridge-run fallback')]);
+
+    // Bridge-run file maps betId → bridgeRunId
+    writeFileSync(
+      join(bridgeRunsDir, `${bridgeRunId}.json`),
+      JSON.stringify({ cycleId, betId, runId: bridgeRunId, status: 'complete' }),
+      'utf-8',
+    );
+
+    const cycle = {
+      id: cycleId,
+      name: 'Test Cycle',
+      state: 'complete' as const,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      bets: [
+        {
+          id: betId,
+          description: 'Bet with explicit runId',
+          appetite: 20,
+          outcome: 'complete' as const,
+          issueRefs: [],
+          runId: directRunId, // bet.runId is set — should take priority
+        },
+      ],
+      pipelineMappings: [],
+      budget: {},
+    } as unknown as Cycle;
+
+    const mockClaude = vi.fn().mockReturnValue('=== Next Keiko Proposals ===\n\nRecommended bets (ranked):\n  1. x    appetite: S    signal: y\n');
+    const gen = new NextKeikoProposalGenerator({ invokeClaude: mockClaude });
+
+    const result = gen.generate({ cycle, runsDir, bridgeRunsDir, completedBets: [] });
+    // Should read from directRunId only (friction) — NOT from bridgeRunId (gap)
+    expect(result.observationCounts.friction).toBe(1);
+    expect(result.observationCounts.gap).toBe(0);
+    expect(result.observationCounts.total).toBe(1);
+  });
+});
