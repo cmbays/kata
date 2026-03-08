@@ -275,8 +275,16 @@ export class BeltCalculator {
   }
 
   private countDecisionOutcomes(): number {
-    // Decision outcomes are written per-run to decisions.jsonl / decision-outcomes.jsonl
-    // in .kata/runs/<run-id>/. Count distinct outcome entries across all runs.
+    // Count decision-outcome pairs from two sources:
+    //
+    // 1. Kime records: decision-outcomes.jsonl — each line = one outcome-recorded decision pair
+    //    (written by `kata decision record-outcome` / orchestrator decision tracking)
+    //
+    // 2. Kansatsu records: observations.jsonl — agents record decisions and outcomes via
+    //    `kata kansatsu record decision` and `kata kansatsu record outcome`. Count matched
+    //    pairs per run: min(decision-type entries, outcome-type entries) in observations.jsonl.
+    //
+    // The two sources are additive: total = kime_pairs + kansatsu_pairs.
     if (!this.deps.runsDir || !existsSync(this.deps.runsDir)) return 0;
     try {
       const runDirs = readdirSync(this.deps.runsDir, { withFileTypes: true })
@@ -284,10 +292,27 @@ export class BeltCalculator {
         .map((d) => d.name);
       let count = 0;
       for (const runId of runDirs) {
-        // decision-outcomes.jsonl: each line = one outcome-recorded decision pair
+        // Source 1: kime decision-outcome records
         const outcomesPath = join(this.deps.runsDir, runId, 'decision-outcomes.jsonl');
         if (existsSync(outcomesPath)) {
           count += readLines(outcomesPath).filter((l) => l.trim().length > 0).length;
+        }
+
+        // Source 2: kansatsu observation pairs (run-level observations.jsonl only)
+        // Agents use `kansatsu record decision` + `kansatsu record outcome` at run level.
+        // A matched pair = min(decisions, outcomes) so orphaned entries don't inflate the count.
+        const obsPath = join(this.deps.runsDir, runId, 'observations.jsonl');
+        if (existsSync(obsPath)) {
+          let decisionCount = 0;
+          let outcomeCount = 0;
+          for (const line of readLines(obsPath)) {
+            try {
+              const obs = JSON.parse(line);
+              if (obs.type === 'decision') decisionCount++;
+              if (obs.type === 'outcome') outcomeCount++;
+            } catch { /* skip malformed lines */ }
+          }
+          count += Math.min(decisionCount, outcomeCount);
         }
       }
       return count;

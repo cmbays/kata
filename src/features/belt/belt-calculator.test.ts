@@ -271,6 +271,96 @@ describe('BeltCalculator', () => {
       expect(snap.decisionOutcomePairs).toBe(0);
     });
 
+    it('counts kansatsu decision+outcome observation pairs from observations.jsonl', () => {
+      const runsDir = join(base, 'runs');
+      const runId = randomUUID();
+      mkdirSync(join(runsDir, runId), { recursive: true });
+
+      // 2 decision observations + 2 outcome observations → 2 pairs
+      const obsLines = [
+        JSON.stringify({ id: randomUUID(), type: 'decision', content: 'Chose approach A', timestamp: new Date().toISOString() }),
+        JSON.stringify({ id: randomUUID(), type: 'decision', content: 'Chose approach B', timestamp: new Date().toISOString() }),
+        JSON.stringify({ id: randomUUID(), type: 'outcome', content: 'Approach A worked well', timestamp: new Date().toISOString() }),
+        JSON.stringify({ id: randomUUID(), type: 'outcome', content: 'Approach B was partial', timestamp: new Date().toISOString() }),
+        JSON.stringify({ id: randomUUID(), type: 'friction', content: 'Some friction', timestamp: new Date().toISOString(), taxonomy: 'tool-mismatch' }),
+      ];
+      writeFileSync(join(runsDir, runId, 'observations.jsonl'), obsLines.join('\n'));
+
+      const calc = new BeltCalculator({ cyclesDir, knowledgeDir, runsDir });
+      const snap = calc.computeSnapshot();
+      expect(snap.decisionOutcomePairs).toBe(2);
+    });
+
+    it('counts kansatsu pairs as min(decisions, outcomes) to avoid inflating count with orphans', () => {
+      const runsDir = join(base, 'runs');
+      const runId = randomUUID();
+      mkdirSync(join(runsDir, runId), { recursive: true });
+
+      // 3 decisions, 1 outcome → only 1 matched pair
+      const obsLines = [
+        JSON.stringify({ id: randomUUID(), type: 'decision', content: 'D1', timestamp: new Date().toISOString() }),
+        JSON.stringify({ id: randomUUID(), type: 'decision', content: 'D2', timestamp: new Date().toISOString() }),
+        JSON.stringify({ id: randomUUID(), type: 'decision', content: 'D3', timestamp: new Date().toISOString() }),
+        JSON.stringify({ id: randomUUID(), type: 'outcome', content: 'O1', timestamp: new Date().toISOString() }),
+      ];
+      writeFileSync(join(runsDir, runId, 'observations.jsonl'), obsLines.join('\n'));
+
+      const calc = new BeltCalculator({ cyclesDir, knowledgeDir, runsDir });
+      const snap = calc.computeSnapshot();
+      expect(snap.decisionOutcomePairs).toBe(1);
+    });
+
+    it('adds kime pairs and kansatsu pairs together across runs', () => {
+      const runsDir = join(base, 'runs');
+      const runId1 = randomUUID();
+      const runId2 = randomUUID();
+      mkdirSync(join(runsDir, runId1), { recursive: true });
+      mkdirSync(join(runsDir, runId2), { recursive: true });
+
+      // run1: 2 kime pairs (decision-outcomes.jsonl)
+      const kimeEntry = (decisionId: string) =>
+        JSON.stringify({ decisionId, runId: runId1, outcome: { notes: 'ok' }, recordedAt: new Date().toISOString() });
+      writeFileSync(join(runsDir, runId1, 'decision-outcomes.jsonl'), [kimeEntry(randomUUID()), kimeEntry(randomUUID())].join('\n'));
+
+      // run2: 3 kansatsu pairs (observations.jsonl: 3 decisions, 3 outcomes)
+      const kansatsuLines = [
+        JSON.stringify({ id: randomUUID(), type: 'decision', content: 'D1', timestamp: new Date().toISOString() }),
+        JSON.stringify({ id: randomUUID(), type: 'decision', content: 'D2', timestamp: new Date().toISOString() }),
+        JSON.stringify({ id: randomUUID(), type: 'decision', content: 'D3', timestamp: new Date().toISOString() }),
+        JSON.stringify({ id: randomUUID(), type: 'outcome', content: 'O1', timestamp: new Date().toISOString() }),
+        JSON.stringify({ id: randomUUID(), type: 'outcome', content: 'O2', timestamp: new Date().toISOString() }),
+        JSON.stringify({ id: randomUUID(), type: 'outcome', content: 'O3', timestamp: new Date().toISOString() }),
+      ];
+      writeFileSync(join(runsDir, runId2, 'observations.jsonl'), kansatsuLines.join('\n'));
+
+      const calc = new BeltCalculator({ cyclesDir, knowledgeDir, runsDir });
+      const snap = calc.computeSnapshot();
+      expect(snap.decisionOutcomePairs).toBe(5); // 2 kime + 3 kansatsu
+    });
+
+    it('handles run with both kime and kansatsu pairs in same run', () => {
+      const runsDir = join(base, 'runs');
+      const runId = randomUUID();
+      mkdirSync(join(runsDir, runId), { recursive: true });
+
+      // 1 kime pair
+      const kimeEntry = JSON.stringify({ decisionId: randomUUID(), runId, outcome: { notes: 'ok' }, recordedAt: new Date().toISOString() });
+      writeFileSync(join(runsDir, runId, 'decision-outcomes.jsonl'), kimeEntry);
+
+      // 2 kansatsu pairs
+      const obsLines = [
+        JSON.stringify({ id: randomUUID(), type: 'decision', content: 'D1', timestamp: new Date().toISOString() }),
+        JSON.stringify({ id: randomUUID(), type: 'decision', content: 'D2', timestamp: new Date().toISOString() }),
+        JSON.stringify({ id: randomUUID(), type: 'outcome', content: 'O1', timestamp: new Date().toISOString() }),
+        JSON.stringify({ id: randomUUID(), type: 'outcome', content: 'O2', timestamp: new Date().toISOString() }),
+      ];
+      writeFileSync(join(runsDir, runId, 'observations.jsonl'), obsLines.join('\n'));
+
+      const calc = new BeltCalculator({ cyclesDir, knowledgeDir, runsDir });
+      const snap = calc.computeSnapshot();
+      expect(snap.decisionOutcomePairs).toBe(3); // 1 kime + 2 kansatsu
+    });
+
     it('reads synthesisApplied and methodologyRecommendationsApplied from result-*.json files', () => {
       const synthesisDir = join(base, 'synthesis');
       mkdirSync(synthesisDir, { recursive: true });
