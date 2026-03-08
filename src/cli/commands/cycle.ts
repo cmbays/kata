@@ -1008,6 +1008,16 @@ export function registerCycleCommands(parent: Command): void {
 
       // --- --yolo mode: prepare + claude for synthesis + apply high-confidence proposals ---
       if (localOpts.yolo) {
+        // Emit cycle header immediately — before any async ops — so there is always
+        // visible stdout output even if prepare() or complete() fail (#336).
+        if (!ctx.globalOpts.json) {
+          const cycleForHeader = manager.get(cycleId);
+          const cycleLabelForHeader = cycleForHeader.name ?? cycleId.slice(0, 8);
+          const betCountForHeader = cycleForHeader.bets.length;
+          console.log(`Cooldown (--yolo): ${cycleLabelForHeader} — ${betCountForHeader} bet(s)`);
+          console.log('');
+        }
+
         // Outer try/catch: ensures --json mode always emits a valid JSON object to
         // stdout even when prepare() or complete() throw (fixes #257 — silent failure).
         let prepareResult: Awaited<ReturnType<typeof session.prepare>>;
@@ -1086,6 +1096,10 @@ export function registerCycleCommands(parent: Command): void {
           // Both modes surface the error — non-JSON to stderr, JSON carries it in the
           // synthesisError field of the output object (emitted below after complete()).
           console.warn(`Warning: --yolo synthesis failure: ${msg}. Completing without proposals.`);
+        }
+
+        if (!ctx.globalOpts.json) {
+          console.log(`Synthesis complete: ${synthesisProposals.length} proposal(s) generated.`);
         }
 
         // Apply only high-confidence proposals (confidence > 0.8)

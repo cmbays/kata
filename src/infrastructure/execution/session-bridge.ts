@@ -241,6 +241,16 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
     lines.push(`  kata --cwd ${repoRoot} kime record --decision "..." --rationale "..." --run ${prepared.runId}`);
 
     lines.push('');
+    lines.push('**kime vs kansatsu — which to use for decisions:**');
+    lines.push('  `kime record` is for decisions with explicit, trackable outcomes. Use kime when:');
+    lines.push('    - You make a significant architectural or approach decision');
+    lines.push('    - You can state what "success" or "failure" looks like for this decision');
+    lines.push('    - Belt advancement tracks these directly as decision-outcome pairs');
+    lines.push('  `kansatsu record decision` + `kansatsu record outcome` is for paired run observations. Use when:');
+    lines.push('    - You want to log a decision as part of a broader observational record');
+    lines.push('    - Belt also counts these as min(decisions, outcomes) pairs — secondary signal');
+    lines.push('  **Prefer `kime record` for significant decisions — it is the primary belt metric.**');
+    lines.push('');
     lines.push('**Observation types** — pick the most specific:');
     lines.push('  decision    — a choice between real alternatives; always include WHY you chose this path');
     lines.push('  prediction  — a testable bet about future behavior (state what would falsify it)');

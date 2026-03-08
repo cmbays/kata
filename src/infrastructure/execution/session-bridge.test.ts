@@ -400,6 +400,23 @@ describe('SessionExecutionBridge', () => {
       expect(context).toContain(`export KATA_RUN_ID=${prepared.runId}`);
     });
 
+    it('clarifies kime vs kansatsu for decision recording (#347)', () => {
+      const cycle = createCycle(kataDir);
+      const bridge = new SessionExecutionBridge(kataDir);
+      const prepared = bridge.prepare(cycle.bets[0]!.id);
+
+      const context = bridge.formatAgentContext(prepared);
+
+      // kime vs kansatsu guidance must be present
+      expect(context).toContain('kime vs kansatsu');
+      // kime is the primary belt metric
+      expect(context).toContain('Belt advancement tracks these directly');
+      // kansatsu decision/outcome is the secondary signal
+      expect(context).toContain('secondary signal');
+      // clear recommendation to prefer kime
+      expect(context).toContain('Prefer `kime record`');
+    });
+
     it('should slugify bet name in branch suggestion (#237)', () => {
       const betId = randomUUID();
       createCycle(kataDir, {
