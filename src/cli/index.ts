@@ -1,5 +1,8 @@
 import { createProgram } from './program.js';
 import { handleCommandError } from './utils.js';
+import { warnIfDistStale } from './dist-freshness.js';
+
+warnIfDistStale();
 
 const program = createProgram();
 
