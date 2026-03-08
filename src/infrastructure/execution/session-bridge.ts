@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { join, dirname } from 'node:path';
 import { existsSync, readdirSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
+import { detectLaunchMode, detectSessionContext } from '@shared/lib/session-context.js';
 import type {
   ISessionExecutionBridge,
   PreparedRun,
@@ -125,6 +126,20 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
     const lines: string[] = [];
     // --cwd takes the repo root (parent of .kata/), used in all kata CLI invocations
     const repoRoot = dirname(prepared.kataDir);
+
+    // Detect launch context at dispatch time (late-bind — reflects actual env at agent start)
+    const launchMode = detectLaunchMode();
+    const sessionCtx = detectSessionContext(repoRoot);
+
+    lines.push('## Launch context');
+    lines.push('');
+    lines.push(`- **Launch mode**: ${launchMode}`);
+    lines.push(`- **In worktree**: ${sessionCtx.inWorktree ? 'yes' : 'no'}`);
+    lines.push(`- **Kata dir resolved**: ${sessionCtx.kataDir ?? prepared.kataDir}`);
+    if (launchMode !== 'interactive' && !sessionCtx.inWorktree) {
+      lines.push('- **Note**: running as agent outside a git worktree — use `--cwd` to point kata commands at the main repo.');
+    }
+    lines.push('');
 
     lines.push('## Kata Run Context');
     lines.push('');
