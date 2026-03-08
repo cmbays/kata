@@ -169,8 +169,11 @@ export class BeltCalculator {
   }
 
   private readLearnings(): import('@domain/types/learning.js').Learning[] {
-    if (!existsSync(this.deps.knowledgeDir)) return [];
-    return JsonStore.list(this.deps.knowledgeDir, LearningSchema);
+    // KnowledgeStore writes learnings to knowledgeDir/learnings/ (not knowledgeDir directly).
+    // We must scan the learnings subdirectory to match where files are actually stored.
+    const learningsDir = join(this.deps.knowledgeDir, 'learnings');
+    if (!existsSync(learningsDir)) return [];
+    return JsonStore.list(learningsDir, LearningSchema);
   }
 
   private readRunMetrics(): {
