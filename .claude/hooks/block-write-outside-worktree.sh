@@ -140,11 +140,37 @@ fi
 # Read-only commands (cat, head, ls, grep…) are never blocked — reads are safe.
 if [[ "$TOOL_NAME" == "Bash" ]]; then
   COMMAND=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // ""')
+
+  # Allow safe git subcommands (optionally preceded by env-var exports like
+  # "export KATA_RUN_ID=...; git commit ..."). Only an explicit allowlist of
+  # subcommands that write exclusively to .git/ internals or the worktree are
+  # permitted. Dangerous subcommands (clone, init, worktree, archive) that can
+  # write to arbitrary paths fall through to normal blocking. Shell chaining
+  # (;&|) also falls through.
+  _cmd_after_exports=$(printf '%s' "$COMMAND" \
+    | sed -E 's/^([[:space:]]*(export [A-Za-z_][A-Za-z0-9_]*=[^;]*;[[:space:]]*)*)//')
+  if ! printf '%s' "$_cmd_after_exports" | grep -qE '[;&|]'; then
+    _git_sub=$(printf '%s' "$_cmd_after_exports" \
+      | sed -E 's/^git[[:space:]]+([a-z-]+).*/\1/')
+    case "$_git_sub" in
+      add|checkout|commit|branch|push|fetch|pull|status|log|diff|show|\
+      tag|stash|rebase|merge|reset|restore|switch|rev-parse|symbolic-ref|\
+      config|remote|describe|shortlog|blame|format-patch|am|apply|cherry-pick)
+        exit 0 ;;
+    esac
+  fi
+
   while IFS= read -r candidate; do
     [[ -z "$candidate" ]] && continue
+    # Exclude only known sink pseudo-files — /dev/null and stdio aliases.
+    # /dev/shm and other writable /dev paths must still be checked.
+    case "$candidate" in
+      /dev/null|/dev/stdin|/dev/stdout|/dev/stderr|/dev/fd/*) continue ;;
+    esac
     is_outside_worktree "$candidate" || continue
+    # Write tokens: >> and > (but NOT >& which is fd duplication like 2>&1)
     if printf '%s' "$COMMAND" | grep -qE \
-        '(>>?|tee |cp |mv |touch |mkdir |ln |chmod |chown |sed -i|truncate |dd |install )'; then
+        '(>>|>[^&>]|tee |cp |mv |touch |mkdir |ln |chmod |chown |sed -i|truncate |dd |install )'; then
       deny "$candidate"
     fi
   done < <(printf '%s' "$COMMAND" | grep -oE '/[A-Za-z0-9_/.\-]+' | sort -u)
