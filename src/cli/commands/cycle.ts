@@ -26,6 +26,10 @@ import type { Run } from '@domain/types/run-state.js';
 import { BeltCalculator, ProjectStateUpdater } from '@features/belt/belt-calculator.js';
 import { KatakaConfidenceCalculator } from '@features/kataka/kataka-confidence-calculator.js';
 import { KATA_DIRS } from '@shared/constants/paths.js';
+import {
+  checkBetsForIssueRefs,
+  formatStalenessWarnings,
+} from '@features/cycle-management/staleness-check.js';
 
 /**
  * Resolve a human-friendly cycle reference (name, short hash, "latest", or UUID)
@@ -690,8 +694,10 @@ export function registerCycleCommands(parent: Command): void {
     .command('launch')
     .description('Launch the staged cycle — prepare all runs and transition to active')
     .option('--kataka <id>', 'Kataka (agent) ID to attribute all prepared runs to')
+    .option('--force', 'Skip staleness check entirely and launch without warnings')
+    .option('--block-on-refs', 'Block launch (exit 1) when any bet references a GitHub issue number')
     .action(withCommandContext(async (ctx) => {
-      const localOpts = ctx.cmd.opts() as { kataka?: string };
+      const localOpts = ctx.cmd.opts() as { kataka?: string; force?: boolean; blockOnRefs?: boolean };
       const manager = new CycleManager(kataDirPath(ctx.kataDir, 'cycles'), JsonStore);
       const cycles = manager.list();
       const stagedCycle = cycles
@@ -708,6 +714,36 @@ export function registerCycleCommands(parent: Command): void {
         throw new Error(
           'Cannot launch a cycle with no bets. Add bets first:\n  kata cycle staged add-bet "<description>"',
         );
+      }
+
+      // Staleness check: warn when bet descriptions reference #N issue numbers.
+      // Default: warn and proceed for plain refs; block on explicit "done" signals.
+      // --force: skip all staleness checks. --block-on-refs: block on any issue ref.
+      if (!localOpts.force) {
+        const stalenessResult = checkBetsForIssueRefs(stagedCycle.bets);
+        const warningLines = formatStalenessWarnings(stalenessResult);
+        if (warningLines.length > 0) {
+          for (const line of warningLines) {
+            console.warn(line);
+          }
+          if (stalenessResult.likelyStale) {
+            // Explicit "closes/fixes/resolves #N" — strong signal work is done; block by default
+            console.error(
+              'Error: one or more bets use "closes/fixes/resolves #N" language, suggesting the work is already done. Re-run with --force to proceed.',
+            );
+            process.exitCode = 1;
+            return;
+          }
+          if (localOpts.blockOnRefs) {
+            // Caller opted in to hard blocking on any issue refs
+            console.error(
+              'Error: bets reference GitHub issues and --block-on-refs is set. Verify issues are still open, then re-run without --block-on-refs to proceed.',
+            );
+            process.exitCode = 1;
+            return;
+          }
+          // Plain #N refs — warn and proceed (likely tracking related issues, not done work)
+        }
       }
 
       // Delegate to the session bridge (same as kata kiai cycle <id> --prepare)
@@ -735,6 +771,9 @@ export function registerCycleCommands(parent: Command): void {
 
       const result = bridge.prepareCycle(stagedCycle.id, localOpts.kataka);
 
+      // Transition the cycle from planning → active now that all runs are prepared
+      manager.updateState(stagedCycle.id, 'active');
+
       if (ctx.globalOpts.json) {
         console.log(JSON.stringify(result, null, 2));
       } else {
@@ -749,6 +788,8 @@ export function registerCycleCommands(parent: Command): void {
         for (const run of result.preparedRuns) {
           console.log(`  kata kiai context ${run.runId}`);
         }
+        console.log('');
+        console.log('Note: if you modified src/ files, run "npm run build" before dispatching agents — they run from dist/.');
       }
     }));
 

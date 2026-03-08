@@ -387,6 +387,10 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
 
     const preparedRuns = pendingBets.map((bet) => this.prepare(bet.id, katakaId));
 
+    // Transition cycle state planning → active so downstream commands
+    // (e.g. `kata cycle status`) reflect the launched state (#322).
+    this.updateCycleState(cycleId, 'active');
+
     return {
       cycleId: cycle.id,
       cycleName: cycle.name ?? cycle.id,
@@ -610,6 +614,28 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
   }
 
   // ── Cycle JSON update ─────────────────────────────────────────────────
+
+  /**
+   * Transition cycle state directly in the cycle JSON file.
+   * Called by prepareCycle() to move a planning cycle to active (#322).
+   */
+  private updateCycleState(cycleId: string, state: CycleState): void {
+    try {
+      const cyclesDir = join(this.kataDir, KATA_DIRS.cycles);
+      const cyclePath = join(cyclesDir, `${cycleId}.json`);
+      if (!existsSync(cyclePath)) {
+        logger.warn(`Cannot update cycle state: cycle file not found for cycle "${cycleId}".`);
+        return;
+      }
+
+      const cycle = JsonStore.read(cyclePath, CycleSchema);
+      cycle.state = state;
+      cycle.updatedAt = new Date().toISOString();
+      JsonStore.write(cyclePath, cycle, CycleSchema);
+    } catch (err) {
+      logger.warn(`Failed to update cycle state for cycle "${cycleId}": ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
 
   /**
    * Update a bet's outcome field directly in the cycle JSON file.
