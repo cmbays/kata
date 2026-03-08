@@ -406,15 +406,14 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
       throw new Error(`No pending bets in cycle "${cycle.name ?? cycle.id}".`);
     }
 
+    // Write name and transition state BEFORE preparing runs so each bridge-run
+    // file is written with the resolved cycle name (#346).
+    this.updateCycleState(cycle.id, 'active', name);
+    const updatedCycle = this.loadCycle(cycle.id);
+    const resolvedName = updatedCycle.name ?? cycle.id;
+
     const preparedRuns = pendingBets.map((bet) => this.prepare(bet.id, katakaId));
 
-    // Transition cycle state planning → active so downstream commands
-    // (e.g. `kata cycle status`) reflect the launched state (#322).
-    // Use cycle.id (resolved UUID) not the raw cycleId param which may be a name.
-    // If --name was provided, also write it to the cycle record at launch time (#346).
-    this.updateCycleState(cycle.id, 'active', name);
-
-    const resolvedName = name ?? cycle.name ?? cycle.id;
     return {
       cycleId: cycle.id,
       cycleName: resolvedName,
