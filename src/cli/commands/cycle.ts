@@ -769,10 +769,8 @@ export function registerCycleCommands(parent: Command): void {
         }
       }
 
+      // prepareCycle() transitions planning → active via updateCycleState internally
       const result = bridge.prepareCycle(stagedCycle.id, localOpts.kataka);
-
-      // Transition the cycle from planning → active now that all runs are prepared
-      manager.updateState(stagedCycle.id, 'active');
 
       if (ctx.globalOpts.json) {
         console.log(JSON.stringify(result, null, 2));

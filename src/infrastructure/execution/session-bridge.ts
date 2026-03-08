@@ -12,7 +12,7 @@ import type {
 } from '@domain/ports/session-bridge.js';
 import type { ExecutionManifest } from '@domain/types/manifest.js';
 import { ExecutionHistoryEntrySchema } from '@domain/types/history.js';
-import { CycleSchema, type Cycle } from '@domain/types/cycle.js';
+import { CycleSchema, type Cycle, type CycleState } from '@domain/types/cycle.js';
 import { type Bet } from '@domain/types/bet.js';
 import { StageCategorySchema } from '@domain/types/stage.js';
 import { z } from 'zod/v4';
@@ -389,7 +389,8 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
 
     // Transition cycle state planning → active so downstream commands
     // (e.g. `kata cycle status`) reflect the launched state (#322).
-    this.updateCycleState(cycleId, 'active');
+    // Use cycle.id (resolved UUID) not the raw cycleId param which may be a name.
+    this.updateCycleState(cycle.id, 'active');
 
     return {
       cycleId: cycle.id,

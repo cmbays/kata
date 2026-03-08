@@ -67,6 +67,8 @@ export function extractIssueNumbers(text: string): number[] {
  * Returns one warning per bet that contains at least one issue ref.
  *
  * Pattern-based check only — no GitHub API is called.
+ * Only prose descriptions are examined (not the structured `issueRefs` field)
+ * because stale-signal language ("closes #N", "done") only appears in prose.
  */
 export function checkBetsForIssueRefs(bets: Bet[]): StalenessCheckResult {
   const warnings: StalenessBetWarning[] = [];
