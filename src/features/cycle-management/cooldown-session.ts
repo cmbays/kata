@@ -1246,6 +1246,7 @@ export class CooldownSession {
       return this._nextKeikoProposalGenerator.generate({
         cycle,
         runsDir: this.deps.runsDir,
+        bridgeRunsDir: this.deps.bridgeRunsDir,
         milestoneName: this.deps.nextKeikoMilestoneName,
         completedBets,
       });
