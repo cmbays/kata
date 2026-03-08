@@ -209,6 +209,29 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
     lines.push(`  export KATA_RUN_ID=${prepared.runId}`);
     lines.push('');
 
+    // PR operations — REST API
+    lines.push('### PR operations — use REST API, not GraphQL');
+    lines.push('`gh pr create`, `gh pr view --json`, and `gh pr merge` all use GitHub GraphQL (5000/hr quota).');
+    lines.push('With parallel agents, this quota drains fast. **Use REST API for all PR operations:**');
+    lines.push('');
+    lines.push('```bash');
+    lines.push('# Create PR');
+    lines.push('gh api repos/{owner}/{repo}/pulls -X POST \\');
+    lines.push('  --field title="..." --field body="..." \\');
+    lines.push('  --field head="branch-name" --field base="main"');
+    lines.push('');
+    lines.push('# Get PR number by branch');
+    lines.push('gh api "repos/{owner}/{repo}/pulls?head={owner}:branch-name"');
+    lines.push('');
+    lines.push('# Merge PR');
+    lines.push('gh api repos/{owner}/{repo}/pulls/NNN/merge -X PUT \\');
+    lines.push('  --field merge_method=squash');
+    lines.push('');
+    lines.push('# List PR reviews');
+    lines.push('gh api repos/{owner}/{repo}/pulls/NNN/reviews');
+    lines.push('```');
+    lines.push('');
+
     // Record as you work
     lines.push('### Record as you work');
     lines.push('Use these commands at natural checkpoints — when a decision matters, when something surprises you, when you hit resistance:');
