@@ -6,6 +6,14 @@ import { CycleManager } from '@domain/services/cycle-manager.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
 
 /**
+ * How this kata session was launched.
+ * - "agent"       — KATA_RUN_ID is set → running inside a structured agent run
+ * - "ci"          — CI=true (or CI=1) is set → running in a CI pipeline
+ * - "interactive" — default; no special env vars present
+ */
+export type LaunchMode = 'interactive' | 'agent' | 'ci';
+
+/**
  * Session context detected at startup — tells the sensei what mode we're in.
  */
 export interface SessionContext {
@@ -17,6 +25,22 @@ export interface SessionContext {
   inWorktree: boolean;
   /** Active cycle info, or null if none */
   activeCycle: { id: string; name: string } | null;
+  /** How this session was launched */
+  launchMode: LaunchMode;
+}
+
+/**
+ * Detect the launch mode from environment variables.
+ *
+ * - KATA_RUN_ID present → "agent" (running inside a structured kata run)
+ * - CI=true or CI=1 → "ci"
+ * - otherwise → "interactive"
+ */
+export function detectLaunchMode(): LaunchMode {
+  if (process.env['KATA_RUN_ID']) return 'agent';
+  const ci = process.env['CI'];
+  if (ci === 'true' || ci === '1') return 'ci';
+  return 'interactive';
 }
 
 /**
@@ -25,6 +49,7 @@ export interface SessionContext {
  * 1. Walk up from CWD looking for .kata/ → kataInitialized, kataDir
  * 2. Check if CWD is inside a git worktree → inWorktree
  * 3. If kata initialized, find the active cycle → activeCycle
+ * 4. Detect launch mode from env vars → launchMode
  */
 export function detectSessionContext(cwd?: string): SessionContext {
   const startDir = cwd ?? process.cwd();
@@ -42,7 +67,10 @@ export function detectSessionContext(cwd?: string): SessionContext {
     activeCycle = findActiveCycle(kataDir);
   }
 
-  return { kataInitialized, kataDir, inWorktree, activeCycle };
+  // 4. Detect launch mode
+  const launchMode = detectLaunchMode();
+
+  return { kataInitialized, kataDir, inWorktree, activeCycle, launchMode };
 }
 
 /**
