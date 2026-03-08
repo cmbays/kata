@@ -60,7 +60,10 @@ function writeLearning(knowledgeDir: string, overrides: Record<string, unknown> 
     updatedAt: now,
     ...overrides,
   };
-  JsonStore.write(join(knowledgeDir, `${id}.json`), learning, LearningSchema);
+  // KnowledgeStore writes to knowledgeDir/learnings/ — mirror that structure here.
+  const learningsDir = join(knowledgeDir, 'learnings');
+  mkdirSync(learningsDir, { recursive: true });
+  JsonStore.write(join(learningsDir, `${id}.json`), learning, LearningSchema);
   return id;
 }
 
