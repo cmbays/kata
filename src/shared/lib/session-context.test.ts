@@ -2,7 +2,7 @@ import { join } from 'node:path';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
-import { detectSessionContext } from './session-context.js';
+import { detectSessionContext, detectLaunchMode } from './session-context.js';
 import { CycleSchema } from '@domain/types/cycle.js';
 
 // ---------------------------------------------------------------------------
@@ -125,5 +125,56 @@ describe('detectSessionContext', () => {
 
     expect(typeof ctx.kataInitialized).toBe('boolean');
     expect(typeof ctx.inWorktree).toBe('boolean');
+  });
+
+  it('should include launchMode in session context', () => {
+    const ctx = detectSessionContext(testDir);
+
+    expect(['interactive', 'agent', 'ci']).toContain(ctx.launchMode);
+  });
+});
+
+describe('detectLaunchMode', () => {
+  const originalEnv = process.env;
+
+  beforeEach(() => {
+    // Restore to a clean state before each test
+    process.env = { ...originalEnv };
+    delete process.env['KATA_RUN_ID'];
+    delete process.env['CI'];
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+  });
+
+  it('should return "interactive" when no relevant env vars are set', () => {
+    expect(detectLaunchMode()).toBe('interactive');
+  });
+
+  it('should return "agent" when KATA_RUN_ID is set', () => {
+    process.env['KATA_RUN_ID'] = 'some-run-id';
+    expect(detectLaunchMode()).toBe('agent');
+  });
+
+  it('should return "ci" when CI=true', () => {
+    process.env['CI'] = 'true';
+    expect(detectLaunchMode()).toBe('ci');
+  });
+
+  it('should return "ci" when CI=1', () => {
+    process.env['CI'] = '1';
+    expect(detectLaunchMode()).toBe('ci');
+  });
+
+  it('should prefer "agent" over "ci" when both KATA_RUN_ID and CI are set', () => {
+    process.env['KATA_RUN_ID'] = 'some-run-id';
+    process.env['CI'] = 'true';
+    expect(detectLaunchMode()).toBe('agent');
+  });
+
+  it('should return "interactive" when CI is set to a non-truthy value', () => {
+    process.env['CI'] = 'false';
+    expect(detectLaunchMode()).toBe('interactive');
   });
 });

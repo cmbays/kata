@@ -23,7 +23,7 @@ import { detectSessionContext } from '@shared/lib/session-context.js';
 // Core handlers (exported so `kata kiai status/stats` can delegate here)
 // ---------------------------------------------------------------------------
 
-export function handleStatus(ctx: { kataDir: string; globalOpts: { json?: boolean; plain?: boolean } }): void {
+export function handleStatus(ctx: { kataDir: string; globalOpts: { json?: boolean; plain?: boolean }; cwd?: string }): void {
   const isJson = ctx.globalOpts.json;
 
   // Active cycle
@@ -75,6 +75,9 @@ export function handleStatus(ctx: { kataDir: string; globalOpts: { json?: boolea
     }
   } catch { /* degraded: belt section unavailable */ }
 
+  // Session context — detected from env vars and filesystem
+  const sessionCtx = detectSessionContext(ctx.cwd);
+
   if (isJson) {
     const beltJson = projectState ? (() => {
       const nextLevel = getNextBeltLevel(projectState.currentBelt);
@@ -95,6 +98,11 @@ export function handleStatus(ctx: { kataDir: string; globalOpts: { json?: boolea
       recentArtifacts,
       knowledge: knowledgeStats,
       belt: beltJson,
+      sessionContext: {
+        launchMode: sessionCtx.launchMode,
+        inWorktree: sessionCtx.inWorktree,
+        kataDir: sessionCtx.kataDir,
+      },
     }, null, 2));
     return;
   }
@@ -160,6 +168,13 @@ export function handleStatus(ctx: { kataDir: string; globalOpts: { json?: boolea
     } else {
       console.log('  You have reached the highest rank. Your practice improves itself.');
     }
+  }
+
+  // Session context
+  console.log('');
+  console.log(`  Session context: ${sessionCtx.launchMode}${sessionCtx.inWorktree ? ', worktree' : ''}`);
+  if (sessionCtx.launchMode === 'agent' && !sessionCtx.inWorktree) {
+    console.log('  Hint: running as agent outside a worktree — use --cwd to point to the main .kata/ if needed.');
   }
 }
 
@@ -381,6 +396,7 @@ export function registerStatusCommands(parent: Command): void {
           console.log(JSON.stringify(sessionCtx, null, 2));
         } else {
           console.log('Session Context:');
+          console.log(`  Launch mode: ${sessionCtx.launchMode}`);
           console.log(`  Kata initialized: ${sessionCtx.kataInitialized ? 'yes' : 'no'}`);
           if (sessionCtx.kataDir) {
             console.log(`  Kata dir: ${sessionCtx.kataDir}`);
@@ -399,14 +415,14 @@ export function registerStatusCommands(parent: Command): void {
       if (!ctx.kataDir) {
         try {
           const kataDir = resolveKataDir(ctx.globalOpts.cwd);
-          handleStatus({ kataDir, globalOpts: { ...ctx.globalOpts, json: isJson } });
+          handleStatus({ kataDir, globalOpts: { ...ctx.globalOpts, json: isJson }, cwd: ctx.globalOpts.cwd });
         } catch (err) {
           console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
           process.exitCode = 1;
         }
         return;
       }
-      handleStatus({ kataDir: ctx.kataDir, globalOpts: { ...ctx.globalOpts, json: isJson } });
+      handleStatus({ kataDir: ctx.kataDir, globalOpts: { ...ctx.globalOpts, json: isJson }, cwd: ctx.globalOpts.cwd });
     }, { needsKataDir: false }));
 
   // ---- kata stats ----
