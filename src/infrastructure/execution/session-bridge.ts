@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { join, dirname } from 'node:path';
 import { existsSync, readdirSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
+import { detectLaunchMode, detectSessionContext } from '@shared/lib/session-context.js';
 import type {
   ISessionExecutionBridge,
   PreparedRun,
@@ -12,7 +13,7 @@ import type {
 } from '@domain/ports/session-bridge.js';
 import type { ExecutionManifest } from '@domain/types/manifest.js';
 import { ExecutionHistoryEntrySchema } from '@domain/types/history.js';
-import { CycleSchema, type Cycle } from '@domain/types/cycle.js';
+import { CycleSchema, type Cycle, type CycleState } from '@domain/types/cycle.js';
 import { type Bet } from '@domain/types/bet.js';
 import { StageCategorySchema } from '@domain/types/stage.js';
 import { z } from 'zod/v4';
@@ -125,6 +126,20 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
     const lines: string[] = [];
     // --cwd takes the repo root (parent of .kata/), used in all kata CLI invocations
     const repoRoot = dirname(prepared.kataDir);
+
+    // Detect launch context at dispatch time (late-bind — reflects actual env at agent start)
+    const launchMode = detectLaunchMode();
+    const sessionCtx = detectSessionContext(repoRoot);
+
+    lines.push('## Launch context');
+    lines.push('');
+    lines.push(`- **Launch mode**: ${launchMode}`);
+    lines.push(`- **In worktree**: ${sessionCtx.inWorktree ? 'yes' : 'no'}`);
+    lines.push(`- **Kata dir resolved**: ${sessionCtx.kataDir ?? prepared.kataDir}`);
+    if (launchMode !== 'interactive' && !sessionCtx.inWorktree) {
+      lines.push('- **Note**: running as agent outside a git worktree — use `--cwd` to point kata commands at the main repo.');
+    }
+    lines.push('');
 
     lines.push('## Kata Run Context');
     lines.push('');
@@ -387,6 +402,10 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
 
     const preparedRuns = pendingBets.map((bet) => this.prepare(bet.id, katakaId));
 
+    // Transition the cycle state from planning → active so that
+    // `kata cycle status <id>` and downstream commands see the correct state.
+    this.updateCycleState(cycle.id, 'active');
+
     return {
       cycleId: cycle.id,
       cycleName: cycle.name ?? cycle.id,
@@ -610,6 +629,28 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
   }
 
   // ── Cycle JSON update ─────────────────────────────────────────────────
+
+  /**
+   * Transition cycle state directly in the cycle JSON file.
+   * Called by prepareCycle() to move a cycle from planning → active.
+   */
+  private updateCycleState(cycleId: string, state: CycleState): void {
+    try {
+      const cyclesDir = join(this.kataDir, KATA_DIRS.cycles);
+      const cyclePath = join(cyclesDir, `${cycleId}.json`);
+      if (!existsSync(cyclePath)) {
+        logger.warn(`Cannot update cycle state: cycle file not found for cycle "${cycleId}".`);
+        return;
+      }
+
+      const cycle = JsonStore.read(cyclePath, CycleSchema);
+      cycle.state = state;
+      cycle.updatedAt = new Date().toISOString();
+      JsonStore.write(cyclePath, cycle, CycleSchema);
+    } catch (err) {
+      logger.warn(`Failed to update cycle state for cycle "${cycleId}": ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
 
   /**
    * Update a bet's outcome field directly in the cycle JSON file.
