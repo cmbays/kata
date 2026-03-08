@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, unlinkSync } from 'node:fs';
 import type { CycleManager, CooldownReport } from '@domain/services/cycle-manager.js';
 import type { IKnowledgeStore } from '@domain/ports/knowledge-store.js';
 import type { IPersistence } from '@domain/ports/persistence.js';
@@ -791,6 +791,27 @@ export class CooldownSession {
       tokenBudget: report.budget.tokenBudget,
       tokensUsed: report.tokensUsed,
     };
+
+    // Clean up stale pending synthesis files for the same cycleId (#330).
+    // Running --prepare multiple times would otherwise accumulate files and
+    // confuse `cooldown complete` about which is current.
+    try {
+      const existing = readdirSync(synthesisDir).filter((f) => f.startsWith('pending-') && f.endsWith('.json'));
+      for (const file of existing) {
+        try {
+          const raw = readFileSync(join(synthesisDir, file), 'utf-8');
+          const meta = JSON.parse(raw) as { cycleId?: string };
+          if (meta.cycleId === cycleId) {
+            unlinkSync(join(synthesisDir, file));
+            logger.debug(`Removed stale synthesis input file: ${file}`);
+          }
+        } catch {
+          // Skip unreadable / already-deleted files
+        }
+      }
+    } catch {
+      // Non-critical — if cleanup fails, still write the new file
+    }
 
     const filePath = join(synthesisDir, `pending-${id}.json`);
     JsonStore.write(filePath, synthesisInput, SynthesisInputSchema);

@@ -102,6 +102,29 @@ export class NextKeikoProposalGenerator {
     // 1. Collect observations from all cycle runs
     const observations = this.collectObservations(input.cycle, input.runsDir, input.bridgeRunsDir);
 
+    // Log observation counts so empty-proposal failures are visible (#342).
+    // When observations are 0, proposals will still be generated from milestone issues
+    // and completed bets, but the signal is weak — this surfaces the situation clearly.
+    const betsWithRunIds = input.cycle.bets.filter((b) => b.runId).length;
+    if (observations.length === 0) {
+      if (betsWithRunIds === 0) {
+        logger.warn(
+          `NextKeikoProposalGenerator: no observations found — cycle has ${input.cycle.bets.length} bet(s) but none have runIds. ` +
+          `Proposals will rely on milestone issues and completed bet descriptions only.`,
+        );
+      } else {
+        logger.warn(
+          `NextKeikoProposalGenerator: no observations found across ${betsWithRunIds} run(s). ` +
+          `Agents may not have recorded observations during this cycle. ` +
+          `Proposals will rely on milestone issues and completed bet descriptions only.`,
+        );
+      }
+    } else {
+      logger.debug(
+        `NextKeikoProposalGenerator: collected ${observations.length} observation(s) from ${betsWithRunIds} run(s).`,
+      );
+    }
+
     const frictionObs = observations.filter((o) => o.type === 'friction');
     const gapObs = observations.filter((o) => o.type === 'gap');
     const insightObs = observations.filter((o) => o.type === 'insight');
