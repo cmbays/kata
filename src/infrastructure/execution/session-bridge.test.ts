@@ -2,6 +2,7 @@ import { join } from 'node:path';
 import { mkdirSync, rmSync, readdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
+import { vi } from 'vitest';
 import { SessionExecutionBridge } from './session-bridge.js';
 import type { AgentCompletionResult } from '@domain/ports/session-bridge.js';
 import { CycleSchema } from '@domain/types/cycle.js';
@@ -62,6 +63,7 @@ describe('SessionExecutionBridge', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     rmSync(kataDir, { recursive: true, force: true });
   });
 
@@ -100,6 +102,28 @@ describe('SessionExecutionBridge', () => {
       expect(meta.status).toBe('in-progress');
       expect(meta.betId).toBe(betId);
       expect(meta.cycleId).toBe(cycle.id);
+    });
+
+    it('should persist canonical agent attribution when prepare() receives an agent ID', () => {
+      const cycle = createCycle(kataDir);
+      const betId = cycle.bets[0]!.id;
+      const agentId = randomUUID();
+      const bridge = new SessionExecutionBridge(kataDir);
+
+      const prepared = bridge.prepare(betId, agentId);
+
+      expect(prepared.agentId).toBe(agentId);
+      expect(prepared.katakaId).toBe(agentId);
+
+      const metaPath = join(kataDir, 'bridge-runs', `${prepared.runId}.json`);
+      const meta = JSON.parse(readFileSync(metaPath, 'utf-8'));
+      expect(meta.agentId).toBe(agentId);
+      expect(meta.katakaId).toBe(agentId);
+
+      const runJsonPath = join(kataDir, 'runs', prepared.runId, 'run.json');
+      const run = RunSchema.parse(JSON.parse(readFileSync(runJsonPath, 'utf-8')));
+      expect(run.agentId).toBe(agentId);
+      expect(run.katakaId).toBe(agentId);
     });
 
     it('should backfill bet.runId in cycle JSON after prepare() (#337)', () => {
@@ -873,6 +897,7 @@ describe('SessionExecutionBridge', () => {
       expect(status.bets.length).toBe(2);
       expect(status.bets[0]!.status).toBe('pending');
       expect(status.bets[1]!.status).toBe('pending');
+      expect(status.budgetUsed).toEqual({ percent: 0, tokenEstimate: 0 });
     });
 
     it('should return status after preparing runs', () => {
@@ -938,6 +963,135 @@ describe('SessionExecutionBridge', () => {
       expect(status.budgetUsed).not.toBeNull();
       expect(status.budgetUsed!.tokenEstimate).toBe(30000);
       expect(status.budgetUsed!.percent).toBe(30); // 30000/100000 * 100
+    });
+
+    it('should ignore unrelated and malformed history entries when estimating budget usage', () => {
+      const cycle = createCycle(kataDir);
+      const bridge = new SessionExecutionBridge(kataDir);
+
+      const historyDir = join(kataDir, 'history');
+      mkdirSync(historyDir, { recursive: true });
+
+      writeFileSync(
+        join(historyDir, `${randomUUID()}.json`),
+        JSON.stringify({
+          id: randomUUID(),
+          pipelineId: randomUUID(),
+          stageType: 'build',
+          stageIndex: 0,
+          adapter: 'claude-native',
+          cycleId: cycle.id,
+          tokenUsage: { total: 15000 },
+          startedAt: new Date().toISOString(),
+          completedAt: new Date().toISOString(),
+        }),
+      );
+      writeFileSync(
+        join(historyDir, `${randomUUID()}.json`),
+        JSON.stringify({
+          id: randomUUID(),
+          pipelineId: randomUUID(),
+          stageType: 'review',
+          stageIndex: 1,
+          adapter: 'claude-native',
+          cycleId: cycle.id,
+          tokenUsage: { total: 5000 },
+          startedAt: new Date().toISOString(),
+          completedAt: new Date().toISOString(),
+        }),
+      );
+      writeFileSync(
+        join(historyDir, `${randomUUID()}.json`),
+        JSON.stringify({
+          id: randomUUID(),
+          pipelineId: randomUUID(),
+          stageType: 'build',
+          stageIndex: 0,
+          adapter: 'claude-native',
+          cycleId: randomUUID(),
+          tokenUsage: { total: 99999 },
+          startedAt: new Date().toISOString(),
+          completedAt: new Date().toISOString(),
+        }),
+      );
+      writeFileSync(
+        join(historyDir, `${randomUUID()}.json`),
+        JSON.stringify({
+          id: randomUUID(),
+          pipelineId: randomUUID(),
+          stageType: 'build',
+          stageIndex: 0,
+          adapter: 'claude-native',
+          cycleId: cycle.id,
+          tokenUsage: {},
+          startedAt: new Date().toISOString(),
+          completedAt: new Date().toISOString(),
+        }),
+      );
+      writeFileSync(join(historyDir, `${randomUUID()}.json`), '{ broken json ');
+
+      const status = bridge.getCycleStatus(cycle.id);
+      expect(status.budgetUsed).toEqual({ percent: 20, tokenEstimate: 20000 });
+    });
+
+    it.each([
+      { elapsedMs: 45_000, expected: '45s' },
+      { elapsedMs: 5 * 60_000, expected: '5m' },
+      { elapsedMs: ((2 * 60) + 5) * 60_000, expected: '2h 5m' },
+    ])('should format elapsed duration as $expected', ({ elapsedMs, expected }) => {
+      vi.useFakeTimers();
+      const now = new Date('2026-03-12T12:00:00.000Z');
+      vi.setSystemTime(now);
+
+      const cycle = createCycle(kataDir, {
+        bets: [
+          {
+            id: randomUUID(),
+            description: 'One timed bet',
+            appetite: 30,
+            outcome: 'pending',
+          },
+        ],
+      });
+      const bridge = new SessionExecutionBridge(kataDir);
+      const prepared = bridge.prepare(cycle.bets[0]!.id);
+
+      const metaPath = join(kataDir, 'bridge-runs', `${prepared.runId}.json`);
+      const meta = JSON.parse(readFileSync(metaPath, 'utf-8'));
+      meta.startedAt = new Date(now.getTime() - elapsedMs).toISOString();
+      writeFileSync(metaPath, JSON.stringify(meta, null, 2));
+
+      const status = bridge.getCycleStatus(cycle.id);
+      expect(status.elapsed).toBe(expected);
+    });
+
+    it('should compute bet durationMs from completed bridge-run metadata', () => {
+      const cycle = createCycle(kataDir, {
+        bets: [
+          {
+            id: randomUUID(),
+            description: 'Completed bet',
+            appetite: 30,
+            outcome: 'pending',
+          },
+        ],
+      });
+      const bridge = new SessionExecutionBridge(kataDir);
+      const prepared = bridge.prepare(cycle.bets[0]!.id);
+
+      const startedAt = new Date('2026-03-12T12:00:00.000Z');
+      const completedAt = new Date(startedAt.getTime() + 65_000);
+      const metaPath = join(kataDir, 'bridge-runs', `${prepared.runId}.json`);
+      const meta = JSON.parse(readFileSync(metaPath, 'utf-8'));
+      meta.startedAt = startedAt.toISOString();
+      meta.completedAt = completedAt.toISOString();
+      meta.status = 'complete';
+      writeFileSync(metaPath, JSON.stringify(meta, null, 2));
+
+      const status = bridge.getCycleStatus(cycle.id);
+      expect(status.bets).toHaveLength(1);
+      expect(status.bets[0]!.durationMs).toBe(65_000);
+      expect(status.bets[0]!.status).toBe('complete');
     });
   });
 

@@ -81,7 +81,10 @@ export class StepFlavorExecutor implements IFlavorExecutor {
             ...(context.bet ?? {}),
             flavorName: flavor.name,
             stepName: stepRef.stepName,
-            ...(context.activeKatakaId ? { katakaId: context.activeKatakaId } : {}),
+            ...(() => {
+              const agentId = context.activeAgentId ?? context.activeKatakaId;
+              return agentId ? { agentId, katakaId: agentId } : {};
+            })(),
           },
         },
         learnings.length > 0 ? learnings : undefined,

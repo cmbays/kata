@@ -1,1 +1,0 @@
-../../docs/vision/knowledge-graph-vision.md

@@ -1,8 +1,8 @@
 import { join, basename as pathBasename, relative, sep } from 'node:path';
 import { readdirSync, readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
-import { KatakaSchema, type Kataka } from '@domain/types/kataka.js';
-import { KatakaRegistry } from '@infra/registries/kataka-registry.js';
+import { KataAgentSchema, type KataAgent } from '@domain/types/kata-agent.js';
+import { KataAgentRegistry } from '@infra/registries/kata-agent-registry.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
 import { KATA_DIRS } from '@shared/constants/paths.js';
 import { logger } from '@shared/lib/logger.js';
@@ -185,16 +185,16 @@ export function discoverAndRegisterAgents(cwd: string, kataDir: string): AgentDi
   }
   const unique = Array.from(seen.values());
 
-  // 4. Register discovered kataka
-  const katakaDir = join(kataDir, KATA_DIRS.kataka);
-  JsonStore.ensureDir(katakaDir);
-  const registry = new KatakaRegistry(katakaDir);
+  // 4. Register discovered agents in the agent registry directory
+  const agentDir = join(kataDir, KATA_DIRS.kataka);
+  JsonStore.ensureDir(agentDir);
+  const registry = new KataAgentRegistry(agentDir);
 
   const registered: Array<{ name: string; id: string; source: string }> = [];
 
   for (const agent of unique) {
     try {
-      const kataka: Kataka = KatakaSchema.parse({
+      const agentRecord: KataAgent = KataAgentSchema.parse({
         id: randomUUID(),
         name: agent.name,
         role: 'executor' as const,
@@ -203,8 +203,8 @@ export function discoverAndRegisterAgents(cwd: string, kataDir: string): AgentDi
         createdAt: new Date().toISOString(),
         active: true,
       });
-      registry.register(kataka);
-      registered.push({ name: kataka.name, id: kataka.id, source: agent.source });
+      registry.register(agentRecord);
+      registered.push({ name: agentRecord.name, id: agentRecord.id, source: agent.source });
     } catch (err) {
       logger.warn(`Could not register discovered agent "${agent.name}": ${err instanceof Error ? err.message : String(err)}`);
     }

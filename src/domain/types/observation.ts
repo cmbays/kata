@@ -8,7 +8,9 @@ const ObservationBaseSchema = z.object({
   id: z.string().uuid(),
   timestamp: z.string().datetime(),
   content: z.string().min(1),
-  /** Agent that recorded this observation (populated when kataka ship in Wave G) */
+  /** Agent that recorded this observation. */
+  agentId: z.string().optional(),
+  /** Compatibility alias for older kataka-named observation attribution. */
   katakaId: z.string().optional(),
 });
 

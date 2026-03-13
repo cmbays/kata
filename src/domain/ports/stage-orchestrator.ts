@@ -40,8 +40,14 @@ export interface OrchestratorContext {
    */
   readonly flavorHint?: FlavorHint;
   /**
-   * Active kataka ID for this execution context — set from flavor.kataka or run-level katakaId.
+   * Active agent ID for this execution context — set from flavor.agentId,
+   * flavor.kataka, or run-level attribution.
    * Used for observation attribution.
+   */
+  readonly activeAgentId?: string;
+  /**
+   * Compatibility alias for older kataka-named execution state.
+   * New code should prefer `activeAgentId`.
    */
   readonly activeKatakaId?: string;
 }

@@ -1,33 +1,33 @@
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { Command } from 'commander';
-import { KatakaSchema, KatakaRoleSchema, type KatakaRole } from '@domain/types/kataka.js';
-import { KatakaRegistry } from '@infra/registries/kataka-registry.js';
+import { KataAgentSchema, KataAgentRoleSchema, type KataAgentRole } from '@domain/types/kata-agent.js';
+import { KataAgentRegistry } from '@infra/registries/kata-agent-registry.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
 import { KATA_DIRS } from '@shared/constants/paths.js';
 import { withCommandContext } from '@cli/utils.js';
 import { getLexicon, cap, pl } from '@cli/lexicon.js';
 import { bold, cyan, dim, visiblePadEnd, strip } from '@shared/lib/ansi.js';
-import type { Kataka } from '@domain/types/kataka.js';
+import type { KataAgent } from '@domain/types/kata-agent.js';
 import {
-  KatakaObservabilityAggregator,
-  type KatakaObservabilityStats,
-} from '@features/kataka/kataka-observability-aggregator.js';
-import { KatakaConfidenceCalculator } from '@features/kataka/kataka-confidence-calculator.js';
-import type { KatakaConfidenceProfile } from '@domain/types/kataka-confidence.js';
+  KataAgentObservabilityAggregator,
+  type KataAgentObservabilityStats,
+} from '@features/kata-agent/kata-agent-observability-aggregator.js';
+import { KataAgentConfidenceCalculator } from '@features/kata-agent/kata-agent-confidence-calculator.js';
+import type { KataAgentConfidenceProfile } from '@domain/types/kata-agent-confidence.js';
 
 // ---------------------------------------------------------------------------
 // Formatting helpers
 // ---------------------------------------------------------------------------
 
-function formatKatakaTable(kataka: Kataka[], plain?: boolean): string {
-  if (kataka.length === 0) {
+function formatAgentTable(agents: KataAgent[], plain?: boolean): string {
+  if (agents.length === 0) {
     return `No ${pl(getLexicon(plain).agent, plain)} registered.`;
   }
   const lex = getLexicon(plain);
 
   const headerCols = [cap(lex.agent), 'Role', 'Skills', 'Active'];
-  const dataRows = kataka.map((k) => [
+  const dataRows = agents.map((k) => [
     cyan(k.name),
     k.role,
     k.skills.length > 0 ? k.skills.slice(0, 3).join(', ') + (k.skills.length > 3 ? '…' : '') : dim('(none)'),
@@ -42,27 +42,27 @@ function formatKatakaTable(kataka: Kataka[], plain?: boolean): string {
   return [header, separator, ...rows].join('\n');
 }
 
-function formatKatakaDetail(k: Kataka, plain?: boolean, stats?: KatakaObservabilityStats, confidenceProfile?: KatakaConfidenceProfile | null): string {
+function formatAgentDetail(agent: KataAgent, plain?: boolean, stats?: KataAgentObservabilityStats, confidenceProfile?: KataAgentConfidenceProfile | null): string {
   const lines: string[] = [];
   const lex = getLexicon(plain);
 
-  lines.push(`${cap(lex.agent)}: ${k.name}`);
-  lines.push(`ID:   ${k.id}`);
-  lines.push(`Role: ${k.role}`);
-  lines.push(`Active: ${k.active ? 'yes' : 'no'}`);
-  if (k.description) lines.push(`Description: ${k.description}`);
-  if (k.skills.length > 0) lines.push(`Skills: ${k.skills.join(', ')}`);
-  if (k.specializations && k.specializations.length > 0) {
-    lines.push(`Specializations: ${k.specializations.join(', ')}`);
+  lines.push(`${cap(lex.agent)}: ${agent.name}`);
+  lines.push(`ID:   ${agent.id}`);
+  lines.push(`Role: ${agent.role}`);
+  lines.push(`Active: ${agent.active ? 'yes' : 'no'}`);
+  if (agent.description) lines.push(`Description: ${agent.description}`);
+  if (agent.skills.length > 0) lines.push(`Skills: ${agent.skills.join(', ')}`);
+  if (agent.specializations && agent.specializations.length > 0) {
+    lines.push(`Specializations: ${agent.specializations.join(', ')}`);
   }
-  lines.push(`Registered: ${k.createdAt}`);
+  lines.push(`Registered: ${agent.createdAt}`);
 
   // Runtime stats section
   lines.push('');
   lines.push('--- Runtime Stats ---');
 
   if (!stats || (stats.observationCount === 0 && stats.agentLearningCount === 0 && !stats.lastRunId)) {
-    lines.push('No runtime data yet — run this kataka in a cycle to build stats.');
+    lines.push('No runtime data yet — run this agent in a cycle to build stats.');
   } else {
     // Observations breakdown
     const byTypeStr = Object.entries(stats.observationsByType)
@@ -112,7 +112,7 @@ function padColumns(values: string[], widths: number[]): string {
   return values.map((v, i) => visiblePadEnd(v, widths[i] ?? 20)).join('  ');
 }
 
-function katakaRegistryPath(kataDir: string): string {
+function agentRegistryPath(kataDir: string): string {
   return join(kataDir, KATA_DIRS.kataka);
 }
 
@@ -124,37 +124,37 @@ function katakaRegistryPath(kataDir: string): string {
  * Register the `kata agent` command group (alias: `kata kataka`).
  *
  * Subcommands:
- *   kata agent list             — list all registered kataka
- *   kata agent inspect <id>     — show full details for one kataka
- *   kata agent register         — register a new kataka
+ *   kata agent list             — list all registered agents
+ *   kata agent inspect <id>     — show full details for one agent
+ *   kata agent register         — register a new agent
  */
 export function registerAgentCommands(parent: Command): void {
   const agent = parent
     .command('agent')
     .alias('kataka')
-    .description('Manage kataka — registered agent personas (alias: kataka)');
+    .description('Manage agents — registered Kata agent personas (alias: kataka)');
 
   // ---------------------------------------------------------------------------
   // kata agent list
   // ---------------------------------------------------------------------------
   agent
     .command('list')
-    .description('List all registered kataka')
-    .option('--active', 'Show only active kataka')
+    .description('List all registered agents')
+    .option('--active', 'Show only active agents')
     .action(withCommandContext((ctx) => {
       const localOpts = ctx.cmd.opts();
-      const registryPath = katakaRegistryPath(ctx.kataDir);
+      const registryPath = agentRegistryPath(ctx.kataDir);
       JsonStore.ensureDir(registryPath);
-      const registry = new KatakaRegistry(registryPath);
+      const registry = new KataAgentRegistry(registryPath);
 
-      const kataka = localOpts.active ? registry.getActive() : registry.list();
+      const agents = localOpts.active ? registry.getActive() : registry.list();
 
       if (ctx.globalOpts.json) {
-        console.log(JSON.stringify(kataka, null, 2));
+        console.log(JSON.stringify(agents, null, 2));
         return;
       }
 
-      console.log(formatKatakaTable(kataka, ctx.globalOpts.plain));
+      console.log(formatAgentTable(agents, ctx.globalOpts.plain));
     }));
 
   // ---------------------------------------------------------------------------
@@ -162,17 +162,17 @@ export function registerAgentCommands(parent: Command): void {
   // ---------------------------------------------------------------------------
   agent
     .command('inspect <id>')
-    .description('Show full details for a kataka')
+    .description('Show full details for an agent')
     .action(withCommandContext((ctx, id: string) => {
-      const registryPath = katakaRegistryPath(ctx.kataDir);
+      const registryPath = agentRegistryPath(ctx.kataDir);
       JsonStore.ensureDir(registryPath);
-      const registry = new KatakaRegistry(registryPath);
+      const registry = new KataAgentRegistry(registryPath);
 
-      let kataka: Kataka;
+      let agentRecord: KataAgent;
       try {
-        kataka = registry.get(id);
+        agentRecord = registry.get(id);
       } catch {
-        console.error(`Error: kataka "${id}" not found. Use "kata agent list" to see registered kataka.`);
+        console.error(`Error: agent "${id}" not found. Use "kata agent list" to see registered agents.`);
         process.exitCode = 1;
         return;
       }
@@ -180,28 +180,28 @@ export function registerAgentCommands(parent: Command): void {
       // Compute runtime stats
       const runsDir = join(ctx.kataDir, KATA_DIRS.runs);
       const knowledgeDir = join(ctx.kataDir, KATA_DIRS.knowledge);
-      const aggregator = new KatakaObservabilityAggregator(runsDir, knowledgeDir);
-      let stats: KatakaObservabilityStats | undefined;
+      const aggregator = new KataAgentObservabilityAggregator(runsDir, knowledgeDir);
+      let stats: KataAgentObservabilityStats | undefined;
       try {
-        stats = aggregator.computeStats(kataka.id, kataka.name);
+        stats = aggregator.computeStats(agentRecord.id, agentRecord.name);
       } catch {
         // Stats unavailable — continue without them
       }
 
       // Load confidence profile
-      const calculator = new KatakaConfidenceCalculator({
+      const calculator = new KataAgentConfidenceCalculator({
         runsDir,
         knowledgeDir,
-        katakaDir: katakaRegistryPath(ctx.kataDir),
+        agentDir: agentRegistryPath(ctx.kataDir),
       });
-      const confidenceProfile = calculator.load(kataka.id);
+      const confidenceProfile = calculator.load(agentRecord.id);
 
       if (ctx.globalOpts.json) {
-        console.log(JSON.stringify({ ...kataka, stats, confidenceProfile }, null, 2));
+        console.log(JSON.stringify({ ...agentRecord, stats, confidenceProfile }, null, 2));
         return;
       }
 
-      console.log(formatKatakaDetail(kataka, ctx.globalOpts.plain, stats, confidenceProfile));
+      console.log(formatAgentDetail(agentRecord, ctx.globalOpts.plain, stats, confidenceProfile));
     }));
 
   // ---------------------------------------------------------------------------
@@ -209,24 +209,24 @@ export function registerAgentCommands(parent: Command): void {
   // ---------------------------------------------------------------------------
   agent
     .command('register')
-    .description('Register a new kataka')
-    .requiredOption('--name <name>', 'Display name for the kataka')
-    .requiredOption('--role <role>', `Role: ${KatakaRoleSchema.options.join(' | ')}`)
+    .description('Register a new agent')
+    .requiredOption('--name <name>', 'Display name for the agent')
+    .requiredOption('--role <role>', `Role: ${KataAgentRoleSchema.options.join(' | ')}`)
     .option('--skills <list>', 'Comma-separated skill identifiers (e.g. TypeScript,React)')
-    .option('--description <text>', 'Free-text description of the kataka')
+    .option('--description <text>', 'Free-text description of the agent')
     .option('--specializations <list>', 'Comma-separated specializations within the role')
     .action(withCommandContext((ctx) => {
       const localOpts = ctx.cmd.opts();
       const lex = getLexicon(ctx.globalOpts.plain);
 
       // Validate role
-      const roleResult = KatakaRoleSchema.safeParse(localOpts.role as string);
+      const roleResult = KataAgentRoleSchema.safeParse(localOpts.role as string);
       if (!roleResult.success) {
-        console.error(`Error: invalid role "${localOpts.role}". Valid: ${KatakaRoleSchema.options.join(', ')}`);
+        console.error(`Error: invalid role "${localOpts.role}". Valid: ${KataAgentRoleSchema.options.join(', ')}`);
         process.exitCode = 1;
         return;
       }
-      const role: KatakaRole = roleResult.data;
+      const role: KataAgentRole = roleResult.data;
 
       const skills = localOpts.skills
         ? (localOpts.skills as string).split(',').map((s: string) => s.trim()).filter(Boolean)
@@ -236,7 +236,7 @@ export function registerAgentCommands(parent: Command): void {
         ? (localOpts.specializations as string).split(',').map((s: string) => s.trim()).filter(Boolean)
         : undefined;
 
-      const kataka = KatakaSchema.parse({
+      const agentRecord = KataAgentSchema.parse({
         id: randomUUID(),
         name: localOpts.name as string,
         role,
@@ -247,16 +247,16 @@ export function registerAgentCommands(parent: Command): void {
         active: true,
       });
 
-      const registryPath = katakaRegistryPath(ctx.kataDir);
+      const registryPath = agentRegistryPath(ctx.kataDir);
       JsonStore.ensureDir(registryPath);
-      const registry = new KatakaRegistry(registryPath);
-      registry.register(kataka);
+      const registry = new KataAgentRegistry(registryPath);
+      registry.register(agentRecord);
 
       if (ctx.globalOpts.json) {
-        console.log(JSON.stringify(kataka, null, 2));
+        console.log(JSON.stringify(agentRecord, null, 2));
       } else {
-        console.log(`✓ ${cap(lex.agent)} registered: ${kataka.name} (${kataka.role})`);
-        console.log(`  id: ${kataka.id}`);
+        console.log(`✓ ${cap(lex.agent)} registered: ${agentRecord.name} (${agentRecord.role})`);
+        console.log(`  id: ${agentRecord.id}`);
       }
     }));
 }

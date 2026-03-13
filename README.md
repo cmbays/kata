@@ -113,11 +113,18 @@ Key design decisions:
 ```bash
 npm run build          # Build with tsup (ESM output)
 npm run dev            # Run CLI in dev mode via tsx
-npm test               # Run all tests (vitest)
+npm run test:unit      # Fast unit-focused vitest suite
+npm run test:integration # Real-service / filesystem integration suite
+npm run test:e2e       # Real CLI subprocess smoke tests
+npm test               # Unit + integration
+npm run test:all       # Unit + integration + e2e
+npm run test:mutation:dry # Validate the Stryker harness quickly
+npm run test:mutation  # Stryker mutation tests on core lifecycle files
 npm run test:watch     # Watch mode
 npm run test:coverage  # Coverage report (v8, 80% threshold)
 npm run lint           # ESLint on src/
 npm run typecheck      # tsc --noEmit
+npm run verify         # Lint + typecheck + unit + integration + e2e + build
 ```
 
 Run a single test file:

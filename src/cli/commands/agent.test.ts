@@ -2,9 +2,9 @@ import { mkdtempSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { Command } from 'commander';
-import { KatakaRegistry } from '@infra/registries/kataka-registry.js';
+import { KataAgentRegistry } from '@infra/registries/kata-agent-registry.js';
 import { registerAgentCommands } from './agent.js';
-import type { Kataka } from '@domain/types/kataka.js';
+import type { Kataka } from '@domain/types/kata-agent.js';
 import { randomUUID } from 'node:crypto';
 
 // ---------------------------------------------------------------------------
@@ -66,14 +66,14 @@ describe('registerAgentCommands', () => {
 });
 
 // ---------------------------------------------------------------------------
-// KatakaRegistry integration (via CLI helpers)
+// KataAgentRegistry integration (via CLI helpers)
 // ---------------------------------------------------------------------------
 
 describe('kata agent integration', () => {
   it('registers a kataka and lists it back', () => {
     const kataDir = makeKataDir();
     const registryPath = join(kataDir, 'kataka');
-    const registry = new KatakaRegistry(registryPath);
+    const registry = new KataAgentRegistry(registryPath);
 
     const k = makeKataka({ name: 'Seki' });
     registry.register(k);
@@ -85,7 +85,7 @@ describe('kata agent integration', () => {
 
   it('only getActive() filters to active kataka', () => {
     const kataDir = makeKataDir();
-    const registry = new KatakaRegistry(join(kataDir, 'kataka'));
+    const registry = new KataAgentRegistry(join(kataDir, 'kataka'));
 
     registry.register(makeKataka({ name: 'Active', active: true }));
     registry.register(makeKataka({ name: 'Inactive', active: false }));
@@ -96,7 +96,7 @@ describe('kata agent integration', () => {
 
   it('inspect finds kataka by id', () => {
     const kataDir = makeKataDir();
-    const registry = new KatakaRegistry(join(kataDir, 'kataka'));
+    const registry = new KataAgentRegistry(join(kataDir, 'kataka'));
     const k = makeKataka({ name: 'Mori' });
     registry.register(k);
 

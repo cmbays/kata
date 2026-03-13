@@ -113,21 +113,6 @@
         ]
       },
       {
-        "group": "Vision",
-        "pages": [
-          "vision/three-space",
-          "vision/knowledge-graph",
-          "vision/rust-port"
-        ]
-      },
-      {
-        "group": "Roadmap",
-        "pages": [
-          "roadmap/unified-roadmap",
-          "roadmap/dogfooding-roadmap"
-        ]
-      },
-      {
         "group": "Project",
         "pages": [
           "project/release-history",

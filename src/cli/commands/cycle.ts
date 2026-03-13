@@ -24,7 +24,7 @@ import { detectTags } from '@features/domain-confidence/domain-tagger.js';
 import { createRunTree, runPaths } from '@infra/persistence/run-store.js';
 import type { Run } from '@domain/types/run-state.js';
 import { BeltCalculator, ProjectStateUpdater } from '@features/belt/belt-calculator.js';
-import { KatakaConfidenceCalculator } from '@features/kataka/kataka-confidence-calculator.js';
+import { KataAgentConfidenceCalculator } from '@features/kata-agent/kata-agent-confidence-calculator.js';
 import { KATA_DIRS } from '@shared/constants/paths.js';
 import { SessionBuilder } from '@features/dojo/session-builder.js';
 import { SessionStore } from '@infra/dojo/session-store.js';
@@ -695,12 +695,14 @@ export function registerCycleCommands(parent: Command): void {
   staged
     .command('launch')
     .description('Launch the staged cycle — prepare all runs and transition to active')
-    .option('--kataka <id>', 'Kataka (agent) ID to attribute all prepared runs to')
+    .option('--agent <id>', 'Agent ID to attribute all prepared runs to')
+    .option('--kataka <id>', 'Alias for --agent <id>')
     .option('--name <name>', 'Human-readable name for the cycle (set at launch time)')
     .option('--force', 'Skip staleness check entirely and launch without warnings')
     .option('--block-on-refs', 'Block launch (exit 1) when any bet references a GitHub issue number')
     .action(withCommandContext(async (ctx) => {
-      const localOpts = ctx.cmd.opts() as { kataka?: string; name?: string; force?: boolean; blockOnRefs?: boolean };
+      const localOpts = ctx.cmd.opts() as { agent?: string; kataka?: string; name?: string; force?: boolean; blockOnRefs?: boolean };
+      const agentId = localOpts.agent ?? localOpts.kataka;
       const manager = new CycleManager(kataDirPath(ctx.kataDir, 'cycles'), JsonStore);
       const cycles = manager.list();
       const stagedCycle = cycles
@@ -753,19 +755,19 @@ export function registerCycleCommands(parent: Command): void {
       const { SessionExecutionBridge } = await import('@infra/execution/session-bridge.js');
       const bridge = new SessionExecutionBridge(ctx.kataDir);
 
-      if (localOpts.kataka) {
-        const { KatakaRegistry } = await import('@infra/registries/kataka-registry.js');
+      if (agentId) {
+        const { KataAgentRegistry } = await import('@infra/registries/kata-agent-registry.js');
         const { join: pathJoin } = await import('node:path');
         const { KATA_DIRS: kataDirs } = await import('@shared/constants/paths.js');
         try {
-          const katakaRegistry = new KatakaRegistry(pathJoin(ctx.kataDir, kataDirs.kataka));
-          katakaRegistry.get(localOpts.kataka);
+          const agentRegistry = new KataAgentRegistry(pathJoin(ctx.kataDir, kataDirs.kataka));
+          agentRegistry.get(agentId);
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
-          if (msg.includes('not found')) {
-            console.error(`Error: kataka "${localOpts.kataka}" not found. Use "kata agent list" to see registered kataka.`);
+          if (msg.includes('not found') || msg.includes('Agent')) {
+            console.error(`Error: agent "${agentId}" not found. Use "kata agent list" to see registered agents.`);
           } else {
-            console.error(`Error: Failed to load kataka "${localOpts.kataka}": ${msg}`);
+            console.error(`Error: Failed to load agent "${agentId}": ${msg}`);
           }
           process.exitCode = 1;
           return;
@@ -774,7 +776,7 @@ export function registerCycleCommands(parent: Command): void {
 
       // prepareCycle() transitions planning → active via updateCycleState internally
       // Pass --name if provided so it's written to the cycle record at launch time (#346).
-      const result = bridge.prepareCycle(stagedCycle.id, localOpts.kataka, localOpts.name);
+      const result = bridge.prepareCycle(stagedCycle.id, agentId, localOpts.name);
 
       if (ctx.globalOpts.json) {
         console.log(JSON.stringify(result, null, 2));
@@ -857,7 +859,7 @@ export function registerCycleCommands(parent: Command): void {
       const synthesisDir = join(ctx.kataDir, 'synthesis');
 
       const runsDir = kataDirPath(ctx.kataDir, 'runs');
-      const katakaDir = join(ctx.kataDir, KATA_DIRS.kataka);
+      const agentDir = join(ctx.kataDir, KATA_DIRS.kataka);
       const dojoDir = kataDirPath(ctx.kataDir, 'dojo');
       const dojoSessionBuilder = new SessionBuilder({
         sessionStore: new SessionStore(join(dojoDir, 'sessions')),
@@ -883,12 +885,12 @@ export function registerCycleCommands(parent: Command): void {
           dojoSessionsDir: join(dojoDir, 'sessions'),
         }),
         projectStateFile: join(ctx.kataDir, 'project-state.json'),
-        katakaConfidenceCalculator: new KatakaConfidenceCalculator({
+        agentConfidenceCalculator: new KataAgentConfidenceCalculator({
           runsDir,
           knowledgeDir: kataDirPath(ctx.kataDir, 'knowledge'),
-          katakaDir,
+          agentDir,
         }),
-        katakaDir,
+        agentDir,
         nextKeikoMilestoneName: localOpts.milestone as string | undefined,
         nextKeikoProposalGenerator: new NextKeikoProposalGenerator(),
       });
@@ -939,7 +941,7 @@ export function registerCycleCommands(parent: Command): void {
       const synthesisDir = join(ctx.kataDir, 'synthesis');
 
       const runsDir = kataDirPath(ctx.kataDir, 'runs');
-      const katakaDir = join(ctx.kataDir, KATA_DIRS.kataka);
+      const agentDir = join(ctx.kataDir, KATA_DIRS.kataka);
       const bridgeRunsDir = join(ctx.kataDir, KATA_DIRS.bridgeRuns);
       const dojoDir = kataDirPath(ctx.kataDir, 'dojo');
       const dojoSessionBuilder = new SessionBuilder({
@@ -967,12 +969,12 @@ export function registerCycleCommands(parent: Command): void {
           dojoSessionsDir: join(dojoDir, 'sessions'),
         }),
         projectStateFile: join(ctx.kataDir, 'project-state.json'),
-        katakaConfidenceCalculator: new KatakaConfidenceCalculator({
+        agentConfidenceCalculator: new KataAgentConfidenceCalculator({
           runsDir,
           knowledgeDir: kataDirPath(ctx.kataDir, 'knowledge'),
-          katakaDir,
+          agentDir,
         }),
-        katakaDir,
+        agentDir,
         nextKeikoMilestoneName: localOpts.milestone as string | undefined,
         nextKeikoProposalGenerator: new NextKeikoProposalGenerator(),
       });

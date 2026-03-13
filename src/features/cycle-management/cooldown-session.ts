@@ -32,8 +32,8 @@ import {
 } from '@domain/types/synthesis.js';
 import type { BeltCalculator } from '@features/belt/belt-calculator.js';
 import { loadProjectState, type BeltComputeResult } from '@features/belt/belt-calculator.js';
-import type { KatakaConfidenceCalculator } from '@features/kataka/kataka-confidence-calculator.js';
-import { KatakaRegistry } from '@infra/registries/kataka-registry.js';
+import type { KataAgentConfidenceCalculator } from '@features/kata-agent/kata-agent-confidence-calculator.js';
+import { KataAgentRegistry } from '@infra/registries/kata-agent-registry.js';
 
 /**
  * Dependencies injected into CooldownSession for testability.
@@ -116,12 +116,20 @@ export interface CooldownSessionDeps {
    */
   projectStateFile?: string;
   /**
-   * Optional KatakaConfidenceCalculator for computing per-kataka confidence profiles.
+   * Optional KataAgentConfidenceCalculator for computing per-agent confidence profiles.
    * Backward compatible — omitting skips confidence computation.
    */
-  katakaConfidenceCalculator?: Pick<KatakaConfidenceCalculator, 'compute'>;
+  agentConfidenceCalculator?: Pick<KataAgentConfidenceCalculator, 'compute'>;
   /**
-   * Optional path to .kata/kataka/ directory. Required when katakaConfidenceCalculator is provided.
+   * Compatibility alias for older callers still passing kataka-named deps.
+   */
+  katakaConfidenceCalculator?: Pick<KataAgentConfidenceCalculator, 'compute'>;
+  /**
+   * Optional path to the agent registry directory. Required when agentConfidenceCalculator is provided.
+   */
+  agentDir?: string;
+  /**
+   * Compatibility alias for older callers still passing katakaDir.
    */
   katakaDir?: string;
   /**
@@ -366,15 +374,17 @@ export class CooldownSession {
         }
       }
 
-      // 8f. Compute per-kataka confidence profiles (non-critical)
-      if (this.deps.katakaConfidenceCalculator && this.deps.katakaDir) {
+      // 8f. Compute per-agent confidence profiles (non-critical)
+      const agentConfidenceCalculator = this.deps.agentConfidenceCalculator ?? this.deps.katakaConfidenceCalculator;
+      const agentDir = this.deps.agentDir ?? this.deps.katakaDir;
+      if (agentConfidenceCalculator && agentDir) {
         try {
-          const registry = new KatakaRegistry(this.deps.katakaDir);
-          for (const kataka of registry.list()) {
-            this.deps.katakaConfidenceCalculator.compute(kataka.id, kataka.name);
+          const registry = new KataAgentRegistry(agentDir);
+          for (const agent of registry.list()) {
+            agentConfidenceCalculator.compute(agent.id, agent.name);
           }
         } catch (err) {
-          logger.warn(`Kataka confidence computation failed: ${err instanceof Error ? err.message : String(err)}`);
+          logger.warn(`Agent confidence computation failed: ${err instanceof Error ? err.message : String(err)}`);
         }
       }
 
@@ -643,15 +653,17 @@ export class CooldownSession {
       }
     }
 
-    // 8f. Compute per-kataka confidence profiles (non-critical)
-    if (this.deps.katakaConfidenceCalculator && this.deps.katakaDir) {
+    // 8f. Compute per-agent confidence profiles (non-critical)
+    const agentConfidenceCalculator = this.deps.agentConfidenceCalculator ?? this.deps.katakaConfidenceCalculator;
+    const agentDir = this.deps.agentDir ?? this.deps.katakaDir;
+    if (agentConfidenceCalculator && agentDir) {
       try {
-        const registry = new KatakaRegistry(this.deps.katakaDir);
-        for (const kataka of registry.list()) {
-          this.deps.katakaConfidenceCalculator.compute(kataka.id, kataka.name);
+        const registry = new KataAgentRegistry(agentDir);
+        for (const agent of registry.list()) {
+          agentConfidenceCalculator.compute(agent.id, agent.name);
         }
       } catch (err) {
-        logger.warn(`Kataka confidence computation failed: ${err instanceof Error ? err.message : String(err)}`);
+        logger.warn(`Agent confidence computation failed: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
 
@@ -857,7 +869,7 @@ export class CooldownSession {
   /**
    * Auto-derive bet outcomes from bridge-run metadata for any bets still marked 'pending'.
    *
-   * bridge-run/<runId>.json is updated by `kiai complete`, unlike run.json which is
+   * bridge-run/<runId>.json is updated by `execute complete` / `kiai complete`, unlike run.json which is
    * written once as "running" and never updated. This ensures cooldown always reflects
    * actual run completion even if the caller passed empty betOutcomes (fixes #216).
    *
@@ -1048,7 +1060,7 @@ export class CooldownSession {
     for (const bet of cycle.bets) {
       if (!bet.runId) continue;
 
-      // Prefer bridge-run metadata — it's updated by kiai complete, unlike run.json
+      // Prefer bridge-run metadata — it's updated by execute complete / kiai complete, unlike run.json
       if (this.deps.bridgeRunsDir) {
         const bridgeRunPath = join(this.deps.bridgeRunsDir, `${bet.runId}.json`);
         try {

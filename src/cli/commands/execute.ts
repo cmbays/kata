@@ -9,11 +9,11 @@ import { KataConfigSchema } from '@domain/types/config.js';
 import { StepRegistry } from '@infra/registries/step-registry.js';
 import { FlavorRegistry } from '@infra/registries/flavor-registry.js';
 import { DecisionRegistry } from '@infra/registries/decision-registry.js';
-import { KatakaRegistry } from '@infra/registries/kataka-registry.js';
+import { KataAgentRegistry } from '@infra/registries/kata-agent-registry.js';
 import { AdapterResolver } from '@infra/execution/adapter-resolver.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
 import { StepFlavorExecutor } from '@features/execute/step-flavor-executor.js';
-import { KiaiRunner } from '@features/execute/kiai-runner.js';
+import { WorkflowRunner } from '@features/execute/workflow-runner.js';
 import { GapBridger } from '@features/execute/gap-bridger.js';
 import { KnowledgeStore } from '@infra/knowledge/knowledge-store.js';
 import { UsageAnalytics } from '@infra/tracking/usage-analytics.js';
@@ -77,36 +77,38 @@ export function registerExecuteCommands(program: Command): void {
     .option('--prepare', 'Prepare all pending bets in the cycle for agent dispatch')
     .option('--status', 'Get aggregated status of all runs in the cycle')
     .option('--complete', 'Complete all in-progress runs in the cycle')
-    .option('--kataka <id>', 'Kataka (agent) ID to attribute all prepared runs to (only used with --prepare)')
+    .option('--agent <id>', 'Agent ID to attribute all prepared runs to (only used with --prepare)')
+    .option('--kataka <id>', 'Alias for --agent <id>')
     .option('--json', 'Output as JSON')
     .action(withCommandContext(async (ctx, cycleRef: string) => {
-      const localOpts = ctx.cmd.opts() as { prepare?: boolean; status?: boolean; complete?: boolean; kataka?: string; json?: boolean };
+      const localOpts = ctx.cmd.opts() as { prepare?: boolean; status?: boolean; complete?: boolean; agent?: string; kataka?: string; json?: boolean };
       const isJson = !!(localOpts.json || ctx.globalOpts.json);
       const bridge = new SessionExecutionBridge(ctx.kataDir);
+      const agentId = localOpts.agent ?? localOpts.kataka;
 
       // Resolve cycle ref to ID
       const manager = new CycleManager(kataDirPath(ctx.kataDir, 'cycles'), JsonStore);
       const cycleId = resolveRef(cycleRef, manager.list(), 'cycle').id;
 
       if (localOpts.prepare) {
-        // Validate --kataka if provided
-        if (localOpts.kataka) {
+        // Validate --agent/--kataka if provided
+        if (agentId) {
           try {
-            const katakaRegistry = new KatakaRegistry(join(ctx.kataDir, KATA_DIRS.kataka));
-            katakaRegistry.get(localOpts.kataka);
+            const agentRegistry = new KataAgentRegistry(join(ctx.kataDir, KATA_DIRS.kataka));
+            agentRegistry.get(agentId);
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
-            if (msg.includes('not found')) {
-              console.error(`Error: kataka "${localOpts.kataka}" not found. Use "kata agent list" to see registered kataka.`);
+            if (msg.includes('not found') || msg.includes('Agent')) {
+              console.error(`Error: agent "${agentId}" not found. Use "kata agent list" to see registered agents.`);
             } else {
-              console.error(`Error: Failed to load kataka "${localOpts.kataka}": ${msg}`);
+              console.error(`Error: Failed to load agent "${agentId}": ${msg}`);
             }
             process.exitCode = 1;
             return;
           }
         }
 
-        const result = bridge.prepareCycle(cycleId, localOpts.kataka);
+        const result = bridge.prepareCycle(cycleId, agentId);
         if (isJson) {
           console.log(JSON.stringify(result, null, 2));
         } else {
@@ -271,31 +273,33 @@ export function registerExecuteCommands(program: Command): void {
     .command('prepare')
     .description('Prepare a single bet for agent execution (session bridge)')
     .requiredOption('--bet <bet-id>', 'Bet ID to prepare')
-    .option('--kataka <id>', 'Kataka (agent) ID to attribute this run to — written to run.json so observations auto-populate katakaId')
+    .option('--agent <id>', 'Agent ID to attribute this run to — written to run.json so observations auto-populate agent attribution')
+    .option('--kataka <id>', 'Alias for --agent <id>')
     .option('--json', 'Output as JSON')
     .action(withCommandContext(async (ctx) => {
-      const localOpts = ctx.cmd.opts() as { bet: string; kataka?: string; json?: boolean };
+      const localOpts = ctx.cmd.opts() as { bet: string; agent?: string; kataka?: string; json?: boolean };
       const isJson = !!(localOpts.json || ctx.globalOpts.json);
       const bridge = new SessionExecutionBridge(ctx.kataDir);
+      const agentId = localOpts.agent ?? localOpts.kataka;
 
-      // Validate --kataka if provided
-      if (localOpts.kataka) {
+      // Validate --agent/--kataka if provided
+      if (agentId) {
         try {
-          const katakaRegistry = new KatakaRegistry(join(ctx.kataDir, KATA_DIRS.kataka));
-          katakaRegistry.get(localOpts.kataka);
+          const agentRegistry = new KataAgentRegistry(join(ctx.kataDir, KATA_DIRS.kataka));
+          agentRegistry.get(agentId);
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
-          if (msg.includes('not found')) {
-            console.error(`Error: kataka "${localOpts.kataka}" not found. Use "kata agent list" to see registered kataka.`);
+          if (msg.includes('not found') || msg.includes('Agent')) {
+            console.error(`Error: agent "${agentId}" not found. Use "kata agent list" to see registered agents.`);
           } else {
-            console.error(`Error: Failed to load kataka "${localOpts.kataka}": ${msg}`);
+            console.error(`Error: Failed to load agent "${agentId}": ${msg}`);
           }
           process.exitCode = 1;
           return;
         }
       }
 
-      const result = bridge.prepare(localOpts.bet, localOpts.kataka);
+      const result = bridge.prepare(localOpts.bet, agentId);
       if (isJson) {
         console.log(JSON.stringify(result, null, 2));
       } else {
@@ -361,7 +365,8 @@ export function registerExecuteCommands(program: Command): void {
     .option('--save-kata <name>', 'Save this run as a named kata after success')
     .option('--list-katas', 'List saved katas and exit')
     .option('--delete-kata <name>', 'Delete a saved kata and exit')
-    .option('--kataka <id>', 'Kataka (agent) ID driving this run — stored in artifact metadata and attributed to observations')
+    .option('--agent <id>', 'Agent ID driving this run — stored in artifact metadata and attributed to observations')
+    .option('--kataka <id>', 'Alias for --agent <id>')
     .option('--yolo', 'Skip confidence gate checks — all decisions proceed without human approval')
     .option('--bridge-gaps', 'Capture identified gaps as step-tier learnings; block on high-severity gaps')
     .option('--hint <spec>', 'Per-stage flavor hint: stage:flavor1,flavor2[:strategy] — guides orchestrator selection (can be repeated)', collect, [])
@@ -477,7 +482,7 @@ export function registerExecuteCommands(program: Command): void {
         pin: pin.length > 0 ? pin : undefined,
         dryRun: localOpts.dryRun,
         saveKata: localOpts.saveKata,
-        katakaId: localOpts.kataka as string | undefined,
+        agentId: (localOpts.agent ?? localOpts.kataka) as string | undefined,
         yolo: localOpts.yolo as boolean | undefined,
         bridgeGaps: localOpts.bridgeGaps as boolean | undefined,
         flavorHints: mergedHints,
@@ -496,7 +501,9 @@ interface RunOptions {
   dryRun?: boolean;
   json?: boolean;
   saveKata?: string;
-  /** ID of the kataka driving this run. Validated against KatakaRegistry before execution. */
+  /** ID of the agent driving this run. Validated against KataAgentRegistry before execution. */
+  agentId?: string;
+  /** Compatibility alias for older kataka-named execution state. */
   katakaId?: string;
   /** Skip confidence gate checks — all decisions proceed without human approval. */
   yolo?: boolean;
@@ -581,23 +588,24 @@ async function runCategories(
   const runner = buildRunner(ctx.kataDir);
   const bet = parseBetOption(opts.bet);
   if (bet === false) { process.exitCode = 1; return; }
+  const agentId = opts.agentId ?? opts.katakaId;
 
   // Fire-and-forget belt discovery hooks
   const projectStateFile = join(ctx.kataDir, 'project-state.json');
   ProjectStateUpdater.markDiscovery(projectStateFile, 'ranFirstExecution');
   if (opts.yolo) ProjectStateUpdater.markRanWithYolo(projectStateFile);
 
-  // Validate --kataka ID if provided
-  if (opts.katakaId) {
+  // Validate --agent/--kataka ID if provided
+  if (agentId) {
     try {
-      const katakaRegistry = new KatakaRegistry(join(ctx.kataDir, KATA_DIRS.kataka));
-      katakaRegistry.get(opts.katakaId);
+      const agentRegistry = new KataAgentRegistry(join(ctx.kataDir, KATA_DIRS.kataka));
+      agentRegistry.get(agentId);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (/not found/i.test(msg)) {
-        console.error(`Error: kataka "${opts.katakaId}" not found. Use "kata agent list" to see registered kataka.`);
+        console.error(`Error: agent "${agentId}" not found. Use "kata agent list" to see registered agents.`);
       } else {
-        console.error(`Error: Failed to load kataka "${opts.katakaId}": ${msg}`);
+        console.error(`Error: Failed to load agent "${agentId}": ${msg}`);
       }
       process.exitCode = 1;
       return;
@@ -612,7 +620,8 @@ async function runCategories(
       bet,
       pin: opts.pin,
       dryRun: opts.dryRun,
-      katakaId: opts.katakaId,
+      agentId,
+      katakaId: agentId,
       yolo: opts.yolo,
       flavorHints: opts.flavorHints,
     });
@@ -658,7 +667,14 @@ async function runCategories(
     }
   } else {
     // Multi-stage pipeline
-    const result = await runner.runPipeline(categories, { bet, dryRun: opts.dryRun, katakaId: opts.katakaId, yolo: opts.yolo, flavorHints: opts.flavorHints });
+    const result = await runner.runPipeline(categories, {
+      bet,
+      dryRun: opts.dryRun,
+      agentId,
+      katakaId: agentId,
+      yolo: opts.yolo,
+      flavorHints: opts.flavorHints,
+    });
 
     // --bridge-gaps: evaluate identified gaps across all stages
     if (opts.bridgeGaps) {
@@ -725,7 +741,7 @@ async function runCategories(
 // Runner builder + helpers
 // ---------------------------------------------------------------------------
 
-function buildRunner(kataDir: string): KiaiRunner {
+function buildRunner(kataDir: string): WorkflowRunner {
   const configPath = kataDirPath(kataDir, 'config');
   const config = JsonStore.exists(configPath)
     ? JsonStore.read(configPath, KataConfigSchema)
@@ -751,7 +767,7 @@ function buildRunner(kataDir: string): KiaiRunner {
   });
 
   const analytics = new UsageAnalytics(kataDir);
-  return new KiaiRunner({
+  return new WorkflowRunner({
     flavorRegistry,
     decisionRegistry,
     executor,

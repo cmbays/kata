@@ -56,7 +56,8 @@ export function registerPredictCommand(parent: Command): void {
     .option('--stage <category>', 'Stage category (research|plan|build|review)')
     .option('--flavor <name>', 'Flavor name (requires --stage)')
     .option('--step <name>', 'Step name (requires --stage and --flavor)')
-    .option('--kataka <id>', 'Agent (kataka) ID recording this prediction')
+    .option('--agent <id>', 'Agent ID recording this prediction')
+    .option('--kataka <id>', 'Alias for --agent <id>')
     .option('--timeframe <str>', 'Prediction timeframe (e.g. "1 sprint", "end of day")')
     .option('--metric <name>', 'Metric being predicted (for quantitative prediction)')
     .option('--value <num>', 'Predicted numeric value (for quantitative prediction)')
@@ -93,7 +94,8 @@ export function registerPredictCommand(parent: Command): void {
         timestamp: new Date().toISOString(),
         content: contentArg,
         type: 'prediction',
-        katakaId: localOpts.kataka,
+        agentId: localOpts.agent ?? localOpts.kataka,
+        katakaId: localOpts.agent ?? localOpts.kataka,
         timeframe: localOpts.timeframe,
         quantitative,
       });

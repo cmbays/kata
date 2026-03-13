@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   check:
-    name: Lint, Test & Build
+    name: Lint, Unit, Integration, E2E & Build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,5 +22,7 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run typecheck
-      - run: npm test
+      - run: npm run test:unit
+      - run: npm run test:integration
       - run: npm run build
+      - run: npm run test:e2e

@@ -49,8 +49,12 @@ export const RunSchema = z.object({
   /** ISO 8601 timestamp when the run finished (completed or failed). */
   completedAt: z.string().datetime().optional(),
   /**
-   * ID of the kataka (agent) driving this run. When set, observations recorded
-   * during the run auto-populate `katakaId` on each observation. (Wave G)
+   * ID of the agent driving this run.
+   */
+  agentId: z.string().uuid().optional(),
+  /**
+   * Compatibility alias for older kataka-named run attribution.
+   * When set, observations recorded during the run auto-populate `katakaId`.
    */
   katakaId: z.string().uuid().optional(),
   /**
@@ -240,7 +244,9 @@ export const DecisionEntrySchema = z.object({
    * decision log is fully self-describing.
    */
   lowConfidence: z.boolean().optional(),
-  /** ID of the kataka (agent) that recorded this decision. Auto-populated from run.json; overrideable with --kataka. */
+  /** ID of the agent that recorded this decision. */
+  agentId: z.string().uuid().optional(),
+  /** Compatibility alias for older kataka-named decision attribution. */
   katakaId: z.string().uuid().optional(),
 });
 
@@ -304,7 +310,9 @@ export const ArtifactIndexEntrySchema = z.object({
   type: ArtifactIndexTypeSchema,
   /** ISO 8601 timestamp when the artifact was recorded. */
   recordedAt: z.string().datetime(),
-  /** ID of the kataka (agent) that recorded this artifact. Auto-populated from run.json; overrideable with --kataka. */
+  /** ID of the agent that recorded this artifact. */
+  agentId: z.string().uuid().optional(),
+  /** Compatibility alias for older kataka-named artifact attribution. */
   katakaId: z.string().uuid().optional(),
 });
 

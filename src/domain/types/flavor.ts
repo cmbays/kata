@@ -85,9 +85,14 @@ export const FlavorSchema = z.object({
    */
   synthesisArtifact: z.string().min(1),
   /**
-   * ID of the kataka (agent) responsible for executing this flavor.
-   * When set, `kata kiai` will record this kataka on the run so observations
+   * ID of the agent responsible for executing this flavor.
+   * When set, `kata execute` will record this agent on the run so observations
    * are automatically attributed to it. (Wave G)
+   */
+  agentId: z.string().uuid().optional(),
+  /**
+   * Compatibility alias for older kataka-named flavor attribution.
+   * New code should prefer `agentId`.
    */
   kataka: z.string().uuid().optional(),
   /**

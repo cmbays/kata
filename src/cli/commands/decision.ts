@@ -38,7 +38,8 @@ export function registerDecisionCommands(parent: Command): void {
     .option('--confidence <number>', 'Confidence in the selection [0-1] (default: 1.0)', parseFloat)
     .option('--reasoning <text>', 'Orchestrator\'s reasoning for the selection')
     .option('--yolo', 'Bypass the confidence gate even if confidence is below threshold')
-    .option('--kataka <id>', 'Kataka (agent) ID recording this decision')
+    .option('--agent <id>', 'Agent ID recording this decision')
+    .option('--kataka <id>', 'Alias for --agent <id>')
     .action(withCommandContext(async (ctx, runId: string) => {
       const localOpts = ctx.cmd.opts();
       const runsDir = kataDirPath(ctx.kataDir, 'runs');
@@ -110,10 +111,10 @@ export function registerDecisionCommands(parent: Command): void {
 
       const paths = runPaths(runsDir, runId);
 
-      // Auto-populate katakaId from run.json if not explicitly provided
-      let katakaId: string | undefined = localOpts.kataka as string | undefined;
-      if (!katakaId) {
-        katakaId = runData.katakaId;
+      // Auto-populate agent attribution from run.json if not explicitly provided
+      let agentId: string | undefined = (localOpts.agent ?? localOpts.kataka) as string | undefined;
+      if (!agentId) {
+        agentId = runData.agentId ?? runData.katakaId;
       }
 
       const id = randomUUID();
@@ -147,7 +148,8 @@ export function registerDecisionCommands(parent: Command): void {
         confidence,
         decidedAt: now,
         ...(isLowConfidence ? { lowConfidence: true } : {}),
-        ...(katakaId ? { katakaId } : {}),
+        ...(agentId ? { agentId } : {}),
+        ...(agentId ? { katakaId: agentId } : {}),
       };
 
       // Append to run-level decisions.jsonl
