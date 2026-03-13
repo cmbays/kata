@@ -268,19 +268,19 @@ export {
   type DomainConfidenceScore,
 } from './domain-tags.js';
 
-// Kataka types (Wave G)
+// Kata agent types (Wave G)
 export {
-  KatakaRoleSchema,
-  KatakaSchema,
-  type KatakaRole,
-  type Kataka,
-} from './kataka.js';
+  KataAgentRoleSchema,
+  KataAgentSchema,
+  type KataAgentRole,
+  type KataAgent,
+} from './kata-agent.js';
 
-// Kataka confidence types (Wave J)
+// Kata agent confidence types (Wave J)
 export {
-  KatakaConfidenceProfileSchema,
-  type KatakaConfidenceProfile,
-} from './kataka-confidence.js';
+  KataAgentConfidenceProfileSchema,
+  type KataAgentConfidenceProfile,
+} from './kata-agent-confidence.js';
 
 // Belt types (Wave J)
 export {

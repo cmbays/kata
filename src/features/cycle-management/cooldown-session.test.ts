@@ -223,6 +223,46 @@ describe('CooldownSession', () => {
       expect(result.learningsCaptured).toBeGreaterThanOrEqual(1);
     });
 
+    it('captures learnings for significant under-utilization', async () => {
+      const cycle = cycleManager.create({ tokenBudget: 100000 }, 'Under Budget');
+      cycleManager.addBet(cycle.id, {
+        description: 'Small feature',
+        appetite: 20,
+        outcome: 'complete',
+        issueRefs: [],
+      });
+
+      const historyEntry = {
+        id: crypto.randomUUID(),
+        pipelineId: crypto.randomUUID(),
+        stageType: 'build',
+        stageIndex: 0,
+        adapter: 'manual',
+        tokenUsage: {
+          inputTokens: 500,
+          outputTokens: 500,
+          cacheCreationTokens: 0,
+          cacheReadTokens: 0,
+          total: 1000,
+        },
+        artifactNames: [],
+        learningIds: [],
+        cycleId: cycle.id,
+        startedAt: new Date().toISOString(),
+        completedAt: new Date().toISOString(),
+      };
+      JsonStore.write(
+        join(historyDir, `${historyEntry.id}.json`),
+        historyEntry,
+        ExecutionHistoryEntrySchema,
+      );
+
+      const result = await session.run(cycle.id);
+
+      expect(result.report.utilizationPercent).toBeCloseTo(1, 0);
+      expect(result.learningsCaptured).toBeGreaterThanOrEqual(1);
+    });
+
     it('rolls back cycle state when an error occurs mid-session', async () => {
       const cycle = cycleManager.create({ tokenBudget: 50000 }, 'Rollback Test');
       cycleManager.updateState(cycle.id, 'active');
@@ -246,6 +286,136 @@ describe('CooldownSession', () => {
       expect(result.report.bets).toEqual([]);
       expect(result.proposals).toEqual([]);
       expect(result.learningsCaptured).toBe(0);
+    });
+  });
+
+  describe('agent confidence integration', () => {
+    function writeAgentRecord(dir: string, id: string, name: string): void {
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(
+        join(dir, `${id}.json`),
+        JSON.stringify({
+          id,
+          name,
+          role: 'executor',
+          skills: [],
+          createdAt: new Date().toISOString(),
+          active: true,
+        }, null, 2),
+      );
+    }
+
+    it('computes confidence for each registered agent during run() using canonical deps', async () => {
+      const agentDir = join(baseDir, 'agents-canonical');
+      const alphaId = randomUUID();
+      const betaId = randomUUID();
+      writeAgentRecord(agentDir, alphaId, 'Alpha');
+      writeAgentRecord(agentDir, betaId, 'Beta');
+
+      const cycle = cycleManager.create({ tokenBudget: 50000 }, 'Agent Confidence Cycle');
+      const agentConfidenceCalculator = { compute: vi.fn() };
+      const sessionWithAgents = new CooldownSession({
+        cycleManager,
+        knowledgeStore,
+        persistence: JsonStore,
+        pipelineDir,
+        historyDir,
+        agentDir,
+        agentConfidenceCalculator,
+      });
+
+      await sessionWithAgents.run(cycle.id);
+
+      expect(agentConfidenceCalculator.compute).toHaveBeenCalledTimes(2);
+      expect(agentConfidenceCalculator.compute).toHaveBeenCalledWith(alphaId, 'Alpha');
+      expect(agentConfidenceCalculator.compute).toHaveBeenCalledWith(betaId, 'Beta');
+    });
+
+    it('supports kataka compatibility aliases during complete()', async () => {
+      const katakaDir = join(baseDir, 'agents-compat');
+      const agentId = randomUUID();
+      writeAgentRecord(katakaDir, agentId, 'Compat Agent');
+
+      const cycle = cycleManager.create({ tokenBudget: 50000 }, 'Compat Agent Cycle');
+      const synthesisDir = join(baseDir, 'synthesis-agent-compat');
+      mkdirSync(synthesisDir, { recursive: true });
+
+      const katakaConfidenceCalculator = { compute: vi.fn() };
+      const sessionWithCompat = new CooldownSession({
+        cycleManager,
+        knowledgeStore,
+        persistence: JsonStore,
+        pipelineDir,
+        historyDir,
+        synthesisDir,
+        katakaDir,
+        katakaConfidenceCalculator,
+      });
+
+      await sessionWithCompat.prepare(cycle.id);
+      await sessionWithCompat.complete(cycle.id);
+
+      expect(katakaConfidenceCalculator.compute).toHaveBeenCalledWith(agentId, 'Compat Agent');
+    });
+  });
+
+  describe('next-keiko integration', () => {
+    it('passes completed and partial bets to the next-keiko generator', async () => {
+      const runsDir = join(baseDir, 'runs-next-keiko');
+      const bridgeRunsDir = join(baseDir, 'bridge-runs-next-keiko');
+      mkdirSync(runsDir, { recursive: true });
+      mkdirSync(bridgeRunsDir, { recursive: true });
+
+      const cycle = cycleManager.create({ tokenBudget: 50000 }, 'Next Keiko Cycle');
+      cycleManager.addBet(cycle.id, {
+        description: 'Completed bet',
+        appetite: 20,
+        outcome: 'complete',
+        issueRefs: [],
+      });
+      cycleManager.addBet(cycle.id, {
+        description: 'Partial bet',
+        appetite: 20,
+        outcome: 'partial',
+        issueRefs: [],
+      });
+      cycleManager.addBet(cycle.id, {
+        description: 'Abandoned bet',
+        appetite: 20,
+        outcome: 'abandoned',
+        issueRefs: [],
+      });
+
+      const nextKeikoProposalGenerator = {
+        generate: vi.fn(() => ({
+          text: '=== Next Keiko Proposals ===',
+          observationCounts: { friction: 0, gap: 0, insight: 0, total: 0 },
+          milestoneIssueCount: 2,
+        })),
+      };
+      const sessionWithNextKeiko = new CooldownSession({
+        cycleManager,
+        knowledgeStore,
+        persistence: JsonStore,
+        pipelineDir,
+        historyDir,
+        runsDir,
+        bridgeRunsDir,
+        nextKeikoMilestoneName: 'Milestone Alpha',
+        nextKeikoProposalGenerator,
+      });
+
+      const result = await sessionWithNextKeiko.run(cycle.id);
+
+      expect(nextKeikoProposalGenerator.generate).toHaveBeenCalledWith(expect.objectContaining({
+        cycle: expect.objectContaining({ id: cycle.id }),
+        runsDir,
+        bridgeRunsDir,
+        milestoneName: 'Milestone Alpha',
+        completedBets: ['Completed bet', 'Partial bet'],
+      }));
+      expect(result.nextKeikoResult?.text).toContain('Next Keiko Proposals');
+      expect(result.nextKeikoResult?.milestoneIssueCount).toBe(2);
     });
   });
 

@@ -1,10 +1,12 @@
 import { join } from 'node:path';
-import { mkdirSync, rmSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync, existsSync, readFileSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { randomUUID } from 'node:crypto';
 import { Command } from 'commander';
 import { registerExecuteCommands } from './execute.js';
 import { CycleManager } from '@domain/services/cycle-manager.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
+import { SessionExecutionBridge } from '@infra/execution/session-bridge.js';
 
 // ---------------------------------------------------------------------------
 // Hoist mock functions before modules are imported
@@ -15,9 +17,9 @@ const { mockRunStage, mockRunPipeline } = vi.hoisted(() => ({
   mockRunPipeline: vi.fn(),
 }));
 
-// Mock KiaiRunner as a class (required for Vitest to treat it as a constructor)
-vi.mock('@features/execute/kiai-runner.js', () => ({
-  KiaiRunner: class MockKiaiRunner {
+// Mock WorkflowRunner as a class (required for Vitest to treat it as a constructor)
+vi.mock('@features/execute/workflow-runner.js', () => ({
+  WorkflowRunner: class MockWorkflowRunner {
     runStage = mockRunStage;
     runPipeline = mockRunPipeline;
   },
@@ -80,6 +82,7 @@ describe('registerExecuteCommands', () => {
     mkdirSync(join(kataDir, 'history'), { recursive: true });
     mkdirSync(join(kataDir, 'tracking'), { recursive: true });
     mkdirSync(join(kataDir, 'katas'), { recursive: true });
+    mkdirSync(join(kataDir, 'kataka'), { recursive: true });
     consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     mockRunStage.mockResolvedValue(makeSingleResult());
@@ -101,6 +104,240 @@ describe('registerExecuteCommands', () => {
     registerExecuteCommands(program);
     return program;
   }
+
+  function registerAgent(id: string, name = 'Test Agent'): void {
+    writeFileSync(
+      join(kataDir, 'kataka', `${id}.json`),
+      JSON.stringify({
+        id,
+        name,
+        role: 'executor',
+        skills: [],
+        createdAt: new Date().toISOString(),
+        active: true,
+      }, null, 2),
+    );
+  }
+
+  function createCycleWithBets(
+    name = 'CLI Cycle',
+    bets: Array<{ description: string; appetite: number; outcome?: 'pending' | 'complete' | 'partial' | 'abandoned' }> = [
+      { description: 'CLI bet', appetite: 30, outcome: 'pending' },
+    ],
+  ) {
+    const manager = new CycleManager(join(kataDir, 'cycles'), JsonStore);
+    let cycle = manager.create({ tokenBudget: 100000 }, name);
+
+    for (const bet of bets) {
+      cycle = manager.addBet(cycle.id, {
+        description: bet.description,
+        appetite: bet.appetite,
+        outcome: bet.outcome ?? 'pending',
+        issueRefs: [],
+      });
+    }
+
+    return manager.get(cycle.id);
+  }
+
+  function prepareRunForBet(betId: string, agentId?: string) {
+    const bridge = new SessionExecutionBridge(kataDir);
+    return bridge.prepare(betId, agentId);
+  }
+
+  describe('cycle subcommand', () => {
+    it('prepares all pending bets for session execution', async () => {
+      const cycle = createCycleWithBets('Dispatch Cycle', [
+        { description: 'Bet A', appetite: 20 },
+        { description: 'Bet B', appetite: 35 },
+      ]);
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir, 'execute', 'cycle', cycle.id, '--prepare',
+      ]);
+
+      const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('Prepared 2 run(s)');
+
+      const bridgeRunsDir = join(kataDir, 'bridge-runs');
+      const files = existsSync(bridgeRunsDir)
+        ? readdirSync(bridgeRunsDir).filter((file) => file.endsWith('.json'))
+        : [];
+      expect(files).toHaveLength(2);
+    });
+
+    it('renders cycle status with budget and activity counts', async () => {
+      const cycle = createCycleWithBets('Status Cycle', [
+        { description: 'Observed bet', appetite: 25 },
+      ]);
+      const bridge = new SessionExecutionBridge(kataDir);
+      const prepared = bridge.prepareCycle(cycle.id);
+      const runId = prepared.preparedRuns[0]!.runId;
+
+      writeFileSync(join(kataDir, 'runs', runId, 'observations.jsonl'), '{"note":"obs1"}\n{"note":"obs2"}\n');
+      writeFileSync(join(kataDir, 'runs', runId, 'artifacts.jsonl'), '{"name":"artifact"}\n');
+      writeFileSync(join(kataDir, 'runs', runId, 'decisions.jsonl'), '{"decision":"ship"}\n');
+      writeFileSync(
+        join(kataDir, 'history', `${randomUUID()}.json`),
+        JSON.stringify({
+          id: randomUUID(),
+          pipelineId: randomUUID(),
+          stageType: 'build',
+          stageIndex: 0,
+          adapter: 'manual',
+          cycleId: cycle.id,
+          tokenUsage: { total: 3000 },
+          startedAt: new Date().toISOString(),
+          completedAt: new Date().toISOString(),
+        }),
+      );
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', 'cycle', cycle.id, '--status']);
+
+      const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('Cycle "Status Cycle"');
+      expect(output).toContain('Budget: 3% used (~3000 tokens)');
+      expect(output).toContain('kansatsu: 2, maki: 1, kime: 1');
+    });
+
+    it('completes a prepared cycle and emits json when requested', async () => {
+      const cycle = createCycleWithBets('Complete Cycle', [
+        { description: 'Bet A', appetite: 20 },
+        { description: 'Bet B', appetite: 20 },
+      ]);
+      const bridge = new SessionExecutionBridge(kataDir);
+      bridge.prepareCycle(cycle.id);
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--json', '--cwd', baseDir, 'execute', 'cycle', cycle.id, '--complete']);
+
+      const parsed = JSON.parse(consoleSpy.mock.calls[0]?.[0] as string);
+      expect(parsed.cycleId).toBe(cycle.id);
+      expect(parsed.completedBets).toBe(2);
+      expect(parsed.totalBets).toBe(2);
+    });
+
+    it('emits prepared cycle data as json when requested', async () => {
+      const cycle = createCycleWithBets('JSON Cycle', [
+        { description: 'JSON bet', appetite: 20 },
+      ]);
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--json', '--cwd', baseDir, 'execute', 'cycle', cycle.id, '--prepare',
+      ]);
+
+      const parsed = JSON.parse(consoleSpy.mock.calls[0]?.[0] as string);
+      expect(parsed.cycleId).toBe(cycle.id);
+      expect(parsed.preparedRuns).toHaveLength(1);
+    });
+
+    it('requires an action flag for execute cycle', async () => {
+      const cycle = createCycleWithBets();
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', 'cycle', cycle.id]);
+
+      expect(process.exitCode).toBe(1);
+      expect(errorSpy.mock.calls.map((c) => c[0]).join('\n')).toContain('Specify one of');
+    });
+  });
+
+  describe('complete subcommand', () => {
+    it('marks a run failed and reports token usage as json', async () => {
+      const cycle = createCycleWithBets('Single Run Cycle', [
+        { description: 'Run me', appetite: 20 },
+      ]);
+      const prepared = prepareRunForBet(cycle.bets[0]!.id);
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir, 'execute', 'complete', prepared.runId,
+        '--failed',
+        '--artifacts', '[{"name":"report.md"}]',
+        '--input-tokens', '10',
+        '--output-tokens', '5',
+        '--json',
+      ]);
+
+      const parsed = JSON.parse(consoleSpy.mock.calls[0]?.[0] as string);
+      expect(parsed.status).toBe('failed');
+      expect(parsed.tokenUsage).toEqual({ inputTokens: 10, outputTokens: 5, total: 15 });
+
+      const runJson = JSON.parse(readFileSync(join(kataDir, 'runs', prepared.runId, 'run.json'), 'utf-8'));
+      expect(runJson.status).toBe('failed');
+      expect(runJson.tokenUsage.totalTokens).toBe(15);
+    });
+
+    it('rejects invalid artifact payloads', async () => {
+      const cycle = createCycleWithBets('Artifact Error Cycle', [
+        { description: 'Bad artifact run', appetite: 20 },
+      ]);
+      const prepared = prepareRunForBet(cycle.bets[0]!.id);
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir, 'execute', 'complete', prepared.runId,
+        '--artifacts', '{"name":"oops"}',
+      ]);
+
+      expect(process.exitCode).toBe(1);
+      expect(errorSpy.mock.calls.map((c) => c[0]).join('\n')).toContain('JSON array');
+    });
+
+    it('rejects negative token counts', async () => {
+      const cycle = createCycleWithBets('Token Error Cycle', [
+        { description: 'Bad token run', appetite: 20 },
+      ]);
+      const prepared = prepareRunForBet(cycle.bets[0]!.id);
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir, 'execute', 'complete', prepared.runId,
+        '--input-tokens', '-1',
+      ]);
+
+      expect(process.exitCode).toBe(1);
+      expect(errorSpy.mock.calls.map((c) => c[0]).join('\n')).toContain('non-negative integer');
+    });
+  });
+
+  describe('context subcommand', () => {
+    it('renders agent context through the context subcommand', async () => {
+      const cycle = createCycleWithBets('Context Cycle', [
+        { description: 'Explain the run', appetite: 25 },
+      ]);
+      const prepared = prepareRunForBet(cycle.bets[0]!.id);
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--json', '--cwd', baseDir, 'execute', 'context', prepared.runId,
+      ]);
+
+      const parsed = JSON.parse(consoleSpy.mock.calls[0]?.[0] as string);
+      expect(parsed.runId).toBe(prepared.runId);
+      expect(parsed.agentContext).toContain(`**Run ID**: ${prepared.runId}`);
+      expect(parsed.agentContext).toContain(`**Bet ID**: ${prepared.betId}`);
+    });
+  });
+
+  describe('hidden backward-compatible execute commands', () => {
+    it('routes execute run through single-stage execution', async () => {
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', 'run', 'build']);
+
+      expect(mockRunStage).toHaveBeenCalledWith('build', expect.anything());
+    });
+
+    it('routes execute pipeline through multi-stage execution', async () => {
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', 'pipeline', 'build', 'review']);
+
+      expect(mockRunPipeline).toHaveBeenCalledWith(['build', 'review'], expect.anything());
+    });
+  });
 
   // ---- --list-katas ----
 
@@ -360,6 +597,23 @@ describe('registerExecuteCommands', () => {
       expect(mockRunStage).toHaveBeenCalledWith(
         'build',
         expect.objectContaining({ pin: expect.arrayContaining(['typescript-tdd', 'legacy-build']) }),
+      );
+    });
+  });
+
+  describe('--agent', () => {
+    it('passes canonical agent attribution to single-stage execution', async () => {
+      const agentId = '11111111-1111-4111-8111-111111111111';
+      registerAgent(agentId);
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir, 'execute', 'build', '--agent', agentId,
+      ]);
+
+      expect(mockRunStage).toHaveBeenCalledWith(
+        'build',
+        expect.objectContaining({ agentId, katakaId: agentId }),
       );
     });
   });

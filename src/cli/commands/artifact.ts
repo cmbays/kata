@@ -35,7 +35,8 @@ export function registerArtifactCommands(parent: Command): void {
     .requiredOption('--file <path>', 'Path to the source artifact file')
     .requiredOption('--summary <description>', 'Short summary of the artifact content')
     .option('--type <type>', 'Artifact type: "artifact" (default) or "synthesis"', 'artifact')
-    .option('--kataka <id>', 'Kataka (agent) ID recording this artifact')
+    .option('--agent <id>', 'Agent ID recording this artifact')
+    .option('--kataka <id>', 'Alias for --agent <id>')
     .action(withCommandContext(async (ctx, runId: string) => {
       const localOpts = ctx.cmd.opts();
       const runsDir = kataDirPath(ctx.kataDir, 'runs');
@@ -77,10 +78,10 @@ export function registerArtifactCommands(parent: Command): void {
 
       const paths = runPaths(runsDir, runId);
 
-      // Auto-populate katakaId from run.json if not explicitly provided
-      let katakaId: string | undefined = localOpts.kataka as string | undefined;
-      if (!katakaId) {
-        katakaId = run.katakaId;
+      // Auto-populate agent attribution from run.json if not explicitly provided
+      let agentId: string | undefined = (localOpts.agent ?? localOpts.kataka) as string | undefined;
+      if (!agentId) {
+        agentId = run.agentId ?? run.katakaId;
       }
       const flavor = (localOpts.flavor as string | undefined) ?? null;
 
@@ -143,7 +144,8 @@ export function registerArtifactCommands(parent: Command): void {
         summary: localOpts.summary as string,
         type: artifactType as 'artifact' | 'synthesis',
         recordedAt: new Date().toISOString(),
-        ...(katakaId ? { katakaId } : {}),
+        ...(agentId ? { agentId } : {}),
+        ...(agentId ? { katakaId: agentId } : {}),
       };
 
       // Append to flavor-level (or stage-level) artifact-index.jsonl

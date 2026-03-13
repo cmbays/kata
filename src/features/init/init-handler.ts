@@ -348,7 +348,7 @@ export async function handleInit(options: InitOptions): Promise<InitResult> {
     logger.warn(`Built-in pipeline templates not found at "${builtinTemplatesDir}". Templates were not loaded.`);
   }
 
-  // Generate KATA.md — the project context file for kataka agents
+  // Generate KATA.md — the project context file for Kata agents
   let kataMdPath: string | undefined;
   const kataMdDest = join(kataDir, 'KATA.md');
   try {

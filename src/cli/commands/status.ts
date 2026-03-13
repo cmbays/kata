@@ -4,7 +4,7 @@ import { CycleManager } from '@domain/services/cycle-manager.js';
 import { KnowledgeStore } from '@infra/knowledge/knowledge-store.js';
 import { UsageAnalytics } from '@infra/tracking/usage-analytics.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
-import { listRecentArtifacts } from '@features/execute/kiai-runner.js';
+import { listRecentArtifacts } from '@features/execute/workflow-runner.js';
 import { StageCategorySchema, type StageCategory } from '@domain/types/stage.js';
 import {
   BELT_KANJI,

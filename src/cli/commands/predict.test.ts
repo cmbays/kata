@@ -197,6 +197,17 @@ describe('kata predict command', () => {
     expect(observations[0]).toMatchObject({ katakaId: 'agent-alpha' });
   });
 
+  it('sets canonical agent attribution when --agent is provided', async () => {
+    await runPredict(kataDir, [
+      'canonical agent prediction',
+      '--run', runId,
+      '--agent', 'agent-beta',
+    ]);
+
+    const observations = readObservations(runsDir, runId, { level: 'run' });
+    expect(observations[0]).toMatchObject({ agentId: 'agent-beta', katakaId: 'agent-beta' });
+  });
+
   // -------------------------------------------------------------------------
   // Missing --run flag → Commander throws (requiredOption)
   // -------------------------------------------------------------------------

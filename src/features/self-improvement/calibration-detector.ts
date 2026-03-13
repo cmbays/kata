@@ -169,19 +169,20 @@ export class CalibrationDetector {
     // 3. Predictor divergence
     // -------------------------------------------------------------------------
     const agentObservations = allObservations.filter(
-      (o) => o.katakaId !== undefined && o.katakaId !== '',
+      (o) => (o.agentId ?? o.katakaId) !== undefined && (o.agentId ?? o.katakaId) !== '',
     );
 
     if (agentObservations.length >= 8) {
-      // Map predictionId → katakaId for prediction observations
+      // Map predictionId → agentId for prediction observations
       const predictionKatakaMap = new Map<string, string>();
       for (const obs of agentObservations) {
-        if (obs.type === 'prediction' && obs.katakaId) {
-          predictionKatakaMap.set(obs.id, obs.katakaId);
+        const agentId = obs.agentId ?? obs.katakaId;
+        if (obs.type === 'prediction' && agentId) {
+          predictionKatakaMap.set(obs.id, agentId);
         }
       }
 
-      // Group validations by the katakaId of the originating prediction
+      // Group validations by the agent attribution of the originating prediction
       const agentValidations = new Map<string, Array<Extract<Reflection, { type: 'validation' }>>>();
       for (const v of validations) {
         const katakaId = predictionKatakaMap.get(v.predictionId);
@@ -217,6 +218,7 @@ export class CalibrationDetector {
             observationIds: lowerValidations.map((v) => v.predictionId),
             type: 'calibration',
             domain: 'agent',
+            agentId: lowerAgentId,
             katakaId: lowerAgentId,
             totalPredictions: lowerValidations.length,
             correctPredictions: lowerValidations.filter((v) => v.correct).length,

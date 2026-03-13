@@ -51,10 +51,10 @@ Map natural language (English and Japanese) to kata operations. Claude's native 
 | "where are things at?" / "status check" | Check progress | `kata kiai cycle <id> --status --json` |
 | "let's do ma / cooldown / reflect" | Start cooldown | `kata cooldown --prepare` |
 | "what's our belt?" / "how are we doing?" | Project status | `kata status --json` |
-| "what's on the roadmap?" | Show roadmap | Read `docs/dogfooding-roadmap.md` |
+| "what's on the roadmap?" | Show roadmap | Check the active project plan or issue tracker |
 | "add a bet/kadai for X" | Add bet to cycle | `kata cycle add-bet ...` |
 
-See the [System Guide Lexicon](../docs/kata-system-guide.md#11-the-kata-lexicon) for the full vocabulary table.
+See the [System Guide Lexicon](../docs-site/guides/system-guide.md#11-the-kata-lexicon) for the full vocabulary table.
 
 ---
 

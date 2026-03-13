@@ -35,8 +35,9 @@ export function formatFlavorDetail(flavor: Flavor, plain?: boolean): string {
     lines.push(`Description: ${flavor.description}`);
   }
   lines.push(`Synthesis Artifact: ${flavor.synthesisArtifact}`);
-  if (flavor.kataka) {
-    lines.push(`${cap(lex.agent)}: ${flavor.kataka}`);
+  const agentId = flavor.agentId ?? flavor.kataka;
+  if (agentId) {
+    lines.push(`${cap(lex.agent)}: ${agentId}`);
   }
   lines.push('');
 
@@ -82,4 +83,3 @@ function computeWidths(rows: string[][]): number[] {
 function padColumns(values: string[], widths: number[]): string {
   return values.map((v, i) => visiblePadEnd(v, widths[i] ?? 20)).join('  ');
 }
-

@@ -2,7 +2,7 @@ import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { discoverAndRegisterAgents } from './agent-discoverer.js';
-import { KatakaRegistry } from '@infra/registries/kataka-registry.js';
+import { KataAgentRegistry } from '@infra/registries/kata-agent-registry.js';
 
 function makeTempProject(): { cwd: string; kataDir: string } {
   const cwd = mkdtempSync(join(tmpdir(), 'kata-discover-test-'));
@@ -55,12 +55,12 @@ describe('discoverAndRegisterAgents', () => {
     expect(alphas).toHaveLength(1);
   });
 
-  it('persists registered agents to the KatakaRegistry', () => {
+  it('persists registered agents to the KataAgentRegistry', () => {
     const { cwd, kataDir } = makeTempProject();
     writeFileSync(join(cwd, 'mori.agent.ts'), '// stub');
     discoverAndRegisterAgents(cwd, kataDir);
 
-    const registry = new KatakaRegistry(join(kataDir, 'kataka'));
+    const registry = new KataAgentRegistry(join(kataDir, 'kataka'));
     const list = registry.list();
     expect(list.some((k) => k.name === 'Mori')).toBe(true);
   });
@@ -70,7 +70,7 @@ describe('discoverAndRegisterAgents', () => {
     writeFileSync(join(cwd, 'builder.agent.ts'), '// stub');
     const result = discoverAndRegisterAgents(cwd, kataDir);
 
-    const registry = new KatakaRegistry(join(kataDir, 'kataka'));
+    const registry = new KataAgentRegistry(join(kataDir, 'kataka'));
     const agent = registry.get(result.agents[0]!.id);
     expect(agent.role).toBe('executor');
   });

@@ -32,7 +32,7 @@ function formatObservation(obs: Observation, plain?: boolean): string {
   lines.push(`${lex.observation}: [${obs.type}] ${obs.content}`);
   lines.push(`  id: ${obs.id}`);
   lines.push(`  at: ${obs.timestamp}`);
-  if (obs.katakaId) lines.push(`  ${lex.agent}: ${obs.katakaId}`);
+  if (obs.agentId ?? obs.katakaId) lines.push(`  ${lex.agent}: ${obs.agentId ?? obs.katakaId}`);
 
   if (obs.type === 'friction') {
     lines.push(`  taxonomy: ${obs.taxonomy}`);
@@ -111,7 +111,8 @@ export function registerObserveCommands(parent: Command): void {
     .option('--stage <category>', 'Stage category (research|plan|build|review) — scope this to a stage')
     .option('--flavor <name>', 'Flavor name — scope this to a flavor (requires --stage)')
     .option('--step <name>', 'Step name — scope this to a step (requires --stage and --flavor)')
-    .option('--kataka <id>', 'Kataka (agent) ID recording this observation')
+    .option('--agent <id>', 'Agent ID recording this observation')
+    .option('--kataka <id>', 'Alias for --agent <id>')
     // Friction-specific
     .option('--taxonomy <type>', `Friction taxonomy: ${FrictionTaxonomy.options.join(' | ')}`)
     .option('--contradicts <ref>', 'What this friction contradicts')
@@ -133,17 +134,17 @@ export function registerObserveCommands(parent: Command): void {
         step: localOpts.step,
       });
 
-      // Auto-populate katakaId from run context if not explicitly provided
-      let katakaId: string | undefined = localOpts.kataka as string | undefined;
+      // Auto-populate agent attribution from run context if not explicitly provided
+      let agentId: string | undefined = (localOpts.agent ?? localOpts.kataka) as string | undefined;
 
-      if (!katakaId) {
-        // Read run.json to check if this run has a katakaId assigned
+      if (!agentId) {
+        // Read run.json to check if this run already has agent attribution
         try {
           const rp = runPaths(runsDir, runId);
           const run = JsonStore.read(rp.runJson, RunSchema);
-          katakaId = run.katakaId;
+          agentId = run.agentId ?? run.katakaId;
         } catch {
-          // Run not found or no katakaId — proceed without attribution
+          // Run not found or no agent attribution — proceed without attribution
         }
       }
 
@@ -152,7 +153,8 @@ export function registerObserveCommands(parent: Command): void {
         id: randomUUID(),
         timestamp: new Date().toISOString(),
         content: contentArg,
-        katakaId,
+        agentId,
+        katakaId: agentId,
       };
 
       let observation: Observation;

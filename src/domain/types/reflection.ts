@@ -18,6 +18,7 @@ const ReflectionBaseSchema = z.object({
 const CalibrationReflectionSchema = ReflectionBaseSchema.extend({
   type: z.literal('calibration'),
   domain: z.string().min(1),
+  agentId: z.string().optional(),
   katakaId: z.string().optional(),
   totalPredictions: z.number().int().min(0),
   correctPredictions: z.number().int().min(0),

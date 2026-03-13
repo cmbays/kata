@@ -231,6 +231,25 @@ describe('kata observe record', () => {
     expect(obs[0]!.katakaId).toBe(explicitKatakaId);
   });
 
+  it('records canonical agent attribution when --agent is provided', async () => {
+    const { kataDir, runsDir } = makeKataDir();
+    const runId = randomUUID();
+    const agentId = randomUUID();
+    writeRunJson(runsDir, runId);
+
+    await runCli([
+      'observe', 'record', 'insight', 'canonical agent observation',
+      '--run', runId,
+      '--agent', agentId,
+    ], join(kataDir, '..'));
+
+    const paths = runPaths(runsDir, runId);
+    const obs = JsonlStore.readAll(paths.observationsJsonl, ObservationSchema);
+    expect(obs).toHaveLength(1);
+    expect(obs[0]!.agentId).toBe(agentId);
+    expect(obs[0]!.katakaId).toBe(agentId);
+  });
+
   it('leaves katakaId undefined when run.json has no katakaId and --kataka is not provided', async () => {
     const { kataDir, runsDir } = makeKataDir();
     const runId = randomUUID();

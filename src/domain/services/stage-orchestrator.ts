@@ -722,13 +722,20 @@ export class BaseStageOrchestrator implements IStageOrchestrator {
   // ---------------------------------------------------------------------------
 
   /**
-   * Build a per-flavor context with cascading kataka attribution:
-   * flavor.kataka > context.activeKatakaId (from run-level) > none
+   * Build a per-flavor context with cascading agent attribution:
+   * flavor.agentId > flavor.kataka > context.activeAgentId > context.activeKatakaId > none
    */
   private contextForFlavor(flavor: Flavor, context: OrchestratorContext): OrchestratorContext {
-    const activeKatakaId = flavor.kataka ?? context.activeKatakaId;
-    if (activeKatakaId === context.activeKatakaId) return context;
-    return { ...context, activeKatakaId };
+    const activeAgentId =
+      flavor.agentId ??
+      flavor.kataka ??
+      context.activeAgentId ??
+      context.activeKatakaId;
+    if (
+      activeAgentId === context.activeAgentId &&
+      activeAgentId === context.activeKatakaId
+    ) return context;
+    return { ...context, activeAgentId, activeKatakaId: activeAgentId };
   }
 
   protected async executeFlavors(

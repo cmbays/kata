@@ -19,19 +19,19 @@ export function slugify(input: string, maxLength = 20): string {
 /**
  * Generate a teammate agent name for cycle-as-a-team execution.
  *
- * Convention: `{bet-slug}/{kataka-name}` (e.g., `auth-fix/bugfix-ts`).
+ * Convention: `{bet-slug}/{agent-name}` (e.g., `auth-fix/bugfix-ts`).
  * When `index` > 0, appends `-{index}` for disambiguation.
  *
  * @param betDescription - Human-readable bet title or description
- * @param katakaName - Name of the kataka being spawned
+ * @param agentName - Name of the agent being spawned
  * @param index - Optional disambiguation index (appended when > 0)
  */
 export function generateTeammateName(
   betDescription: string,
-  katakaName: string,
+  agentName: string,
   index?: number,
 ): string {
   const betSlug = slugify(betDescription) || 'unnamed';
   const suffix = index && index > 0 ? `-${index}` : '';
-  return `${betSlug}/${katakaName}${suffix}`;
+  return `${betSlug}/${agentName}${suffix}`;
 }

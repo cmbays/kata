@@ -11,11 +11,18 @@ A Development Methodology Engine — TypeScript library + CLI that encodes devel
 ```bash
 npm run build          # Build with tsup (ESM, Node 20+)
 npm run dev            # Run CLI in dev mode: tsx src/cli/index.ts
-npm test               # Run all tests (vitest)
+npm run test:unit      # Fast unit-focused vitest suite
+npm run test:integration # Real-service / filesystem integration suite
+npm run test:e2e       # Real CLI subprocess smoke tests
+npm test               # Unit + integration
+npm run test:all       # Unit + integration + e2e
+npm run test:mutation:dry # Validate the Stryker harness quickly
+npm run test:mutation  # Stryker mutation tests on core lifecycle files
 npm run test:watch     # Watch mode
 npm run test:coverage  # Coverage (v8, thresholds: 80% statements/functions/lines, 75% branches)
 npm run lint           # ESLint on src/
 npm run typecheck      # tsc --noEmit
+npm run verify         # Lint + typecheck + unit + integration + e2e + build
 ```
 
 Run a single test file: `npx vitest run src/path/to/file.test.ts`
@@ -56,7 +63,15 @@ src/
 
 ## Tests
 
-Colocated: `*.test.ts` next to `*.ts`. Vitest globals enabled — no need to import `describe`/`it`/`expect`. Coverage excludes test files and `src/cli/index.ts`.
+Colocated: `*.test.ts` next to `*.ts`. Vitest globals enabled — no need to import `describe`/`it`/`expect`.
+
+Test stages:
+- Unit: `vitest.unit.config.ts`
+- Integration: `vitest.integration.config.ts`
+- E2E: `vitest.e2e.config.ts` using the built CLI entrypoint from `dist/cli/index.js`
+- Mutation: `vitest.mutation.config.ts` + `stryker.config.mjs`
+
+Coverage excludes test files and `src/cli/index.ts`.
 
 ## GitHub PR operations — use REST API
 
@@ -80,4 +95,4 @@ gh api repos/{owner}/{repo}/pulls/NNN/reviews
 
 ## Implementation status
 
-**Keiko 5 complete.** ~3013 tests across 147 files. San-Ma three-space architecture (Epic #261) is the current unblocked epic. See `memory/MEMORY.md` for current state and open issues, `docs/pipeline/plan.md` for wave structure.
+**Keiko 5 complete.** ~3013 tests across 147 files. See `memory/MEMORY.md` for current state and open issues.

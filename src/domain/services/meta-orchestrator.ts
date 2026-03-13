@@ -34,7 +34,7 @@ export class MetaOrchestrator implements IMetaOrchestrator {
   async runPipeline(
     categories: StageCategory[],
     bet?: Record<string, unknown>,
-    options?: { yolo?: boolean; flavorHints?: Record<string, FlavorHint>; katakaId?: string },
+    options?: { yolo?: boolean; flavorHints?: Record<string, FlavorHint>; agentId?: string; katakaId?: string },
   ): Promise<PipelineOrchestrationResult> {
     if (categories.length === 0) {
       throw new OrchestratorError(
@@ -44,6 +44,8 @@ export class MetaOrchestrator implements IMetaOrchestrator {
 
     const stageResults: OrchestratorResult[] = [];
     const accumulatedArtifacts: string[] = [];
+
+    const agentId = options?.agentId ?? options?.katakaId;
 
     for (const category of categories) {
       logger.info(`MetaOrchestrator: starting stage "${category}"`, {
@@ -80,7 +82,8 @@ export class MetaOrchestrator implements IMetaOrchestrator {
         bet,
         learnings: [],
         flavorHint,
-        activeKatakaId: options?.katakaId,
+        activeAgentId: agentId,
+        activeKatakaId: agentId,
       };
 
       // Create and run the stage orchestrator

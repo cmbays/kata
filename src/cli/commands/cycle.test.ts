@@ -19,19 +19,30 @@ describe('registerCycleCommands', () => {
   const cyclesDir = join(kataDir, 'cycles');
   const runsDir = join(kataDir, 'runs');
   const katasDir = join(kataDir, 'katas');
+  const testBinDir = join(baseDir, '.test-bin');
   let consoleSpy: ReturnType<typeof vi.spyOn>;
   let errorSpy: ReturnType<typeof vi.spyOn>;
+  let originalPath: string | undefined;
 
   beforeEach(() => {
     mkdirSync(cyclesDir, { recursive: true });
     mkdirSync(runsDir, { recursive: true });
     mkdirSync(katasDir, { recursive: true });
+    mkdirSync(testBinDir, { recursive: true });
+    writeFileSync(
+      join(testBinDir, 'claude'),
+      '#!/usr/bin/env node\nprocess.stdout.write("[]\\n");\n',
+      { encoding: 'utf-8', mode: 0o755 },
+    );
+    originalPath = process.env['PATH'];
+    process.env['PATH'] = `${testBinDir}${process.platform === 'win32' ? ';' : ':'}${originalPath ?? ''}`;
     consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
   });
 
   afterEach(() => {
     rmSync(baseDir, { recursive: true, force: true });
+    process.env['PATH'] = originalPath;
     consoleSpy.mockRestore();
     errorSpy.mockRestore();
   });
@@ -42,6 +53,25 @@ describe('registerCycleCommands', () => {
     program.exitOverride();
     registerCycleCommands(program);
     return program;
+  }
+
+  async function withStubbedClaudeOutput<T>(output: string, run: () => Promise<T>): Promise<T> {
+    const stubDir = join(baseDir, '.test-bin');
+    mkdirSync(stubDir, { recursive: true });
+    writeFileSync(
+      join(stubDir, 'claude'),
+      `#!/usr/bin/env node\nprocess.stdout.write(${JSON.stringify(`${output}\n`)});\n`,
+      { encoding: 'utf-8', mode: 0o755 },
+    );
+
+    const originalPath = process.env['PATH'];
+    process.env['PATH'] = `${stubDir}${process.platform === 'win32' ? ';' : ':'}${originalPath ?? ''}`;
+
+    try {
+      return await run();
+    } finally {
+      process.env['PATH'] = originalPath;
+    }
   }
 
   describe('cycle new', () => {
@@ -1106,11 +1136,13 @@ describe('registerCycleCommands', () => {
       // and complete() can pick up the result. We skip the synthesis spawn by
       // pre-writing the result file before the cycle is even in cooldown state.
 
-      const program = createProgram();
-      await program.parseAsync([
-        'node', 'test', '--json', '--cwd', baseDir,
-        'cooldown', cycle.id, '--yolo',
-      ]);
+      await withStubbedClaudeOutput('[]', async () => {
+        const program = createProgram();
+        await program.parseAsync([
+          'node', 'test', '--json', '--cwd', baseDir,
+          'cooldown', cycle.id, '--yolo',
+        ]);
+      });
 
       // JSON output must always be valid and contain the core fields (#227 fix)
       const firstCall = consoleSpy.mock.calls[0]?.[0] as string;
