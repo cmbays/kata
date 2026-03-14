@@ -9,6 +9,7 @@ import { JsonStore } from '@infra/persistence/json-store.js';
 import { RuleRegistry } from '@infra/registries/rule-registry.js';
 import { createRunTree, writeRun, writeStageState } from '@infra/persistence/run-store.js';
 import type { Run, StageState } from '@domain/types/run-state.js';
+import { logger } from '@shared/lib/logger.js';
 // JsonStore satisfies IPersistence structurally — passed as persistence adapter in deps
 import {
   CooldownSession,
@@ -180,6 +181,33 @@ describe('CooldownSession', () => {
       expect(result.learningsCaptured).toBeGreaterThanOrEqual(1);
     });
 
+    it('does not capture a low-completion learning at exactly 50% completion', async () => {
+      const cycle = cycleManager.create({ tokenBudget: 50000 }, 'Boundary Completion');
+      cycleManager.addBet(cycle.id, {
+        description: 'Bet 1',
+        appetite: 30,
+        outcome: 'pending',
+        issueRefs: [],
+      });
+      const updatedCycle = cycleManager.addBet(cycle.id, {
+        description: 'Bet 2',
+        appetite: 20,
+        outcome: 'pending',
+        issueRefs: [],
+      });
+
+      const result = await session.run(cycle.id, [
+        { betId: updatedCycle.bets[0]!.id, outcome: 'complete' },
+        { betId: updatedCycle.bets[1]!.id, outcome: 'abandoned' },
+      ]);
+
+      expect(result.report.completionRate).toBe(50);
+      const learnings = knowledgeStore.query({});
+      expect(
+        learnings.some((learning) => learning.content.includes('Boundary Completion') && learning.content.includes('low completion rate')),
+      ).toBe(false);
+    });
+
     it('captures learnings for over-budget usage', async () => {
       const cycle = cycleManager.create({ tokenBudget: 10000 }, 'Over Budget');
       cycleManager.addBet(cycle.id, {
@@ -221,6 +249,78 @@ describe('CooldownSession', () => {
       expect(result.report.utilizationPercent).toBe(150);
       expect(result.report.alertLevel).toBe('critical');
       expect(result.learningsCaptured).toBeGreaterThanOrEqual(1);
+    });
+
+    it('does not capture an over-budget learning at exactly 100% utilization', async () => {
+      const cycle = cycleManager.create({ tokenBudget: 10000 }, 'Exact Budget');
+      cycleManager.addBet(cycle.id, {
+        description: 'Exact budget bet',
+        appetite: 20,
+        outcome: 'complete',
+        issueRefs: [],
+      });
+
+      const historyEntry = {
+        id: crypto.randomUUID(),
+        pipelineId: crypto.randomUUID(),
+        stageType: 'build',
+        stageIndex: 0,
+        adapter: 'manual',
+        tokenUsage: {
+          inputTokens: 6000,
+          outputTokens: 4000,
+          cacheCreationTokens: 0,
+          cacheReadTokens: 0,
+          total: 10000,
+        },
+        artifactNames: [],
+        learningIds: [],
+        cycleId: cycle.id,
+        startedAt: new Date().toISOString(),
+        completedAt: new Date().toISOString(),
+      };
+      JsonStore.write(join(historyDir, `${historyEntry.id}.json`), historyEntry, ExecutionHistoryEntrySchema);
+
+      const result = await session.run(cycle.id);
+
+      expect(result.report.utilizationPercent).toBe(100);
+      expect(result.learningsCaptured).toBe(0);
+    });
+
+    it('does not capture an under-utilization learning at exactly 30% utilization', async () => {
+      const cycle = cycleManager.create({ tokenBudget: 10000 }, 'Thirty Percent');
+      cycleManager.addBet(cycle.id, {
+        description: 'Thirty percent bet',
+        appetite: 20,
+        outcome: 'complete',
+        issueRefs: [],
+      });
+
+      const historyEntry = {
+        id: crypto.randomUUID(),
+        pipelineId: crypto.randomUUID(),
+        stageType: 'build',
+        stageIndex: 0,
+        adapter: 'manual',
+        tokenUsage: {
+          inputTokens: 2000,
+          outputTokens: 1000,
+          cacheCreationTokens: 0,
+          cacheReadTokens: 0,
+          total: 3000,
+        },
+        artifactNames: [],
+        learningIds: [],
+        cycleId: cycle.id,
+        startedAt: new Date().toISOString(),
+        completedAt: new Date().toISOString(),
+      };
+      JsonStore.write(join(historyDir, `${historyEntry.id}.json`), historyEntry, ExecutionHistoryEntrySchema);
+
+      const result = await session.run(cycle.id);
+
+      expect(result.report.utilizationPercent).toBe(30);
+      expect(result.learningsCaptured).toBe(0);
     });
 
     it('captures learnings for significant under-utilization', async () => {
@@ -608,6 +708,37 @@ describe('CooldownSession', () => {
       const enriched = session.enrichReportWithTokens(baseReport, cycle.id);
 
       expect(enriched.utilizationPercent).toBe(0);
+    });
+
+    it.each([
+      { total: 10000, expected: 'critical' },
+      { total: 9000, expected: 'warning' },
+      { total: 7500, expected: 'info' },
+    ])('uses the exact $expected threshold boundary', ({ total, expected }) => {
+      const cycle = cycleManager.create({ tokenBudget: 10000 }, `Boundary ${expected}`);
+      const historyEntry = {
+        id: crypto.randomUUID(),
+        pipelineId: crypto.randomUUID(),
+        stageType: 'build',
+        stageIndex: 0,
+        adapter: 'manual',
+        tokenUsage: {
+          inputTokens: total,
+          outputTokens: 0,
+          cacheCreationTokens: 0,
+          cacheReadTokens: 0,
+          total,
+        },
+        artifactNames: [],
+        learningIds: [],
+        cycleId: cycle.id,
+        startedAt: new Date().toISOString(),
+        completedAt: new Date().toISOString(),
+      };
+      JsonStore.write(join(historyDir, `${historyEntry.id}.json`), historyEntry, ExecutionHistoryEntrySchema);
+
+      const enriched = session.enrichReportWithTokens(cycleManager.generateCooldown(cycle.id), cycle.id);
+      expect(enriched.alertLevel).toBe(expected);
     });
   });
 
@@ -1566,6 +1697,34 @@ describe('CooldownSession', () => {
       expect(cycleManager.get(cycle.id).state).toBe('complete');
     });
 
+    it('logs the incomplete-runs warning only when force is false', async () => {
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      const withBet = cycleManager.addBet(cycle.id, { description: 'Warned bet', appetite: 30, outcome: 'pending', issueRefs: [] });
+      const bet = withBet.bets[0]!;
+
+      const run = makeRun(cycle.id, bet.id, 'pending');
+      createRunTree(runsDir, run);
+      cycleManager.setRunId(cycle.id, bet.id, run.id);
+
+      const sessionWithRuns = new CooldownSession({
+        cycleManager, knowledgeStore, persistence: JsonStore, pipelineDir, historyDir, runsDir,
+      });
+      const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+
+      try {
+        await sessionWithRuns.run(cycle.id, [], { force: false });
+        expect(warnSpy.mock.calls.some((args) => String(args[0]).includes('still in progress'))).toBe(true);
+
+        warnSpy.mockClear();
+        cycleManager.updateState(cycle.id, 'active');
+
+        await sessionWithRuns.run(cycle.id, [], { force: true });
+        expect(warnSpy.mock.calls.some((args) => String(args[0]).includes('still in progress'))).toBe(false);
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+
     it('cooldown proceeds normally (no block) even with incomplete runs — just warns', async () => {
       const cycle = cycleManager.create({ tokenBudget: 50000 });
       const withBet = cycleManager.addBet(cycle.id, { description: 'Stale bet', appetite: 30, outcome: 'pending', issueRefs: [] });
@@ -1661,6 +1820,34 @@ describe('CooldownSession', () => {
       // Should still return incompleteRuns so the caller can surface them
       expect(result.incompleteRuns).toHaveLength(1);
       expect(result.synthesisInputId).toBeTruthy();
+    });
+
+    it('prepare logs the incomplete-runs warning only when force is false', async () => {
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      const withBet = cycleManager.addBet(cycle.id, { description: 'Prepare warn bet', appetite: 30, outcome: 'pending', issueRefs: [] });
+      const bet = withBet.bets[0]!;
+
+      const run = makeRun(cycle.id, bet.id, 'pending');
+      createRunTree(runsDir, run);
+      cycleManager.setRunId(cycle.id, bet.id, run.id);
+
+      const sessionWithRuns = new CooldownSession({
+        cycleManager, knowledgeStore, persistence: JsonStore, pipelineDir, historyDir, runsDir, synthesisDir,
+      });
+      const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+
+      try {
+        await sessionWithRuns.prepare(cycle.id, [], 'quick', { force: false });
+        expect(warnSpy.mock.calls.some((args) => String(args[0]).includes('still in progress'))).toBe(true);
+
+        warnSpy.mockClear();
+        cycleManager.updateState(cycle.id, 'active');
+
+        await sessionWithRuns.prepare(cycle.id, [], 'quick', { force: true });
+        expect(warnSpy.mock.calls.some((args) => String(args[0]).includes('still in progress'))).toBe(false);
+      } finally {
+        warnSpy.mockRestore();
+      }
     });
   });
 });

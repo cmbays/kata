@@ -81,7 +81,14 @@ export function registerExecuteCommands(program: Command): void {
     .option('--kataka <id>', 'Alias for --agent <id>')
     .option('--json', 'Output as JSON')
     .action(withCommandContext(async (ctx, cycleRef: string) => {
-      const localOpts = ctx.cmd.opts() as { prepare?: boolean; status?: boolean; complete?: boolean; agent?: string; kataka?: string; json?: boolean };
+      const localOpts = ctx.cmd.optsWithGlobals() as {
+        prepare?: boolean;
+        status?: boolean;
+        complete?: boolean;
+        agent?: string;
+        kataka?: string;
+        json?: boolean;
+      };
       const isJson = !!(localOpts.json || ctx.globalOpts.json);
       const bridge = new SessionExecutionBridge(ctx.kataDir);
       const agentId = localOpts.agent ?? localOpts.kataka;

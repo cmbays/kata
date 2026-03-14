@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { mkdirSync, rmSync, readdirSync, readFileSync } from 'node:fs';
+import { mkdirSync, rmSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { vi } from 'vitest';
 import type { StageCategory } from '@domain/types/stage.js';
@@ -14,7 +14,7 @@ import { FlavorNotFoundError, OrchestratorError } from '@shared/lib/errors.js';
 import { UsageAnalytics } from '@infra/tracking/usage-analytics.js';
 import { MetaOrchestrator } from '@domain/services/meta-orchestrator.js';
 import { ExecutionHistoryEntrySchema } from '@domain/types/history.js';
-import { WorkflowRunner, type WorkflowRunnerDeps } from './workflow-runner.js';
+import { WorkflowRunner, type WorkflowRunnerDeps, listRecentArtifacts } from './workflow-runner.js';
 
 // ---------------------------------------------------------------------------
 // Test fixtures
@@ -198,6 +198,87 @@ describe('WorkflowRunner', () => {
       expect(files).toHaveLength(0);
     });
 
+    it('creates the artifacts directory on demand and uses a sanitized timestamp filename', async () => {
+      rmSync(join(baseDir, 'artifacts'), { recursive: true, force: true });
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-03-13T14:15:16.789Z'));
+
+      try {
+        const deps = makeDeps({ kataDir: baseDir });
+        const runner = new WorkflowRunner(deps);
+        await runner.runStage('build');
+      } finally {
+        vi.useRealTimers();
+      }
+
+      const files = readdirSync(join(baseDir, 'artifacts')).filter((file) => file.endsWith('.json'));
+      expect(files).toEqual(['build-2026-03-13T14-15-16-789Z.json']);
+    });
+
+    it('threads katakaId-only runs into executor context and artifact metadata', async () => {
+      let seenContext: Record<string, unknown> | undefined;
+      const executor: IFlavorExecutor = {
+        execute: vi.fn((flavor, context) => {
+          seenContext = context as Record<string, unknown>;
+          return Promise.resolve(makeFlavorResult(flavor.name));
+        }),
+      };
+      const katakaId = '00000000-0000-4000-8000-000000000003';
+      const deps = makeDeps({ kataDir: baseDir, executor });
+      const runner = new WorkflowRunner(deps);
+
+      await runner.runStage('build', { katakaId });
+
+      expect(seenContext).toMatchObject({
+        activeAgentId: katakaId,
+        activeKatakaId: katakaId,
+      });
+
+      const artifactFile = readdirSync(join(baseDir, 'artifacts')).find((f) => f.endsWith('.json'));
+      const artifact = JSON.parse(readFileSync(join(baseDir, 'artifacts', artifactFile!), 'utf-8'));
+      expect(artifact.agentId).toBe(katakaId);
+      expect(artifact.katakaId).toBe(katakaId);
+    });
+
+    it('passes existing json artifact names into orchestrator context', async () => {
+      writeFileSync(join(baseDir, 'artifacts', 'alpha.json'), '{}');
+      writeFileSync(join(baseDir, 'artifacts', 'notes.txt'), 'ignore me');
+      writeFileSync(join(baseDir, 'artifacts', 'beta.json'), '{}');
+
+      let seenContext: Record<string, unknown> | undefined;
+      const executor: IFlavorExecutor = {
+        execute: vi.fn((flavor, context) => {
+          seenContext = context as Record<string, unknown>;
+          return Promise.resolve(makeFlavorResult(flavor.name));
+        }),
+      };
+      const deps = makeDeps({ kataDir: baseDir, executor });
+      const runner = new WorkflowRunner(deps);
+
+      await runner.runStage('build');
+
+      expect(seenContext?.availableArtifacts).toEqual(expect.arrayContaining(['alpha', 'beta']));
+      expect(seenContext?.availableArtifacts).not.toContain('notes.txt');
+    });
+
+    it('treats a missing artifacts directory as no available artifacts', async () => {
+      rmSync(join(baseDir, 'artifacts'), { recursive: true, force: true });
+
+      let seenContext: Record<string, unknown> | undefined;
+      const executor: IFlavorExecutor = {
+        execute: vi.fn((flavor, context) => {
+          seenContext = context as Record<string, unknown>;
+          return Promise.resolve(makeFlavorResult(flavor.name));
+        }),
+      };
+      const deps = makeDeps({ kataDir: baseDir, executor });
+      const runner = new WorkflowRunner(deps);
+
+      await runner.runStage('build');
+
+      expect(seenContext?.availableArtifacts).toEqual([]);
+    });
+
     it('accepts optional ruleRegistry without crashing', async () => {
       const mockRuleRegistry = {
         loadRules: vi.fn(() => []),
@@ -295,6 +376,11 @@ describe('WorkflowRunner', () => {
       expect(runner.listRecentArtifacts()).toEqual([]);
     });
 
+    it('returns empty array when the artifacts directory is missing', () => {
+      rmSync(join(baseDir, 'artifacts'), { recursive: true, force: true });
+      expect(listRecentArtifacts(baseDir)).toEqual([]);
+    });
+
     it('returns artifact entries after a stage run', async () => {
       const deps = makeDeps({ kataDir: baseDir });
       const runner = new WorkflowRunner(deps);
@@ -303,6 +389,53 @@ describe('WorkflowRunner', () => {
       expect(artifacts.length).toBeGreaterThan(0);
       expect(artifacts[0]).toHaveProperty('name');
       expect(artifacts[0]).toHaveProperty('timestamp');
+    });
+
+    it('sorts JSON artifacts newest-first and ignores non-JSON files', () => {
+      writeFileSync(
+        join(baseDir, 'artifacts', '2026-03-12T10-00-00-000Z.json'),
+        JSON.stringify({ name: 'first', timestamp: '2026-03-12T10:00:00.000Z' }),
+      );
+      writeFileSync(
+        join(baseDir, 'artifacts', '2026-03-13T11-00-00-000Z.json'),
+        JSON.stringify({ name: 'second', timestamp: '2026-03-13T11:00:00.000Z' }),
+      );
+      writeFileSync(join(baseDir, 'artifacts', 'notes.txt'), 'ignore me');
+
+      const artifacts = listRecentArtifacts(baseDir);
+
+      expect(artifacts.map((artifact) => artifact.file)).toEqual([
+        '2026-03-13T11-00-00-000Z.json',
+        '2026-03-12T10-00-00-000Z.json',
+      ]);
+      expect(artifacts.map((artifact) => artifact.name)).toEqual(['second', 'first']);
+    });
+
+    it('falls back to filename and completedAt when artifact metadata is partial', () => {
+      writeFileSync(
+        join(baseDir, 'artifacts', 'build-snapshot.json'),
+        JSON.stringify({ completedAt: '2026-03-13T15:00:00.000Z' }),
+      );
+
+      const [artifact] = listRecentArtifacts(baseDir);
+
+      expect(artifact).toEqual({
+        name: 'build-snapshot',
+        timestamp: '2026-03-13T15:00:00.000Z',
+        file: 'build-snapshot.json',
+      });
+    });
+
+    it('falls back to filename and unknown when artifact JSON is malformed', () => {
+      writeFileSync(join(baseDir, 'artifacts', 'broken.json'), '{ broken json ');
+
+      const [artifact] = listRecentArtifacts(baseDir);
+
+      expect(artifact).toEqual({
+        name: 'broken',
+        timestamp: 'unknown',
+        file: 'broken.json',
+      });
     });
   });
 
@@ -409,6 +542,22 @@ describe('WorkflowRunner', () => {
       await runner.runPipeline(['build']);
       // options.yolo is undefined when not supplied — threaded as { yolo: undefined }
       expect(spy).toHaveBeenCalledWith(['build'], undefined, { yolo: undefined });
+      spy.mockRestore();
+    });
+
+    it('runPipeline canonicalizes katakaId-only runs for the meta orchestrator', async () => {
+      const spy = vi.spyOn(MetaOrchestrator.prototype, 'runPipeline');
+      const deps = makePipelineDeps();
+      const runner = new WorkflowRunner(deps);
+      const katakaId = '00000000-0000-4000-8000-000000000004';
+
+      await runner.runPipeline(['build'], { katakaId });
+
+      expect(spy).toHaveBeenCalledWith(
+        ['build'],
+        undefined,
+        expect.objectContaining({ agentId: katakaId, katakaId }),
+      );
       spy.mockRestore();
     });
   });
@@ -655,6 +804,50 @@ describe('WorkflowRunner', () => {
       const files = readHistoryFiles(baseDir);
       const entry = readHistoryEntry(baseDir, files[0]!);
       expect(entry.durationMs).toBeGreaterThanOrEqual(0);
+    });
+
+    it('history entry stores the exact Date.now() duration delta', async () => {
+      const deps = makeDeps({ kataDir: baseDir });
+      const runner = new WorkflowRunner(deps);
+      const nowSpy = vi.spyOn(Date, 'now');
+      nowSpy.mockReturnValueOnce(1_000).mockReturnValueOnce(1_450);
+
+      try {
+        await runner.runStage('build');
+      } finally {
+        nowSpy.mockRestore();
+      }
+
+      const files = readHistoryFiles(baseDir);
+      const entry = readHistoryEntry(baseDir, files[0]!);
+      expect(entry.durationMs).toBe(450);
+    });
+
+    it('pipeline history entries store the exact shared Date.now() duration delta', async () => {
+      const flavors = [
+        makeFlavor('research-standard', 'research'),
+        makeFlavor('build-standard', 'build'),
+      ];
+      const deps: WorkflowRunnerDeps = {
+        flavorRegistry: makeFlavorRegistry(flavors),
+        decisionRegistry: makeDecisionRegistry(),
+        executor: makeExecutor(),
+        kataDir: baseDir,
+      };
+      const runner = new WorkflowRunner(deps);
+      const nowSpy = vi.spyOn(Date, 'now');
+      nowSpy.mockReturnValueOnce(2_000).mockReturnValueOnce(2_650);
+
+      try {
+        await runner.runPipeline(['research', 'build']);
+      } finally {
+        nowSpy.mockRestore();
+      }
+
+      const files = readHistoryFiles(baseDir);
+      const entries = files.map((file) => readHistoryEntry(baseDir, file));
+      expect(entries).toHaveLength(2);
+      expect(entries.every((entry) => entry.durationMs === 650)).toBe(true);
     });
 
     it('history entry timestamps are valid ISO 8601', async () => {
