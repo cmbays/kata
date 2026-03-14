@@ -183,13 +183,13 @@ describe('CooldownSession', () => {
 
     it('does not capture a low-completion learning at exactly 50% completion', async () => {
       const cycle = cycleManager.create({ tokenBudget: 50000 }, 'Boundary Completion');
-      let updatedCycle = cycleManager.addBet(cycle.id, {
+      cycleManager.addBet(cycle.id, {
         description: 'Bet 1',
         appetite: 30,
         outcome: 'pending',
         issueRefs: [],
       });
-      updatedCycle = cycleManager.addBet(cycle.id, {
+      const updatedCycle = cycleManager.addBet(cycle.id, {
         description: 'Bet 2',
         appetite: 20,
         outcome: 'pending',
