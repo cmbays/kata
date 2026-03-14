@@ -668,5 +668,23 @@ describe('CooldownSession.prepare() — observation wiring', () => {
       // CycleB's file must remain untouched
       expect(existsSync(resultB.synthesisInputPath)).toBe(true);
     });
+
+    it('ignores unrelated files while cleaning stale synthesis inputs', async () => {
+      const cycle = cycleManager.create({ tokenBudget: 50000 }, 'Ignore Other Files');
+      const unrelatedPending = join(synthesisDir, 'pending-unrelated.json');
+      const unrelatedResult = join(synthesisDir, 'result-stale.json');
+      const notesFile = join(synthesisDir, 'notes.txt');
+
+      writeFileSync(unrelatedPending, JSON.stringify({ cycleId: 'some-other-cycle' }));
+      writeFileSync(unrelatedResult, JSON.stringify({ cycleId: cycle.id }));
+      writeFileSync(notesFile, 'keep me');
+
+      const result = await new CooldownSession(makeDeps()).prepare(cycle.id);
+
+      expect(existsSync(unrelatedPending)).toBe(true);
+      expect(existsSync(unrelatedResult)).toBe(true);
+      expect(existsSync(notesFile)).toBe(true);
+      expect(existsSync(result.synthesisInputPath)).toBe(true);
+    });
   });
 });

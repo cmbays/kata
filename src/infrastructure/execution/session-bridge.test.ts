@@ -7,6 +7,7 @@ import { SessionExecutionBridge } from './session-bridge.js';
 import type { AgentCompletionResult } from '@domain/ports/session-bridge.js';
 import { CycleSchema } from '@domain/types/cycle.js';
 import { RunSchema } from '@domain/types/run-state.js';
+import * as sessionContext from '@shared/lib/session-context.js';
 
 // ---------------------------------------------------------------------------
 // Test fixtures
@@ -124,6 +125,30 @@ describe('SessionExecutionBridge', () => {
       const run = RunSchema.parse(JSON.parse(readFileSync(runJsonPath, 'utf-8')));
       expect(run.agentId).toBe(agentId);
       expect(run.katakaId).toBe(agentId);
+    });
+
+    it('should build manifest prompt and metadata with cycle ID fallback when the cycle name is absent', () => {
+      const cycle = createCycle(kataDir);
+      const cyclePath = join(kataDir, 'cycles', `${cycle.id}.json`);
+      const stored = JSON.parse(readFileSync(cyclePath, 'utf-8')) as Record<string, unknown>;
+      delete stored['name'];
+      writeFileSync(cyclePath, JSON.stringify(stored, null, 2));
+
+      const bridge = new SessionExecutionBridge(kataDir);
+      const prepared = bridge.prepare(cycle.bets[0]!.id);
+
+      expect(prepared.manifest.stageType).toBe('research,plan,build,review');
+      expect(prepared.manifest.prompt).toContain(`Cycle "${cycle.id}"`);
+      expect(prepared.manifest.prompt).toContain(`run ${prepared.runId}`);
+      expect(prepared.manifest.context.metadata).toEqual({
+        betId: cycle.bets[0]!.id,
+        cycleId: cycle.id,
+        cycleName: cycle.id,
+        runId: prepared.runId,
+        adapter: 'claude-native',
+      });
+      expect(prepared.manifest.artifacts).toEqual([]);
+      expect(prepared.manifest.learnings).toEqual([]);
     });
 
     it('should backfill bet.runId in cycle JSON after prepare() (#337)', () => {
@@ -254,6 +279,32 @@ describe('SessionExecutionBridge', () => {
       const runJsonPath = join(kataDir, 'runs', prepared.runId, 'run.json');
       const run = RunSchema.parse(JSON.parse(readFileSync(runJsonPath, 'utf-8')));
       expect(run.stageSequence).toEqual(['research']);
+      expect(run.currentStage).toBe('research');
+    });
+
+    it('run.json falls back to the default stage sequence when all ad-hoc stages are invalid', () => {
+      const betId = randomUUID();
+      mkdirSync(join(kataDir, 'katas'), { recursive: true });
+      writeFileSync(
+        join(kataDir, 'katas', 'broken-sequence.json'),
+        JSON.stringify({ stages: ['custom-stage'] }, null, 2),
+      );
+      createCycle(kataDir, {
+        bets: [{
+          id: betId,
+          description: 'Custom-stage bet',
+          appetite: 15,
+          outcome: 'pending',
+          kata: { type: 'named', pattern: 'broken-sequence' },
+        }],
+      });
+      const bridge = new SessionExecutionBridge(kataDir);
+
+      const prepared = bridge.prepare(betId);
+
+      const runJsonPath = join(kataDir, 'runs', prepared.runId, 'run.json');
+      const run = RunSchema.parse(JSON.parse(readFileSync(runJsonPath, 'utf-8')));
+      expect(run.stageSequence).toEqual(['research', 'plan', 'build', 'review']);
       expect(run.currentStage).toBe('research');
     });
 
@@ -459,6 +510,56 @@ describe('SessionExecutionBridge', () => {
       // Bet name should be slugified: spaces → dashes, special chars removed, lowercase
       expect(context).toContain('fix-the-login-bug-42');
     });
+
+    it('includes the non-worktree launch note and falls back to the prepared kata dir', () => {
+      const cycle = createCycle(kataDir);
+      const bridge = new SessionExecutionBridge(kataDir);
+      const prepared = bridge.prepare(cycle.bets[0]!.id);
+      const launchSpy = vi.spyOn(sessionContext, 'detectLaunchMode').mockReturnValue('agent');
+      const contextSpy = vi.spyOn(sessionContext, 'detectSessionContext').mockReturnValue({
+        kataInitialized: false,
+        kataDir: null,
+        inWorktree: false,
+        activeCycle: null,
+        launchMode: 'agent',
+      });
+
+      try {
+        const context = bridge.formatAgentContext(prepared);
+
+        expect(context).toContain('- **Launch mode**: agent');
+        expect(context).toContain('- **In worktree**: no');
+        expect(context).toContain(`- **Kata dir resolved**: ${prepared.kataDir}`);
+        expect(context).toContain('outside a git worktree');
+      } finally {
+        launchSpy.mockRestore();
+        contextSpy.mockRestore();
+      }
+    });
+
+    it('omits the non-worktree launch note when already inside a worktree', () => {
+      const cycle = createCycle(kataDir);
+      const bridge = new SessionExecutionBridge(kataDir);
+      const prepared = bridge.prepare(cycle.bets[0]!.id);
+      const launchSpy = vi.spyOn(sessionContext, 'detectLaunchMode').mockReturnValue('interactive');
+      const contextSpy = vi.spyOn(sessionContext, 'detectSessionContext').mockReturnValue({
+        kataInitialized: true,
+        kataDir,
+        inWorktree: true,
+        activeCycle: null,
+        launchMode: 'interactive',
+      });
+
+      try {
+        const context = bridge.formatAgentContext(prepared);
+
+        expect(context).toContain('- **In worktree**: yes');
+        expect(context).not.toContain('outside a git worktree');
+      } finally {
+        launchSpy.mockRestore();
+        contextSpy.mockRestore();
+      }
+    });
   });
 
   describe('getAgentContext()', () => {
@@ -539,6 +640,24 @@ describe('SessionExecutionBridge', () => {
       expect(entry.cycleId).toBe(cycle.id);
       expect(entry.betId).toBe(cycle.bets[0]!.id);
       expect(entry.artifactNames).toEqual(['fix.ts']);
+    });
+
+    it('should record the exact completion duration in the history entry', () => {
+      vi.useFakeTimers();
+      const startedAt = new Date('2026-03-12T12:00:00.000Z');
+      vi.setSystemTime(startedAt);
+
+      const cycle = createCycle(kataDir);
+      const bridge = new SessionExecutionBridge(kataDir);
+      const prepared = bridge.prepare(cycle.bets[0]!.id);
+
+      vi.setSystemTime(new Date(startedAt.getTime() + 90_000));
+      bridge.complete(prepared.runId, { success: true });
+
+      const historyDir = join(kataDir, 'history');
+      const [file] = readdirSync(historyDir).filter((f) => f.endsWith('.json'));
+      const entry = JSON.parse(readFileSync(join(historyDir, file!), 'utf-8'));
+      expect(entry.durationMs).toBe(90_000);
     });
 
     it('should mark failed runs', () => {
@@ -830,6 +949,21 @@ describe('SessionExecutionBridge', () => {
       expect(() => bridge.prepareCycle(cycle.id)).toThrow(/No pending bets/);
     });
 
+    it('should mention the cycle ID when no pending bets remain and the cycle has no name', () => {
+      const cycle = createCycle(kataDir, {
+        bets: [
+          { id: randomUUID(), description: 'Done', appetite: 100, outcome: 'complete' },
+        ],
+      });
+      const cyclePath = join(kataDir, 'cycles', `${cycle.id}.json`);
+      const stored = JSON.parse(readFileSync(cyclePath, 'utf-8')) as Record<string, unknown>;
+      delete stored['name'];
+      writeFileSync(cyclePath, JSON.stringify(stored, null, 2));
+      const bridge = new SessionExecutionBridge(kataDir);
+
+      expect(() => bridge.prepareCycle(cycle.id)).toThrow(cycle.id);
+    });
+
     it('should resolve cycle by name', () => {
       const cycle = createCycle(kataDir, { name: 'My Cycle' });
       const bridge = new SessionExecutionBridge(kataDir);
@@ -935,6 +1069,42 @@ describe('SessionExecutionBridge', () => {
       const bet1Status = status.bets.find((b) => b.runId === runId);
       expect(bet1Status!.kansatsuCount).toBe(3);
       expect(bet1Status!.artifactCount).toBe(1);
+    });
+
+    it('should include stage-level observations and decisions in cycle status counts', () => {
+      const cycle = createCycle(kataDir);
+      const bridge = new SessionExecutionBridge(kataDir);
+
+      const prepared = bridge.prepareCycle(cycle.id);
+      const runId = prepared.preparedRuns[0]!.runId;
+      const runDir = join(kataDir, 'runs', runId);
+      const stageDir = join(runDir, 'stages', 'build');
+      mkdirSync(stageDir, { recursive: true });
+
+      writeFileSync(join(runDir, 'observations.jsonl'), '{"note":"run obs"}\n');
+      writeFileSync(join(stageDir, 'observations.jsonl'), '{"note":"stage obs 1"}\n{"note":"stage obs 2"}\n');
+      writeFileSync(join(stageDir, 'decisions.jsonl'), '{"decision":"ship"}\n{"decision":"refactor"}\n');
+
+      const status = bridge.getCycleStatus(cycle.id);
+      const betStatus = status.bets.find((bet) => bet.runId === runId);
+
+      expect(betStatus!.kansatsuCount).toBe(3);
+      expect(betStatus!.decisionCount).toBe(2);
+    });
+
+    it('should ignore unrelated bridge-run files when listing cycle status', () => {
+      const cycle = createCycle(kataDir);
+      const otherCycle = createCycle(kataDir, { name: 'Other Cycle' });
+      const bridge = new SessionExecutionBridge(kataDir);
+
+      bridge.prepareCycle(cycle.id);
+      bridge.prepareCycle(otherCycle.id);
+      writeFileSync(join(kataDir, 'bridge-runs', 'notes.txt'), 'ignore me');
+
+      const status = bridge.getCycleStatus(cycle.id);
+
+      expect(status.bets).toHaveLength(cycle.bets.length);
+      expect(status.bets.every((bet) => cycle.bets.some((cycleBet) => cycleBet.id === bet.betId))).toBe(true);
     });
 
     it('should estimate budget usage from history', () => {
@@ -1093,6 +1263,71 @@ describe('SessionExecutionBridge', () => {
       expect(status.bets[0]!.durationMs).toBe(65_000);
       expect(status.bets[0]!.status).toBe('complete');
     });
+
+    it('should prefer completedAt over startedAt for last activity and fall back to startedAt otherwise', () => {
+      const cycle = createCycle(kataDir, {
+        bets: [
+          {
+            id: randomUUID(),
+            description: 'Completed bet',
+            appetite: 30,
+            outcome: 'pending',
+          },
+          {
+            id: randomUUID(),
+            description: 'Running bet',
+            appetite: 20,
+            outcome: 'pending',
+          },
+        ],
+      });
+      const bridge = new SessionExecutionBridge(kataDir);
+      const prepared = bridge.prepareCycle(cycle.id);
+
+      const completedMetaPath = join(kataDir, 'bridge-runs', `${prepared.preparedRuns[0]!.runId}.json`);
+      const completedMeta = JSON.parse(readFileSync(completedMetaPath, 'utf-8'));
+      completedMeta.startedAt = '2026-03-12T12:00:00.000Z';
+      completedMeta.completedAt = '2026-03-12T12:05:00.000Z';
+      completedMeta.status = 'complete';
+      writeFileSync(completedMetaPath, JSON.stringify(completedMeta, null, 2));
+
+      const runningMetaPath = join(kataDir, 'bridge-runs', `${prepared.preparedRuns[1]!.runId}.json`);
+      const runningMeta = JSON.parse(readFileSync(runningMetaPath, 'utf-8'));
+      runningMeta.startedAt = '2026-03-12T13:00:00.000Z';
+      delete runningMeta.completedAt;
+      writeFileSync(runningMetaPath, JSON.stringify(runningMeta, null, 2));
+
+      const status = bridge.getCycleStatus(cycle.id);
+      const completedBet = status.bets.find((bet) => bet.runId === prepared.preparedRuns[0]!.runId);
+      const runningBet = status.bets.find((bet) => bet.runId === prepared.preparedRuns[1]!.runId);
+
+      expect(completedBet!.lastActivity).toBe('2026-03-12T12:05:00.000Z');
+      expect(runningBet!.lastActivity).toBe('2026-03-12T13:00:00.000Z');
+    });
+
+    it('uses the earliest started run when calculating cycle elapsed time', () => {
+      vi.useFakeTimers();
+      const now = new Date('2026-03-12T12:00:00.000Z');
+      vi.setSystemTime(now);
+
+      const cycle = createCycle(kataDir);
+      const bridge = new SessionExecutionBridge(kataDir);
+      const prepared = bridge.prepareCycle(cycle.id);
+
+      const [firstRun, secondRun] = prepared.preparedRuns;
+      const firstMetaPath = join(kataDir, 'bridge-runs', `${firstRun!.runId}.json`);
+      const secondMetaPath = join(kataDir, 'bridge-runs', `${secondRun!.runId}.json`);
+      const firstMeta = JSON.parse(readFileSync(firstMetaPath, 'utf-8'));
+      const secondMeta = JSON.parse(readFileSync(secondMetaPath, 'utf-8'));
+
+      firstMeta.startedAt = new Date(now.getTime() - (2 * 60 * 60_000)).toISOString();
+      secondMeta.startedAt = new Date(now.getTime() - (5 * 60_000)).toISOString();
+      writeFileSync(firstMetaPath, JSON.stringify(firstMeta, null, 2));
+      writeFileSync(secondMetaPath, JSON.stringify(secondMeta, null, 2));
+
+      const status = bridge.getCycleStatus(cycle.id);
+      expect(status.elapsed).toBe('2h 0m');
+    });
   });
 
   describe('completeCycle()', () => {
@@ -1139,6 +1374,38 @@ describe('SessionExecutionBridge', () => {
       expect(summary.tokenUsage!.total).toBe(4500);
       expect(summary.tokenUsage!.inputTokens).toBe(3000);
       expect(summary.tokenUsage!.outputTokens).toBe(1500);
+    });
+
+    it('should aggregate exact duration totals and leave token usage null when no token data is provided', () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-03-12T14:00:00.000Z'));
+
+      try {
+        const cycle = createCycle(kataDir);
+        const bridge = new SessionExecutionBridge(kataDir);
+        const prepared = bridge.prepareCycle(cycle.id);
+
+        const firstMetaPath = join(kataDir, 'bridge-runs', `${prepared.preparedRuns[0]!.runId}.json`);
+        const firstMeta = JSON.parse(readFileSync(firstMetaPath, 'utf-8'));
+        firstMeta.startedAt = '2026-03-12T13:59:00.000Z';
+        writeFileSync(firstMetaPath, JSON.stringify(firstMeta, null, 2));
+
+        const secondMetaPath = join(kataDir, 'bridge-runs', `${prepared.preparedRuns[1]!.runId}.json`);
+        const secondMeta = JSON.parse(readFileSync(secondMetaPath, 'utf-8'));
+        secondMeta.startedAt = '2026-03-12T13:58:00.000Z';
+        writeFileSync(secondMetaPath, JSON.stringify(secondMeta, null, 2));
+
+        const summary = bridge.completeCycle(cycle.id, {
+          [prepared.preparedRuns[0]!.runId]: { success: true },
+          [prepared.preparedRuns[1]!.runId]: { success: false },
+        });
+
+        expect(summary.completedBets).toBe(1);
+        expect(summary.totalDurationMs).toBe(180_000);
+        expect(summary.tokenUsage).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it('should default to success when no result provided for a run', () => {

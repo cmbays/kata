@@ -145,6 +145,45 @@ describe('registerExecuteCommands', () => {
     return bridge.prepare(betId, agentId);
   }
 
+  describe('status and stats delegation', () => {
+    it('delegates execute status to handleStatus', async () => {
+      const statusModule = await import('./status.js');
+      const handleStatus = vi.mocked(statusModule.handleStatus);
+      const program = createProgram();
+
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', 'status']);
+
+      expect(handleStatus).toHaveBeenCalledTimes(1);
+      expect(handleStatus).toHaveBeenCalledWith(expect.objectContaining({ kataDir }));
+    });
+
+    it('delegates execute stats with the parsed category filter', async () => {
+      const statusModule = await import('./status.js');
+      const handleStats = vi.mocked(statusModule.handleStats);
+      const parseCategoryFilter = vi.mocked(statusModule.parseCategoryFilter);
+      parseCategoryFilter.mockReturnValueOnce('build');
+      const program = createProgram();
+
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', 'stats', '--category', 'build']);
+
+      expect(parseCategoryFilter).toHaveBeenCalledWith('build');
+      expect(handleStats).toHaveBeenCalledWith(expect.objectContaining({ kataDir }), 'build');
+    });
+
+    it('sets exitCode when execute stats receives an invalid category filter', async () => {
+      const statusModule = await import('./status.js');
+      const handleStats = vi.mocked(statusModule.handleStats);
+      const parseCategoryFilter = vi.mocked(statusModule.parseCategoryFilter);
+      parseCategoryFilter.mockReturnValueOnce(false);
+      const program = createProgram();
+
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', 'stats', '--gyo', 'bad']);
+
+      expect(process.exitCode).toBe(1);
+      expect(handleStats).not.toHaveBeenCalled();
+    });
+  });
+
   describe('cycle subcommand', () => {
     it('prepares all pending bets for session execution', async () => {
       const cycle = createCycleWithBets('Dispatch Cycle', [
@@ -165,6 +204,52 @@ describe('registerExecuteCommands', () => {
         ? readdirSync(bridgeRunsDir).filter((file) => file.endsWith('.json'))
         : [];
       expect(files).toHaveLength(2);
+    });
+
+    it('forwards --kataka when preparing a cycle', async () => {
+      const cycle = createCycleWithBets('Attributed Cycle', [
+        { description: 'Attributed bet', appetite: 20 },
+      ]);
+      const agentId = randomUUID();
+      registerAgent(agentId, 'Cycle Agent');
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir, 'execute', 'cycle', cycle.id, '--prepare', '--kataka', agentId,
+      ]);
+
+      const bridgeRunFiles = readdirSync(join(kataDir, 'bridge-runs')).filter((file) => file.endsWith('.json'));
+      expect(bridgeRunFiles).toHaveLength(1);
+
+      const meta = JSON.parse(readFileSync(join(kataDir, 'bridge-runs', bridgeRunFiles[0]!), 'utf-8')) as {
+        runId: string;
+        agentId?: string;
+        katakaId?: string;
+      };
+      expect(meta.agentId).toBe(agentId);
+      expect(meta.katakaId).toBe(agentId);
+
+      const run = JSON.parse(readFileSync(join(kataDir, 'runs', meta.runId, 'run.json'), 'utf-8')) as {
+        agentId?: string;
+        katakaId?: string;
+      };
+      expect(run.agentId).toBe(agentId);
+      expect(run.katakaId).toBe(agentId);
+    });
+
+    it('rejects an unknown agent when preparing a cycle', async () => {
+      const cycle = createCycleWithBets('Missing Agent Cycle', [
+        { description: 'Unattributed bet', appetite: 20 },
+      ]);
+      const missingAgentId = randomUUID();
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir, 'execute', 'cycle', cycle.id, '--prepare', '--agent', missingAgentId,
+      ]);
+
+      expect(process.exitCode).toBe(1);
+      expect(errorSpy.mock.calls.map((c) => c[0]).join('\n')).toContain(`agent "${missingAgentId}" not found`);
     });
 
     it('renders cycle status with budget and activity counts', async () => {
@@ -234,6 +319,21 @@ describe('registerExecuteCommands', () => {
       expect(parsed.preparedRuns).toHaveLength(1);
     });
 
+    it('emits cycle status as json when local --json is provided', async () => {
+      const cycle = createCycleWithBets('Local Json Status', [
+        { description: 'Observed bet', appetite: 25 },
+      ]);
+      const bridge = new SessionExecutionBridge(kataDir);
+      bridge.prepareCycle(cycle.id);
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', 'cycle', cycle.id, '--status', '--json']);
+
+      const parsed = JSON.parse(consoleSpy.mock.calls[0]?.[0] as string);
+      expect(parsed.cycleId).toBe(cycle.id);
+      expect(parsed.bets).toHaveLength(1);
+    });
+
     it('requires an action flag for execute cycle', async () => {
       const cycle = createCycleWithBets();
 
@@ -287,6 +387,22 @@ describe('registerExecuteCommands', () => {
       expect(errorSpy.mock.calls.map((c) => c[0]).join('\n')).toContain('JSON array');
     });
 
+    it('rejects artifact entries without a string name', async () => {
+      const cycle = createCycleWithBets('Artifact Shape Cycle', [
+        { description: 'Bad artifact item', appetite: 20 },
+      ]);
+      const prepared = prepareRunForBet(cycle.bets[0]!.id);
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir, 'execute', 'complete', prepared.runId,
+        '--artifacts', '[{"path":"report.md"}]',
+      ]);
+
+      expect(process.exitCode).toBe(1);
+      expect(errorSpy.mock.calls.map((c) => c[0]).join('\n')).toContain('"name" string property');
+    });
+
     it('rejects negative token counts', async () => {
       const cycle = createCycleWithBets('Token Error Cycle', [
         { description: 'Bad token run', appetite: 20 },
@@ -301,6 +417,24 @@ describe('registerExecuteCommands', () => {
 
       expect(process.exitCode).toBe(1);
       expect(errorSpy.mock.calls.map((c) => c[0]).join('\n')).toContain('non-negative integer');
+    });
+
+    it('accepts zero token counts and reports them exactly', async () => {
+      const cycle = createCycleWithBets('Zero Token Cycle', [
+        { description: 'Zero token run', appetite: 20 },
+      ]);
+      const prepared = prepareRunForBet(cycle.bets[0]!.id);
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir, 'execute', 'complete', prepared.runId,
+        '--input-tokens', '0',
+        '--output-tokens', '0',
+        '--json',
+      ]);
+
+      const parsed = JSON.parse(consoleSpy.mock.calls[0]?.[0] as string);
+      expect(parsed.tokenUsage).toEqual({ inputTokens: 0, outputTokens: 0, total: 0 });
     });
   });
 
@@ -360,6 +494,19 @@ describe('registerExecuteCommands', () => {
       const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
       expect(output).toContain('my-kata');
       expect(output).toContain('build -> review');
+    });
+
+    it('ignores non-json files in the katas directory', async () => {
+      const kata = { name: 'my-kata', stages: ['build', 'review'] };
+      writeFileSync(join(kataDir, 'katas', 'my-kata.json'), JSON.stringify(kata, null, 2));
+      writeFileSync(join(kataDir, 'katas', 'notes.txt'), 'ignore me');
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', '--list-katas']);
+
+      const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('my-kata');
+      expect(output).not.toContain('notes.txt');
     });
 
     it('outputs saved katas as JSON with global --json flag', async () => {
@@ -598,6 +745,37 @@ describe('registerExecuteCommands', () => {
         'build',
         expect.objectContaining({ pin: expect.arrayContaining(['typescript-tdd', 'legacy-build']) }),
       );
+    });
+  });
+
+  describe('--hint', () => {
+    it('passes parsed flavor hints through to execution', async () => {
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir, 'execute', 'build',
+        '--hint', 'build:typescript-tdd,reviewer:restrict',
+      ]);
+
+      expect(mockRunStage).toHaveBeenCalledWith(
+        'build',
+        expect.objectContaining({
+          flavorHints: {
+            build: { recommended: ['typescript-tdd', 'reviewer'], strategy: 'restrict' },
+          },
+        }),
+      );
+    });
+
+    it('sets exitCode=1 for invalid hint format', async () => {
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir, 'execute', 'build',
+        '--hint', 'build-only',
+      ]);
+
+      expect(process.exitCode).toBe(1);
+      expect(errorSpy.mock.calls.map((c) => c[0]).join('\n')).toContain('invalid --hint format');
+      expect(mockRunStage).not.toHaveBeenCalled();
     });
   });
 
@@ -950,6 +1128,38 @@ describe('registerExecuteCommands', () => {
       expect(output).toContain('rule adjustments');
     });
 
+    it('omits zero-score losers from scoring factors when a positive winner exists', async () => {
+      mockRunStage.mockResolvedValue({
+        ...makeSingleResult('build'),
+        matchReports: [
+          {
+            flavorName: 'typescript-tdd',
+            score: 0.90,
+            keywordHits: 3,
+            ruleAdjustments: 0,
+            learningBoost: 0,
+            reasoning: 'winning flavor',
+          },
+          {
+            flavorName: 'zero-loser',
+            score: 0,
+            keywordHits: 0,
+            ruleAdjustments: 0,
+            learningBoost: 0,
+            reasoning: 'should be filtered',
+          },
+        ],
+      });
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', 'build', '--explain']);
+
+      const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('zero-loser');
+      expect(output).toContain('score: 0.00');
+      expect(output).not.toContain('zero-loser:');
+    });
+
     it('does not print explain block when --explain is not set', async () => {
       mockRunStage.mockResolvedValue({
         ...makeSingleResult('build'),
@@ -1029,6 +1239,50 @@ describe('registerExecuteCommands', () => {
       const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
       expect(output).toContain('Auto-selected bet');
       expect(output).toContain('My next bet');
+    });
+
+    it('suppresses the auto-selected banner when --json is enabled', async () => {
+      mkdirSync(cyclesDir, { recursive: true });
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 50000 }, 'Json Cycle');
+      const withBet = manager.addBet(cycle.id, {
+        description: 'JSON bet', appetite: 30, outcome: 'pending', issueRefs: [],
+      });
+      manager.updateBet(cycle.id, withBet.bets[0]!.id, { kata: { type: 'ad-hoc', stages: ['build'] } });
+      manager.updateState(cycle.id, 'active');
+
+      mockRunStage.mockResolvedValue(makeSingleResult('build'));
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--json', '--cwd', baseDir, 'execute', '--next']);
+
+      const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).not.toContain('Auto-selected bet');
+      expect(() => JSON.parse(output)).not.toThrow();
+    });
+
+    it('uses the cycle id in the auto-selected banner when the active cycle has no name', async () => {
+      mkdirSync(cyclesDir, { recursive: true });
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 50000 }, 'Named Then Removed');
+      const withBet = manager.addBet(cycle.id, {
+        description: 'Unnamed cycle bet', appetite: 25, outcome: 'pending', issueRefs: [],
+      });
+      manager.updateBet(cycle.id, withBet.bets[0]!.id, { kata: { type: 'ad-hoc', stages: ['build'] } });
+      manager.updateState(cycle.id, 'active');
+
+      const cyclePath = join(cyclesDir, `${cycle.id}.json`);
+      const stored = JSON.parse(readFileSync(cyclePath, 'utf-8')) as Record<string, unknown>;
+      delete stored['name'];
+      writeFileSync(cyclePath, JSON.stringify(stored, null, 2));
+
+      mockRunStage.mockResolvedValue(makeSingleResult('build'));
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', '--next']);
+
+      const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain(`(cycle: ${cycle.id})`);
     });
 
     it('skips non-pending bets and selects the first pending one', async () => {
