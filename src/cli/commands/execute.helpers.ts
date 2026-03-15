@@ -1,26 +1,52 @@
+import { z } from 'zod/v4';
+import { FlavorHintSchema } from '@domain/types/saved-kata.js';
 import { StageCategorySchema } from '@domain/types/stage.js';
-import type { FlavorHint } from '@domain/types/saved-kata.js';
 
-export interface ParseSuccess<T> {
-  ok: true;
-  value: T;
-}
+export const parseSuccessSchema = z.object({
+  ok: z.literal(true),
+  value: z.unknown(),
+});
 
-export interface ParseFailure {
-  ok: false;
-  error: string;
-}
+export const parseFailureSchema = z.object({
+  ok: z.literal(false),
+  error: z.string(),
+});
 
-export type ParseResult<T> = ParseSuccess<T> | ParseFailure;
+export const parseResultSchema = z.discriminatedUnion('ok', [
+  parseSuccessSchema,
+  parseFailureSchema,
+]);
 
-export interface ExplainMatchReport {
-  flavorName: string;
-  score: number;
-  keywordHits: number;
-  ruleAdjustments: number;
-  learningBoost: number;
-  reasoning: string;
-}
+export const explainMatchReportSchema = z.object({
+  flavorName: z.string(),
+  score: z.number(),
+  keywordHits: z.number(),
+  ruleAdjustments: z.number(),
+  learningBoost: z.number(),
+  reasoning: z.string(),
+});
+
+export type ParseSuccess = z.infer<typeof parseSuccessSchema>;
+export type ParseFailure = z.infer<typeof parseFailureSchema>;
+export type ParseResult = z.infer<typeof parseResultSchema>;
+export type ExplainMatchReport = z.infer<typeof explainMatchReportSchema>;
+
+const _betOptionResultSchema = z.discriminatedUnion('ok', [
+  parseSuccessSchema.extend({
+    value: z.record(z.string(), z.unknown()).optional(),
+  }),
+  parseFailureSchema,
+]);
+
+const _hintFlagResultSchema = z.discriminatedUnion('ok', [
+  parseSuccessSchema.extend({
+    value: z.record(z.string(), FlavorHintSchema).optional(),
+  }),
+  parseFailureSchema,
+]);
+
+type BetOptionResult = z.infer<typeof _betOptionResultSchema>;
+type HintFlagResult = z.infer<typeof _hintFlagResultSchema>;
 
 export function formatExplain(
   stageCategory: string,
@@ -65,8 +91,8 @@ export function formatExplain(
   return lines.join('\n');
 }
 
-export function parseBetOption(betJson: string | undefined): ParseResult<Record<string, unknown> | undefined> {
-  if (!betJson) {
+export function parseBetOption(betJson: string | undefined): BetOptionResult {
+  if (betJson === undefined) {
     return { ok: true, value: undefined };
   }
 
@@ -85,12 +111,12 @@ export function parseBetOption(betJson: string | undefined): ParseResult<Record<
   }
 }
 
-export function parseHintFlags(hints: readonly string[] | undefined): ParseResult<Record<string, FlavorHint> | undefined> {
+export function parseHintFlags(hints: readonly string[] | undefined): HintFlagResult {
   if (!hints || hints.length === 0) {
     return { ok: true, value: undefined };
   }
 
-  const result: Record<string, FlavorHint> = {};
+  const result: Record<string, z.infer<typeof FlavorHintSchema>> = {};
   const validCategories = StageCategorySchema.options;
 
   for (const spec of hints) {
@@ -118,8 +144,8 @@ export function parseHintFlags(hints: readonly string[] | undefined): ParseResul
       };
     }
 
-    const strategy = parts[2] as 'prefer' | 'restrict' | undefined;
-    if (strategy && strategy !== 'prefer' && strategy !== 'restrict') {
+    const strategy = parts[2];
+    if (strategy === '' || (strategy !== undefined && strategy !== 'prefer' && strategy !== 'restrict')) {
       return {
         ok: false,
         error: `Error: invalid strategy "${strategy}" in --hint. Valid: prefer, restrict`,

@@ -1,10 +1,9 @@
-import { describe, expect, it } from 'vitest';
 import {
   formatDurationMs,
   formatExplain,
   parseBetOption,
   parseHintFlags,
-} from './execute.helpers.js';
+} from '@cli/commands/execute.helpers.js';
 
 describe('execute helpers', () => {
   describe('parseBetOption', () => {
@@ -21,6 +20,13 @@ describe('execute helpers', () => {
 
     it('rejects invalid JSON', () => {
       expect(parseBetOption('{broken}')).toEqual({
+        ok: false,
+        error: 'Error: --bet must be valid JSON',
+      });
+    });
+
+    it('rejects an explicitly empty JSON payload', () => {
+      expect(parseBetOption('')).toEqual({
         ok: false,
         error: 'Error: --bet must be valid JSON',
       });
@@ -128,6 +134,10 @@ describe('execute helpers', () => {
       expect(parseHintFlags(['build:typescript-tdd:avoid'])).toEqual({
         ok: false,
         error: 'Error: invalid strategy "avoid" in --hint. Valid: prefer, restrict',
+      });
+      expect(parseHintFlags(['build:typescript-tdd:'])).toEqual({
+        ok: false,
+        error: 'Error: invalid strategy "" in --hint. Valid: prefer, restrict',
       });
     });
   });
