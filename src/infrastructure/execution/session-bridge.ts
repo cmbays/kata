@@ -21,6 +21,7 @@ import { JsonStore } from '@infra/persistence/json-store.js';
 import { createRunTree, readRun, writeRun, runPaths } from '@infra/persistence/run-store.js';
 import { KATA_DIRS } from '@shared/constants/paths.js';
 import { logger } from '@shared/lib/logger.js';
+import { formatSessionBridgeAgentContext } from './session-bridge-agent-context.js';
 
 /**
  * Schema for bridge-run metadata stored at .kata/bridge-runs/<runId>.json.
@@ -52,6 +53,12 @@ const BridgeRunMetaSchema = z.object({
 });
 
 type BridgeRunMeta = z.infer<typeof BridgeRunMetaSchema>;
+
+type CycleCompletionTotals = {
+  completedBets: number;
+  totalDurationMs: number;
+  tokenUsage: { inputTokens: number; outputTokens: number; total: number } | null;
+};
 
 /**
  * SessionExecutionBridge — splits the adapter lifecycle for in-session execution.
@@ -133,185 +140,15 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
   }
 
   formatAgentContext(prepared: PreparedRun): string {
-    const lines: string[] = [];
-    // --cwd takes the repo root (parent of .kata/), used in all kata CLI invocations
     const repoRoot = dirname(prepared.kataDir);
-
-    // Detect launch context at dispatch time (late-bind — reflects actual env at agent start)
     const launchMode = detectLaunchMode();
     const sessionCtx = detectSessionContext(repoRoot);
 
-    lines.push('## Launch context');
-    lines.push('');
-    lines.push(`- **Launch mode**: ${launchMode}`);
-    lines.push(`- **In worktree**: ${sessionCtx.inWorktree ? 'yes' : 'no'}`);
-    lines.push(`- **Kata dir resolved**: ${sessionCtx.kataDir ?? prepared.kataDir}`);
-    if (launchMode !== 'interactive' && !sessionCtx.inWorktree) {
-      lines.push('- **Note**: running as agent outside a git worktree — use `--cwd` to point kata commands at the main repo.');
-    }
-    lines.push('');
-
-    lines.push('## Kata Run Context');
-    lines.push('');
-    lines.push('You are executing inside a kata run. Record your work as you go.');
-    lines.push('');
-    lines.push(`- **Run ID**: ${prepared.runId}`);
-    lines.push(`- **Bet ID**: ${prepared.betId}`);
-    lines.push(`- **Cycle ID**: ${prepared.cycleId}`);
-    lines.push(`- **Kata dir**: ${prepared.kataDir}`);
-    lines.push(`- **Stages**: ${prepared.stages.join(', ')}`);
-    lines.push('');
-
-    // What to produce
-    lines.push('### What to produce');
-    lines.push(`Execute the bet: "${prepared.betName}"`);
-    if (prepared.manifest.artifacts.length > 0) {
-      lines.push('');
-      lines.push('Expected artifacts:');
-      for (const art of prepared.manifest.artifacts) {
-        const req = art.required !== false ? '[required]' : '[optional]';
-        lines.push(`  - ${art.name} ${req}${art.description ? ` — ${art.description}` : ''}`);
-      }
-    }
-    lines.push('');
-
-    // Gates
-    if (prepared.manifest.entryGate || prepared.manifest.exitGate) {
-      lines.push('### Gates');
-      if (prepared.manifest.entryGate) {
-        lines.push(`**Entry gate** (${prepared.manifest.entryGate.type}):`);
-        for (const cond of prepared.manifest.entryGate.conditions) {
-          const desc = cond.description ?? this.describeCondition(cond);
-          lines.push(`  - [${cond.type}] ${desc}`);
-        }
-        lines.push('  If you cannot satisfy an entry gate, STOP and report to the sensei.');
-        lines.push('');
-      }
-      if (prepared.manifest.exitGate) {
-        lines.push(`**Exit gate** (${prepared.manifest.exitGate.type}):`);
-        for (const cond of prepared.manifest.exitGate.conditions) {
-          const desc = cond.description ?? this.describeCondition(cond);
-          lines.push(`  - [${cond.type}] ${desc}`);
-        }
-        lines.push('  Your output must satisfy these conditions. The sensei will verify.');
-        lines.push('');
-      }
-      lines.push('Do not skip gates — the sensei catches violations at stage boundaries.');
-      lines.push('');
-    }
-
-    // Git workflow
-    lines.push('### Git workflow');
-    lines.push('You are working in a git worktree. **NEVER commit directly to the `main` branch.**');
-    lines.push('');
-    lines.push('Before your first commit, create a feature branch:');
-    lines.push(`  git checkout -b keiko-${prepared.runId.slice(0, 8)}/${prepared.betName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40)}`);
-    lines.push('');
-    lines.push('Then commit to that branch and open a PR. The sensei will merge.');
-    lines.push('');
-    lines.push('To ensure hooks can detect your agent context, set this env var in your shell before git operations:');
-    lines.push(`  export KATA_RUN_ID=${prepared.runId}`);
-    lines.push('');
-
-    // PR operations — REST API
-    lines.push('### PR operations — use REST API, not GraphQL');
-    lines.push('`gh pr create`, `gh pr view --json`, and `gh pr merge` all use GitHub GraphQL (5000/hr quota).');
-    lines.push('With parallel agents, this quota drains fast. **Use REST API for all PR operations:**');
-    lines.push('');
-    lines.push('```bash');
-    lines.push('# Create PR');
-    lines.push('gh api repos/{owner}/{repo}/pulls -X POST \\');
-    lines.push('  --field title="..." --field body="..." \\');
-    lines.push('  --field head="branch-name" --field base="main"');
-    lines.push('');
-    lines.push('# Get PR number by branch');
-    lines.push('gh api "repos/{owner}/{repo}/pulls?head={owner}:branch-name"');
-    lines.push('');
-    lines.push('# Merge PR');
-    lines.push('gh api repos/{owner}/{repo}/pulls/NNN/merge -X PUT \\');
-    lines.push('  --field merge_method=squash');
-    lines.push('');
-    lines.push('# List PR reviews');
-    lines.push('gh api repos/{owner}/{repo}/pulls/NNN/reviews');
-    lines.push('```');
-    lines.push('');
-
-    // Record as you work
-    lines.push('### Record as you work');
-    lines.push('Use these commands at natural checkpoints — when a decision matters, when something surprises you, when you hit resistance:');
-    lines.push('');
-    lines.push(`  kata --cwd ${repoRoot} kansatsu record <type> "..." --run ${prepared.runId}`);
-    lines.push(`  kata --cwd ${repoRoot} maki record <name> <path> --run ${prepared.runId}`);
-    lines.push(`  kata --cwd ${repoRoot} kime record --decision "..." --rationale "..." --run ${prepared.runId}`);
-
-    lines.push('');
-    lines.push('**kime vs kansatsu — which to use for decisions:**');
-    lines.push('  `kime record` is for decisions with explicit, trackable outcomes. Use kime when:');
-    lines.push('    - You make a significant architectural or approach decision');
-    lines.push('    - You can state what "success" or "failure" looks like for this decision');
-    lines.push('    - Belt advancement tracks these directly as decision-outcome pairs');
-    lines.push('  `kansatsu record decision` + `kansatsu record outcome` is for paired run observations. Use when:');
-    lines.push('    - You want to log a decision as part of a broader observational record');
-    lines.push('    - Belt also counts these as min(decisions, outcomes) pairs — secondary signal');
-    lines.push('  **Prefer `kime record` for significant decisions — it is the primary belt metric.**');
-    lines.push('');
-    lines.push('**Observation types** — pick the most specific:');
-    lines.push('  decision    — a choice between real alternatives; always include WHY you chose this path');
-    lines.push('  prediction  — a testable bet about future behavior (state what would falsify it)');
-    lines.push('  assumption  — something you are treating as true but have not verified');
-    lines.push('  friction    — something that slowed you down; requires --taxonomy (see below)');
-    lines.push('  gap         — missing capability, coverage, or information; requires --severity critical|major|minor');
-    lines.push('  outcome     — factual result after a decision or prediction resolves');
-    lines.push('  insight     — non-obvious learning that would change your approach in a similar situation');
-    lines.push('');
-    lines.push('**FRICTION — record immediately, before continuing:**');
-    lines.push('When you hit a wall, get blocked, or need a workaround — record it as friction BEFORE resuming work.');
-    lines.push('Do not defer to the summary. Friction recorded mid-run is the signal; friction in prose is noise.');
-    lines.push('');
-    lines.push('Example friction record (copy-paste and fill in):');
-    lines.push(`  kata --cwd ${repoRoot} kansatsu record friction "lint-staged reverted my edits to execute.ts between two Edit calls" --run ${prepared.runId} --taxonomy tool-mismatch`);
-    lines.push('');
-    lines.push('**Friction taxonomy** (--taxonomy <value> — required for friction type):');
-    lines.push('  stale-learning   — your expected pattern was outdated or wrong in this context');
-    lines.push('  config-drift     — actual env/files/settings do not match documented expectations');
-    lines.push('  convention-clash — established code convention conflicts with the natural approach');
-    lines.push('  tool-mismatch    — available tool required workarounds; not quite right for the job');
-    lines.push('  scope-creep      — work expanded beyond the original bet boundary during execution');
-    lines.push('  agent-override   — user directed a different approach from what you would have chosen');
-    lines.push('');
-    lines.push('**Quality bar** — ask: would a future agent reading this understand what happened and why?');
-    lines.push('  weak:   "Features already in main, issues can be closed"');
-    lines.push('  strong: "Bets silently become redundant when issues stay open after merging — triage needs a closed-issue pre-flight"');
-    lines.push('');
-
-    // Injected learnings
-    if (prepared.manifest.learnings.length > 0) {
-      lines.push('### Injected Learnings');
-      lines.push('These patterns were captured from previous executions:');
-      lines.push('');
-      for (const learning of prepared.manifest.learnings) {
-        const conf = learning.confidence !== undefined
-          ? ` (confidence: ${(learning.confidence * 100).toFixed(0)}%)`
-          : '';
-        lines.push(`  - [${learning.tier}/${learning.category}]${conf}`);
-        lines.push(`    ${learning.content}`);
-      }
-      lines.push('');
-    }
-
-    // When you're done
-    lines.push('### When you\'re done');
-    lines.push('Before reporting back — did you record all friction events?');
-    lines.push('Check: rate limits hit, unexpected tool behavior, workarounds needed, anything that took more than one try.');
-    lines.push('If any of those happened and you have not recorded them yet, record them now before continuing.');
-    lines.push('');
-    lines.push('Report back to the sensei with a summary of:');
-    lines.push('- What you produced (artifacts)');
-    lines.push('- Any decisions you made and why');
-    lines.push('- Any issues or blockers encountered');
-    lines.push('Do NOT close the run yourself — the sensei handles run lifecycle.');
-
-    return lines.join('\n');
+    return formatSessionBridgeAgentContext(prepared, {
+      launchMode,
+      repoRoot,
+      sessionContext: sessionCtx,
+    });
   }
 
   getAgentContext(runId: string): string {
@@ -323,44 +160,7 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
       throw new Error(`Run "${runId}" is in terminal state "${meta.status}" and cannot be dispatched.`);
     }
 
-    // Reconstruct the minimal PreparedRun shape needed by formatAgentContext().
-    // The manifest is rebuilt from stored metadata — it doesn't need to be the
-    // exact original manifest because formatAgentContext() only reads:
-    //   prepared.runId, betId, cycleId, kataDir, stages,
-    //   manifest.artifacts, manifest.entryGate, manifest.exitGate, manifest.learnings
-    // betName and betPrompt are stored in BridgeRunMeta directly.
-    const prepared: PreparedRun = {
-      runId: meta.runId,
-      betId: meta.betId,
-      betName: meta.betName,
-      cycleId: meta.cycleId,
-      cycleName: meta.cycleName,
-      manifest: {
-        stageType: meta.stages.join(','),
-        prompt: `Execute the bet: "${meta.betName}"`,
-        context: {
-          pipelineId: meta.runId,
-          stageIndex: 0,
-          metadata: {
-            betId: meta.betId,
-            cycleId: meta.cycleId,
-            cycleName: meta.cycleName,
-            runId: meta.runId,
-            adapter: 'claude-native',
-          },
-        },
-        artifacts: [],
-        learnings: [],
-      },
-      kataDir: this.kataDir,
-      stages: meta.stages,
-      isolation: meta.isolation,
-      startedAt: meta.startedAt,
-      agentId: meta.agentId ?? meta.katakaId,
-      katakaId: meta.agentId ?? meta.katakaId,
-    };
-
-    return this.formatAgentContext(prepared);
+    return this.formatAgentContext(this.rebuildPreparedRun(meta));
   }
 
   complete(runId: string, result: AgentCompletionResult): void {
@@ -371,67 +171,9 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
 
     const completedAt = new Date().toISOString();
     const durationMs = new Date(completedAt).getTime() - new Date(meta.startedAt).getTime();
-
-    // Write history entry (same schema as WorkflowRunner.writeHistoryEntry)
-    try {
-      const id = randomUUID();
-      const entry = ExecutionHistoryEntrySchema.parse({
-        id,
-        pipelineId: randomUUID(),
-        stageType: meta.stages.join(','),
-        stageIndex: 0,
-        adapter: 'claude-native',
-        artifactNames: result.artifacts?.map((a) => a.name) ?? [],
-        startedAt: meta.startedAt,
-        completedAt,
-        durationMs,
-        cycleId: meta.cycleId,
-        betId: meta.betId,
-        tokenUsage: result.tokenUsage ? {
-          inputTokens: result.tokenUsage.inputTokens ?? 0,
-          outputTokens: result.tokenUsage.outputTokens ?? 0,
-          total: result.tokenUsage.total ?? 0,
-          cacheCreationTokens: 0,
-          cacheReadTokens: 0,
-        } : undefined,
-      });
-
-      const historyDir = join(this.kataDir, KATA_DIRS.history);
-      mkdirSync(historyDir, { recursive: true });
-      writeFileSync(
-        join(historyDir, `${id}.json`),
-        JSON.stringify(entry, null, 2) + '\n',
-      );
-    } catch (err) {
-      logger.error('Failed to write history entry for bridge run.', {
-        runId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-      throw new Error(
-        `Bridge run ${runId} history entry failed to write: ${err instanceof Error ? err.message : String(err)}`,
-        { cause: err },
-      );
-    }
-
-    // Update bridge run metadata (includes tokenUsage when provided)
-    meta.completedAt = completedAt;
-    meta.status = result.success ? 'complete' : 'failed';
-    if (result.tokenUsage) {
-      meta.tokenUsage = {
-        inputTokens: result.tokenUsage.inputTokens ?? 0,
-        outputTokens: result.tokenUsage.outputTokens ?? 0,
-        totalTokens: result.tokenUsage.total ?? 0,
-      };
-    }
-    this.writeBridgeRunMeta(meta);
-
-    // Update run.json with completion status and token usage so kata watch
-    // can display final state (#254 partial fix: run.json reflects completion).
+    this.writeHistoryEntry(runId, meta, result, completedAt, durationMs);
+    this.writeCompletedBridgeRunMeta(meta, result, completedAt);
     this.updateRunJsonOnComplete(runId, completedAt, result.success, result.tokenUsage);
-
-    // Update the bet outcome in the cycle JSON so CycleManager.generateCooldown()
-    // sees correct completion data (fixes #216: 0% completion rate in cooldown).
-    // success → 'complete', failure → 'partial' (agent ran but did not fully succeed).
     this.updateBetOutcomeInCycle(meta.cycleId, meta.betId, result.success ? 'complete' : 'partial');
   }
 
@@ -450,8 +192,32 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
     this.updateCycleState(cycle.id, 'active', name);
     const updatedCycle = this.loadCycle(cycle.id);
     const resolvedName = updatedCycle.name ?? cycle.id;
+    const inProgressBridgeRuns = this.listBridgeRunsForCycle(cycle.id)
+      .filter((meta) => meta.status === 'in-progress');
+    const bridgeRunsByRunId = new Map(inProgressBridgeRuns.map((meta) => [meta.runId, meta]));
+    const bridgeRunsByBetId = new Map<string, BridgeRunMeta>();
 
-    const preparedRuns = pendingBets.map((bet) => this.prepare(bet.id, agentId));
+    for (const meta of inProgressBridgeRuns) {
+      if (!bridgeRunsByBetId.has(meta.betId)) {
+        bridgeRunsByBetId.set(meta.betId, meta);
+      }
+    }
+
+    const preparedRuns = pendingBets.map((bet) => {
+      const reusableMeta = (bet.runId ? bridgeRunsByRunId.get(bet.runId) : undefined)
+        ?? bridgeRunsByBetId.get(bet.id);
+
+      if (!reusableMeta) {
+        return this.prepare(bet.id, agentId);
+      }
+
+      const refreshedMeta = this.refreshPreparedRunMeta(reusableMeta, bet, updatedCycle, agentId);
+      if (bet.runId !== refreshedMeta.runId) {
+        this.backfillRunIdInCycle(updatedCycle.id, bet.id, refreshedMeta.runId);
+      }
+
+      return this.rebuildPreparedRun(refreshedMeta);
+    });
 
     return {
       cycleId: cycle.id,
@@ -463,65 +229,17 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
   getCycleStatus(cycleId: string): CycleExecutionStatus {
     const cycle = this.loadCycle(cycleId);
     const bridgeRuns = this.listBridgeRunsForCycle(cycleId);
-
-    const bets: RunStatus[] = [];
-    let earliestStart: string | null = null;
-
-    for (const meta of bridgeRuns) {
-      // Count observations, artifacts, decisions from .kata/runs/ if available
-      const counts = this.countRunData(meta.runId);
-
-      if (!earliestStart || meta.startedAt < earliestStart) {
-        earliestStart = meta.startedAt;
-      }
-
-      const durationMs = meta.completedAt
-        ? new Date(meta.completedAt).getTime() - new Date(meta.startedAt).getTime()
-        : null;
-
-      bets.push({
-        betId: meta.betId,
-        betName: meta.betName,
-        runId: meta.runId,
-        status: meta.status === 'in-progress' ? 'in-progress' : meta.status,
-        kansatsuCount: counts.observations,
-        artifactCount: counts.artifacts,
-        decisionCount: counts.decisions,
-        lastActivity: counts.lastTimestamp,
-        durationMs,
-      });
-    }
-
-    // Include bets that haven't been prepared yet
-    for (const bet of cycle.bets) {
-      if (!bridgeRuns.some((r) => r.betId === bet.id)) {
-        bets.push({
-          betId: bet.id,
-          betName: bet.description,
-          runId: '',
-          status: 'pending',
-          kansatsuCount: 0,
-          artifactCount: 0,
-          decisionCount: 0,
-          lastActivity: null,
-          durationMs: null,
-        });
-      }
-    }
-
-    const elapsed = earliestStart
-      ? this.formatDuration(Date.now() - new Date(earliestStart).getTime())
-      : '0m';
-
-    // Budget estimation (approximate — we count history entries for this cycle)
-    const budgetUsed = this.estimateBudgetUsage(cycle);
+    const preparedBetStatuses = bridgeRuns.map((meta) => this.buildPreparedBetStatus(meta));
+    const pendingBetStatuses = cycle.bets
+      .filter((bet) => !bridgeRuns.some((meta) => meta.betId === bet.id))
+      .map((bet) => this.buildPendingBetStatus(bet));
 
     return {
       cycleId: cycle.id,
       cycleName: cycle.name ?? cycle.id,
-      bets,
-      elapsed,
-      budgetUsed,
+      bets: [...preparedBetStatuses, ...pendingBetStatuses],
+      elapsed: this.formatElapsedDuration(bridgeRuns),
+      budgetUsed: this.estimateBudgetUsage(cycle),
     };
   }
 
@@ -529,45 +247,199 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
     const cycle = this.loadCycle(cycleId);
     const bridgeRuns = this.listBridgeRunsForCycle(cycleId);
 
-    let totalDuration = 0;
-    let totalInput = 0;
-    let totalOutput = 0;
-    let totalTokens = 0;
-    let completed = 0;
-    let hasTokenData = false;
-
-    for (const meta of bridgeRuns) {
-      if (meta.status === 'in-progress') {
-        const result = results[meta.runId] ?? { success: true };
-        this.complete(meta.runId, result);
-      }
-
-      // Re-read to get updated metadata
-      const updated = this.readBridgeRunMeta(meta.runId);
-      if (updated?.status === 'complete') completed++;
-
-      if (updated?.completedAt) {
-        totalDuration += new Date(updated.completedAt).getTime() - new Date(updated.startedAt).getTime();
-      }
-
-      const agentResult = results[meta.runId];
-      if (agentResult?.tokenUsage) {
-        hasTokenData = true;
-        totalInput += agentResult.tokenUsage.inputTokens ?? 0;
-        totalOutput += agentResult.tokenUsage.outputTokens ?? 0;
-        totalTokens += agentResult.tokenUsage.total ?? 0;
-      }
-    }
+    this.completePendingCycleRuns(bridgeRuns, results);
+    const totals = this.collectCycleCompletionTotals(bridgeRuns, results);
 
     return {
       cycleId: cycle.id,
       cycleName: cycle.name ?? cycle.id,
-      completedBets: completed,
+      completedBets: totals.completedBets,
       totalBets: cycle.bets.length,
-      totalDurationMs: totalDuration,
-      tokenUsage: hasTokenData
-        ? { inputTokens: totalInput, outputTokens: totalOutput, total: totalTokens }
-        : null,
+      totalDurationMs: totals.totalDurationMs,
+      tokenUsage: totals.tokenUsage,
+    };
+  }
+
+  private writeHistoryEntry(
+    runId: string,
+    meta: BridgeRunMeta,
+    result: AgentCompletionResult,
+    completedAt: string,
+    durationMs: number,
+  ): void {
+    try {
+      const id = randomUUID();
+      const entry = this.buildHistoryEntryRecord(id, meta, result, completedAt, durationMs);
+
+      const historyDir = join(this.kataDir, KATA_DIRS.history);
+      mkdirSync(historyDir, { recursive: true });
+      writeFileSync(
+        join(historyDir, `${id}.json`),
+        JSON.stringify(entry, null, 2) + '\n',
+      );
+    } catch (err) {
+      logger.error('Failed to write history entry for bridge run.', {
+        runId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      throw new Error(
+        `Bridge run ${runId} history entry failed to write: ${err instanceof Error ? err.message : String(err)}`,
+        { cause: err },
+      );
+    }
+  }
+
+  private buildHistoryEntryRecord(
+    id: string,
+    meta: BridgeRunMeta,
+    result: AgentCompletionResult,
+    completedAt: string,
+    durationMs: number,
+  ) {
+    return ExecutionHistoryEntrySchema.parse({
+      id,
+      pipelineId: randomUUID(),
+      stageType: meta.stages.join(','),
+      stageIndex: 0,
+      adapter: 'claude-native',
+      artifactNames: result.artifacts?.map((artifact) => artifact.name) ?? [],
+      startedAt: meta.startedAt,
+      completedAt,
+      durationMs,
+      cycleId: meta.cycleId,
+      betId: meta.betId,
+      tokenUsage: this.toHistoryTokenUsage(result.tokenUsage),
+    });
+  }
+
+  private toHistoryTokenUsage(tokenUsage?: AgentCompletionResult['tokenUsage']) {
+    if (!tokenUsage) {
+      return undefined;
+    }
+
+    return {
+      inputTokens: tokenUsage.inputTokens ?? 0,
+      outputTokens: tokenUsage.outputTokens ?? 0,
+      total: tokenUsage.total ?? 0,
+      cacheCreationTokens: 0,
+      cacheReadTokens: 0,
+    };
+  }
+
+  private writeCompletedBridgeRunMeta(
+    meta: BridgeRunMeta,
+    result: AgentCompletionResult,
+    completedAt: string,
+  ): void {
+    const updatedMeta = {
+      ...meta,
+      completedAt,
+      status: result.success ? 'complete' : 'failed',
+      ...(result.tokenUsage ? {
+        tokenUsage: {
+          inputTokens: result.tokenUsage.inputTokens ?? 0,
+          outputTokens: result.tokenUsage.outputTokens ?? 0,
+          totalTokens: result.tokenUsage.total ?? 0,
+        },
+      } : {}),
+    } satisfies BridgeRunMeta;
+
+    this.writeBridgeRunMeta(updatedMeta);
+  }
+
+  private buildPreparedBetStatus(meta: BridgeRunMeta): RunStatus {
+    const counts = this.countRunData(meta.runId);
+
+    return {
+      betId: meta.betId,
+      betName: meta.betName,
+      runId: meta.runId,
+      status: meta.status === 'in-progress' ? 'in-progress' : meta.status,
+      kansatsuCount: counts.observations,
+      artifactCount: counts.artifacts,
+      decisionCount: counts.decisions,
+      lastActivity: counts.lastTimestamp,
+      durationMs: this.calculateRunDuration(meta),
+    };
+  }
+
+  private buildPendingBetStatus(bet: Bet): RunStatus {
+    return {
+      betId: bet.id,
+      betName: bet.description,
+      runId: '',
+      status: 'pending',
+      kansatsuCount: 0,
+      artifactCount: 0,
+      decisionCount: 0,
+      lastActivity: null,
+      durationMs: null,
+    };
+  }
+
+  private formatElapsedDuration(bridgeRuns: BridgeRunMeta[]): string {
+    const earliestStart = bridgeRuns
+      .map((meta) => meta.startedAt)
+      .sort()[0];
+
+    return earliestStart
+      ? this.formatDuration(Date.now() - new Date(earliestStart).getTime())
+      : '0m';
+  }
+
+  private calculateRunDuration(meta: BridgeRunMeta): number | null {
+    return meta.completedAt
+      ? new Date(meta.completedAt).getTime() - new Date(meta.startedAt).getTime()
+      : null;
+  }
+
+  private completePendingCycleRuns(
+    bridgeRuns: BridgeRunMeta[],
+    results: Record<string, AgentCompletionResult>,
+  ): void {
+    for (const meta of bridgeRuns) {
+      if (meta.status === 'in-progress') {
+        this.complete(meta.runId, results[meta.runId] ?? { success: true });
+      }
+    }
+  }
+
+  private collectCycleCompletionTotals(
+    bridgeRuns: BridgeRunMeta[],
+    results: Record<string, AgentCompletionResult>,
+  ): CycleCompletionTotals {
+    const totals: CycleCompletionTotals = {
+      completedBets: 0,
+      totalDurationMs: 0,
+      tokenUsage: null,
+    };
+
+    for (const meta of bridgeRuns) {
+      const updated = this.readBridgeRunMeta(meta.runId);
+      if (!updated) {
+        continue;
+      }
+
+      totals.completedBets += updated.status === 'complete' ? 1 : 0;
+      totals.totalDurationMs += this.calculateRunDuration(updated) ?? 0;
+      totals.tokenUsage = this.mergeTokenUsage(totals.tokenUsage, results[meta.runId]?.tokenUsage);
+    }
+
+    return totals;
+  }
+
+  private mergeTokenUsage(
+    existing: CycleCompletionTotals['tokenUsage'],
+    tokenUsage?: AgentCompletionResult['tokenUsage'],
+  ): CycleCompletionTotals['tokenUsage'] {
+    if (!tokenUsage) {
+      return existing;
+    }
+
+    return {
+      inputTokens: (existing?.inputTokens ?? 0) + (tokenUsage.inputTokens ?? 0),
+      outputTokens: (existing?.outputTokens ?? 0) + (tokenUsage.outputTokens ?? 0),
+      total: (existing?.total ?? 0) + (tokenUsage.total ?? 0),
     };
   }
 
@@ -658,23 +530,6 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
     };
   }
 
-  private describeCondition(cond: { type: string; artifactName?: string; predecessorType?: string }): string {
-    switch (cond.type) {
-      case 'artifact-exists':
-        return cond.artifactName ? `artifact "${cond.artifactName}" must exist` : 'required artifact must exist';
-      case 'predecessor-complete':
-        return cond.predecessorType ? `stage "${cond.predecessorType}" must be complete` : 'predecessor must be complete';
-      case 'human-approved':
-        return 'requires human approval';
-      case 'schema-valid':
-        return 'output must pass schema validation';
-      case 'command-passes':
-        return 'command must exit with code 0';
-      default:
-        return cond.type;
-    }
-  }
-
   // ── Cycle JSON update ─────────────────────────────────────────────────
 
   /**
@@ -692,24 +547,48 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
       }
 
       const cycle = JsonStore.read(cyclePath, CycleSchema);
-      const ALLOWED_TRANSITIONS: Partial<Record<CycleState, CycleState>> = {
-        planning: 'active',
-        active: 'cooldown',
-        cooldown: 'complete',
-      };
-      if (ALLOWED_TRANSITIONS[cycle.state] !== state) {
+      if (cycle.state === state) {
+        this.writeCycleNameIfChanged(cyclePath, cycle, name);
+        return;
+      }
+      if (!this.canTransitionCycleState(cycle.state, state)) {
         logger.warn(`Cannot transition cycle "${cycleId}" from "${cycle.state}" to "${state}".`);
         return;
       }
-      cycle.state = state;
-      if (name !== undefined) {
-        cycle.name = name;
-      }
-      cycle.updatedAt = new Date().toISOString();
-      JsonStore.write(cyclePath, cycle, CycleSchema);
+
+      this.writeCycleState(cyclePath, cycle, state, name);
     } catch (err) {
       logger.warn(`Failed to update cycle state for cycle "${cycleId}": ${err instanceof Error ? err.message : String(err)}`);
     }
+  }
+
+  private canTransitionCycleState(from: CycleState, to: CycleState): boolean {
+    const allowedTransitions: Partial<Record<CycleState, CycleState>> = {
+      planning: 'active',
+      active: 'cooldown',
+      cooldown: 'complete',
+    };
+
+    return allowedTransitions[from] === to;
+  }
+
+  private writeCycleNameIfChanged(cyclePath: string, cycle: Cycle, name?: string): void {
+    if (name === undefined || cycle.name === name) {
+      return;
+    }
+
+    cycle.name = name;
+    cycle.updatedAt = new Date().toISOString();
+    JsonStore.write(cyclePath, cycle, CycleSchema);
+  }
+
+  private writeCycleState(cyclePath: string, cycle: Cycle, state: CycleState, name?: string): void {
+    cycle.state = state;
+    if (name !== undefined) {
+      cycle.name = name;
+    }
+    cycle.updatedAt = new Date().toISOString();
+    JsonStore.write(cyclePath, cycle, CycleSchema);
   }
 
   /**
@@ -786,6 +665,67 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
     } catch (err) {
       logger.warn(`Failed to backfill bet.runId in cycle "${cycleId}" for bet "${betId}": ${err instanceof Error ? err.message : String(err)}`);
     }
+  }
+
+  private refreshPreparedRunMeta(
+    meta: BridgeRunMeta,
+    bet: Bet,
+    cycle: Cycle,
+    agentId?: string,
+  ): BridgeRunMeta {
+    const refreshed: BridgeRunMeta = {
+      ...meta,
+      betName: bet.description,
+      cycleName: cycle.name ?? cycle.id,
+    };
+
+    let changed = refreshed.betName !== meta.betName || refreshed.cycleName !== meta.cycleName;
+
+    if (agentId && !meta.agentId) {
+      refreshed.agentId = agentId;
+      refreshed.katakaId = agentId;
+      changed = true;
+      this.updateRunJsonAgentAttribution(meta.runId, agentId);
+    }
+
+    if (changed) {
+      this.writeBridgeRunMeta(refreshed);
+    }
+
+    return refreshed;
+  }
+
+  private rebuildPreparedRun(meta: BridgeRunMeta): PreparedRun {
+    return {
+      runId: meta.runId,
+      betId: meta.betId,
+      betName: meta.betName,
+      cycleId: meta.cycleId,
+      cycleName: meta.cycleName,
+      manifest: {
+        stageType: meta.stages.join(','),
+        prompt: `Execute the bet: "${meta.betName}"`,
+        context: {
+          pipelineId: meta.runId,
+          stageIndex: 0,
+          metadata: {
+            betId: meta.betId,
+            cycleId: meta.cycleId,
+            cycleName: meta.cycleName,
+            runId: meta.runId,
+            adapter: 'claude-native',
+          },
+        },
+        artifacts: [],
+        learnings: [],
+      },
+      kataDir: this.kataDir,
+      stages: meta.stages,
+      isolation: meta.isolation,
+      startedAt: meta.startedAt,
+      agentId: meta.agentId ?? meta.katakaId,
+      katakaId: meta.agentId ?? meta.katakaId,
+    };
   }
 
   // ── run.json writer ───────────────────────────────────────────────────
@@ -889,6 +829,26 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
     }
   }
 
+  private updateRunJsonAgentAttribution(runId: string, agentId: string): void {
+    try {
+      const runsDir = join(this.kataDir, KATA_DIRS.runs);
+      const paths = runPaths(runsDir, runId);
+      if (!existsSync(paths.runJson)) return;
+
+      const run = readRun(runsDir, runId);
+      writeRun(runsDir, {
+        ...run,
+        agentId,
+        katakaId: agentId,
+      });
+    } catch (err) {
+      logger.warn('Failed to update run.json agent attribution for an existing bridge run.', {
+        runId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
   // ── Bridge run metadata persistence ───────────────────────────────────
 
   private bridgeRunsDir(): string {
@@ -946,41 +906,46 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
       return { observations: 0, artifacts: 0, decisions: 0, lastTimestamp: null };
     }
 
-    // Count JSONL entries in the run's data files
-    const countJsonlLines = (filePath: string): number => {
-      if (!existsSync(filePath)) return 0;
-      try {
-        const content = readFileSync(filePath, 'utf-8').trim();
-        return content ? content.split('\n').length : 0;
-      } catch {
-        return 0;
-      }
-    };
-
     // Standard run-store paths
-    let observations = countJsonlLines(join(runDir, 'observations.jsonl'));
-    const artifacts = countJsonlLines(join(runDir, 'artifacts.jsonl'));
-    let decisions = countJsonlLines(join(runDir, 'decisions.jsonl'));
+    let observations = this.countJsonlLines(join(runDir, 'observations.jsonl'));
+    const artifacts = this.countJsonlLines(join(runDir, 'artifacts.jsonl'));
+    let decisions = this.countJsonlLines(join(runDir, 'decisions.jsonl'));
 
     // Also check stage-level observations
     const stagesDir = join(runDir, 'stages');
     if (existsSync(stagesDir)) {
       for (const stageDir of readdirSync(stagesDir)) {
-        observations += countJsonlLines(join(stagesDir, stageDir, 'observations.jsonl'));
-        decisions += countJsonlLines(join(stagesDir, stageDir, 'decisions.jsonl'));
+        observations += this.countJsonlLines(join(stagesDir, stageDir, 'observations.jsonl'));
+        decisions += this.countJsonlLines(join(stagesDir, stageDir, 'decisions.jsonl'));
       }
     }
 
-    // Get last timestamp from bridge-run metadata
-    const meta = this.readBridgeRunMeta(runId);
-    let lastTimestamp: string | null = null;
-    if (meta?.completedAt) {
-      lastTimestamp = meta.completedAt;
-    } else if (meta?.startedAt) {
-      lastTimestamp = meta.startedAt;
-    }
+    const lastTimestamp = this.resolveLastActivityTimestamp(runId);
 
     return { observations, artifacts, decisions, lastTimestamp };
+  }
+
+  private countJsonlLines(filePath: string): number {
+    if (!existsSync(filePath)) return 0;
+    try {
+      const content = readFileSync(filePath, 'utf-8').trim();
+      return content ? content.split('\n').length : 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  private resolveLastActivityTimestamp(runId: string): string | null {
+    const meta = this.readBridgeRunMeta(runId);
+
+    if (meta?.completedAt) {
+      return meta.completedAt;
+    }
+    if (meta?.startedAt) {
+      return meta.startedAt;
+    }
+
+    return null;
   }
 
   private estimateBudgetUsage(cycle: Cycle): { percent: number; tokenEstimate: number } | null {
@@ -989,22 +954,36 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
     const historyDir = join(this.kataDir, KATA_DIRS.history);
     if (!existsSync(historyDir)) return { percent: 0, tokenEstimate: 0 };
 
-    let totalTokens = 0;
-    for (const file of readdirSync(historyDir).filter((f) => f.endsWith('.json'))) {
-      try {
-        const entry = JSON.parse(readFileSync(join(historyDir, file), 'utf-8'));
-        if (entry.cycleId === cycle.id && entry.tokenUsage?.total) {
-          totalTokens += entry.tokenUsage.total;
-        }
-      } catch {
-        // Skip invalid files
-      }
-    }
+    const totalTokens = this.sumCycleHistoryTokens(historyDir, cycle.id);
 
     return {
       percent: Math.round((totalTokens / cycle.budget.tokenBudget) * 100),
       tokenEstimate: totalTokens,
     };
+  }
+
+  private sumCycleHistoryTokens(historyDir: string, cycleId: string): number {
+    let totalTokens = 0;
+
+    for (const file of readdirSync(historyDir).filter((entry) => entry.endsWith('.json'))) {
+      const entryTotal = this.readHistoryTokenTotal(join(historyDir, file), cycleId);
+      totalTokens += entryTotal ?? 0;
+    }
+
+    return totalTokens;
+  }
+
+  private readHistoryTokenTotal(filePath: string, cycleId: string): number | null {
+    try {
+      const entry = JSON.parse(readFileSync(filePath, 'utf-8'));
+      if (entry.cycleId !== cycleId) {
+        return null;
+      }
+
+      return entry.tokenUsage?.total ?? null;
+    } catch {
+      return null;
+    }
   }
 
   private formatDuration(ms: number): string {

@@ -21,8 +21,7 @@ import type { KataAssignment, Bet } from '@domain/types/bet.js';
 import { DomainArea, WorkType, WorkNovelty, DomainTagsSchema } from '@domain/types/domain-tags.js';
 import type { DomainTags } from '@domain/types/domain-tags.js';
 import { detectTags } from '@features/domain-confidence/domain-tagger.js';
-import { createRunTree, runPaths } from '@infra/persistence/run-store.js';
-import type { Run } from '@domain/types/run-state.js';
+import { runPaths } from '@infra/persistence/run-store.js';
 import { BeltCalculator, ProjectStateUpdater } from '@features/belt/belt-calculator.js';
 import { KataAgentConfidenceCalculator } from '@features/kata-agent/kata-agent-confidence-calculator.js';
 import { KATA_DIRS } from '@shared/constants/paths.js';
@@ -354,15 +353,14 @@ export function registerCycleCommands(parent: Command): void {
   // kata cycle start <cycle-id>
   cycle
     .command('start <cycle-id>')
-    .description('Start a cycle — validates kata assignments and creates run trees for each bet')
+    .description('Start a cycle — validates kata assignments and prepares session-bridge runs for each bet')
     .action(withCommandContext(async (ctx, rawCycleId: string) => {
       const manager = new CycleManager(kataDirPath(ctx.kataDir, 'cycles'), JsonStore);
       const cycleId = resolveCycleId(manager, rawCycleId);
-      const runsDir = kataDirPath(ctx.kataDir, 'runs');
       const katasDir = kataDirPath(ctx.kataDir, 'katas');
 
-      // Pre-flight: read cycle and resolve all kata stages before any state mutations.
-      // This ensures that missing kata files are detected before the cycle transitions to 'active'.
+      // Pre-flight: read cycle and resolve all named kata files before any state mutations.
+      // This preserves the existing fail-before-activate behavior for explicit kata references.
       const draftCycle = manager.get(cycleId);
 
       if (draftCycle.state === 'active' || draftCycle.state === 'cooldown' || draftCycle.state === 'complete') {
@@ -383,20 +381,19 @@ export function registerCycleCommands(parent: Command): void {
       }
 
       // Pre-flight: load all named kata files so missing patterns fail before any mutations.
-      const stageSequences = new Map<string, Array<'research' | 'plan' | 'build' | 'review'>>();
       for (const bet of draftCycle.bets) {
         const kata = bet.kata!;
         if (kata.type === 'named') {
           const kataPath = join(katasDir, `${kata.pattern}.json`);
-          const savedKata = JsonStore.read(kataPath, SavedKataSchema);
-          stageSequences.set(bet.id, savedKata.stages as Array<'research' | 'plan' | 'build' | 'review'>);
-        } else {
-          stageSequences.set(bet.id, kata.stages as Array<'research' | 'plan' | 'build' | 'review'>);
+          JsonStore.read(kataPath, SavedKataSchema);
         }
       }
 
-      // All validation passed — now transition cycle state and create run trees.
-      const { cycle } = manager.startCycle(cycleId);
+      // All validation passed — launch through the session bridge so cycle start,
+      // staged launch, and execute cycle --prepare share the same preparation seam.
+      const { SessionExecutionBridge } = await import('@infra/execution/session-bridge.js');
+      const bridge = new SessionExecutionBridge(ctx.kataDir);
+      const prepared = bridge.prepareCycle(cycleId);
 
       const runs: Array<{
         runId: string;
@@ -405,37 +402,24 @@ export function registerCycleCommands(parent: Command): void {
         kataPattern: string;
         stageSequence: string[];
         runDir: string;
-      }> = [];
+      }> = prepared.preparedRuns.map((run) => {
+        const bet = draftCycle.bets.find((candidate) => candidate.id === run.betId);
+        const kata = bet?.kata;
+        const kataPattern = kata?.type === 'named'
+          ? kata.pattern
+          : kata?.type === 'ad-hoc'
+            ? kata.stages.join(',')
+            : run.stages.join(',');
 
-      for (const bet of cycle.bets) {
-        const kata = bet.kata!;
-        const stageSequence = stageSequences.get(bet.id)!;
-
-        const runId = crypto.randomUUID();
-        const run: Run = {
-          id: runId,
-          cycleId,
-          betId: bet.id,
-          betPrompt: bet.description,
-          kataPattern: kata.type === 'named' ? kata.pattern : undefined,
-          stageSequence,
-          currentStage: null,
-          status: 'pending',
-          startedAt: new Date().toISOString(),
+        return {
+          runId: run.runId,
+          betId: run.betId,
+          betPrompt: run.betName,
+          kataPattern,
+          stageSequence: run.stages,
+          runDir: runPaths(kataDirPath(ctx.kataDir, 'runs'), run.runId).runDir,
         };
-
-        createRunTree(runsDir, run);
-        manager.setRunId(cycleId, bet.id, runId);
-
-        runs.push({
-          runId,
-          betId: bet.id,
-          betPrompt: bet.description,
-          kataPattern: kata.type === 'named' ? kata.pattern : kata.stages.join(','),
-          stageSequence,
-          runDir: runPaths(runsDir, runId).runDir,
-        });
-      }
+      });
 
       if (ctx.globalOpts.json) {
         console.log(JSON.stringify({ cycleId, status: 'active', runs }, null, 2));

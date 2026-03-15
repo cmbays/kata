@@ -1017,6 +1017,63 @@ describe('SessionExecutionBridge', () => {
       const updatedCycle = CycleSchema.parse(JSON.parse(readFileSync(cyclePath, 'utf-8')));
       expect(updatedCycle.name).toBe('My Cycle');
     });
+
+    it('should reuse existing in-progress bridge runs when the same cycle is prepared twice', () => {
+      const cycle = createCycle(kataDir, { state: 'planning' });
+      const bridge = new SessionExecutionBridge(kataDir);
+
+      const first = bridge.prepareCycle(cycle.id);
+      const second = bridge.prepareCycle(cycle.id);
+
+      expect(second.preparedRuns.map((run) => run.runId)).toEqual(
+        first.preparedRuns.map((run) => run.runId),
+      );
+
+      const bridgeRunFiles = readdirSync(join(kataDir, 'bridge-runs')).filter((file) => file.endsWith('.json'));
+      expect(bridgeRunFiles).toHaveLength(cycle.bets.length);
+    });
+
+    it('should update cycle and bridge metadata names when an active cycle is re-prepared with a new name', () => {
+      const cycle = createCycle(kataDir, { state: 'planning', name: 'Original Name' });
+      const bridge = new SessionExecutionBridge(kataDir);
+
+      const first = bridge.prepareCycle(cycle.id);
+      const second = bridge.prepareCycle(cycle.id, undefined, 'Renamed Cycle');
+
+      expect(second.preparedRuns.map((run) => run.runId)).toEqual(
+        first.preparedRuns.map((run) => run.runId),
+      );
+      expect(second.cycleName).toBe('Renamed Cycle');
+
+      const cyclePath = join(kataDir, 'cycles', `${cycle.id}.json`);
+      const updatedCycle = CycleSchema.parse(JSON.parse(readFileSync(cyclePath, 'utf-8')));
+      expect(updatedCycle.name).toBe('Renamed Cycle');
+
+      const bridgeMeta = JSON.parse(readFileSync(join(kataDir, 'bridge-runs', `${first.preparedRuns[0]!.runId}.json`), 'utf-8'));
+      expect(bridgeMeta.cycleName).toBe('Renamed Cycle');
+    });
+
+    it('should backfill agent attribution onto existing prepared runs when a later prepare provides agentId', () => {
+      const cycle = createCycle(kataDir, { state: 'planning' });
+      const bridge = new SessionExecutionBridge(kataDir);
+
+      const first = bridge.prepareCycle(cycle.id);
+      const agentId = randomUUID();
+      const second = bridge.prepareCycle(cycle.id, agentId);
+
+      expect(second.preparedRuns.map((run) => run.runId)).toEqual(
+        first.preparedRuns.map((run) => run.runId),
+      );
+      expect(second.preparedRuns.every((run) => run.agentId === agentId)).toBe(true);
+
+      const bridgeMeta = JSON.parse(readFileSync(join(kataDir, 'bridge-runs', `${first.preparedRuns[0]!.runId}.json`), 'utf-8'));
+      expect(bridgeMeta.agentId).toBe(agentId);
+      expect(bridgeMeta.katakaId).toBe(agentId);
+
+      const runJson = RunSchema.parse(JSON.parse(readFileSync(join(kataDir, 'runs', first.preparedRuns[0]!.runId, 'run.json'), 'utf-8')));
+      expect(runJson.agentId).toBe(agentId);
+      expect(runJson.katakaId).toBe(agentId);
+    });
   });
 
   describe('getCycleStatus()', () => {
