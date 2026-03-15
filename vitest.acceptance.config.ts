@@ -10,11 +10,9 @@ export default defineConfig({
     name: 'acceptance',
     include: ['src/**/*.feature'],
     setupFiles: ['./src/acceptance/setup.ts'],
+    testTimeout: 10_000,
     fileParallelism: false,
     maxWorkers: 1,
     minWorkers: 1,
-    quickpickle: {
-      stepTimeout: 10_000,
-    },
   },
 });

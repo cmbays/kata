@@ -2,7 +2,8 @@
 
 ## Key Paths
 
-- Repo root: `/Users/cmbays/github/kata`
+- Repo root: `.` (this repository)
+- Ops clone root: set `OPS_ROOT` to the absolute path of your local `ops` checkout.
 - Shared agent guidance: `CLAUDE.md`, `AGENTS.md`, `MEMORY.md`
 - Acceptance bootstrap: `src/acceptance/setup.ts`, `vitest.acceptance.config.ts`
 - Gherkin pilot: `src/infrastructure/execution/session-bridge.feature`
@@ -18,11 +19,11 @@
 
 | Logical Name | Path |
 |---|---|
-| Kata ops manifest | `/Users/cmbays/github/ops/products/kata/MANIFEST.md` |
-| Org testing standard | `/Users/cmbays/github/ops/standards/testing.md` |
-| Quality loop playbook | `/Users/cmbays/github/ops/playbooks/quality-loop.md` |
-| Org security standard | `/Users/cmbays/github/ops/standards/security.md` |
-| Cross-repo docs standard | `/Users/cmbays/github/ops/standards/cross-repo-docs.md` |
-| AGENTS standard | `/Users/cmbays/github/ops/standards/agents-md.md` |
-| Kata unified roadmap | `/Users/cmbays/github/ops/vision/kata/UNIFIED-ROADMAP.md` |
-| Kata dogfooding roadmap | `/Users/cmbays/github/ops/vision/kata/DOGFOODING-ROADMAP.md` |
+| Kata ops manifest | `$OPS_ROOT/products/kata/MANIFEST.md` |
+| Org testing standard | `$OPS_ROOT/standards/testing.md` |
+| Quality loop playbook | `$OPS_ROOT/playbooks/quality-loop.md` |
+| Org security standard | `$OPS_ROOT/standards/security.md` |
+| Cross-repo docs standard | `$OPS_ROOT/standards/cross-repo-docs.md` |
+| AGENTS standard | `$OPS_ROOT/standards/agents-md.md` |
+| Kata unified roadmap | `$OPS_ROOT/vision/kata/UNIFIED-ROADMAP.md` |
+| Kata dogfooding roadmap | `$OPS_ROOT/vision/kata/DOGFOODING-ROADMAP.md` |

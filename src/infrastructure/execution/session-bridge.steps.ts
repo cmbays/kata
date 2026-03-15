@@ -4,10 +4,12 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { After, Given, QuickPickleWorld, Then, When, setWorldConstructor } from 'quickpickle';
 import { expect, vi } from 'vitest';
+import { z } from 'zod/v4';
 import type { PreparedRun } from '@domain/ports/session-bridge.js';
 import { CycleSchema, type Cycle } from '@domain/types/cycle.js';
 import { RunSchema } from '@domain/types/run-state.js';
-import { SessionExecutionBridge } from './session-bridge.js';
+import { SessionExecutionBridge } from '@infra/execution/session-bridge.js';
+import { KATA_DIRS } from '@shared/constants/paths.js';
 import * as sessionContext from '@shared/lib/session-context.js';
 
 class SessionBridgeWorld extends QuickPickleWorld {
@@ -19,6 +21,10 @@ class SessionBridgeWorld extends QuickPickleWorld {
 }
 
 setWorldConstructor(SessionBridgeWorld);
+
+const bridgeRunMetaSchema = z.object({
+  status: z.enum(['in-progress', 'complete', 'failed']),
+});
 
 function createTestDir(): string {
   const dir = join(tmpdir(), `kata-acceptance-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -43,7 +49,7 @@ function createCycle(kataDir: string, betDescription: string): Cycle {
     updatedAt: now,
   });
 
-  const cyclesDir = join(kataDir, 'cycles');
+  const cyclesDir = join(kataDir, KATA_DIRS.cycles);
   mkdirSync(cyclesDir, { recursive: true });
   writeFileSync(join(cyclesDir, `${cycle.id}.json`), JSON.stringify(cycle, null, 2));
 
@@ -117,7 +123,7 @@ Then('a running run record exists for the prepared run', (world: SessionBridgeWo
     throw new Error('Expected a prepared run and kata directory before reading run state.');
   }
 
-  const runJsonPath = join(world.kataDir, 'runs', world.prepared.runId, 'run.json');
+  const runJsonPath = join(world.kataDir, KATA_DIRS.runs, world.prepared.runId, 'run.json');
   expect(existsSync(runJsonPath)).toBe(true);
 
   const run = RunSchema.parse(JSON.parse(readFileSync(runJsonPath, 'utf-8')));
@@ -130,8 +136,8 @@ Then('the bridge metadata is marked {string}', (world: SessionBridgeWorld, statu
     throw new Error('Expected a prepared run and kata directory before reading bridge metadata.');
   }
 
-  const metaPath = join(world.kataDir, 'bridge-runs', `${world.prepared.runId}.json`);
-  const meta = JSON.parse(readFileSync(metaPath, 'utf-8')) as { status?: string };
+  const metaPath = join(world.kataDir, KATA_DIRS.bridgeRuns, `${world.prepared.runId}.json`);
+  const meta = bridgeRunMetaSchema.parse(JSON.parse(readFileSync(metaPath, 'utf-8')));
   expect(meta.status).toBe(status);
 });
 

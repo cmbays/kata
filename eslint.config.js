@@ -1,22 +1,9 @@
 import eslint from '@eslint/js';
 import boundaries from 'eslint-plugin-boundaries';
 import tseslint from 'typescript-eslint';
+import layerPolicy from './tooling/layer-policy.cjs';
 
-const boundaryElements = [
-  { type: 'domain', pattern: 'src/domain/**/*' },
-  { type: 'infrastructure', pattern: 'src/infrastructure/**/*' },
-  { type: 'features', pattern: 'src/features/**/*' },
-  { type: 'shared', pattern: 'src/shared/**/*' },
-  { type: 'cli', pattern: 'src/cli/**/*' },
-];
-
-const boundaryRules = [
-  { from: 'domain', allow: ['domain', 'shared'] },
-  { from: 'infrastructure', allow: ['domain', 'infrastructure', 'shared'] },
-  { from: 'features', allow: ['domain', 'infrastructure', 'features', 'shared'] },
-  { from: 'shared', allow: ['domain', 'infrastructure', 'shared'] },
-  { from: 'cli', allow: ['cli', 'domain', 'infrastructure', 'features', 'shared'] },
-];
+const { boundaryElements, boundaryRules } = layerPolicy;
 
 export default tseslint.config(
   eslint.configs.recommended,

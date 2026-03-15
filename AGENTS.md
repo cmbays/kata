@@ -1,9 +1,11 @@
 # AGENTS.md
 
 ## Mission
+
 Kata is the development methodology engine CLI/runtime. It owns cycle orchestration, run persistence, knowledge capture, and agent execution plumbing. Private strategy, roadmaps, and product governance live in the `ops` repo; resolve those entry points from `MEMORY.md`.
 
 ## Primary Workflows
+
 - Read `MEMORY.md` before any cross-repo or governance-heavy task.
 - Build: `npm run build`
 - Unit tests: `npm run test:unit`
@@ -15,10 +17,11 @@ Kata is the development methodology engine CLI/runtime. It owns cycle orchestrat
   - Drive implementation with unit/integration tests until acceptance scenarios pass.
   - Run `npm run test:coverage:unit && npm run test:crap`.
   - Run focused mutation testing on the changed behavior-heavy modules.
-  - Run `npm run lint && npm run test:arch`.
+- Run `npm run lint && npm run test:arch`.
 - Worktrees are mandatory for tracked-file edits. Start from `origin/main`, confirm the worktree/branch, and never work in the shared main checkout.
 
 ## Guardrails
+
 - Follow the org testing and security standards referenced from `MEMORY.md`.
 - Keep public/private boundaries intact. Public repo docs should not point at private `ops` paths directly.
 - Prefer extracting pure helpers from CLI/orchestration files before adding more direct tests to large side-effect-heavy modules.
@@ -26,6 +29,7 @@ Kata is the development methodology engine CLI/runtime. It owns cycle orchestrat
 - Co-locate `.feature` files with the feature they specify, and register their step files through `src/acceptance/setup.ts`.
 
 ## Quality Gates
+
 - For new behavior or behavior clarification, acceptance scenarios exist and fail before implementation.
 - Changed unit and integration tests pass locally.
 - `npm run test:acceptance` passes.
@@ -34,6 +38,7 @@ Kata is the development methodology engine CLI/runtime. It owns cycle orchestrat
 - Focused mutation testing is run for the changed business logic or orchestration seam, with meaningful survivors called out explicitly.
 
 ## References
+
 - Resolve `Kata ops manifest` from `MEMORY.md`.
 - Resolve `Org testing standard` from `MEMORY.md`.
 - Resolve `Quality loop playbook` from `MEMORY.md`.
