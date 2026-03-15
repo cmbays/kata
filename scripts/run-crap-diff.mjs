@@ -1,8 +1,12 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const ref = process.argv[2] ?? 'origin/main';
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 function runGit(args) {
   return spawnSync('git', args, {
@@ -60,16 +64,30 @@ if (changedFiles.length === 0) {
   process.exit(0);
 }
 
-const crapArgs = [
-  '--import',
-  'tsx',
-  './node_modules/crap4ts/src/cli/cli.ts',
-  '--strict',
-  '--include',
-  ...changedFiles,
-];
+function resolveCrapRunner() {
+  const localBin = resolve(repoRoot, 'node_modules/.bin/crap4ts');
+  if (existsSync(localBin)) {
+    return {
+      command: localBin,
+      args: ['--strict', '--include', ...changedFiles],
+    };
+  }
 
-const result = spawnSync('node', crapArgs, {
+  const sourceCli = resolve(repoRoot, 'node_modules/crap4ts/src/cli/cli.ts');
+  if (existsSync(sourceCli)) {
+    return {
+      command: 'node',
+      args: ['--import', 'tsx', sourceCli, '--strict', '--include', ...changedFiles],
+    };
+  }
+
+  console.error('Unable to resolve a crap4ts CLI entrypoint.');
+  process.exit(1);
+}
+
+const crapRunner = resolveCrapRunner();
+
+const result = spawnSync(crapRunner.command, crapRunner.args, {
   encoding: 'utf-8',
   stdio: 'inherit',
 });
