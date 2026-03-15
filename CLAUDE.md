@@ -13,20 +13,29 @@ npm run build          # Build with tsup (ESM, Node 20+)
 npm run dev            # Run CLI in dev mode: tsx src/cli/index.ts
 npm run test:unit      # Fast unit-focused vitest suite
 npm run test:integration # Real-service / filesystem integration suite
+npm run test:acceptance # Gherkin acceptance scenarios via quickpickle + Vitest
 npm run test:e2e       # Real CLI subprocess smoke tests
 npm test               # Unit + integration
-npm run test:all       # Unit + integration + e2e
+npm run test:all       # Unit + integration + acceptance + e2e
 npm run test:mutation:dry # Validate the Stryker harness quickly
 npm run test:mutation  # Stryker mutation tests on core lifecycle files
 npm run test:watch     # Watch mode
 npm run test:coverage  # Coverage (v8, thresholds: 80% statements/functions/lines, 75% branches)
+npm run test:coverage:unit # Unit-only coverage artifact generation for CRAP analysis
+npm run test:crap      # CRAP analysis against changed files
+npm run test:arch      # dependency-cruiser architecture checks
 npm run lint           # ESLint on src/
 npm run typecheck      # tsc --noEmit
 npm run verify         # Lint + typecheck + unit + integration + e2e + build
+npm run verify:quality # Coverage generation + CRAP + architecture
 ```
 
 Run a single test file: `npx vitest run src/path/to/file.test.ts`
 Run tests by pattern: `npx vitest run -t "PatternName"`
+
+## Cross-repo context
+
+Read `MEMORY.md` for the Cross-Repo Registry and current ops entrypoints. Do not hardcode private `ops` paths in tracked docs.
 
 ## Architecture
 
@@ -95,4 +104,4 @@ gh api repos/{owner}/{repo}/pulls/NNN/reviews
 
 ## Implementation status
 
-**Keiko 5 complete.** ~3013 tests across 147 files. See `memory/MEMORY.md` for current state and open issues.
+**Keiko 5 complete.** ~3013 tests across 147 files. See `MEMORY.md` for current state and cross-repo entrypoints.
