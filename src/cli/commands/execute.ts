@@ -807,7 +807,7 @@ function katasDir(kataDir: string): string {
   return join(kataDir, KATA_DIRS.katas);
 }
 
-function listSavedKatas(kataDir: string): Array<{ name: string; stages: StageCategory[]; description?: string }> {
+export function listSavedKatas(kataDir: string): Array<{ name: string; stages: StageCategory[]; description?: string }> {
   const dir = katasDir(kataDir);
   if (!existsSync(dir)) return [];
   return readdirSync(dir)
@@ -827,7 +827,7 @@ function listSavedKatas(kataDir: string): Array<{ name: string; stages: StageCat
     .filter((k): k is NonNullable<typeof k> => k !== null);
 }
 
-function loadSavedKata(kataDir: string, name: string): { stages: StageCategory[]; flavorHints?: Record<string, FlavorHint> } {
+export function loadSavedKata(kataDir: string, name: string): { stages: StageCategory[]; flavorHints?: Record<string, FlavorHint> } {
   assertValidKataName(name);
   const filePath = join(katasDir(kataDir), `${name}.json`);
   if (!existsSync(filePath)) {
@@ -852,7 +852,7 @@ function loadSavedKata(kataDir: string, name: string): { stages: StageCategory[]
   }
 }
 
-function saveSavedKata(kataDir: string, name: string, stages: StageCategory[], flavorHints?: Record<string, FlavorHint>): void {
+export function saveSavedKata(kataDir: string, name: string, stages: StageCategory[], flavorHints?: Record<string, FlavorHint>): void {
   assertValidKataName(name);
   const dir = katasDir(kataDir);
   mkdirSync(dir, { recursive: true });
@@ -860,7 +860,7 @@ function saveSavedKata(kataDir: string, name: string, stages: StageCategory[], f
   writeFileSync(join(dir, `${name}.json`), JSON.stringify(kata, null, 2), 'utf-8');
 }
 
-function deleteSavedKata(kataDir: string, name: string): void {
+export function deleteSavedKata(kataDir: string, name: string): void {
   assertValidKataName(name);
   const filePath = join(katasDir(kataDir), `${name}.json`);
   if (!existsSync(filePath)) {
