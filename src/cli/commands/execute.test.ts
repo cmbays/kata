@@ -1768,6 +1768,92 @@ describe('registerExecuteCommands', () => {
         expect.objectContaining({ bet: expect.objectContaining({ description: 'Named kata bet' }) }),
       );
     });
+
+    it('picks the active cycle over a planning cycle when both exist', async () => {
+      mkdirSync(cyclesDir, { recursive: true });
+      const manager = new CycleManager(cyclesDir, JsonStore);
+
+      // Create a planning cycle first (would be found first if filter used `true`)
+      const planningCycle = manager.create({ tokenBudget: 50000 }, 'Planning Cycle');
+      manager.addBet(planningCycle.id, {
+        description: 'Planning bet', appetite: 30, outcome: 'pending', issueRefs: [],
+      });
+
+      // Create the active cycle second
+      const activeCycle = manager.create({ tokenBudget: 50000 }, 'Active Cycle');
+      manager.addBet(activeCycle.id, {
+        description: 'Active bet', appetite: 30, outcome: 'pending', issueRefs: [],
+      });
+      manager.updateState(activeCycle.id, 'active');
+
+      mockRunStage.mockResolvedValue(makeSingleResult('build'));
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', 'build', '--next']);
+
+      expect(mockRunStage).toHaveBeenCalledWith(
+        'build',
+        expect.objectContaining({ bet: expect.objectContaining({ description: 'Active bet' }) }),
+      );
+    });
+
+    it('uses the cycle name fallback (activeCycle.name ?? activeCycle.id) correctly', async () => {
+      mkdirSync(cyclesDir, { recursive: true });
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 50000 }, 'Named Cycle');
+      manager.addBet(cycle.id, { description: 'Done bet', appetite: 30, outcome: 'complete', issueRefs: [] });
+      manager.updateState(cycle.id, 'active');
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', '--next']);
+
+      const output = consoleSpy.mock.calls.map((c: unknown[]) => c[0]).join('\n');
+      // Should use cycle NAME, not ID
+      expect(output).toContain('Named Cycle');
+    });
+
+    it('skips kata resolution when explicit categories are provided alongside --next', async () => {
+      mkdirSync(cyclesDir, { recursive: true });
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 50000 }, 'Cat Override');
+      const withBet = manager.addBet(cycle.id, {
+        description: 'Override bet', appetite: 30, outcome: 'pending', issueRefs: [],
+      });
+      manager.updateBet(cycle.id, withBet.bets[0]!.id, { kata: { type: 'ad-hoc', stages: ['review'] } });
+      manager.updateState(cycle.id, 'active');
+
+      mockRunStage.mockResolvedValue(makeSingleResult('build'));
+
+      const program = createProgram();
+      // Explicit categories override bet's kata assignment
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', 'build', '--next']);
+
+      expect(mockRunStage).toHaveBeenCalledWith('build', expect.anything());
+    });
+  });
+
+  // ---- yolo flag ----
+
+  describe('--yolo', () => {
+    it('passes yolo=true to execution when --yolo flag is set', async () => {
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', 'build', '--yolo']);
+
+      expect(mockRunStage).toHaveBeenCalledWith(
+        'build',
+        expect.objectContaining({ yolo: true }),
+      );
+    });
+
+    it('does not pass yolo when --yolo flag is absent', async () => {
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', 'build']);
+
+      expect(mockRunStage).toHaveBeenCalledWith(
+        'build',
+        expect.objectContaining({ yolo: undefined }),
+      );
+    });
   });
 });
 
