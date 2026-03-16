@@ -16,6 +16,7 @@ import { ExecutionHistoryEntrySchema } from '@domain/types/history.js';
 import { createStageOrchestrator } from '@domain/services/orchestrators/index.js';
 import { MetaOrchestrator } from '@domain/services/meta-orchestrator.js';
 import { KATA_DIRS } from '@shared/constants/paths.js';
+import { isJsonFile } from '@shared/lib/file-filters.js';
 import { logger } from '@shared/lib/logger.js';
 import type { UsageAnalytics } from '@infra/tracking/usage-analytics.js';
 
@@ -307,7 +308,7 @@ export class WorkflowRunner {
     if (!existsSync(artifactsDir)) return [];
 
     return readdirSync(artifactsDir)
-      .filter((f) => f.endsWith('.json'))
+      .filter(isJsonFile)
       .map((f) => f.replace('.json', ''));
   }
 
@@ -348,7 +349,7 @@ export function listRecentArtifacts(kataDir: string): ArtifactEntry[] {
   if (!existsSync(artifactsDir)) return [];
 
   const files = readdirSync(artifactsDir)
-    .filter((f) => f.endsWith('.json'))
+    .filter(isJsonFile)
     .sort()
     .reverse();
 

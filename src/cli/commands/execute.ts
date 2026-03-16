@@ -17,6 +17,7 @@ import { WorkflowRunner } from '@features/execute/workflow-runner.js';
 import { GapBridger } from '@features/execute/gap-bridger.js';
 import { KnowledgeStore } from '@infra/knowledge/knowledge-store.js';
 import { UsageAnalytics } from '@infra/tracking/usage-analytics.js';
+import { isJsonFile } from '@shared/lib/file-filters.js';
 import { KATA_DIRS } from '@shared/constants/paths.js';
 import { ProjectStateUpdater } from '@features/belt/belt-calculator.js';
 import { CycleManager } from '@domain/services/cycle-manager.js';
@@ -810,7 +811,7 @@ function listSavedKatas(kataDir: string): Array<{ name: string; stages: StageCat
   const dir = katasDir(kataDir);
   if (!existsSync(dir)) return [];
   return readdirSync(dir)
-    .filter((f) => f.endsWith('.json'))
+    .filter(isJsonFile)
     .map((f) => {
       try {
         const raw = JSON.parse(readFileSync(join(dir, f), 'utf-8'));
