@@ -9,9 +9,13 @@ import {
   buildDojoSessionBuildRequest,
   buildSynthesisInputRecord,
   clampConfidenceWithDelta,
+  collectBridgeRunIds,
   filterExecutionHistoryForCycle,
   hasFailedCaptures,
+  hasMethod,
+  hasObservations,
   isJsonFile,
+  isSyncableBet,
   isSynthesisPendingFile,
   listCompletedBetDescriptions,
   mapBridgeRunStatusToIncompleteStatus,
@@ -19,6 +23,7 @@ import {
   resolveAppliedProposalIds,
   selectEffectiveBetOutcomes,
   shouldRecordBetOutcomes,
+  shouldSyncOutcomes,
   shouldWarnOnIncompleteRuns,
   shouldWriteDojoDiary,
   shouldWriteDojoSession,
@@ -412,6 +417,100 @@ describe('cooldown-session helpers', () => {
 
     it('returns false when failed count is zero', () => {
       expect(hasFailedCaptures(0)).toBe(false);
+    });
+  });
+
+  describe('isSyncableBet', () => {
+    it('returns true only when outcome is pending AND runId is present', () => {
+      expect(isSyncableBet({ outcome: 'pending', runId: 'run-1' })).toBe(true);
+    });
+
+    it('returns false when outcome is not pending', () => {
+      expect(isSyncableBet({ outcome: 'complete', runId: 'run-1' })).toBe(false);
+      expect(isSyncableBet({ outcome: 'partial', runId: 'run-1' })).toBe(false);
+      expect(isSyncableBet({ outcome: 'abandoned', runId: 'run-1' })).toBe(false);
+    });
+
+    it('returns false when runId is missing or undefined', () => {
+      expect(isSyncableBet({ outcome: 'pending' })).toBe(false);
+      expect(isSyncableBet({ outcome: 'pending', runId: undefined })).toBe(false);
+    });
+
+    it('returns false when runId is empty string', () => {
+      expect(isSyncableBet({ outcome: 'pending', runId: '' })).toBe(false);
+    });
+  });
+
+  describe('collectBridgeRunIds', () => {
+    it('collects betId→runId pairs for matching cycleId', () => {
+      const result = collectBridgeRunIds([
+        { cycleId: 'c1', betId: 'b1', runId: 'r1' },
+        { cycleId: 'c2', betId: 'b2', runId: 'r2' },
+        { cycleId: 'c1', betId: 'b3', runId: 'r3' },
+      ], 'c1');
+
+      expect(result.size).toBe(2);
+      expect(result.get('b1')).toBe('r1');
+      expect(result.get('b3')).toBe('r3');
+    });
+
+    it('skips records with missing betId or runId', () => {
+      const result = collectBridgeRunIds([
+        { cycleId: 'c1', betId: 'b1' },
+        { cycleId: 'c1', runId: 'r2' },
+        { cycleId: 'c1' },
+      ], 'c1');
+
+      expect(result.size).toBe(0);
+    });
+
+    it('returns empty map when no records match', () => {
+      const result = collectBridgeRunIds([
+        { cycleId: 'c2', betId: 'b1', runId: 'r1' },
+      ], 'c1');
+
+      expect(result.size).toBe(0);
+    });
+
+    it('returns empty map for empty input', () => {
+      expect(collectBridgeRunIds([], 'c1').size).toBe(0);
+    });
+  });
+
+  describe('hasObservations', () => {
+    it('returns true for non-empty arrays', () => {
+      expect(hasObservations([{ id: '1' }])).toBe(true);
+      expect(hasObservations([1, 2, 3])).toBe(true);
+    });
+
+    it('returns false for empty arrays', () => {
+      expect(hasObservations([])).toBe(false);
+    });
+  });
+
+  describe('shouldSyncOutcomes', () => {
+    it('returns true when there are outcomes to sync', () => {
+      expect(shouldSyncOutcomes([{ betId: 'b1', outcome: 'complete' }])).toBe(true);
+    });
+
+    it('returns false when there are no outcomes to sync', () => {
+      expect(shouldSyncOutcomes([])).toBe(false);
+    });
+  });
+
+  describe('hasMethod', () => {
+    it('returns true when the target has the named method', () => {
+      expect(hasMethod({ checkExpiry: () => {} }, 'checkExpiry')).toBe(true);
+    });
+
+    it('returns false when the target does not have the named method', () => {
+      expect(hasMethod({}, 'checkExpiry')).toBe(false);
+      expect(hasMethod({ checkExpiry: 42 }, 'checkExpiry')).toBe(false);
+    });
+
+    it('returns false for null and undefined targets', () => {
+      expect(hasMethod(null, 'checkExpiry')).toBe(false);
+      expect(hasMethod(undefined, 'checkExpiry')).toBe(false);
     });
   });
 });

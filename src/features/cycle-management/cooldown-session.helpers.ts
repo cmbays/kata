@@ -302,3 +302,51 @@ export function isSynthesisPendingFile(filename: string): boolean {
 export function hasFailedCaptures(failed: number): boolean {
   return failed > 0;
 }
+
+/**
+ * Pure filter: returns true for bets that are eligible for auto-sync
+ * (outcome is still 'pending' AND the bet has a runId assigned).
+ */
+export function isSyncableBet(bet: { outcome: string; runId?: string }): boolean {
+  return bet.outcome === 'pending' && Boolean(bet.runId);
+}
+
+/**
+ * Build a betId → runId mapping from an array of bridge-run metadata records.
+ * Only includes records that match the target cycleId and have both betId and runId.
+ */
+export function collectBridgeRunIds(
+  metas: ReadonlyArray<{ cycleId?: string; betId?: string; runId?: string }>,
+  targetCycleId: string,
+): Map<string, string> {
+  const result = new Map<string, string>();
+  for (const meta of metas) {
+    if (meta.cycleId === targetCycleId && meta.betId && meta.runId) {
+      result.set(meta.betId, meta.runId);
+    }
+  }
+  return result;
+}
+
+/**
+ * Pure predicate: returns true when the non-empty observations array
+ * should be appended to the aggregate (length > 0).
+ */
+export function hasObservations(observations: readonly unknown[]): boolean {
+  return observations.length > 0;
+}
+
+/**
+ * Determine whether auto-synced outcomes should be recorded to the cycle.
+ */
+export function shouldSyncOutcomes(syncedOutcomes: readonly unknown[]): boolean {
+  return syncedOutcomes.length > 0;
+}
+
+/**
+ * Pure predicate: returns true when a typeof check confirms the target
+ * has a given method (used to guard optional checkExpiry in expiry check).
+ */
+export function hasMethod(target: unknown, methodName: string): boolean {
+  return typeof (target as Record<string, unknown>)?.[methodName] === 'function';
+}
