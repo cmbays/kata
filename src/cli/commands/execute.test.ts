@@ -427,6 +427,22 @@ describe('registerExecuteCommands', () => {
       expect(parsed.bets).toHaveLength(1);
     });
 
+    it('renders cycle completion details in plain-text mode', async () => {
+      const cycle = createCycleWithBets('Plain Complete', [
+        { description: 'Plain bet', appetite: 20 },
+      ]);
+      const bridge = new SessionExecutionBridge(kataDir);
+      bridge.prepareCycle(cycle.id);
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', 'cycle', cycle.id, '--complete']);
+
+      const output = consoleSpy.mock.calls.map((c: unknown[]) => c[0]).join('\n');
+      expect(output).toContain('completed');
+      expect(output).toContain('Bets: 1/1');
+      expect(output).toContain('Duration:');
+    });
+
     it('requires an action flag for execute cycle', async () => {
       const cycle = createCycleWithBets();
 
