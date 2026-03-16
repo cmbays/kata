@@ -2,7 +2,11 @@ import { mkdirSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
-import { KataAgentConfidenceCalculator } from './kata-agent-confidence-calculator.js';
+import {
+  KataAgentConfidenceCalculator,
+  resolveRegistryDir,
+  computeAverageConfidence,
+} from './kata-agent-confidence-calculator.js';
 import { KataAgentConfidenceProfileSchema } from '@domain/types/kata-agent-confidence.js';
 import { createRunTree, appendObservation } from '@infra/persistence/run-store.js';
 import { KnowledgeStore } from '@infra/knowledge/knowledge-store.js';
@@ -64,6 +68,55 @@ function seedLearning(knowledgeDir: string, overrides: Partial<LearningInput> = 
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Pure helper tests — direct mutation coverage
+// ---------------------------------------------------------------------------
+
+describe('resolveRegistryDir', () => {
+  it('returns agentDir when both agentDir and katakaDir are provided', () => {
+    expect(resolveRegistryDir('/agent', '/kataka')).toBe('/agent');
+  });
+
+  it('falls back to katakaDir when agentDir is undefined', () => {
+    expect(resolveRegistryDir(undefined, '/kataka')).toBe('/kataka');
+  });
+
+  it('returns agentDir when katakaDir is undefined', () => {
+    expect(resolveRegistryDir('/agent', undefined)).toBe('/agent');
+  });
+
+  it('throws when neither agentDir nor katakaDir is provided', () => {
+    expect(() => resolveRegistryDir(undefined, undefined)).toThrow(
+      'KataAgentConfidenceCalculator requires agentDir (or legacy katakaDir).',
+    );
+  });
+});
+
+describe('computeAverageConfidence', () => {
+  it('returns 0 for an empty array', () => {
+    expect(computeAverageConfidence([])).toBe(0);
+  });
+
+  it('returns the single value for a one-element array', () => {
+    expect(computeAverageConfidence([{ confidence: 0.7 }])).toBe(0.7);
+  });
+
+  it('returns the arithmetic mean of multiple values', () => {
+    const learnings = [{ confidence: 0.6 }, { confidence: 0.8 }, { confidence: 1.0 }];
+    expect(computeAverageConfidence(learnings)).toBeCloseTo(0.8, 10);
+  });
+
+  it('handles all-zero confidence values', () => {
+    const learnings = [{ confidence: 0 }, { confidence: 0 }];
+    expect(computeAverageConfidence(learnings)).toBe(0);
+  });
+
+  it('handles all-one confidence values', () => {
+    const learnings = [{ confidence: 1 }, { confidence: 1 }, { confidence: 1 }];
+    expect(computeAverageConfidence(learnings)).toBe(1);
+  });
+});
 
 describe('KataAgentConfidenceCalculator', () => {
   describe('compute()', () => {
@@ -178,6 +231,50 @@ describe('KataAgentConfidenceCalculator', () => {
       expect(profile.observationCount).toBe(0);
     });
 
+    it('uses agentDir when provided (ignores katakaDir)', () => {
+      const { runsDir, knowledgeDir, katakaDir } = makeDirs();
+      const base = join(tmpdir(), `kata-conf-calc-${randomUUID()}`);
+      const agentDir = join(base, '.kata', 'agents');
+      mkdirSync(agentDir, { recursive: true });
+
+      const calc = new KataAgentConfidenceCalculator({
+        runsDir,
+        knowledgeDir,
+        agentDir,
+        katakaDir,
+      });
+      const id = randomUUID();
+
+      calc.compute(id, 'test-agent');
+
+      // Written to agentDir, not katakaDir
+      expect(existsSync(join(agentDir, id, 'confidence.json'))).toBe(true);
+      expect(existsSync(join(katakaDir, id, 'confidence.json'))).toBe(false);
+    });
+
+    it('uses agentDir without katakaDir', () => {
+      const { runsDir, knowledgeDir } = makeDirs();
+      const base = join(tmpdir(), `kata-conf-calc-${randomUUID()}`);
+      const agentDir = join(base, '.kata', 'agents');
+      mkdirSync(agentDir, { recursive: true });
+
+      const calc = new KataAgentConfidenceCalculator({ runsDir, knowledgeDir, agentDir });
+      const id = randomUUID();
+
+      const profile = calc.compute(id, 'test-agent');
+      expect(profile.katakaId).toBe(id);
+      expect(existsSync(join(agentDir, id, 'confidence.json'))).toBe(true);
+    });
+
+    it('throws when neither agentDir nor katakaDir is provided', () => {
+      const { runsDir, knowledgeDir } = makeDirs();
+      const calc = new KataAgentConfidenceCalculator({ runsDir, knowledgeDir });
+
+      expect(() => calc.compute(randomUUID(), 'test-agent')).toThrow(
+        'KataAgentConfidenceCalculator requires agentDir (or legacy katakaDir).',
+      );
+    });
+
     it('handles missing knowledgeDir gracefully (learningCount = 0, overallConfidence = 0)', () => {
       const base = join(tmpdir(), `kata-conf-calc-${randomUUID()}`);
       const runsDir = join(base, '.kata', 'runs');
@@ -216,6 +313,40 @@ describe('KataAgentConfidenceCalculator', () => {
   });
 
   describe('load()', () => {
+    it('throws when neither agentDir nor katakaDir is provided', () => {
+      const { runsDir, knowledgeDir } = makeDirs();
+      const calc = new KataAgentConfidenceCalculator({ runsDir, knowledgeDir });
+
+      expect(() => calc.load(randomUUID())).toThrow(
+        'KataAgentConfidenceCalculator requires agentDir (or legacy katakaDir).',
+      );
+    });
+
+    it('loads from agentDir when both agentDir and katakaDir are provided', () => {
+      const { runsDir, knowledgeDir } = makeDirs();
+      const base = join(tmpdir(), `kata-conf-calc-${randomUUID()}`);
+      const agentDir = join(base, '.kata', 'agents');
+      const katakaDir = join(base, '.kata', 'kataka');
+      mkdirSync(agentDir, { recursive: true });
+      mkdirSync(katakaDir, { recursive: true });
+
+      const calc = new KataAgentConfidenceCalculator({
+        runsDir,
+        knowledgeDir,
+        agentDir,
+        katakaDir,
+      });
+      const id = randomUUID();
+
+      // Write profile via compute (goes to agentDir)
+      calc.compute(id, 'test-agent');
+
+      // Load should find it from agentDir
+      const loaded = calc.load(id);
+      expect(loaded).not.toBeNull();
+      expect(loaded!.katakaId).toBe(id);
+    });
+
     it('returns null when file does not exist', () => {
       const { runsDir, knowledgeDir, katakaDir } = makeDirs();
       const calc = new KataAgentConfidenceCalculator({ runsDir, knowledgeDir, katakaDir });
