@@ -304,6 +304,26 @@ describe('registerExecuteCommands', () => {
       expect(parsed.totalBets).toBe(2);
     });
 
+    it('includes persisted token usage when a run was already completed before execute cycle --complete', async () => {
+      const cycle = createCycleWithBets('Persisted Token Cycle', [
+        { description: 'Bet A', appetite: 20 },
+        { description: 'Bet B', appetite: 20 },
+      ]);
+      const bridge = new SessionExecutionBridge(kataDir);
+      const prepared = bridge.prepareCycle(cycle.id);
+      bridge.complete(prepared.preparedRuns[0]!.runId, {
+        success: true,
+        tokenUsage: { inputTokens: 10, outputTokens: 5, total: 15 },
+      });
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--json', '--cwd', baseDir, 'execute', 'cycle', cycle.id, '--complete']);
+
+      const parsed = JSON.parse(consoleSpy.mock.calls[0]?.[0] as string);
+      expect(parsed.completedBets).toBe(2);
+      expect(parsed.tokenUsage).toEqual({ inputTokens: 10, outputTokens: 5, total: 15 });
+    });
+
     it('emits prepared cycle data as json when requested', async () => {
       const cycle = createCycleWithBets('JSON Cycle', [
         { description: 'JSON bet', appetite: 20 },
