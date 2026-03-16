@@ -973,4 +973,40 @@ describe('WorkflowRunner', () => {
       expect(new Date(entry.completedAt).toISOString()).toBe(entry.completedAt);
     });
   });
+
+  describe('listRecentArtifacts filtering', () => {
+    it('filters out non-json files from the artifacts directory', () => {
+      const artifactsDir = join(baseDir, 'artifacts');
+      mkdirSync(artifactsDir, { recursive: true });
+      writeFileSync(join(artifactsDir, 'readme.txt'), 'not an artifact');
+      writeFileSync(join(artifactsDir, 'notes.md'), '# notes');
+      writeFileSync(join(artifactsDir, 'valid.json'), JSON.stringify({ name: 'test-artifact', timestamp: '2026-03-16T10:00:00Z' }));
+
+      const artifacts = listRecentArtifacts(baseDir);
+      expect(artifacts).toHaveLength(1);
+      expect(artifacts[0]!.name).toBe('test-artifact');
+    });
+  });
+
+  describe('persistArtifact directory creation', () => {
+    it('creates artifacts dir and persists artifact when dir did not exist', async () => {
+      // Ensure artifacts dir does NOT exist
+      const testDir = join(tmpdir(), `kata-wf-persist-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+      mkdirSync(join(testDir, 'stages'), { recursive: true });
+      mkdirSync(join(testDir, 'flavors'), { recursive: true });
+      mkdirSync(join(testDir, 'history'), { recursive: true });
+      mkdirSync(join(testDir, 'tracking'), { recursive: true });
+      // Do NOT create artifacts dir — the runner should create it
+
+      const deps = makeDeps({ kataDir: testDir });
+      const runner = new WorkflowRunner(deps);
+      await runner.runStage('build');
+
+      const artifactsDir = join(testDir, 'artifacts');
+      const files = readdirSync(artifactsDir).filter((f) => f.endsWith('.json'));
+      expect(files).toHaveLength(1);
+
+      rmSync(testDir, { recursive: true, force: true });
+    });
+  });
 });
