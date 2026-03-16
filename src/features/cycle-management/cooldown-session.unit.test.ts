@@ -1578,7 +1578,7 @@ describe('CooldownSession follow-up pipeline', () => {
     }
   });
 
-  it('skips follow-up steps gracefully when matchers are not provided', async () => {
+  it('skips follow-up steps gracefully when matchers are not provided — no warnings logged', async () => {
     const fixture = createFixture();
     try {
       const cycle = fixture.cycleManager.create({ tokenBudget: 10_000 }, 'NoMatchers');
@@ -1599,9 +1599,17 @@ describe('CooldownSession follow-up pipeline', () => {
         runsDir: fixture.runsDir,
       });
 
-      // Should complete without errors
+      const warnSpy = vi.spyOn(logger, 'warn');
       const result = await session.run(cycle.id);
       expect(result.report).toBeDefined();
+
+      // Verify no warnings about prediction/calibration/friction failures
+      // If the guard is mutated away, null reference errors would trigger logger.warn
+      const warnMessages = warnSpy.mock.calls.map((call) => String(call[0]));
+      expect(warnMessages.filter((m) => m.includes('Prediction matching failed'))).toHaveLength(0);
+      expect(warnMessages.filter((m) => m.includes('Calibration detection failed'))).toHaveLength(0);
+      expect(warnMessages.filter((m) => m.includes('Friction analysis failed'))).toHaveLength(0);
+      warnSpy.mockRestore();
     } finally {
       fixture.cleanup();
     }
