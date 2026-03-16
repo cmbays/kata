@@ -310,6 +310,21 @@ export function buildPreparedRunOutputLines(result: PreparedRunOutput, agentCont
   ];
 }
 
+export function resolveJsonFlag(localJson: boolean | undefined, globalJson: boolean | undefined): boolean {
+  return !!(localJson || globalJson);
+}
+
+export function betStatusSymbol(status: string): string {
+  if (status === 'in-progress') return '\u27F3';
+  if (status === 'complete') return '\u2713';
+  if (status === 'failed') return '\u2717';
+  return '\u00B7';
+}
+
+export function resolveCompletionStatus(failed: boolean | undefined): 'failed' | 'complete' {
+  return failed ? 'failed' : 'complete';
+}
+
 export function assertValidKataName(name: string): void {
   if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
     throw new Error(

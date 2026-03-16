@@ -23,6 +23,7 @@ import { CycleManager } from '@domain/services/cycle-manager.js';
 import { SessionExecutionBridge } from '@infra/execution/session-bridge.js';
 import {
   assertValidKataName,
+  betStatusSymbol,
   buildPreparedCycleOutputLines,
   buildPreparedRunOutputLines,
   formatDurationMs,
@@ -33,6 +34,8 @@ import {
   parseCompletedRunArtifacts,
   parseCompletedRunTokenUsage,
   parseHintFlags,
+  resolveCompletionStatus,
+  resolveJsonFlag,
 } from '@cli/commands/execute.helpers.js';
 import { resolveRef } from '@cli/resolve-ref.js';
 import { handleStatus, handleStats, parseCategoryFilter } from './status.js';
@@ -102,7 +105,7 @@ export function registerExecuteCommands(program: Command): void {
         kataka?: string;
         json?: boolean;
       };
-      const isJson = !!(localOpts.json || ctx.globalOpts.json);
+      const isJson = resolveJsonFlag(localOpts.json, ctx.globalOpts.json);
       const bridge = new SessionExecutionBridge(ctx.kataDir);
       const agentId = localOpts.agent ?? localOpts.kataka;
 
@@ -143,7 +146,7 @@ export function registerExecuteCommands(program: Command): void {
           }
           console.log('');
           for (const bet of result.bets) {
-            const status = bet.status === 'in-progress' ? '⟳' : bet.status === 'complete' ? '✓' : bet.status === 'failed' ? '✗' : '·';
+            const status = betStatusSymbol(bet.status);
             console.log(`  ${status} ${bet.betName} [${bet.status}]`);
             if (bet.runId) {
               console.log(`    kansatsu: ${bet.kansatsuCount}, maki: ${bet.artifactCount}, kime: ${bet.decisionCount}`);
@@ -189,7 +192,7 @@ export function registerExecuteCommands(program: Command): void {
         outputTokens?: number;
         json?: boolean;
       };
-      const isJson = !!(localOpts.json || ctx.globalOpts.json);
+      const isJson = resolveJsonFlag(localOpts.json, ctx.globalOpts.json);
       const bridge = new SessionExecutionBridge(ctx.kataDir);
 
       const parsedArtifacts = parseCompletedRunArtifacts(localOpts.artifacts);
@@ -226,14 +229,14 @@ export function registerExecuteCommands(program: Command): void {
       if (isJson) {
         console.log(JSON.stringify({
           runId,
-          status: localOpts.failed ? 'failed' : 'complete',
+          status: resolveCompletionStatus(localOpts.failed),
           ...(tokenUsage ? { tokenUsage } : {}),
         }));
       } else {
         const tokenLine = hasTokens
           ? ` (tokens: ${totalTokens ?? 0} total, ${tokenUsage?.inputTokens ?? 0} in, ${tokenUsage?.outputTokens ?? 0} out)`
           : '';
-        console.log(`Run ${runId} marked as ${localOpts.failed ? 'failed' : 'complete'}.${tokenLine}`);
+        console.log(`Run ${runId} marked as ${resolveCompletionStatus(localOpts.failed)}.${tokenLine}`);
       }
     }));
 
@@ -245,7 +248,7 @@ export function registerExecuteCommands(program: Command): void {
     .option('--json', 'Wrap output in a JSON object with a "agentContext" key')
     .action(withCommandContext(async (ctx, runId: string) => {
       const localOpts = ctx.cmd.opts() as { json?: boolean };
-      const isJson = !!(localOpts.json || ctx.globalOpts.json);
+      const isJson = resolveJsonFlag(localOpts.json, ctx.globalOpts.json);
       const bridge = new SessionExecutionBridge(ctx.kataDir);
 
       const agentContext = bridge.getAgentContext(runId);
@@ -267,7 +270,7 @@ export function registerExecuteCommands(program: Command): void {
     .option('--json', 'Output as JSON')
     .action(withCommandContext(async (ctx) => {
       const localOpts = ctx.cmd.opts() as { bet: string; agent?: string; kataka?: string; json?: boolean };
-      const isJson = !!(localOpts.json || ctx.globalOpts.json);
+      const isJson = resolveJsonFlag(localOpts.json, ctx.globalOpts.json);
       const bridge = new SessionExecutionBridge(ctx.kataDir);
       const agentId = localOpts.agent ?? localOpts.kataka;
 

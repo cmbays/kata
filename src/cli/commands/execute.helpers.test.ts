@@ -1,5 +1,6 @@
 import {
   assertValidKataName,
+  betStatusSymbol,
   buildPreparedCycleOutputLines,
   buildPreparedRunOutputLines,
   formatDurationMs,
@@ -10,6 +11,8 @@ import {
   parseCompletedRunArtifacts,
   parseCompletedRunTokenUsage,
   parseHintFlags,
+  resolveCompletionStatus,
+  resolveJsonFlag,
 } from '@cli/commands/execute.helpers.js';
 
 describe('execute helpers', () => {
@@ -419,6 +422,58 @@ describe('execute helpers', () => {
         'Agent context block (use "kata kiai context <run-id>" to fetch at dispatch time):',
         '**Run ID**: run-1',
       ]);
+    });
+  });
+
+  describe('resolveJsonFlag', () => {
+    it('returns true when local json is set', () => {
+      expect(resolveJsonFlag(true, undefined)).toBe(true);
+    });
+
+    it('returns true when global json is set', () => {
+      expect(resolveJsonFlag(undefined, true)).toBe(true);
+    });
+
+    it('returns true when both are set', () => {
+      expect(resolveJsonFlag(true, true)).toBe(true);
+    });
+
+    it('returns false when neither is set', () => {
+      expect(resolveJsonFlag(undefined, undefined)).toBe(false);
+      expect(resolveJsonFlag(false, false)).toBe(false);
+    });
+  });
+
+  describe('betStatusSymbol', () => {
+    it('returns looping arrow for in-progress', () => {
+      expect(betStatusSymbol('in-progress')).toBe('\u27F3');
+    });
+
+    it('returns check for complete', () => {
+      expect(betStatusSymbol('complete')).toBe('\u2713');
+    });
+
+    it('returns cross for failed', () => {
+      expect(betStatusSymbol('failed')).toBe('\u2717');
+    });
+
+    it('returns dot for unknown status', () => {
+      expect(betStatusSymbol('pending')).toBe('\u00B7');
+      expect(betStatusSymbol('')).toBe('\u00B7');
+    });
+  });
+
+  describe('resolveCompletionStatus', () => {
+    it('returns failed when flag is true', () => {
+      expect(resolveCompletionStatus(true)).toBe('failed');
+    });
+
+    it('returns complete when flag is false', () => {
+      expect(resolveCompletionStatus(false)).toBe('complete');
+    });
+
+    it('returns complete when flag is undefined', () => {
+      expect(resolveCompletionStatus(undefined)).toBe('complete');
     });
   });
 });
