@@ -10,6 +10,9 @@ import {
   buildSynthesisInputRecord,
   clampConfidenceWithDelta,
   filterExecutionHistoryForCycle,
+  hasFailedCaptures,
+  isJsonFile,
+  isSynthesisPendingFile,
   listCompletedBetDescriptions,
   mapBridgeRunStatusToIncompleteStatus,
   mapBridgeRunStatusToSyncedOutcome,
@@ -371,6 +374,44 @@ describe('cooldown-session helpers', () => {
         { outcome: 'partial', description: 'Partial bet' },
         { outcome: 'abandoned', description: 'Abandoned bet' },
       ])).toEqual(['Complete bet', 'Partial bet']);
+    });
+  });
+
+  describe('isJsonFile', () => {
+    it('returns true for .json files', () => {
+      expect(isJsonFile('run.json')).toBe(true);
+      expect(isJsonFile('pending-abc.json')).toBe(true);
+    });
+
+    it('returns false for non-.json files', () => {
+      expect(isJsonFile('readme.md')).toBe(false);
+      expect(isJsonFile('json')).toBe(false);
+      expect(isJsonFile('')).toBe(false);
+    });
+  });
+
+  describe('isSynthesisPendingFile', () => {
+    it('returns true for pending-*.json files', () => {
+      expect(isSynthesisPendingFile('pending-abc.json')).toBe(true);
+      expect(isSynthesisPendingFile('pending-123-456.json')).toBe(true);
+    });
+
+    it('returns false when prefix or suffix is wrong', () => {
+      expect(isSynthesisPendingFile('result-abc.json')).toBe(false);
+      expect(isSynthesisPendingFile('pending-abc.txt')).toBe(false);
+      expect(isSynthesisPendingFile('pending-.md')).toBe(false);
+      expect(isSynthesisPendingFile('')).toBe(false);
+    });
+  });
+
+  describe('hasFailedCaptures', () => {
+    it('returns true when failed count is positive', () => {
+      expect(hasFailedCaptures(1)).toBe(true);
+      expect(hasFailedCaptures(5)).toBe(true);
+    });
+
+    it('returns false when failed count is zero', () => {
+      expect(hasFailedCaptures(0)).toBe(false);
     });
   });
 });
