@@ -1062,8 +1062,9 @@ describe('WorkflowRunner', () => {
       const runner = new WorkflowRunner(deps);
       const result = await runner.runStage('build');
 
-      // The context passed to the orchestrator should include existing artifacts
+      // The result should be defined and contain stage output
       expect(result).toBeDefined();
+      expect(result.stageCategory).toBe('build');
     });
 
     it('returns empty when artifacts directory does not exist', async () => {

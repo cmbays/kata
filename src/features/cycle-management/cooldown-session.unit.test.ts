@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { CycleManager } from '@domain/services/cycle-manager.js';
@@ -1040,7 +1040,8 @@ describe('CooldownSession unit seams', () => {
     try {
       const cycle = fixture.cycleManager.create({ tokenBudget: 1_000 }, 'Expiry Check');
 
-      const debugSpy = vi.spyOn(logger, 'debug').mockImplementation(() => {});
+      const checkExpirySpy = vi.spyOn(fixture.baseDeps.knowledgeStore, 'checkExpiry');
+      vi.spyOn(logger, 'debug').mockImplementation(() => {});
       const session = new CooldownSession({
         ...fixture.baseDeps,
         proposalGenerator: { generate: vi.fn(() => []) },
@@ -1048,9 +1049,8 @@ describe('CooldownSession unit seams', () => {
 
       await session.run(cycle.id);
 
-      // KnowledgeStore has checkExpiry method, so it should be called
-      // and debug messages should include expiry-related content (or none if nothing expired)
-      expect(debugSpy).toBeDefined();
+      // KnowledgeStore has checkExpiry, so it should have been invoked during run()
+      expect(checkExpirySpy).toHaveBeenCalled();
     } finally {
       vi.restoreAllMocks();
       fixture.cleanup();
@@ -1240,12 +1240,11 @@ describe('CooldownSession unit seams', () => {
       const result = await session.run(cycle.id);
       expect(result.report).toBeDefined();
 
-      // Diary should have been written — check that diary dir has content
+      // Diary should have been written unconditionally when dojoDir is set
       const diaryDir = join(fixture.dojoDir, 'diary');
-      if (existsSync(diaryDir)) {
-        // Diary was written (the entry exists or the dir was populated)
-        expect(existsSync(diaryDir)).toBe(true);
-      }
+      expect(existsSync(diaryDir)).toBe(true);
+      const diaryFiles = readdirSync(diaryDir);
+      expect(diaryFiles.length).toBeGreaterThan(0);
     } finally {
       fixture.cleanup();
     }
