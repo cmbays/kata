@@ -20,8 +20,14 @@ import { z } from 'zod/v4';
 import { JsonStore } from '@infra/persistence/json-store.js';
 import {
   canTransitionCycleState,
+  computeBudgetPercent,
+  countJsonlContent,
+  extractHistoryTokenTotal,
+  findEarliestTimestamp,
   hasBridgeRunMetadataChanged,
   isJsonFile,
+  matchesCycleRef,
+  resolveAgentId,
 } from './session-bridge.helpers.js';
 import { createRunTree, readRun, writeRun, runPaths } from '@infra/persistence/run-store.js';
 import { KATA_DIRS } from '@shared/constants/paths.js';
@@ -357,7 +363,7 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
       betId: meta.betId,
       betName: meta.betName,
       runId: meta.runId,
-      status: meta.status === 'in-progress' ? 'in-progress' : meta.status,
+      status: meta.status,
       kansatsuCount: counts.observations,
       artifactCount: counts.artifacts,
       decisionCount: counts.decisions,
@@ -381,9 +387,7 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
   }
 
   private formatElapsedDuration(bridgeRuns: BridgeRunMeta[]): string {
-    const earliestStart = bridgeRuns
-      .map((meta) => meta.startedAt)
-      .sort()[0];
+    const earliestStart = findEarliestTimestamp(bridgeRuns.map((meta) => meta.startedAt));
 
     return earliestStart
       ? this.formatDuration(Date.now() - new Date(earliestStart).getTime())
@@ -447,7 +451,7 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
     for (const file of files) {
       try {
         const cycle = JsonStore.read(join(cyclesDir, file), CycleSchema);
-        if (cycle.id === cycleId || cycle.name === cycleId) {
+        if (matchesCycleRef(cycle, cycleId)) {
           return cycle;
         }
       } catch {
@@ -692,8 +696,8 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
       stages: meta.stages,
       isolation: meta.isolation,
       startedAt: meta.startedAt,
-      agentId: meta.agentId ?? meta.katakaId,
-      katakaId: meta.agentId ?? meta.katakaId,
+      agentId: resolveAgentId(meta.agentId, meta.katakaId),
+      katakaId: resolveAgentId(meta.agentId, meta.katakaId),
     };
   }
 
@@ -848,7 +852,7 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
     if (!existsSync(dir)) return [];
 
     return readdirSync(dir)
-      .filter((f) => f.endsWith('.json'))
+      .filter(isJsonFile)
       .map((f) => {
         try {
           const meta = BridgeRunMetaSchema.parse(JSON.parse(readFileSync(join(dir, f), 'utf-8')));
@@ -897,8 +901,7 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
   private countJsonlLines(filePath: string): number {
     if (!existsSync(filePath)) return 0;
     try {
-      const content = readFileSync(filePath, 'utf-8').trim();
-      return content ? content.split('\n').length : 0;
+      return countJsonlContent(readFileSync(filePath, 'utf-8'));
     } catch {
       return 0;
     }
@@ -924,17 +927,13 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
     if (!existsSync(historyDir)) return { percent: 0, tokenEstimate: 0 };
 
     const totalTokens = this.sumCycleHistoryTokens(historyDir, cycle.id);
-
-    return {
-      percent: Math.round((totalTokens / cycle.budget.tokenBudget) * 100),
-      tokenEstimate: totalTokens,
-    };
+    return computeBudgetPercent(totalTokens, cycle.budget.tokenBudget);
   }
 
   private sumCycleHistoryTokens(historyDir: string, cycleId: string): number {
     let totalTokens = 0;
 
-    for (const file of readdirSync(historyDir).filter((entry) => entry.endsWith('.json'))) {
+    for (const file of readdirSync(historyDir).filter(isJsonFile)) {
       const entryTotal = this.readHistoryTokenTotal(join(historyDir, file), cycleId);
       totalTokens += entryTotal ?? 0;
     }
@@ -945,11 +944,7 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
   private readHistoryTokenTotal(filePath: string, cycleId: string): number | null {
     try {
       const entry = JSON.parse(readFileSync(filePath, 'utf-8'));
-      if (entry.cycleId !== cycleId) {
-        return null;
-      }
-
-      return entry.tokenUsage?.total ?? null;
+      return extractHistoryTokenTotal(entry, cycleId);
     } catch {
       return null;
     }

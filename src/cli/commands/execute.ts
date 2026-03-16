@@ -17,6 +17,7 @@ import { WorkflowRunner } from '@features/execute/workflow-runner.js';
 import { GapBridger } from '@features/execute/gap-bridger.js';
 import { KnowledgeStore } from '@infra/knowledge/knowledge-store.js';
 import { UsageAnalytics } from '@infra/tracking/usage-analytics.js';
+import { isJsonFile } from '@shared/lib/file-filters.js';
 import { KATA_DIRS } from '@shared/constants/paths.js';
 import { ProjectStateUpdater } from '@features/belt/belt-calculator.js';
 import { CycleManager } from '@domain/services/cycle-manager.js';
@@ -26,9 +27,14 @@ import {
   betStatusSymbol,
   buildPreparedCycleOutputLines,
   buildPreparedRunOutputLines,
+  formatConfidencePercent,
   formatDurationMs,
   formatAgentLoadError,
   formatExplain,
+  hasBlockedGaps,
+  hasBridgedGaps,
+  hasNoGapsToBridge,
+  hasPipelineLearnings,
   mergePinnedFlavors,
   parseBetOption,
   parseCompletedRunArtifacts,
@@ -657,20 +663,20 @@ function bridgeExecutionGaps(input: {
     suggestedFlavors: string[];
   }>;
 }): boolean {
-  if (!input.gaps || input.gaps.length === 0) return true;
+  if (hasNoGapsToBridge(input.gaps)) return true;
 
   const store = new KnowledgeStore(kataDirPath(input.kataDir, 'knowledge'));
   const bridger = new GapBridger({ knowledgeStore: store });
-  const { blocked, bridged } = bridger.bridge(input.gaps);
+  const { blocked, bridged } = bridger.bridge(input.gaps!);
 
-  if (blocked.length > 0) {
+  if (hasBlockedGaps(blocked)) {
     console.error(`[kata] Blocked by ${blocked.length} high-severity gap(s):`);
     for (const gap of blocked) console.error(`  • ${gap.description}`);
     process.exitCode = 1;
     return false;
   }
 
-  if (bridged.length > 0) {
+  if (hasBridgedGaps(bridged)) {
     console.log(`[kata] Captured ${bridged.length} gap(s) as step-tier learnings.`);
     ProjectStateUpdater.incrementGapsClosed(input.projectStateFile, bridged.length);
   }
@@ -695,7 +701,7 @@ function printSingleCategoryResult(result: StageRunResult, isJson: boolean, opts
   console.log('');
   console.log('Decisions:');
   for (const decision of result.decisions) {
-    console.log(`  ${decision.decisionType}: ${decision.selection} (confidence: ${(decision.confidence * 100).toFixed(0)}%)`);
+    console.log(`  ${decision.decisionType}: ${decision.selection} (confidence: ${formatConfidencePercent(decision.confidence)})`);
   }
   console.log('');
   console.log(`Stage artifact: ${result.stageArtifact.name}`);
@@ -735,7 +741,7 @@ function printPipelineResult(
     console.log(`    Artifact: ${stageResult.stageArtifact.name}`);
   }
 
-  if (result.pipelineReflection.learnings.length > 0) {
+  if (hasPipelineLearnings(result.pipelineReflection.learnings)) {
     console.log('');
     console.log('Learnings:');
     for (const learning of result.pipelineReflection.learnings) {
@@ -801,11 +807,11 @@ function katasDir(kataDir: string): string {
   return join(kataDir, KATA_DIRS.katas);
 }
 
-function listSavedKatas(kataDir: string): Array<{ name: string; stages: StageCategory[]; description?: string }> {
+export function listSavedKatas(kataDir: string): Array<{ name: string; stages: StageCategory[]; description?: string }> {
   const dir = katasDir(kataDir);
   if (!existsSync(dir)) return [];
   return readdirSync(dir)
-    .filter((f) => f.endsWith('.json'))
+    .filter(isJsonFile)
     .map((f) => {
       try {
         const raw = JSON.parse(readFileSync(join(dir, f), 'utf-8'));
@@ -821,7 +827,7 @@ function listSavedKatas(kataDir: string): Array<{ name: string; stages: StageCat
     .filter((k): k is NonNullable<typeof k> => k !== null);
 }
 
-function loadSavedKata(kataDir: string, name: string): { stages: StageCategory[]; flavorHints?: Record<string, FlavorHint> } {
+export function loadSavedKata(kataDir: string, name: string): { stages: StageCategory[]; flavorHints?: Record<string, FlavorHint> } {
   assertValidKataName(name);
   const filePath = join(katasDir(kataDir), `${name}.json`);
   if (!existsSync(filePath)) {
@@ -846,7 +852,7 @@ function loadSavedKata(kataDir: string, name: string): { stages: StageCategory[]
   }
 }
 
-function saveSavedKata(kataDir: string, name: string, stages: StageCategory[], flavorHints?: Record<string, FlavorHint>): void {
+export function saveSavedKata(kataDir: string, name: string, stages: StageCategory[], flavorHints?: Record<string, FlavorHint>): void {
   assertValidKataName(name);
   const dir = katasDir(kataDir);
   mkdirSync(dir, { recursive: true });
@@ -854,7 +860,7 @@ function saveSavedKata(kataDir: string, name: string, stages: StageCategory[], f
   writeFileSync(join(dir, `${name}.json`), JSON.stringify(kata, null, 2), 'utf-8');
 }
 
-function deleteSavedKata(kataDir: string, name: string): void {
+export function deleteSavedKata(kataDir: string, name: string): void {
   assertValidKataName(name);
   const filePath = join(katasDir(kataDir), `${name}.json`);
   if (!existsSync(filePath)) {

@@ -494,6 +494,175 @@ describe('CooldownSession unit seams', () => {
     }
   });
 
+  it('writeRunDiary skips diary when dojoDir is not configured', async () => {
+    const fixture = createFixture();
+
+    try {
+      const cycle = fixture.cycleManager.create({ tokenBudget: 1_000 }, 'No Diary');
+      fixture.cycleManager.addBet(cycle.id, {
+        description: 'Skip diary bet',
+        appetite: 30,
+        outcome: 'pending',
+        issueRefs: [],
+      });
+
+      const dojoSessionBuilder = { build: vi.fn() };
+      const session = new CooldownSession({
+        ...fixture.baseDeps,
+        // dojoDir deliberately NOT set
+        dojoSessionBuilder,
+        proposalGenerator: { generate: vi.fn(() => []) },
+      });
+
+      const result = await session.run(cycle.id);
+
+      // Diary and session should NOT be written when dojoDir is absent
+      expect(dojoSessionBuilder.build).not.toHaveBeenCalled();
+      expect(result.report).toBeDefined();
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it('complete writes diary and session when dojoDir and dojoSessionBuilder are configured', async () => {
+    const fixture = createFixture();
+
+    try {
+      const cycle = fixture.cycleManager.create({ tokenBudget: 5_000 }, 'Complete Diary');
+      fixture.cycleManager.addBet(cycle.id, {
+        description: 'Diary bet',
+        appetite: 40,
+        outcome: 'complete',
+        issueRefs: [],
+      });
+
+      const dojoSessionBuilder = { build: vi.fn() };
+      const session = new CooldownSession({
+        ...fixture.baseDeps,
+        dojoDir: fixture.dojoDir,
+        dojoSessionBuilder,
+        proposalGenerator: { generate: vi.fn(() => []) },
+      });
+
+      await session.complete(cycle.id);
+
+      // Both diary and session should be written
+      expect(dojoSessionBuilder.build).toHaveBeenCalledTimes(1);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it('run with force=true parameter exercises warning bypass', async () => {
+    const fixture = createFixture();
+
+    try {
+      const cycle = fixture.cycleManager.create({ tokenBudget: 2_000 }, 'Force Bypass');
+      const updated = fixture.cycleManager.addBet(cycle.id, {
+        description: 'Force bet',
+        appetite: 30,
+        outcome: 'pending',
+        issueRefs: [],
+      });
+      const bet = updated.bets[0]!;
+      const run = makeRun(cycle.id, bet.id, 'running');
+      createRunTree(fixture.runsDir, run);
+      fixture.cycleManager.setRunId(cycle.id, bet.id, run.id);
+
+      const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+      const session = new CooldownSession({
+        ...fixture.baseDeps,
+        proposalGenerator: { generate: vi.fn(() => []) },
+      });
+
+      // Should not warn when force=true
+      await session.run(cycle.id, [], { force: true });
+      expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining('run(s) are still in progress'));
+    } finally {
+      vi.restoreAllMocks();
+      fixture.cleanup();
+    }
+  });
+
+  it('prepare with depth parameter overrides default synthesis depth', async () => {
+    const fixture = createFixture();
+
+    try {
+      const cycle = fixture.cycleManager.create({ tokenBudget: 5_000 }, 'Depth Override');
+      fixture.cycleManager.addBet(cycle.id, {
+        description: 'Depth bet',
+        appetite: 30,
+        outcome: 'complete',
+        issueRefs: [],
+      });
+
+      const session = new CooldownSession({
+        ...fixture.baseDeps,
+        synthesisDepth: 'minimal',
+        proposalGenerator: { generate: vi.fn(() => []) },
+      });
+
+      const result = await session.prepare(cycle.id, [], 'thorough');
+      const synthesisInput = JSON.parse(readFileSync(result.synthesisInputPath, 'utf-8'));
+      expect(synthesisInput.depth).toBe('thorough');
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it('run skips nextKeiko when runsDir is not configured', async () => {
+    const fixture = createFixture();
+
+    try {
+      const cycle = fixture.cycleManager.create({ tokenBudget: 1_000 }, 'No Runs');
+      const nextKeikoGen = { generate: vi.fn(() => ({ text: 'test', observationCounts: { friction: 0, gap: 0, insight: 0, total: 0 }, milestoneIssueCount: 0 })) };
+
+      const session = new CooldownSession({
+        cycleManager: fixture.cycleManager,
+        knowledgeStore: fixture.knowledgeStore,
+        persistence: JsonStore,
+        pipelineDir: fixture.pipelineDir,
+        historyDir: fixture.historyDir,
+        // runsDir deliberately NOT set
+        proposalGenerator: { generate: vi.fn(() => []) },
+        nextKeikoProposalGenerator: nextKeikoGen,
+      });
+
+      const result = await session.run(cycle.id);
+
+      // nextKeiko should NOT be called without runsDir
+      expect(nextKeikoGen.generate).not.toHaveBeenCalled();
+      expect(result.nextKeikoResult).toBeUndefined();
+      expect(result.incompleteRuns).toBeUndefined();
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it('run returns empty incompleteRuns when all bets are complete', async () => {
+    const fixture = createFixture();
+
+    try {
+      const cycle = fixture.cycleManager.create({ tokenBudget: 2_000 }, 'All Complete');
+      fixture.cycleManager.addBet(cycle.id, {
+        description: 'Done bet',
+        appetite: 30,
+        outcome: 'complete',
+        issueRefs: [],
+      });
+
+      const session = new CooldownSession({
+        ...fixture.baseDeps,
+        proposalGenerator: { generate: vi.fn(() => []) },
+      });
+
+      const result = await session.run(cycle.id);
+      expect(result.incompleteRuns).toEqual([]);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
   it('checkIncompleteRuns prefers bridge metadata and falls back to run.json status', () => {
     const fixture = createFixture();
 

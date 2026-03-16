@@ -106,6 +106,38 @@ describe('SessionExecutionBridge unit coverage', () => {
     expect(context).toContain(`- **Run ID**: ${prepared.runId}`);
   });
 
+  it('getAgentContext rejects a completed run in terminal state', () => {
+    const cycle = createCycle(kataDir);
+    const bridge = new SessionExecutionBridge(kataDir);
+    const prepared = bridge.prepare(cycle.bets[0]!.id);
+
+    bridge.complete(prepared.runId, { success: true });
+
+    expect(() => bridge.getAgentContext(prepared.runId)).toThrow(
+      `Run "${prepared.runId}" is in terminal state "complete" and cannot be dispatched.`,
+    );
+  });
+
+  it('getAgentContext rejects a failed run in terminal state', () => {
+    const cycle = createCycle(kataDir);
+    const bridge = new SessionExecutionBridge(kataDir);
+    const prepared = bridge.prepare(cycle.bets[0]!.id);
+
+    bridge.complete(prepared.runId, { success: false });
+
+    expect(() => bridge.getAgentContext(prepared.runId)).toThrow(
+      `Run "${prepared.runId}" is in terminal state "failed" and cannot be dispatched.`,
+    );
+  });
+
+  it('getAgentContext throws for non-existent run', () => {
+    const bridge = new SessionExecutionBridge(kataDir);
+
+    expect(() => bridge.getAgentContext('nonexistent-run')).toThrow(
+      'No bridge run found for run ID "nonexistent-run".',
+    );
+  });
+
   it('resolves stages for ad-hoc, named, and missing named kata assignments', () => {
     mkdirSync(join(kataDir, 'katas'), { recursive: true });
     writeFileSync(

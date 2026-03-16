@@ -56,6 +56,11 @@ import {
   isJsonFile,
   isSynthesisPendingFile,
   hasFailedCaptures,
+  isSyncableBet,
+  collectBridgeRunIds,
+  hasObservations,
+  shouldSyncOutcomes,
+  hasMethod,
 } from './cooldown-session.helpers.js';
 
 /**
@@ -805,7 +810,7 @@ export class CooldownSession {
       if (!runId) continue;
 
       const runObs = this.readObservationsForRun(runId, bet.id);
-      if (runObs.length > 0) {
+      if (hasObservations(runObs)) {
         observations.push(...runObs);
       }
     }
@@ -873,16 +878,11 @@ export class CooldownSession {
    * Returns an empty Map when bridgeRunsDir is missing or unreadable.
    */
   private loadBridgeRunIdsByBetId(cycleId: string, bridgeRunsDir: string): Map<string, string> {
-    const result = new Map<string, string>();
-
-    for (const file of this.listJsonFiles(bridgeRunsDir)) {
-      const meta = this.readBridgeRunMeta(join(bridgeRunsDir, file));
-      if (meta?.cycleId === cycleId && meta.betId && meta.runId) {
-        result.set(meta.betId, meta.runId);
-      }
-    }
-
-    return result;
+    const files = this.listJsonFiles(bridgeRunsDir);
+    const metas = files
+      .map((file) => this.readBridgeRunMeta(join(bridgeRunsDir, file)))
+      .filter((meta): meta is NonNullable<typeof meta> => meta !== undefined);
+    return collectBridgeRunIds(metas, cycleId);
   }
 
   private listJsonFiles(dir: string): string[] {
@@ -919,15 +919,15 @@ export class CooldownSession {
     const toSync: BetOutcomeRecord[] = [];
 
     for (const bet of cycle.bets) {
-      if (bet.outcome !== 'pending' || !bet.runId) continue;
+      if (!isSyncableBet(bet)) continue;
 
-      const outcome = this.readBridgeRunOutcome(bridgeRunsDir, bet.runId);
+      const outcome = this.readBridgeRunOutcome(bridgeRunsDir, bet.runId!);
       if (outcome) {
         toSync.push({ betId: bet.id, outcome });
       }
     }
 
-    if (toSync.length > 0) {
+    if (shouldSyncOutcomes(toSync)) {
       this.recordBetOutcomes(cycleId, toSync);
     }
 
@@ -1201,7 +1201,7 @@ export class CooldownSession {
    */
   private runExpiryCheck(): void {
     try {
-      if (typeof this.deps.knowledgeStore.checkExpiry !== 'function') return;
+      if (!hasMethod(this.deps.knowledgeStore, 'checkExpiry')) return;
       const result = this.deps.knowledgeStore.checkExpiry();
       for (const message of buildExpiryCheckMessages(result)) {
         logger.debug(message);
