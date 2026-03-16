@@ -11,9 +11,6 @@ import {
   clampConfidenceWithDelta,
   collectBridgeRunIds,
   filterExecutionHistoryForCycle,
-  hasFailedCaptures,
-  hasMethod,
-  hasObservations,
   isJsonFile,
   isSyncableBet,
   isSynthesisPendingFile,
@@ -23,7 +20,6 @@ import {
   resolveAppliedProposalIds,
   selectEffectiveBetOutcomes,
   shouldRecordBetOutcomes,
-  shouldSyncOutcomes,
   shouldWarnOnIncompleteRuns,
   shouldWriteDojoDiary,
   shouldWriteDojoSession,
@@ -409,17 +405,6 @@ describe('cooldown-session helpers', () => {
     });
   });
 
-  describe('hasFailedCaptures', () => {
-    it('returns true when failed count is positive', () => {
-      expect(hasFailedCaptures(1)).toBe(true);
-      expect(hasFailedCaptures(5)).toBe(true);
-    });
-
-    it('returns false when failed count is zero', () => {
-      expect(hasFailedCaptures(0)).toBe(false);
-    });
-  });
-
   describe('isSyncableBet', () => {
     it('returns true only when outcome is pending AND runId is present', () => {
       expect(isSyncableBet({ outcome: 'pending', runId: 'run-1' })).toBe(true);
@@ -477,40 +462,4 @@ describe('cooldown-session helpers', () => {
     });
   });
 
-  describe('hasObservations', () => {
-    it('returns true for non-empty arrays', () => {
-      expect(hasObservations([{ id: '1' }])).toBe(true);
-      expect(hasObservations([1, 2, 3])).toBe(true);
-    });
-
-    it('returns false for empty arrays', () => {
-      expect(hasObservations([])).toBe(false);
-    });
-  });
-
-  describe('shouldSyncOutcomes', () => {
-    it('returns true when there are outcomes to sync', () => {
-      expect(shouldSyncOutcomes([{ betId: 'b1', outcome: 'complete' }])).toBe(true);
-    });
-
-    it('returns false when there are no outcomes to sync', () => {
-      expect(shouldSyncOutcomes([])).toBe(false);
-    });
-  });
-
-  describe('hasMethod', () => {
-    it('returns true when the target has the named method', () => {
-      expect(hasMethod({ checkExpiry: () => {} }, 'checkExpiry')).toBe(true);
-    });
-
-    it('returns false when the target does not have the named method', () => {
-      expect(hasMethod({}, 'checkExpiry')).toBe(false);
-      expect(hasMethod({ checkExpiry: 42 }, 'checkExpiry')).toBe(false);
-    });
-
-    it('returns false for null and undefined targets', () => {
-      expect(hasMethod(null, 'checkExpiry')).toBe(false);
-      expect(hasMethod(undefined, 'checkExpiry')).toBe(false);
-    });
-  });
 });

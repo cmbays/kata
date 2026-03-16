@@ -7,10 +7,6 @@ import {
   formatDurationMs,
   formatAgentLoadError,
   formatExplain,
-  hasBlockedGaps,
-  hasBridgedGaps,
-  hasNoGapsToBridge,
-  hasPipelineLearnings,
   mergePinnedFlavors,
   parseBetOption,
   parseCompletedRunArtifacts,
@@ -483,40 +479,6 @@ describe('execute helpers', () => {
     });
   });
 
-  describe('hasNoGapsToBridge', () => {
-    it('returns true when gaps is undefined', () => {
-      expect(hasNoGapsToBridge(undefined)).toBe(true);
-    });
-
-    it('returns true when gaps is empty', () => {
-      expect(hasNoGapsToBridge([])).toBe(true);
-    });
-
-    it('returns false when there are gaps', () => {
-      expect(hasNoGapsToBridge([{ description: 'gap' }])).toBe(false);
-    });
-  });
-
-  describe('hasBridgedGaps', () => {
-    it('returns true for non-empty bridged array', () => {
-      expect(hasBridgedGaps([{ id: '1' }])).toBe(true);
-    });
-
-    it('returns false for empty array', () => {
-      expect(hasBridgedGaps([])).toBe(false);
-    });
-  });
-
-  describe('hasBlockedGaps', () => {
-    it('returns true for non-empty blocked array', () => {
-      expect(hasBlockedGaps([{ id: '1' }])).toBe(true);
-    });
-
-    it('returns false for empty array', () => {
-      expect(hasBlockedGaps([])).toBe(false);
-    });
-  });
-
   describe('formatConfidencePercent', () => {
     it('converts decimal confidence to percent string', () => {
       expect(formatConfidencePercent(0.75)).toBe('75%');
@@ -530,13 +492,4 @@ describe('execute helpers', () => {
     });
   });
 
-  describe('hasPipelineLearnings', () => {
-    it('returns true for non-empty learnings', () => {
-      expect(hasPipelineLearnings(['learning 1'])).toBe(true);
-    });
-
-    it('returns false for empty learnings', () => {
-      expect(hasPipelineLearnings([])).toBe(false);
-    });
-  });
 });

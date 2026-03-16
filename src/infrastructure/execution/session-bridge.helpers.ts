@@ -26,14 +26,6 @@ export function hasBridgeRunMetadataChanged(
 }
 
 /**
- * Map a bridge-run status to the display status used by getCycleStatus.
- * 'in-progress' maps to 'in-progress', everything else passes through.
- */
-export function mapBridgeRunStatus<T extends string>(status: T): T {
-  return status;
-}
-
-/**
  * Find the earliest timestamp from a list of ISO strings.
  * Returns undefined if the array is empty.
  */
@@ -87,13 +79,6 @@ export function extractHistoryTokenTotal(
 ): number | null {
   if (entry.cycleId !== targetCycleId) return null;
   return entry.tokenUsage?.total ?? null;
-}
-
-/**
- * Sum token totals from multiple entries, treating null as 0.
- */
-export function sumTokenTotals(totals: readonly (number | null)[]): number {
-  return totals.reduce<number>((sum, t) => sum + (t ?? 0), 0);
 }
 
 /**
