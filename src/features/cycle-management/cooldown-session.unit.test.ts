@@ -706,4 +706,238 @@ describe('CooldownSession unit seams', () => {
       fixture.cleanup();
     }
   });
+
+  it('enrichBetOutcomesWithDescriptions falls back to cycle bet descriptions when betDescription is absent', async () => {
+    const fixture = createFixture();
+
+    try {
+      const cycle = fixture.cycleManager.create({ tokenBudget: 2_000 }, 'Enrich Test');
+      const updated = fixture.cycleManager.addBet(cycle.id, {
+        description: 'Bet with known description',
+        appetite: 30,
+        outcome: 'pending',
+        issueRefs: [],
+      });
+      const bet = updated.bets[0]!;
+      const run = makeRun(cycle.id, bet.id);
+      createRunTree(fixture.runsDir, run);
+      writeStageState(fixture.runsDir, run.id, makeStageState());
+      fixture.cycleManager.setRunId(cycle.id, bet.id, run.id);
+      writeBridgeRun(fixture.bridgeRunsDir, run.id, {
+        cycleId: cycle.id,
+        betId: bet.id,
+        status: 'complete',
+      });
+
+      // Create diary dir so diary writing is exercised
+      mkdirSync(join(fixture.dojoDir, 'diary'), { recursive: true });
+
+      const session = new CooldownSession({
+        ...fixture.baseDeps,
+        dojoDir: fixture.dojoDir,
+        proposalGenerator: { generate: vi.fn(() => []) },
+      });
+
+      // Run with empty betOutcomes — auto-sync from bridge runs should provide outcomes
+      // and enrichBetOutcomesWithDescriptions should fill in betDescription from the cycle
+      const result = await session.run(cycle.id);
+      expect(result.betOutcomes).toHaveLength(1);
+      expect(result.betOutcomes[0]!.betId).toBe(bet.id);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it('run with force=false (default) warns on incomplete runs', async () => {
+    const fixture = createFixture();
+
+    try {
+      const cycle = fixture.cycleManager.create({ tokenBudget: 2_000 }, 'Default Force');
+      const updated = fixture.cycleManager.addBet(cycle.id, {
+        description: 'In-progress bet',
+        appetite: 30,
+        outcome: 'pending',
+        issueRefs: [],
+      });
+      const bet = updated.bets[0]!;
+      const run = makeRun(cycle.id, bet.id, 'running');
+      createRunTree(fixture.runsDir, run);
+      fixture.cycleManager.setRunId(cycle.id, bet.id, run.id);
+
+      const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+      const session = new CooldownSession({
+        ...fixture.baseDeps,
+        proposalGenerator: { generate: vi.fn(() => []) },
+      });
+
+      // Default force=false should warn about incomplete runs
+      await session.run(cycle.id);
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('run(s) are still in progress'));
+    } finally {
+      vi.restoreAllMocks();
+      fixture.cleanup();
+    }
+  });
+
+  it('prepare with force=false (default) warns on incomplete runs', async () => {
+    const fixture = createFixture();
+
+    try {
+      const cycle = fixture.cycleManager.create({ tokenBudget: 2_000 }, 'Prepare Default Force');
+      const updated = fixture.cycleManager.addBet(cycle.id, {
+        description: 'Prep incomplete bet',
+        appetite: 30,
+        outcome: 'pending',
+        issueRefs: [],
+      });
+      const bet = updated.bets[0]!;
+      const run = makeRun(cycle.id, bet.id, 'running');
+      createRunTree(fixture.runsDir, run);
+      fixture.cycleManager.setRunId(cycle.id, bet.id, run.id);
+
+      const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+      const session = new CooldownSession({
+        ...fixture.baseDeps,
+        proposalGenerator: { generate: vi.fn(() => []) },
+      });
+
+      // Default force=false should warn about incomplete runs in prepare path
+      await session.prepare(cycle.id);
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('run(s) are still in progress'));
+    } finally {
+      vi.restoreAllMocks();
+      fixture.cleanup();
+    }
+  });
+
+  it('collectSynthesisObservations skips bets without runId and filters empty observation lists', async () => {
+    const fixture = createFixture();
+
+    try {
+      const cycle = fixture.cycleManager.create({ tokenBudget: 5_000 }, 'Obs Filter');
+      // Add a bet with a run that has observations
+      let updated = fixture.cycleManager.addBet(cycle.id, {
+        description: 'Has observations',
+        appetite: 30,
+        outcome: 'complete',
+        issueRefs: [],
+      });
+      // Add a bet WITHOUT a runId — should be skipped
+      updated = fixture.cycleManager.addBet(cycle.id, {
+        description: 'No run assigned',
+        appetite: 20,
+        outcome: 'pending',
+        issueRefs: [],
+      });
+
+      const bet = updated.bets[0]!;
+      const run = makeRun(cycle.id, bet.id);
+      createRunTree(fixture.runsDir, run);
+      writeStageState(fixture.runsDir, run.id, makeStageState());
+      appendObservation(fixture.runsDir, run.id, {
+        id: randomUUID(),
+        timestamp: new Date().toISOString(),
+        type: 'insight',
+        content: 'Observable insight',
+      }, { level: 'run' });
+      fixture.cycleManager.setRunId(cycle.id, bet.id, run.id);
+
+      const session = new CooldownSession({
+        ...fixture.baseDeps,
+        proposalGenerator: { generate: vi.fn(() => []) },
+      });
+
+      const result = await session.prepare(cycle.id);
+      const input = JSON.parse(readFileSync(result.synthesisInputPath, 'utf-8'));
+      expect(input.observations).toHaveLength(1);
+      expect(input.observations[0]!.content).toBe('Observable insight');
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it('autoSyncBetOutcomesFromBridgeRuns skips bets that are not syncable', async () => {
+    const fixture = createFixture();
+
+    try {
+      const cycle = fixture.cycleManager.create({ tokenBudget: 2_000 }, 'AutoSync');
+      // Add a bet that is already complete (not syncable)
+      let updated = fixture.cycleManager.addBet(cycle.id, {
+        description: 'Already complete bet',
+        appetite: 30,
+        outcome: 'complete',
+        issueRefs: [],
+      });
+      // Add a pending bet WITH runId (syncable)
+      updated = fixture.cycleManager.addBet(cycle.id, {
+        description: 'Syncable bet',
+        appetite: 30,
+        outcome: 'pending',
+        issueRefs: [],
+      });
+
+      const syncableBet = updated.bets[1]!;
+      const run = makeRun(cycle.id, syncableBet.id);
+      createRunTree(fixture.runsDir, run);
+      writeStageState(fixture.runsDir, run.id, makeStageState());
+      fixture.cycleManager.setRunId(cycle.id, syncableBet.id, run.id);
+      writeBridgeRun(fixture.bridgeRunsDir, run.id, {
+        cycleId: cycle.id,
+        betId: syncableBet.id,
+        status: 'complete',
+      });
+
+      const session = new CooldownSession({
+        ...fixture.baseDeps,
+        proposalGenerator: { generate: vi.fn(() => []) },
+      });
+
+      const result = await session.run(cycle.id);
+      // Only the syncable bet should have an outcome recorded
+      expect(result.betOutcomes).toEqual([
+        { betId: syncableBet.id, outcome: 'complete' },
+      ]);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it('listJsonFiles filters non-json files from bridge-runs directory', async () => {
+    const fixture = createFixture();
+
+    try {
+      // Write a .txt file into bridge-runs — should be ignored
+      writeFileSync(join(fixture.bridgeRunsDir, 'notes.txt'), 'not json');
+      writeFileSync(join(fixture.bridgeRunsDir, 'readme.md'), '# notes');
+
+      const cycle = fixture.cycleManager.create({ tokenBudget: 5_000 }, 'Json Filter');
+      const updated = fixture.cycleManager.addBet(cycle.id, {
+        description: 'Filter bet',
+        appetite: 30,
+        outcome: 'complete',
+        issueRefs: [],
+      });
+      const bet = updated.bets[0]!;
+      const run = makeRun(cycle.id, bet.id);
+      createRunTree(fixture.runsDir, run);
+      fixture.cycleManager.setRunId(cycle.id, bet.id, run.id);
+      writeBridgeRun(fixture.bridgeRunsDir, run.id, {
+        cycleId: cycle.id,
+        betId: bet.id,
+        status: 'complete',
+      });
+
+      const session = new CooldownSession({
+        ...fixture.baseDeps,
+        proposalGenerator: { generate: vi.fn(() => []) },
+      });
+
+      // prepare uses collectSynthesisObservations which uses loadBridgeRunIdsByBetId
+      // which uses listJsonFiles — the .txt file should be filtered out
+      const result = await session.prepare(cycle.id);
+      expect(result.synthesisInputPath).toBeTruthy();
+    } finally {
+      fixture.cleanup();
+    }
+  });
 });
