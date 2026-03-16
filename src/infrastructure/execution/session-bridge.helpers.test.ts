@@ -66,17 +66,10 @@ describe('session-bridge helpers', () => {
     });
   });
 
-  describe('isJsonFile', () => {
-    it('returns true for .json files', () => {
-      expect(isJsonFile('cycle.json')).toBe(true);
+  describe('isJsonFile (re-exported from shared)', () => {
+    it('is re-exported and callable', () => {
       expect(isJsonFile('data.json')).toBe(true);
-    });
-
-    it('returns false for non-.json files', () => {
       expect(isJsonFile('readme.md')).toBe(false);
-      expect(isJsonFile('json')).toBe(false);
-      expect(isJsonFile('')).toBe(false);
-      expect(isJsonFile('.DS_Store')).toBe(false);
     });
   });
 });

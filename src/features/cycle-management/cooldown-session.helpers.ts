@@ -293,9 +293,7 @@ export function listCompletedBetDescriptions(
     .map((bet) => bet.description);
 }
 
-export function isJsonFile(filename: string): boolean {
-  return filename.endsWith('.json');
-}
+export { isJsonFile } from '@shared/lib/file-filters.js';
 
 export function isSynthesisPendingFile(filename: string): boolean {
   return filename.startsWith('pending-') && filename.endsWith('.json');

@@ -1,5 +1,7 @@
 import type { CycleState } from '@domain/types/cycle.js';
 
+export { isJsonFile } from '@shared/lib/file-filters.js';
+
 /**
  * Check whether a cycle state transition is allowed.
  * Valid transitions: planning → active → cooldown → complete.
@@ -21,11 +23,4 @@ export function hasBridgeRunMetadataChanged(
   refreshed: { betName?: string; cycleName?: string },
 ): boolean {
   return refreshed.betName !== current.betName || refreshed.cycleName !== current.cycleName;
-}
-
-/**
- * Filter filenames to only .json files.
- */
-export function isJsonFile(filename: string): boolean {
-  return filename.endsWith('.json');
 }

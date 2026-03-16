@@ -432,6 +432,7 @@ describe('execute helpers', () => {
 
     it('returns true when global json is set', () => {
       expect(resolveJsonFlag(undefined, true)).toBe(true);
+      expect(resolveJsonFlag(false, true)).toBe(true);
     });
 
     it('returns true when both are set', () => {
