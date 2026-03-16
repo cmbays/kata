@@ -249,34 +249,40 @@ export function resolveAppliedProposalIds(
 export function buildAgentPerspectiveFromProposals(proposals: readonly SynthesisProposal[]): string | undefined {
   if (proposals.length === 0) return undefined;
 
-  const lines: string[] = ['## Agent Perspective (Synthesis)'];
-  lines.push('');
+  return [
+    '## Agent Perspective (Synthesis)',
+    '',
+    ...proposals.flatMap((proposal) => [...formatAgentPerspectiveProposal(proposal), '']),
+  ].join('\n').trimEnd();
+}
 
-  for (const proposal of proposals) {
-    switch (proposal.type) {
-      case 'new-learning':
-        lines.push(`**New learning** [${proposal.proposedTier}/${proposal.proposedCategory}] (confidence: ${proposal.confidence.toFixed(2)}):`);
-        lines.push(`  ${proposal.proposedContent}`);
-        break;
-      case 'update-learning':
-        lines.push(`**Updated learning** (confidence delta: ${proposal.confidenceDelta > 0 ? '+' : ''}${proposal.confidenceDelta.toFixed(2)}):`);
-        lines.push(`  ${proposal.proposedContent}`);
-        break;
-      case 'promote':
-        lines.push(`**Promoted learning** to ${proposal.toTier} tier.`);
-        break;
-      case 'archive':
-        lines.push(`**Archived learning**: ${proposal.reason}`);
-        break;
-      case 'methodology-recommendation':
-        lines.push(`**Methodology recommendation** (${proposal.area}):`);
-        lines.push(`  ${proposal.recommendation}`);
-        break;
-    }
-    lines.push('');
+function formatAgentPerspectiveProposal(proposal: SynthesisProposal): string[] {
+  switch (proposal.type) {
+    case 'new-learning':
+      return [
+        `**New learning** [${proposal.proposedTier}/${proposal.proposedCategory}] (confidence: ${proposal.confidence.toFixed(2)}):`,
+        `  ${proposal.proposedContent}`,
+      ];
+    case 'update-learning':
+      return formatUpdateLearningPerspective(proposal.confidenceDelta, proposal.proposedContent);
+    case 'promote':
+      return [`**Promoted learning** to ${proposal.toTier} tier.`];
+    case 'archive':
+      return [`**Archived learning**: ${proposal.reason}`];
+    case 'methodology-recommendation':
+      return [
+        `**Methodology recommendation** (${proposal.area}):`,
+        `  ${proposal.recommendation}`,
+      ];
   }
+}
 
-  return lines.join('\n').trimEnd();
+function formatUpdateLearningPerspective(confidenceDelta: number, proposedContent: string): string[] {
+  const prefix = confidenceDelta > 0 ? '+' : '';
+  return [
+    `**Updated learning** (confidence delta: ${prefix}${confidenceDelta.toFixed(2)}):`,
+    `  ${proposedContent}`,
+  ];
 }
 
 export function listCompletedBetDescriptions(

@@ -283,6 +283,10 @@ describe('cooldown-session helpers', () => {
   });
 
   describe('buildAgentPerspectiveFromProposals', () => {
+    it('returns undefined when there are no accepted proposals', () => {
+      expect(buildAgentPerspectiveFromProposals([])).toBeUndefined();
+    });
+
     it('formats positive and negative confidence deltas distinctly', () => {
       const perspective = buildAgentPerspectiveFromProposals([
         {
@@ -301,6 +305,49 @@ describe('cooldown-session helpers', () => {
 
       expect(perspective).toContain('+0.15');
       expect(perspective).toContain('-0.20');
+    });
+
+    it('formats each synthesis proposal variant with its expected wording', () => {
+      const perspective = buildAgentPerspectiveFromProposals([
+        {
+          id: 'new-learning',
+          type: 'new-learning',
+          proposedTier: 'operational',
+          proposedCategory: 'cadence',
+          confidence: 0.82,
+          proposedContent: 'Keep cooldown reports short and explicit.',
+          basedOnObservations: [],
+          rationale: 'Short reports travel better.',
+        },
+        {
+          id: 'promote',
+          type: 'promote',
+          learningId: 'learning-1',
+          toTier: 'strategic',
+          rationale: 'Shows up every cycle.',
+        },
+        {
+          id: 'archive',
+          type: 'archive',
+          learningId: 'learning-2',
+          reason: 'Superseded by new process',
+        },
+        {
+          id: 'method',
+          type: 'methodology-recommendation',
+          area: 'testing',
+          recommendation: 'Keep extracting pure helpers before adding orchestration tests.',
+          rationale: 'Preserves logical boundaries.',
+        },
+      ] as Parameters<typeof buildAgentPerspectiveFromProposals>[0]);
+
+      expect(perspective).toContain('## Agent Perspective (Synthesis)');
+      expect(perspective).toContain('**New learning** [operational/cadence] (confidence: 0.82):');
+      expect(perspective).toContain('Keep cooldown reports short and explicit.');
+      expect(perspective).toContain('**Promoted learning** to strategic tier.');
+      expect(perspective).toContain('**Archived learning**: Superseded by new process');
+      expect(perspective).toContain('**Methodology recommendation** (testing):');
+      expect(perspective).toContain('Keep extracting pure helpers before adding orchestration tests.');
     });
   });
 
