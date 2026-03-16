@@ -21,7 +21,19 @@ import { KATA_DIRS } from '@shared/constants/paths.js';
 import { ProjectStateUpdater } from '@features/belt/belt-calculator.js';
 import { CycleManager } from '@domain/services/cycle-manager.js';
 import { SessionExecutionBridge } from '@infra/execution/session-bridge.js';
-import { formatDurationMs, formatExplain, parseBetOption, parseHintFlags } from '@cli/commands/execute.helpers.js';
+import {
+  assertValidKataName,
+  buildPreparedCycleOutputLines,
+  buildPreparedRunOutputLines,
+  formatDurationMs,
+  formatAgentLoadError,
+  formatExplain,
+  mergePinnedFlavors,
+  parseBetOption,
+  parseCompletedRunArtifacts,
+  parseCompletedRunTokenUsage,
+  parseHintFlags,
+} from '@cli/commands/execute.helpers.js';
 import { resolveRef } from '@cli/resolve-ref.js';
 import { handleStatus, handleStats, parseCategoryFilter } from './status.js';
 
@@ -106,11 +118,7 @@ export function registerExecuteCommands(program: Command): void {
             agentRegistry.get(agentId);
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
-            if (msg.includes('not found') || msg.includes('Agent')) {
-              console.error(`Error: agent "${agentId}" not found. Use "kata agent list" to see registered agents.`);
-            } else {
-              console.error(`Error: Failed to load agent "${agentId}": ${msg}`);
-            }
+            console.error(formatAgentLoadError(agentId, msg));
             process.exitCode = 1;
             return;
           }
@@ -120,12 +128,8 @@ export function registerExecuteCommands(program: Command): void {
         if (isJson) {
           console.log(JSON.stringify(result, null, 2));
         } else {
-          console.log(`Prepared ${result.preparedRuns.length} run(s) for cycle "${result.cycleName}"`);
-          for (const run of result.preparedRuns) {
-            console.log(`  ${run.betName}`);
-            console.log(`    Run ID: ${run.runId}`);
-            console.log(`    Stages: ${run.stages.join(', ')}`);
-            console.log(`    Isolation: ${run.isolation}`);
+          for (const line of buildPreparedCycleOutputLines(result)) {
+            console.log(line);
           }
         }
       } else if (localOpts.status) {
@@ -188,69 +192,46 @@ export function registerExecuteCommands(program: Command): void {
       const isJson = !!(localOpts.json || ctx.globalOpts.json);
       const bridge = new SessionExecutionBridge(ctx.kataDir);
 
-      let artifacts: Array<{ name: string; path?: string }> | undefined;
-      if (localOpts.artifacts) {
-        try {
-          const parsed: unknown = JSON.parse(localOpts.artifacts);
-          if (!Array.isArray(parsed)) {
-            console.error('Error: --artifacts must be a JSON array');
-            process.exitCode = 1;
-            return;
-          }
-          for (const item of parsed) {
-            if (typeof item !== 'object' || item === null || typeof (item as Record<string, unknown>).name !== 'string') {
-              console.error('Error: each artifact must have a "name" string property');
-              process.exitCode = 1;
-              return;
-            }
-          }
-          artifacts = parsed as Array<{ name: string; path?: string }>;
-        } catch {
-          console.error('Error: --artifacts must be valid JSON');
-          process.exitCode = 1;
-          return;
-        }
-      }
-
-      // Validate token counts if provided
-      if (localOpts.inputTokens !== undefined && (isNaN(localOpts.inputTokens) || localOpts.inputTokens < 0)) {
-        console.error('Error: --input-tokens must be a non-negative integer');
+      const parsedArtifacts = parseCompletedRunArtifacts(localOpts.artifacts);
+      if (!parsedArtifacts.ok) {
+        console.error(parsedArtifacts.error);
         process.exitCode = 1;
         return;
       }
-      if (localOpts.outputTokens !== undefined && (isNaN(localOpts.outputTokens) || localOpts.outputTokens < 0)) {
-        console.error('Error: --output-tokens must be a non-negative integer');
+      const artifacts = parsedArtifacts.value as Array<{ name: string; path?: string }> | undefined;
+
+      const parsedTokenUsage = parseCompletedRunTokenUsage(localOpts.inputTokens, localOpts.outputTokens);
+      if (!parsedTokenUsage.ok) {
+        console.error(parsedTokenUsage.error);
         process.exitCode = 1;
         return;
       }
-
-      const inputTokens = localOpts.inputTokens;
-      const outputTokens = localOpts.outputTokens;
-      const hasTokens = inputTokens !== undefined || outputTokens !== undefined;
-      const totalTokens = hasTokens ? (inputTokens ?? 0) + (outputTokens ?? 0) : undefined;
+      const { hasTokens, totalTokens, tokenUsage } = parsedTokenUsage.value as {
+        hasTokens: boolean;
+        totalTokens?: number;
+        tokenUsage?: {
+          inputTokens?: number;
+          outputTokens?: number;
+          total: number;
+        };
+      };
 
       bridge.complete(runId, {
         success: !localOpts.failed,
         artifacts,
         notes: localOpts.notes,
-        ...(hasTokens ? {
-          tokenUsage: {
-            inputTokens,
-            outputTokens,
-            total: totalTokens,
-          },
-        } : {}),
+        ...(tokenUsage ? { tokenUsage } : {}),
       });
 
       if (isJson) {
         console.log(JSON.stringify({
           runId,
           status: localOpts.failed ? 'failed' : 'complete',
-          ...(hasTokens ? { tokenUsage: { inputTokens, outputTokens, total: totalTokens } } : {}),
+          ...(tokenUsage ? { tokenUsage } : {}),
         }));
       } else {
         const tokenLine = hasTokens
-          ? ` (tokens: ${totalTokens ?? 0} total, ${inputTokens ?? 0} in, ${outputTokens ?? 0} out)`
+          ? ` (tokens: ${totalTokens ?? 0} total, ${tokenUsage?.inputTokens ?? 0} in, ${tokenUsage?.outputTokens ?? 0} out)`
           : '';
         console.log(`Run ${runId} marked as ${localOpts.failed ? 'failed' : 'complete'}.${tokenLine}`);
       }
@@ -297,11 +278,7 @@ export function registerExecuteCommands(program: Command): void {
           agentRegistry.get(agentId);
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
-          if (msg.includes('not found') || msg.includes('Agent')) {
-            console.error(`Error: agent "${agentId}" not found. Use "kata agent list" to see registered agents.`);
-          } else {
-            console.error(`Error: Failed to load agent "${agentId}": ${msg}`);
-          }
+          console.error(formatAgentLoadError(agentId, msg));
           process.exitCode = 1;
           return;
         }
@@ -311,17 +288,14 @@ export function registerExecuteCommands(program: Command): void {
       if (isJson) {
         console.log(JSON.stringify(result, null, 2));
       } else {
-        console.log(`Prepared run for bet: "${result.betName}"`);
-        console.log(`  Run ID: ${result.runId}`);
-        console.log(`  Cycle: ${result.cycleName}`);
-        console.log(`  Stages: ${result.stages.join(', ')}`);
-        console.log(`  Isolation: ${result.isolation}`);
-        console.log('');
-        console.log('Agent context block (use "kata kiai context <run-id>" to fetch at dispatch time):');
+        let agentContextBlock: string;
         try {
-          console.log(bridge.getAgentContext(result.runId));
+          agentContextBlock = bridge.getAgentContext(result.runId);
         } catch (err) {
-          console.log(`(context unavailable: ${err instanceof Error ? err.message : String(err)})`);
+          agentContextBlock = `(context unavailable: ${err instanceof Error ? err.message : String(err)})`;
+        }
+        for (const line of buildPreparedRunOutputLines(result, agentContextBlock)) {
+          console.log(line);
         }
       }
     }));
@@ -339,7 +313,7 @@ export function registerExecuteCommands(program: Command): void {
       const localOpts = ctx.cmd.opts();
       await runCategories(ctx, [category], {
         bet: localOpts.bet,
-        pin: [...(localOpts.pin ?? []), ...(localOpts.ryu ?? [])],
+        pin: mergePinnedFlavors(localOpts.pin ?? [], localOpts.ryu ?? []),
         dryRun: localOpts.dryRun,
         json: localOpts.json,
       });
@@ -476,7 +450,7 @@ export function registerExecuteCommands(program: Command): void {
         return;
       }
 
-      const pin = [...(localOpts.ryu ?? []), ...(localOpts.pin ?? [])];
+      const pin = mergePinnedFlavors(localOpts.ryu ?? [], localOpts.pin ?? []);
 
       // Parse --hint flags into flavorHints map (merges with loaded kata hints)
       const cliHints = parseHintFlags(localOpts.hint as string[] | undefined);
@@ -491,7 +465,7 @@ export function registerExecuteCommands(program: Command): void {
 
       await runCategories(ctx, resolvedCategories, {
         bet: betFromNext ?? (localOpts.bet as string | undefined),
-        pin: pin.length > 0 ? pin : undefined,
+        pin,
         dryRun: localOpts.dryRun,
         saveKata: localOpts.saveKata,
         agentId: (localOpts.agent ?? localOpts.kataka) as string | undefined,
@@ -532,7 +506,6 @@ async function runCategories(
   rawCategories: string[],
   opts: RunOptions,
 ): Promise<void> {
-  // Validate all categories
   const categories: StageCategory[] = [];
   for (const cat of rawCategories) {
     const parseResult = StageCategorySchema.safeParse(cat);
@@ -554,151 +527,222 @@ async function runCategories(
   }
   const bet = parsedBet.value;
   const agentId = opts.agentId ?? opts.katakaId;
-
-  // Fire-and-forget belt discovery hooks
   const projectStateFile = join(ctx.kataDir, 'project-state.json');
   ProjectStateUpdater.markDiscovery(projectStateFile, 'ranFirstExecution');
   if (opts.yolo) ProjectStateUpdater.markRanWithYolo(projectStateFile);
 
-  // Validate --agent/--kataka ID if provided
   if (agentId) {
     try {
       const agentRegistry = new KataAgentRegistry(join(ctx.kataDir, KATA_DIRS.kataka));
       agentRegistry.get(agentId);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      if (/not found/i.test(msg)) {
-        console.error(`Error: agent "${agentId}" not found. Use "kata agent list" to see registered agents.`);
-      } else {
-        console.error(`Error: Failed to load agent "${agentId}": ${msg}`);
-      }
+      console.error(formatAgentLoadError(agentId, msg));
       process.exitCode = 1;
       return;
     }
   }
 
-  const isJson = ctx.globalOpts.json || opts.json;
+  const isJson = Boolean(ctx.globalOpts.json || opts.json);
 
   if (categories.length === 1) {
-    // Single stage
-    const result = await runner.runStage(categories[0]!, {
+    const shouldContinue = await runSingleCategoryMode({
+      ctx,
+      runner,
+      category: categories[0]!,
       bet,
-      pin: opts.pin,
-      dryRun: opts.dryRun,
       agentId,
-      katakaId: agentId,
-      yolo: opts.yolo,
-      flavorHints: opts.flavorHints,
+      isJson,
+      opts,
+      projectStateFile,
     });
-
-    // --bridge-gaps: evaluate identified gaps
-    if (opts.bridgeGaps && result.gaps && result.gaps.length > 0) {
-      const store = new KnowledgeStore(kataDirPath(ctx.kataDir, 'knowledge'));
-      const bridger = new GapBridger({ knowledgeStore: store });
-      const { blocked, bridged } = bridger.bridge(result.gaps);
-      if (blocked.length > 0) {
-        console.error(`[kata] Blocked by ${blocked.length} high-severity gap(s):`);
-        for (const g of blocked) console.error(`  • ${g.description}`);
-        process.exitCode = 1;
-        return;
-      }
-      if (bridged.length > 0) {
-        console.log(`[kata] Captured ${bridged.length} gap(s) as step-tier learnings.`);
-        ProjectStateUpdater.incrementGapsClosed(projectStateFile, bridged.length);
-      }
-    }
-
-    if (isJson) {
-      console.log(JSON.stringify(result, null, 2));
-    } else {
-      if (opts.explain) {
-        console.log(formatExplain(result.stageCategory, result.selectedFlavors, result.matchReports));
-        console.log('');
-      }
-      console.log(`Stage: ${result.stageCategory}`);
-      console.log(`Execution mode: ${result.executionMode}`);
-      console.log(`Selected flavors: ${result.selectedFlavors.join(', ')}`);
-      console.log('');
-      console.log('Decisions:');
-      for (const decision of result.decisions) {
-        console.log(`  ${decision.decisionType}: ${decision.selection} (confidence: ${(decision.confidence * 100).toFixed(0)}%)`);
-      }
-      console.log('');
-      console.log(`Stage artifact: ${result.stageArtifact.name}`);
-      if (opts.dryRun) {
-        console.log('');
-        console.log('(dry-run — no artifacts persisted)');
-      }
-    }
+    if (!shouldContinue) return;
   } else {
-    // Multi-stage pipeline
-    const result = await runner.runPipeline(categories, {
+    const shouldContinue = await runPipelineMode({
+      ctx,
+      runner,
+      categories,
       bet,
-      dryRun: opts.dryRun,
       agentId,
-      katakaId: agentId,
-      yolo: opts.yolo,
-      flavorHints: opts.flavorHints,
+      isJson,
+      opts,
+      projectStateFile,
     });
-
-    // --bridge-gaps: evaluate identified gaps across all stages
-    if (opts.bridgeGaps) {
-      const allGaps = result.stageResults.flatMap((sr) => sr.gaps ?? []);
-      if (allGaps.length > 0) {
-        const store = new KnowledgeStore(kataDirPath(ctx.kataDir, 'knowledge'));
-        const bridger = new GapBridger({ knowledgeStore: store });
-        const { blocked, bridged } = bridger.bridge(allGaps);
-        if (blocked.length > 0) {
-          console.error(`[kata] Blocked by ${blocked.length} high-severity gap(s):`);
-          for (const g of blocked) console.error(`  • ${g.description}`);
-          process.exitCode = 1;
-          return;
-        }
-        if (bridged.length > 0) {
-          console.log(`[kata] Captured ${bridged.length} gap(s) as step-tier learnings.`);
-          ProjectStateUpdater.incrementGapsClosed(projectStateFile, bridged.length);
-        }
-      }
-    }
-
-    if (isJson) {
-      console.log(JSON.stringify(result, null, 2));
-    } else {
-      if (opts.explain) {
-        for (const stageResult of result.stageResults) {
-          console.log(formatExplain(stageResult.stageCategory, stageResult.selectedFlavors, stageResult.matchReports));
-          console.log('');
-        }
-      }
-      console.log(`Pipeline: ${categories.join(' -> ')}`);
-      console.log(`Stages completed: ${result.stageResults.length}`);
-      console.log(`Overall quality: ${result.pipelineReflection.overallQuality}`);
-      console.log('');
-      for (const stageResult of result.stageResults) {
-        console.log(`  ${stageResult.stageCategory}:`);
-        console.log(`    Flavors: ${stageResult.selectedFlavors.join(', ')}`);
-        console.log(`    Mode: ${stageResult.executionMode}`);
-        console.log(`    Artifact: ${stageResult.stageArtifact.name}`);
-      }
-      if (result.pipelineReflection.learnings.length > 0) {
-        console.log('');
-        console.log('Learnings:');
-        for (const learning of result.pipelineReflection.learnings) {
-          console.log(`  - ${learning}`);
-        }
-      }
-      if (opts.dryRun) {
-        console.log('');
-        console.log('(dry-run — no artifacts persisted)');
-      }
-    }
+    if (!shouldContinue) return;
   }
 
-  // Save kata if requested
   if (opts.saveKata && !opts.dryRun) {
     saveSavedKata(ctx.kataDir, opts.saveKata, categories, opts.flavorHints);
     ProjectStateUpdater.markDiscovery(projectStateFile, 'savedKataSequence');
     if (!isJson) console.log(`\nKata "${opts.saveKata}" saved.`);
+  }
+}
+
+type RunContext = { kataDir: string; globalOpts: { json?: boolean }; cmd: { opts(): Record<string, unknown> } };
+type StageRunResult = Awaited<ReturnType<WorkflowRunner['runStage']>>;
+type PipelineRunResult = Awaited<ReturnType<WorkflowRunner['runPipeline']>>;
+
+async function runSingleCategoryMode(input: {
+  ctx: RunContext;
+  runner: WorkflowRunner;
+  category: StageCategory;
+  bet: Record<string, unknown> | undefined;
+  agentId?: string;
+  isJson: boolean;
+  opts: RunOptions;
+  projectStateFile: string;
+}): Promise<boolean> {
+  const result = await input.runner.runStage(input.category, {
+    bet: input.bet,
+    pin: input.opts.pin,
+    dryRun: input.opts.dryRun,
+    agentId: input.agentId,
+    katakaId: input.agentId,
+    yolo: input.opts.yolo,
+    flavorHints: input.opts.flavorHints,
+  });
+
+  const shouldContinue = bridgeExecutionGaps({
+    kataDir: input.ctx.kataDir,
+    projectStateFile: input.projectStateFile,
+    gaps: input.opts.bridgeGaps ? result.gaps : undefined,
+  });
+  if (!shouldContinue) return false;
+
+  printSingleCategoryResult(result, input.isJson, input.opts);
+  return true;
+}
+
+async function runPipelineMode(input: {
+  ctx: RunContext;
+  runner: WorkflowRunner;
+  categories: StageCategory[];
+  bet: Record<string, unknown> | undefined;
+  agentId?: string;
+  isJson: boolean;
+  opts: RunOptions;
+  projectStateFile: string;
+}): Promise<boolean> {
+  const result = await input.runner.runPipeline(input.categories, {
+    bet: input.bet,
+    dryRun: input.opts.dryRun,
+    agentId: input.agentId,
+    katakaId: input.agentId,
+    yolo: input.opts.yolo,
+    flavorHints: input.opts.flavorHints,
+  });
+
+  const shouldContinue = bridgeExecutionGaps({
+    kataDir: input.ctx.kataDir,
+    projectStateFile: input.projectStateFile,
+    gaps: input.opts.bridgeGaps
+      ? result.stageResults.flatMap((stageResult) => stageResult.gaps ?? [])
+      : undefined,
+  });
+  if (!shouldContinue) return false;
+
+  printPipelineResult(result, input.categories, input.isJson, input.opts);
+  return true;
+}
+
+function bridgeExecutionGaps(input: {
+  kataDir: string;
+  projectStateFile: string;
+  gaps?: Array<{
+    description: string;
+    severity: 'low' | 'medium' | 'high';
+    suggestedFlavors: string[];
+  }>;
+}): boolean {
+  if (!input.gaps || input.gaps.length === 0) return true;
+
+  const store = new KnowledgeStore(kataDirPath(input.kataDir, 'knowledge'));
+  const bridger = new GapBridger({ knowledgeStore: store });
+  const { blocked, bridged } = bridger.bridge(input.gaps);
+
+  if (blocked.length > 0) {
+    console.error(`[kata] Blocked by ${blocked.length} high-severity gap(s):`);
+    for (const gap of blocked) console.error(`  • ${gap.description}`);
+    process.exitCode = 1;
+    return false;
+  }
+
+  if (bridged.length > 0) {
+    console.log(`[kata] Captured ${bridged.length} gap(s) as step-tier learnings.`);
+    ProjectStateUpdater.incrementGapsClosed(input.projectStateFile, bridged.length);
+  }
+
+  return true;
+}
+
+function printSingleCategoryResult(result: StageRunResult, isJson: boolean, opts: RunOptions): void {
+  if (isJson) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+
+  if (opts.explain) {
+    console.log(formatExplain(result.stageCategory, result.selectedFlavors, result.matchReports));
+    console.log('');
+  }
+
+  console.log(`Stage: ${result.stageCategory}`);
+  console.log(`Execution mode: ${result.executionMode}`);
+  console.log(`Selected flavors: ${result.selectedFlavors.join(', ')}`);
+  console.log('');
+  console.log('Decisions:');
+  for (const decision of result.decisions) {
+    console.log(`  ${decision.decisionType}: ${decision.selection} (confidence: ${(decision.confidence * 100).toFixed(0)}%)`);
+  }
+  console.log('');
+  console.log(`Stage artifact: ${result.stageArtifact.name}`);
+
+  if (opts.dryRun) {
+    console.log('');
+    console.log('(dry-run — no artifacts persisted)');
+  }
+}
+
+function printPipelineResult(
+  result: PipelineRunResult,
+  categories: StageCategory[],
+  isJson: boolean,
+  opts: RunOptions,
+): void {
+  if (isJson) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+
+  if (opts.explain) {
+    for (const stageResult of result.stageResults) {
+      console.log(formatExplain(stageResult.stageCategory, stageResult.selectedFlavors, stageResult.matchReports));
+      console.log('');
+    }
+  }
+
+  console.log(`Pipeline: ${categories.join(' -> ')}`);
+  console.log(`Stages completed: ${result.stageResults.length}`);
+  console.log(`Overall quality: ${result.pipelineReflection.overallQuality}`);
+  console.log('');
+  for (const stageResult of result.stageResults) {
+    console.log(`  ${stageResult.stageCategory}:`);
+    console.log(`    Flavors: ${stageResult.selectedFlavors.join(', ')}`);
+    console.log(`    Mode: ${stageResult.executionMode}`);
+    console.log(`    Artifact: ${stageResult.stageArtifact.name}`);
+  }
+
+  if (result.pipelineReflection.learnings.length > 0) {
+    console.log('');
+    console.log('Learnings:');
+    for (const learning of result.pipelineReflection.learnings) {
+      console.log(`  - ${learning}`);
+    }
+  }
+
+  if (opts.dryRun) {
+    console.log('');
+    console.log('(dry-run — no artifacts persisted)');
   }
 }
 
@@ -749,15 +793,6 @@ function collect(value: string, previous: string[]): string[] {
 // ---------------------------------------------------------------------------
 // Saved kata helpers
 // ---------------------------------------------------------------------------
-
-/** Prevent path traversal via kata names. Only alphanumeric, hyphens, and underscores allowed. */
-function assertValidKataName(name: string): void {
-  if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
-    throw new Error(
-      `Invalid kata name "${name}": names must contain only letters, digits, hyphens, and underscores.`,
-    );
-  }
-}
 
 function katasDir(kataDir: string): string {
   return join(kataDir, KATA_DIRS.katas);

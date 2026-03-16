@@ -112,6 +112,40 @@ describe('CooldownSession', () => {
       expect(cycleManager.get(cycle.id).state).toBe('complete');
     });
 
+    it('logs expiry-check summaries when archived or stale learnings are found', async () => {
+      const debugSpy = vi.spyOn(logger, 'debug').mockImplementation(() => {});
+      const checkExpiry = vi.spyOn(knowledgeStore, 'checkExpiry').mockReturnValue({
+        archived: [{ id: 'archived-learning' }],
+        flaggedStale: [{ id: 'stale-learning' }],
+      } as ReturnType<typeof knowledgeStore.checkExpiry>);
+      const cycle = cycleManager.create({ tokenBudget: 50000 }, 'Expiry Check Cycle');
+
+      await session.run(cycle.id);
+
+      expect(checkExpiry).toHaveBeenCalledTimes(1);
+      expect(debugSpy).toHaveBeenCalledWith('Expiry check: auto-archived 1 expired operational learnings');
+      expect(debugSpy).toHaveBeenCalledWith('Expiry check: flagged 1 stale strategic learnings for review');
+    });
+
+    it('does not log expiry-check summaries when nothing was archived or flagged', async () => {
+      const debugSpy = vi.spyOn(logger, 'debug').mockImplementation(() => {});
+      const checkExpiry = vi.spyOn(knowledgeStore, 'checkExpiry').mockReturnValue({
+        archived: [],
+        flaggedStale: [],
+      } as ReturnType<typeof knowledgeStore.checkExpiry>);
+      const cycle = cycleManager.create({ tokenBudget: 50000 }, 'Quiet Expiry Check');
+
+      try {
+        await session.run(cycle.id);
+
+        expect(checkExpiry).toHaveBeenCalledTimes(1);
+        expect(debugSpy).not.toHaveBeenCalledWith('Expiry check: auto-archived 0 expired operational learnings');
+        expect(debugSpy).not.toHaveBeenCalledWith('Expiry check: flagged 0 stale strategic learnings for review');
+      } finally {
+        debugSpy.mockRestore();
+      }
+    });
+
     it('enriches report with token usage from cycle history', async () => {
       const cycle = cycleManager.create({ tokenBudget: 100000 }, 'Token Cycle');
       cycleManager.addBet(cycle.id, {
@@ -251,6 +285,66 @@ describe('CooldownSession', () => {
       expect(result.learningsCaptured).toBeGreaterThanOrEqual(1);
     });
 
+    it('warns when some cooldown learnings fail to capture', async () => {
+      const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+      const cycle = cycleManager.create({ tokenBudget: 10000 }, 'Partial Learning Failure');
+      cycleManager.addBet(cycle.id, {
+        description: 'Bet 1',
+        appetite: 30,
+        outcome: 'pending',
+        issueRefs: [],
+      });
+      const updatedCycle = cycleManager.addBet(cycle.id, {
+        description: 'Bet 2',
+        appetite: 30,
+        outcome: 'pending',
+        issueRefs: [],
+      });
+
+      const originalCapture = knowledgeStore.capture.bind(knowledgeStore);
+      vi.spyOn(knowledgeStore, 'capture')
+        .mockImplementationOnce(() => {
+          throw new Error('capture exploded');
+        })
+        .mockImplementation((params) => {
+          originalCapture(params);
+        });
+
+      const historyEntry = {
+        id: crypto.randomUUID(),
+        pipelineId: crypto.randomUUID(),
+        stageType: 'build',
+        stageIndex: 0,
+        adapter: 'manual',
+        tokenUsage: {
+          inputTokens: 8000,
+          outputTokens: 7000,
+          cacheCreationTokens: 0,
+          cacheReadTokens: 0,
+          total: 15000,
+        },
+        artifactNames: [],
+        learningIds: [],
+        cycleId: cycle.id,
+        startedAt: new Date().toISOString(),
+        completedAt: new Date().toISOString(),
+      };
+      JsonStore.write(
+        join(historyDir, `${historyEntry.id}.json`),
+        historyEntry,
+        ExecutionHistoryEntrySchema,
+      );
+
+      const result = await session.run(cycle.id, [
+        { betId: updatedCycle.bets[0]!.id, outcome: 'abandoned' },
+        { betId: updatedCycle.bets[1]!.id, outcome: 'abandoned' },
+      ]);
+
+      expect(result.learningsCaptured).toBe(1);
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Failed to capture cooldown learning: capture exploded'));
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('1 of 2 cooldown learnings failed to capture'));
+    });
+
     it('does not capture an over-budget learning at exactly 100% utilization', async () => {
       const cycle = cycleManager.create({ tokenBudget: 10000 }, 'Exact Budget');
       cycleManager.addBet(cycle.id, {
@@ -378,6 +472,34 @@ describe('CooldownSession', () => {
       expect(cycleManager.get(cycle.id).state).toBe('active');
     });
 
+    it('logs an error when rollback also fails after run() throws', async () => {
+      const cycle = cycleManager.create({ tokenBudget: 50000 }, 'Rollback Failure Test');
+      cycleManager.updateState(cycle.id, 'active');
+
+      const errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => {});
+      const originalUpdateState = cycleManager.updateState.bind(cycleManager);
+      vi.spyOn(cycleManager, 'generateCooldown').mockImplementation(() => {
+        throw new Error('Simulated failure');
+      });
+      vi.spyOn(cycleManager, 'updateState').mockImplementation((cycleId, state) => {
+        if (state === 'active') {
+          throw new Error('Rollback exploded');
+        }
+        originalUpdateState(cycleId, state);
+      });
+
+      try {
+        await expect(session.run(cycle.id)).rejects.toThrow('Simulated failure');
+        expect(errorSpy).toHaveBeenCalledWith(
+          `Failed to roll back cycle "${cycle.id}" from cooldown to "active". Manual intervention may be required.`,
+          { rollbackError: 'Rollback exploded' },
+        );
+        expect(cycleManager.get(cycle.id).state).toBe('cooldown');
+      } finally {
+        errorSpy.mockRestore();
+      }
+    });
+
     it('handles empty cycle with no bets', async () => {
       const cycle = cycleManager.create({ tokenBudget: 50000 }, 'Empty Cycle');
 
@@ -456,6 +578,61 @@ describe('CooldownSession', () => {
       await sessionWithCompat.complete(cycle.id);
 
       expect(katakaConfidenceCalculator.compute).toHaveBeenCalledWith(agentId, 'Compat Agent');
+    });
+  });
+
+  describe('belt advancement integration', () => {
+    it('logs belt advancement during run() only when the belt levels up', async () => {
+      const infoSpy = vi.spyOn(logger, 'info').mockImplementation(() => {});
+      const projectStateFile = join(baseDir, 'project-state-run.json');
+
+      const leveledCycle = cycleManager.create({ tokenBudget: 50000 }, 'Leveled Run Cycle');
+      const leveledSession = new CooldownSession({
+        cycleManager,
+        knowledgeStore,
+        persistence: JsonStore,
+        pipelineDir,
+        historyDir,
+        projectStateFile,
+        beltCalculator: {
+          computeAndStore: vi.fn(() => ({
+            belt: 'yon-kyu',
+            previous: 'go-kyu',
+            leveledUp: true,
+          })),
+        },
+      });
+
+      const steadyCycle = cycleManager.create({ tokenBudget: 50000 }, 'Steady Run Cycle');
+      const steadySession = new CooldownSession({
+        cycleManager,
+        knowledgeStore,
+        persistence: JsonStore,
+        pipelineDir,
+        historyDir,
+        projectStateFile,
+        beltCalculator: {
+          computeAndStore: vi.fn(() => ({
+            belt: 'go-kyu',
+            previous: 'go-kyu',
+            leveledUp: false,
+          })),
+        },
+      });
+
+      try {
+        const leveledResult = await leveledSession.run(leveledCycle.id);
+        expect(leveledResult.beltResult?.leveledUp).toBe(true);
+        expect(infoSpy).toHaveBeenCalledWith('Belt advanced: go-kyu → yon-kyu');
+
+        infoSpy.mockClear();
+
+        const steadyResult = await steadySession.run(steadyCycle.id);
+        expect(steadyResult.beltResult?.leveledUp).toBe(false);
+        expect(infoSpy).not.toHaveBeenCalled();
+      } finally {
+        infoSpy.mockRestore();
+      }
     });
   });
 
@@ -582,6 +759,44 @@ describe('CooldownSession', () => {
       const reloaded = cycleManager.get(cycle.id);
       expect(reloaded.bets[0]!.outcome).toBe('pending'); // Unchanged
     });
+
+    it('logs unmatched bet IDs returned by the cycle manager', () => {
+      const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+
+      try {
+        session.recordBetOutcomes(cycle.id, [
+          { betId: 'nonexistent-id', outcome: 'complete' },
+        ]);
+
+        expect(warnSpy).toHaveBeenCalledWith(
+          expect.stringContaining(`Bet outcome(s) for cycle "${cycle.id}" referenced nonexistent bet IDs: nonexistent-id`),
+        );
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+
+    it('does not warn when every bet outcome matches a real bet', () => {
+      const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      const updated = cycleManager.addBet(cycle.id, {
+        description: 'Known bet',
+        appetite: 20,
+        outcome: 'pending',
+        issueRefs: [],
+      });
+
+      try {
+        session.recordBetOutcomes(cycle.id, [
+          { betId: updated.bets[0]!.id, outcome: 'complete' },
+        ]);
+
+        expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining('referenced nonexistent bet IDs'));
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
   });
 
   describe('enrichReportWithTokens', () => {
@@ -627,6 +842,39 @@ describe('CooldownSession', () => {
 
       expect(enriched.tokensUsed).toBe(18000);
       expect(enriched.utilizationPercent).toBe(18);
+    });
+
+    it('requests history with warnOnInvalid=false and ignores entries for other cycles', () => {
+      const cycle = cycleManager.create({ tokenBudget: 100000 }, 'Filtered History');
+      const list = vi.fn(() => ([
+        {
+          id: 'entry-a',
+          cycleId: cycle.id,
+          tokenUsage: { total: 1800 },
+        },
+        {
+          id: 'entry-b',
+          cycleId: 'other-cycle',
+          tokenUsage: { total: 9000 },
+        },
+        {
+          id: 'entry-c',
+          cycleId: cycle.id,
+        },
+      ]));
+      const sessionWithPersistenceSpy = new CooldownSession({
+        cycleManager,
+        knowledgeStore,
+        persistence: { list } as unknown as typeof JsonStore,
+        pipelineDir,
+        historyDir,
+      });
+
+      const enriched = sessionWithPersistenceSpy.enrichReportWithTokens(cycleManager.generateCooldown(cycle.id), cycle.id);
+
+      expect(list).toHaveBeenCalledWith(historyDir, ExecutionHistoryEntrySchema, { warnOnInvalid: false });
+      expect(enriched.tokensUsed).toBe(1800);
+      expect(enriched.utilizationPercent).toBeCloseTo(1.8, 0);
     });
 
     it('sets critical alert when over budget', () => {
@@ -1127,6 +1375,24 @@ describe('CooldownSession', () => {
       expect(sessions.length).toBe(0);
     });
 
+    it('does not generate a dojo session when dojoDir is omitted even if a builder exists', async () => {
+      const dojoSessionBuilder = { build: vi.fn() };
+      const cycle = cycleManager.create({ tokenBudget: 50000 }, 'Builder Only');
+
+      const sessionWithoutDojoDir = new CooldownSession({
+        cycleManager,
+        knowledgeStore,
+        persistence: JsonStore,
+        pipelineDir,
+        historyDir,
+        dojoSessionBuilder,
+      });
+
+      await sessionWithoutDojoDir.run(cycle.id);
+
+      expect(dojoSessionBuilder.build).not.toHaveBeenCalled();
+    });
+
     it('does not abort cooldown when dojo session generation fails', async () => {
       const failingBuilder = {
         build: () => { throw new Error('SessionBuilder exploded'); },
@@ -1187,6 +1453,25 @@ describe('CooldownSession', () => {
       const sessions = sessionStore.list();
       expect(sessions.length).toBeGreaterThanOrEqual(1);
       expect(sessions[0]!.title).toContain('Complete Session Cycle');
+    });
+
+    it('does not generate a dojo session on complete() when dojoDir is omitted', async () => {
+      const dojoSessionBuilder = { build: vi.fn() };
+      const cycle = cycleManager.create({ tokenBudget: 50000 }, 'Complete Without Dojo Dir');
+      const sessionForComplete = new CooldownSession({
+        cycleManager,
+        knowledgeStore,
+        persistence: JsonStore,
+        pipelineDir,
+        historyDir,
+        synthesisDir,
+        dojoSessionBuilder,
+      });
+
+      await sessionForComplete.prepare(cycle.id);
+      await sessionForComplete.complete(cycle.id);
+
+      expect(dojoSessionBuilder.build).not.toHaveBeenCalled();
     });
   });
 
@@ -1583,6 +1868,35 @@ describe('CooldownSession', () => {
       expect(result.report.completionRate).toBe(0); // partial doesn't count as complete
     });
 
+    it('does not record bet outcomes when bridge-run status is still in progress', async () => {
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      const withBet = cycleManager.addBet(cycle.id, { description: 'Running bet', appetite: 80, outcome: 'pending', issueRefs: [] });
+      const bet = withBet.bets[0]!;
+      const runId = randomUUID();
+      cycleManager.setRunId(cycle.id, bet.id, runId);
+
+      writeFileSync(join(bridgeRunsDir, `${runId}.json`), JSON.stringify({
+        runId, betId: bet.id, cycleId: cycle.id, cycleName: 'Test', betName: 'Running bet',
+        stages: ['build'], isolation: 'shared', startedAt: new Date().toISOString(), status: 'in-progress',
+      }));
+
+      const sessionWithBridge = new CooldownSession({
+        cycleManager, knowledgeStore, persistence: JsonStore, pipelineDir, historyDir, bridgeRunsDir,
+      });
+      const recordSpy = vi.spyOn(sessionWithBridge, 'recordBetOutcomes');
+
+      try {
+        cycleManager.updateState(cycle.id, 'active');
+        const result = await sessionWithBridge.run(cycle.id, [], { force: true });
+
+        expect(recordSpy).not.toHaveBeenCalled();
+        expect(result.betOutcomes).toEqual([]);
+        expect(result.report.bets[0]!.outcome).toBe('pending');
+      } finally {
+        recordSpy.mockRestore();
+      }
+    });
+
     it('explicit bet outcome passed to run() takes precedence over bridge-run auto-sync', async () => {
       const cycle = cycleManager.create({ tokenBudget: 50000 });
       // Bet starts as pending — auto-sync would set it to 'complete' from bridge-run
@@ -1725,6 +2039,18 @@ describe('CooldownSession', () => {
       }
     });
 
+    it('does not log the incomplete-runs warning when no incomplete runs exist', async () => {
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+
+      try {
+        await session.run(cycle.id, [], { force: false });
+        expect(warnSpy.mock.calls.some((args) => String(args[0]).includes('still in progress'))).toBe(false);
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+
     it('cooldown proceeds normally (no block) even with incomplete runs — just warns', async () => {
       const cycle = cycleManager.create({ tokenBudget: 50000 });
       const withBet = cycleManager.addBet(cycle.id, { description: 'Stale bet', appetite: 30, outcome: 'pending', issueRefs: [] });
@@ -1848,6 +2174,69 @@ describe('CooldownSession', () => {
       } finally {
         warnSpy.mockRestore();
       }
+    });
+
+    it('prepare does not log the incomplete-runs warning when every run is complete', async () => {
+      const cycle = cycleManager.create({ tokenBudget: 50000 });
+      const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+
+      try {
+        await session.prepare(cycle.id, [], 'quick', { force: false });
+        expect(warnSpy.mock.calls.some((args) => String(args[0]).includes('still in progress'))).toBe(false);
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+  });
+
+  describe('buildAgentPerspectiveFromProposals', () => {
+    it('formats supported proposal types for diary agent perspective text', () => {
+      const perspective = CooldownSession.buildAgentPerspectiveFromProposals([
+        {
+          id: 'new-learning',
+          type: 'new-learning',
+          proposedTier: 'stage',
+          proposedCategory: 'testing',
+          proposedContent: 'Write mutation-focused tests for hot seams.',
+          confidence: 0.82,
+        },
+        {
+          id: 'update-learning',
+          type: 'update-learning',
+          confidenceDelta: 0.15,
+          proposedContent: 'Prefer smaller cooldown scopes when mutation debt is high.',
+        },
+        {
+          id: 'promote',
+          type: 'promote',
+          toTier: 'category',
+        },
+        {
+          id: 'archive',
+          type: 'archive',
+          reason: 'Superseded by recent cooldown evidence.',
+        },
+        {
+          id: 'methodology',
+          type: 'methodology-recommendation',
+          area: 'planning',
+          recommendation: 'Split large orchestration seams before adding more CLI wiring.',
+        },
+      ] as Parameters<typeof CooldownSession.buildAgentPerspectiveFromProposals>[0]);
+
+      expect(perspective).toContain('New learning');
+      expect(perspective).toContain('[stage/testing]');
+      expect(perspective).toContain('Updated learning');
+      expect(perspective).toContain('+0.15');
+      expect(perspective).toContain('Promoted learning');
+      expect(perspective).toContain('Archived learning');
+      expect(perspective).toContain('Methodology recommendation');
+      expect(perspective).toContain('(planning)');
+      expect(perspective).toContain('Split large orchestration seams before adding more CLI wiring.');
+    });
+
+    it('returns undefined when there are no proposals', () => {
+      expect(CooldownSession.buildAgentPerspectiveFromProposals([])).toBeUndefined();
     });
   });
 });

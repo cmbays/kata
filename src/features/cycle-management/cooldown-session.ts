@@ -5,7 +5,7 @@ import type { IKnowledgeStore } from '@domain/ports/knowledge-store.js';
 import type { IPersistence } from '@domain/ports/persistence.js';
 import type { IStageRuleRegistry } from '@domain/ports/rule-registry.js';
 import type { ExecutionHistoryEntry } from '@domain/types/history.js';
-import type { BudgetAlertLevel, Cycle } from '@domain/types/cycle.js';
+import type { Cycle } from '@domain/types/cycle.js';
 import type { RuleSuggestion } from '@domain/types/rule.js';
 import { ExecutionHistoryEntrySchema } from '@domain/types/history.js';
 import { DiaryWriter } from '@features/dojo/diary-writer.js';
@@ -27,13 +27,33 @@ import type { Observation } from '@domain/types/observation.js';
 import {
   SynthesisInputSchema,
   SynthesisResultSchema,
-  type SynthesisInput,
   type SynthesisProposal,
 } from '@domain/types/synthesis.js';
 import type { BeltCalculator } from '@features/belt/belt-calculator.js';
 import { loadProjectState, type BeltComputeResult } from '@features/belt/belt-calculator.js';
 import type { KataAgentConfidenceCalculator } from '@features/kata-agent/kata-agent-confidence-calculator.js';
 import { KataAgentRegistry } from '@infra/registries/kata-agent-registry.js';
+import {
+  buildAgentPerspectiveFromProposals,
+  buildBeltAdvancementMessage,
+  buildCooldownBudgetUsage,
+  buildExpiryCheckMessages,
+  buildCooldownLearningDrafts,
+  buildDiaryBetOutcomesFromCycleBets,
+  buildDojoSessionBuildRequest,
+  buildSynthesisInputRecord,
+  clampConfidenceWithDelta,
+  filterExecutionHistoryForCycle,
+  listCompletedBetDescriptions,
+  mapBridgeRunStatusToIncompleteStatus,
+  mapBridgeRunStatusToSyncedOutcome,
+  resolveAppliedProposalIds,
+  selectEffectiveBetOutcomes,
+  shouldRecordBetOutcomes,
+  shouldWarnOnIncompleteRuns,
+  shouldWriteDojoDiary,
+  shouldWriteDojoSession,
+} from './cooldown-session.helpers.js';
 
 /**
  * Dependencies injected into CooldownSession for testability.
@@ -254,23 +274,275 @@ export class CooldownSession {
 
   constructor(deps: CooldownSessionDeps) {
     this.deps = deps;
+    this.proposalGenerator = this.resolveProposalGenerator(deps);
+    this.predictionMatcher = this.resolvePredictionMatcher(deps);
+    this.calibrationDetector = this.resolveCalibrationDetector(deps);
+    this.hierarchicalPromoter = this.resolveHierarchicalPromoter(deps);
+    this.frictionAnalyzer = this.resolveFrictionAnalyzer(deps);
+    this._nextKeikoProposalGenerator = this.resolveNextKeikoProposalGenerator(deps);
+  }
+
+  private resolveProposalGenerator(deps: CooldownSessionDeps): Pick<ProposalGenerator, 'generate'> {
+    if (deps.proposalGenerator) return deps.proposalGenerator;
+
     const generatorDeps: ProposalGeneratorDeps = {
       cycleManager: deps.cycleManager,
       knowledgeStore: deps.knowledgeStore,
       persistence: deps.persistence,
       pipelineDir: deps.pipelineDir,
     };
-    this.proposalGenerator = deps.proposalGenerator ?? new ProposalGenerator(generatorDeps);
-    this.predictionMatcher = deps.predictionMatcher ?? (deps.runsDir ? new PredictionMatcher(deps.runsDir) : null);
-    this.calibrationDetector = deps.calibrationDetector ?? (deps.runsDir ? new CalibrationDetector(deps.runsDir) : null);
-    this.hierarchicalPromoter = deps.hierarchicalPromoter ?? new HierarchicalPromoter(deps.knowledgeStore);
-    this.frictionAnalyzer = deps.frictionAnalyzer ?? (deps.runsDir ? new FrictionAnalyzer(deps.runsDir, deps.knowledgeStore) : null);
-    // NextKeikoProposalGenerator is opt-in: only activated when explicitly provided
-    // via nextKeikoProposalGenerator dep OR when nextKeikoGeneratorDeps is provided.
-    // Auto-construction from runsDir alone would cause all existing tests to call
-    // `claude --print` unexpectedly.
-    this._nextKeikoProposalGenerator = deps.nextKeikoProposalGenerator
-      ?? (deps.nextKeikoGeneratorDeps ? new NextKeikoProposalGenerator(deps.nextKeikoGeneratorDeps) : null);
+    return new ProposalGenerator(generatorDeps);
+  }
+
+  private resolvePredictionMatcher(deps: CooldownSessionDeps): Pick<PredictionMatcher, 'match'> | null {
+    if (deps.predictionMatcher) return deps.predictionMatcher;
+    return deps.runsDir ? new PredictionMatcher(deps.runsDir) : null;
+  }
+
+  private resolveCalibrationDetector(deps: CooldownSessionDeps): Pick<CalibrationDetector, 'detect'> | null {
+    if (deps.calibrationDetector) return deps.calibrationDetector;
+    return deps.runsDir ? new CalibrationDetector(deps.runsDir) : null;
+  }
+
+  private resolveHierarchicalPromoter(
+    deps: CooldownSessionDeps,
+  ): Pick<HierarchicalPromoter, 'promoteStepToFlavor' | 'promoteFlavorToStage' | 'promoteStageToCategory'> {
+    return deps.hierarchicalPromoter ?? new HierarchicalPromoter(deps.knowledgeStore);
+  }
+
+  private resolveFrictionAnalyzer(deps: CooldownSessionDeps): Pick<FrictionAnalyzer, 'analyze'> | null {
+    if (deps.frictionAnalyzer) return deps.frictionAnalyzer;
+    return deps.runsDir ? new FrictionAnalyzer(deps.runsDir, deps.knowledgeStore) : null;
+  }
+
+  private resolveNextKeikoProposalGenerator(
+    deps: CooldownSessionDeps,
+  ): Pick<NextKeikoProposalGenerator, 'generate'> | null {
+    if (deps.nextKeikoProposalGenerator) return deps.nextKeikoProposalGenerator;
+    return deps.nextKeikoGeneratorDeps ? new NextKeikoProposalGenerator(deps.nextKeikoGeneratorDeps) : null;
+  }
+
+  private warnOnIncompleteRuns(incompleteRuns: IncompleteRunInfo[], force: boolean): void {
+    if (!shouldWarnOnIncompleteRuns(incompleteRuns.length, force)) return;
+    logger.warn(
+      `Warning: ${incompleteRuns.length} run(s) are still in progress. Cooldown data may be incomplete. Proceeding — use --force to suppress this warning.`,
+    );
+  }
+
+  private beginCooldown(cycleId: string): Cycle['state'] {
+    const previousState = this.deps.cycleManager.get(cycleId).state;
+    this.deps.cycleManager.updateState(cycleId, 'cooldown');
+    return previousState;
+  }
+
+  private rollbackCycleState(cycleId: string, previousState: Cycle['state']): void {
+    try {
+      this.deps.cycleManager.updateState(cycleId, previousState);
+    } catch (rollbackError) {
+      logger.error(`Failed to roll back cycle "${cycleId}" from cooldown to "${previousState}". Manual intervention may be required.`, {
+        rollbackError: rollbackError instanceof Error ? rollbackError.message : String(rollbackError),
+      });
+    }
+  }
+
+  private buildCooldownPhase(cycleId: string, betOutcomes: BetOutcomeRecord[]): {
+    cycle: Cycle;
+    report: CooldownReport;
+    runSummaries?: RunSummary[];
+    proposals: CycleProposal[];
+    ruleSuggestions?: RuleSuggestion[];
+    learningsCaptured: number;
+    effectiveBetOutcomes: BetOutcomeRecord[];
+  } {
+    const syncedOutcomes = this.autoSyncBetOutcomesFromBridgeRuns(cycleId);
+    this.recordExplicitBetOutcomes(cycleId, betOutcomes);
+    const cycle = this.deps.cycleManager.get(cycleId);
+    const report = this.buildCooldownReport(cycleId);
+    const runSummaries = this.maybeLoadRunSummaries(cycle);
+
+    return {
+      cycle,
+      report,
+      runSummaries,
+      proposals: this.proposalGenerator.generate(cycleId, runSummaries),
+      ruleSuggestions: this.loadRuleSuggestions(),
+      learningsCaptured: this.captureCooldownLearnings(report),
+      effectiveBetOutcomes: selectEffectiveBetOutcomes(betOutcomes, syncedOutcomes) as BetOutcomeRecord[],
+    };
+  }
+
+  private buildCooldownReport(cycleId: string): CooldownReport {
+    const report = this.deps.cycleManager.generateCooldown(cycleId);
+    return this.enrichReportWithTokens(report, cycleId);
+  }
+
+  private maybeLoadRunSummaries(cycle: Cycle): RunSummary[] | undefined {
+    return this.deps.runsDir ? this.loadRunSummaries(cycle) : undefined;
+  }
+
+  private loadRuleSuggestions(): RuleSuggestion[] | undefined {
+    if (!this.deps.ruleRegistry) return undefined;
+
+    try {
+      return this.deps.ruleRegistry.getPendingSuggestions();
+    } catch (err) {
+      logger.warn(`Failed to load rule suggestions: ${err instanceof Error ? err.message : String(err)}`);
+      return undefined;
+    }
+  }
+
+  private recordExplicitBetOutcomes(cycleId: string, betOutcomes: BetOutcomeRecord[]): void {
+    if (!shouldRecordBetOutcomes(betOutcomes)) return;
+    this.recordBetOutcomes(cycleId, betOutcomes);
+  }
+
+  private runCooldownFollowUps(cycle: Cycle): void {
+    this.runPredictionMatching(cycle);
+    this.runCalibrationDetection(cycle);
+    this.runHierarchicalPromotion();
+    this.runExpiryCheck();
+    this.runFrictionAnalysis(cycle);
+  }
+
+  private computeOptionalBeltResult(): BeltComputeResult | undefined {
+    if (!this.deps.beltCalculator || !this.deps.projectStateFile) return undefined;
+
+    try {
+      const state = loadProjectState(this.deps.projectStateFile);
+      const beltResult = this.deps.beltCalculator.computeAndStore(this.deps.projectStateFile, state);
+      const beltAdvanceMessage = buildBeltAdvancementMessage(beltResult);
+      if (beltAdvanceMessage) {
+        logger.info(beltAdvanceMessage);
+      }
+      return beltResult;
+    } catch (err) {
+      logger.warn(`Belt computation failed: ${err instanceof Error ? err.message : String(err)}`);
+      return undefined;
+    }
+  }
+
+  private computeOptionalAgentConfidence(): void {
+    const agentConfidenceCalculator = this.deps.agentConfidenceCalculator ?? this.deps.katakaConfidenceCalculator;
+    const agentDir = this.deps.agentDir ?? this.deps.katakaDir;
+    if (!agentConfidenceCalculator || !agentDir) return;
+
+    try {
+      const registry = new KataAgentRegistry(agentDir);
+      for (const agent of registry.list()) {
+        agentConfidenceCalculator.compute(agent.id, agent.name);
+      }
+    } catch (err) {
+      logger.warn(`Agent confidence computation failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  private writeRunDiary(input: {
+    cycleId: string;
+    cycleName?: string;
+    cycle: Cycle;
+    betOutcomes: BetOutcomeRecord[];
+    proposals: CycleProposal[];
+    runSummaries?: RunSummary[];
+    learningsCaptured: number;
+    ruleSuggestions?: RuleSuggestion[];
+    humanPerspective?: string;
+  }): void {
+    if (!shouldWriteDojoDiary(this.deps.dojoDir)) return;
+
+    this.writeDiaryEntry({
+      cycleId: input.cycleId,
+      cycleName: input.cycleName,
+      betOutcomes: this.enrichBetOutcomesWithDescriptions(input.cycle, input.betOutcomes),
+      proposals: input.proposals,
+      runSummaries: input.runSummaries,
+      learningsCaptured: input.learningsCaptured,
+      ruleSuggestions: input.ruleSuggestions,
+      humanPerspective: input.humanPerspective,
+    });
+  }
+
+  private enrichBetOutcomesWithDescriptions(cycle: Cycle, betOutcomes: BetOutcomeRecord[]): BetOutcomeRecord[] {
+    const betDescriptionMap = new Map(cycle.bets.map((bet) => [bet.id, bet.description]));
+    return betOutcomes.map((betOutcome) => ({
+      ...betOutcome,
+      betDescription: betOutcome.betDescription ?? betDescriptionMap.get(betOutcome.betId),
+    }));
+  }
+
+  private writeCompleteDiary(input: {
+    cycleId: string;
+    cycleName?: string;
+    cycle: Cycle;
+    proposals: CycleProposal[];
+    runSummaries?: RunSummary[];
+    ruleSuggestions?: RuleSuggestion[];
+    synthesisProposals?: SynthesisProposal[];
+  }): void {
+    if (!shouldWriteDojoDiary(this.deps.dojoDir)) return;
+
+    this.writeDiaryEntry({
+      cycleId: input.cycleId,
+      cycleName: input.cycleName,
+      betOutcomes: buildDiaryBetOutcomesFromCycleBets(input.cycle.bets) as BetOutcomeRecord[],
+      proposals: input.proposals,
+      runSummaries: input.runSummaries,
+      learningsCaptured: 0,
+      ruleSuggestions: input.ruleSuggestions,
+      agentPerspective: buildAgentPerspectiveFromProposals(input.synthesisProposals ?? []),
+    });
+  }
+
+  private writeOptionalDojoSession(cycleId: string, cycleName?: string): void {
+    if (!shouldWriteDojoSession(this.deps.dojoDir, this.deps.dojoSessionBuilder)) return;
+    this.writeDojoSession(cycleId, cycleName);
+  }
+
+  private readAppliedSynthesisProposals(
+    synthesisInputId?: string,
+    acceptedProposalIds?: readonly string[],
+  ): SynthesisProposal[] | undefined {
+    const resultPath = this.resolveSynthesisResultPath(synthesisInputId);
+    if (!resultPath || !existsSync(resultPath)) return undefined;
+
+    try {
+      const synthesisResult = JsonStore.read(resultPath, SynthesisResultSchema);
+      return this.applyAcceptedSynthesisProposals(synthesisResult.proposals, acceptedProposalIds);
+    } catch (err) {
+      logger.warn(`Failed to read synthesis result for input ${synthesisInputId}: ${err instanceof Error ? err.message : String(err)}`);
+      return undefined;
+    }
+  }
+
+  private resolveSynthesisResultPath(synthesisInputId?: string): string | undefined {
+    if (!synthesisInputId || !this.deps.synthesisDir) return undefined;
+    return join(this.deps.synthesisDir, `result-${synthesisInputId}.json`);
+  }
+
+  private applyAcceptedSynthesisProposals(
+    proposals: readonly SynthesisProposal[],
+    acceptedProposalIds?: readonly string[],
+  ): SynthesisProposal[] {
+    const idsToApply = resolveAppliedProposalIds(proposals, acceptedProposalIds);
+    const appliedProposals: SynthesisProposal[] = [];
+
+    for (const proposal of proposals) {
+      if (!idsToApply.has(proposal.id)) continue;
+      if (this.tryApplyProposal(proposal)) {
+        appliedProposals.push(proposal);
+      }
+    }
+
+    return appliedProposals;
+  }
+
+  private tryApplyProposal(proposal: SynthesisProposal): boolean {
+    try {
+      this.applyProposal(proposal);
+      return true;
+    } catch (err) {
+      logger.warn(`Failed to apply synthesis proposal ${proposal.id} (${proposal.type}): ${err instanceof Error ? err.message : String(err)}`);
+      return false;
+    }
   }
 
   /**
@@ -291,140 +563,37 @@ export class CooldownSession {
    * @param force When true, skips the incomplete-run guard and proceeds even if runs are in-progress.
    */
   async run(cycleId: string, betOutcomes: BetOutcomeRecord[] = [], { force = false, humanPerspective }: { force?: boolean; humanPerspective?: string } = {}): Promise<CooldownSessionResult> {
-    // 0. Check for incomplete runs before any state mutation
     const incompleteRuns = this.checkIncompleteRuns(cycleId);
-    if (incompleteRuns.length > 0 && !force) {
-      logger.warn(
-        `Warning: ${incompleteRuns.length} run(s) are still in progress. Cooldown data may be incomplete. Proceeding — use --force to suppress this warning.`,
-      );
-    }
-
-    // Save previous state for rollback on failure
-    const previousState = this.deps.cycleManager.get(cycleId).state;
-
-    // 1. Transition to cooldown state
-    this.deps.cycleManager.updateState(cycleId, 'cooldown');
+    this.warnOnIncompleteRuns(incompleteRuns, force);
+    const previousState = this.beginCooldown(cycleId);
 
     try {
-      // 2. Auto-sync pending bet outcomes from bridge-run metadata (non-critical)
-      const syncedOutcomes = this.autoSyncBetOutcomesFromBridgeRuns(cycleId);
-
-      // 3. Record bet outcomes if provided (explicit outcomes override auto-sync)
-      if (betOutcomes.length > 0) {
-        this.recordBetOutcomes(cycleId, betOutcomes);
-      }
-
-      // Effective outcomes for the result: explicit > auto-synced
-      const effectiveBetOutcomes: BetOutcomeRecord[] = betOutcomes.length > 0 ? betOutcomes : syncedOutcomes;
-
-      // 4. Generate the base cooldown report
-      let report = this.deps.cycleManager.generateCooldown(cycleId);
-
-      // 5. Enrich with actual token usage
-      report = this.enrichReportWithTokens(report, cycleId);
-
-      // 6. Load run summaries when runsDir provided (enrich proposals)
-      const cycle = this.deps.cycleManager.get(cycleId);
-      const runSummaries = this.deps.runsDir
-        ? this.loadRunSummaries(cycle)
-        : undefined;
-
-      // 6. Generate next-cycle proposals (enriched with run data when available)
-      const proposals = this.proposalGenerator.generate(cycleId, runSummaries);
-
-      // 7. Load pending rule suggestions (non-critical — errors must not abort a completed cooldown)
-      let ruleSuggestions: RuleSuggestion[] | undefined;
-      if (this.deps.ruleRegistry) {
-        try {
-          ruleSuggestions = this.deps.ruleRegistry.getPendingSuggestions();
-        } catch (err) {
-          logger.warn(`Failed to load rule suggestions: ${err instanceof Error ? err.message : String(err)}`);
-        }
-      }
-
-      // 8. Capture cooldown learnings (non-critical — errors should not abort)
-      const learningsCaptured = this.captureCooldownLearnings(report);
-
-      // 8a. Match cycle predictions to outcomes (non-critical)
-      this.runPredictionMatching(cycle);
-
-      // 8a.5. Detect systematic prediction biases (non-critical, runs after prediction matching)
-      this.runCalibrationDetection(cycle);
-
-      // 8b. Bubble step-tier learnings up the hierarchy (non-critical)
-      this.runHierarchicalPromotion();
-
-      // 8c. Scan for expired/stale learnings (non-critical)
-      this.runExpiryCheck();
-
-      // 8d. Analyze friction observations and resolve contradictions (non-critical)
-      this.runFrictionAnalysis(cycle);
-
-      // 8e. Compute belt advancement (non-critical)
-      let beltResult: BeltComputeResult | undefined;
-      if (this.deps.beltCalculator && this.deps.projectStateFile) {
-        try {
-          const state = loadProjectState(this.deps.projectStateFile);
-          beltResult = this.deps.beltCalculator.computeAndStore(this.deps.projectStateFile, state);
-          if (beltResult.leveledUp) {
-            logger.info(`Belt advanced: ${beltResult.previous} → ${beltResult.belt}`);
-          }
-        } catch (err) {
-          logger.warn(`Belt computation failed: ${err instanceof Error ? err.message : String(err)}`);
-        }
-      }
-
-      // 8f. Compute per-agent confidence profiles (non-critical)
-      const agentConfidenceCalculator = this.deps.agentConfidenceCalculator ?? this.deps.katakaConfidenceCalculator;
-      const agentDir = this.deps.agentDir ?? this.deps.katakaDir;
-      if (agentConfidenceCalculator && agentDir) {
-        try {
-          const registry = new KataAgentRegistry(agentDir);
-          for (const agent of registry.list()) {
-            agentConfidenceCalculator.compute(agent.id, agent.name);
-          }
-        } catch (err) {
-          logger.warn(`Agent confidence computation failed: ${err instanceof Error ? err.message : String(err)}`);
-        }
-      }
-
-      // 8.5. Write dojo diary entry (non-critical — failure never aborts cooldown)
-      if (this.deps.dojoDir) {
-        const betDescriptionMap = new Map(cycle.bets.map((b) => [b.id, b.description]));
-        const enrichedBetOutcomes = effectiveBetOutcomes.map((b) => ({
-          ...b,
-          betDescription: b.betDescription ?? betDescriptionMap.get(b.betId),
-        }));
-        this.writeDiaryEntry({
-          cycleId,
-          cycleName: cycle.name,
-          betOutcomes: enrichedBetOutcomes,
-          proposals,
-          runSummaries,
-          learningsCaptured,
-          ruleSuggestions,
-          humanPerspective,
-        });
-      }
-
-      // 8.6. Generate dojo session (non-critical — satisfies belt criterion dojoSessionsGenerated)
-      if (this.deps.dojoDir && this.deps.dojoSessionBuilder) {
-        this.writeDojoSession(cycleId, cycle.name);
-      }
-
-      // 8g. Generate LLM-driven next-keiko proposals (non-critical)
-      const nextKeikoResult = this.runNextKeikoProposals(cycle);
-
-      // 9. Transition to complete
+      const phase = this.buildCooldownPhase(cycleId, betOutcomes);
+      this.runCooldownFollowUps(phase.cycle);
+      const beltResult = this.computeOptionalBeltResult();
+      this.computeOptionalAgentConfidence();
+      this.writeRunDiary({
+        cycleId,
+        cycleName: phase.cycle.name,
+        cycle: phase.cycle,
+        betOutcomes: phase.effectiveBetOutcomes,
+        proposals: phase.proposals,
+        runSummaries: phase.runSummaries,
+        learningsCaptured: phase.learningsCaptured,
+        ruleSuggestions: phase.ruleSuggestions,
+        humanPerspective,
+      });
+      this.writeOptionalDojoSession(cycleId, phase.cycle.name);
+      const nextKeikoResult = this.runNextKeikoProposals(phase.cycle);
       this.deps.cycleManager.updateState(cycleId, 'complete');
 
       return {
-        report,
-        betOutcomes: effectiveBetOutcomes,
-        proposals,
-        learningsCaptured,
-        runSummaries,
-        ruleSuggestions,
+        report: phase.report,
+        betOutcomes: phase.effectiveBetOutcomes,
+        proposals: phase.proposals,
+        learningsCaptured: phase.learningsCaptured,
+        runSummaries: phase.runSummaries,
+        ruleSuggestions: phase.ruleSuggestions,
         synthesisInputId: undefined,
         synthesisInputPath: undefined,
         synthesisProposals: undefined,
@@ -433,14 +602,7 @@ export class CooldownSession {
         nextKeikoResult,
       };
     } catch (error) {
-      // Attempt to roll back to previous state so the user can retry
-      try {
-        this.deps.cycleManager.updateState(cycleId, previousState);
-      } catch (rollbackError) {
-        logger.error(`Failed to roll back cycle "${cycleId}" from cooldown to "${previousState}". Manual intervention may be required.`, {
-          rollbackError: rollbackError instanceof Error ? rollbackError.message : String(rollbackError),
-        });
-      }
+      this.rollbackCycleState(cycleId, previousState);
       throw error;
     }
   }
@@ -457,100 +619,34 @@ export class CooldownSession {
    * @param force When true, skips the incomplete-run guard and proceeds even if runs are in-progress.
    */
   async prepare(cycleId: string, betOutcomes: BetOutcomeRecord[] = [], depth?: import('@domain/types/synthesis.js').SynthesisDepth, { force = false }: { force?: boolean } = {}): Promise<CooldownPrepareResult> {
-    // Check for incomplete runs before any state mutation
     const incompleteRuns = this.checkIncompleteRuns(cycleId);
-    if (incompleteRuns.length > 0 && !force) {
-      logger.warn(
-        `Warning: ${incompleteRuns.length} run(s) are still in progress. Cooldown data may be incomplete. Proceeding — use --force to suppress this warning.`,
-      );
-    }
-
-    const previousState = this.deps.cycleManager.get(cycleId).state;
-
-    // 1. Transition to cooldown state
-    this.deps.cycleManager.updateState(cycleId, 'cooldown');
+    this.warnOnIncompleteRuns(incompleteRuns, force);
+    const previousState = this.beginCooldown(cycleId);
 
     try {
-      // 2. Auto-sync pending bet outcomes from bridge-run metadata (non-critical)
-      this.autoSyncBetOutcomesFromBridgeRuns(cycleId);
-
-      // 3. Record explicit bet outcomes (override auto-sync)
-      if (betOutcomes.length > 0) {
-        this.recordBetOutcomes(cycleId, betOutcomes);
-      }
-
-      // 4. Generate the base cooldown report
-      let report = this.deps.cycleManager.generateCooldown(cycleId);
-
-      // 5. Enrich with actual token usage
-      report = this.enrichReportWithTokens(report, cycleId);
-
-      // 6. Load run summaries when runsDir provided
-      const cycle = this.deps.cycleManager.get(cycleId);
-      const runSummaries = this.deps.runsDir
-        ? this.loadRunSummaries(cycle)
-        : undefined;
-
-      // 7. Generate next-cycle proposals
-      const proposals = this.proposalGenerator.generate(cycleId, runSummaries);
-
-      // 7. Load pending rule suggestions
-      let ruleSuggestions: RuleSuggestion[] | undefined;
-      if (this.deps.ruleRegistry) {
-        try {
-          ruleSuggestions = this.deps.ruleRegistry.getPendingSuggestions();
-        } catch (err) {
-          logger.warn(`Failed to load rule suggestions: ${err instanceof Error ? err.message : String(err)}`);
-        }
-      }
-
-      // 8. Capture cooldown learnings
-      const learningsCaptured = this.captureCooldownLearnings(report);
-
-      // 8a. Match cycle predictions to outcomes (non-critical)
-      this.runPredictionMatching(cycle);
-
-      // 8a.5. Detect systematic prediction biases (non-critical, runs after prediction matching)
-      this.runCalibrationDetection(cycle);
-
-      // 8b. Bubble step-tier learnings up the hierarchy (non-critical)
-      this.runHierarchicalPromotion();
-
-      // 8c. Scan for expired/stale learnings (non-critical)
-      this.runExpiryCheck();
-
-      // 8d. Analyze friction observations and resolve contradictions (non-critical)
-      this.runFrictionAnalysis(cycle);
-
-      // 9. Read ALL observations from .kata/runs/ for this cycle and write SynthesisInput
+      const phase = this.buildCooldownPhase(cycleId, betOutcomes);
+      this.runCooldownFollowUps(phase.cycle);
       const effectiveDepth = depth ?? this.deps.synthesisDepth ?? 'standard';
       const { synthesisInputId, synthesisInputPath } = this.writeSynthesisInput(
         cycleId,
-        cycle,
-        report,
+        phase.cycle,
+        phase.report,
         effectiveDepth,
       );
 
       return {
-        report,
+        report: phase.report,
         betOutcomes,
-        proposals,
-        learningsCaptured,
-        runSummaries,
-        ruleSuggestions,
+        proposals: phase.proposals,
+        learningsCaptured: phase.learningsCaptured,
+        runSummaries: phase.runSummaries,
+        ruleSuggestions: phase.ruleSuggestions,
         synthesisInputId,
         synthesisInputPath,
         incompleteRuns: this.deps.runsDir ? incompleteRuns : undefined,
       };
     } catch (error) {
-      // Attempt to roll back to previous state so the user can retry
-      try {
-        this.deps.cycleManager.updateState(cycleId, previousState);
-      } catch (rollbackError) {
-        logger.error(`Failed to roll back cycle "${cycleId}" from cooldown to "${previousState}". Manual intervention may be required.`, {
-          rollbackError: rollbackError instanceof Error ? rollbackError.message : String(rollbackError),
-        });
-      }
+      this.rollbackCycleState(cycleId, previousState);
       throw error;
     }
   }
@@ -570,107 +666,25 @@ export class CooldownSession {
     acceptedProposalIds?: string[],
   ): Promise<CooldownSessionResult> {
     const cycle = this.deps.cycleManager.get(cycleId);
-
-    // Reconstruct basic result data (report may have already been prepared)
-    let report = this.deps.cycleManager.generateCooldown(cycleId);
-    report = this.enrichReportWithTokens(report, cycleId);
-
-    const runSummaries = this.deps.runsDir ? this.loadRunSummaries(cycle) : undefined;
+    const report = this.buildCooldownReport(cycleId);
+    const runSummaries = this.maybeLoadRunSummaries(cycle);
     const proposals = this.proposalGenerator.generate(cycleId, runSummaries);
-
-    let ruleSuggestions: RuleSuggestion[] | undefined;
-    if (this.deps.ruleRegistry) {
-      try {
-        ruleSuggestions = this.deps.ruleRegistry.getPendingSuggestions();
-      } catch (err) {
-        logger.warn(`Failed to load rule suggestions: ${err instanceof Error ? err.message : String(err)}`);
-      }
-    }
-
-    // Read and apply synthesis proposals if synthesisInputId provided
-    let synthesisProposals: SynthesisProposal[] | undefined;
-    if (synthesisInputId && this.deps.synthesisDir) {
-      const resultPath = join(this.deps.synthesisDir, `result-${synthesisInputId}.json`);
-      if (existsSync(resultPath)) {
-        try {
-          const synthesisResult = JsonStore.read(resultPath, SynthesisResultSchema);
-          const idsToApply = acceptedProposalIds
-            ? new Set(acceptedProposalIds)
-            : new Set(synthesisResult.proposals.map((p) => p.id));
-
-          const appliedProposals: SynthesisProposal[] = [];
-          for (const proposal of synthesisResult.proposals) {
-            if (!idsToApply.has(proposal.id)) continue;
-            try {
-              this.applyProposal(proposal);
-              appliedProposals.push(proposal);
-            } catch (err) {
-              logger.warn(`Failed to apply synthesis proposal ${proposal.id} (${proposal.type}): ${err instanceof Error ? err.message : String(err)}`);
-            }
-          }
-          synthesisProposals = appliedProposals;
-        } catch (err) {
-          logger.warn(`Failed to read synthesis result for input ${synthesisInputId}: ${err instanceof Error ? err.message : String(err)}`);
-        }
-      }
-    }
-
-    // Write dojo diary entry (non-critical)
-    if (this.deps.dojoDir) {
-      const effectiveBetOutcomes: BetOutcomeRecord[] = cycle.bets
-        .filter((b) => b.outcome !== 'pending')
-        .map((b) => ({ betId: b.id, outcome: b.outcome as BetOutcomeRecord['outcome'], notes: b.outcomeNotes, betDescription: b.description }));
-      this.writeDiaryEntry({
-        cycleId,
-        cycleName: cycle.name,
-        betOutcomes: effectiveBetOutcomes,
-        proposals,
-        runSummaries,
-        learningsCaptured: 0,
-        ruleSuggestions,
-        agentPerspective: synthesisProposals && synthesisProposals.length > 0
-          ? CooldownSession.buildAgentPerspectiveFromProposals(synthesisProposals)
-          : undefined,
-      });
-    }
-
-    // Generate dojo session (non-critical — satisfies belt criterion dojoSessionsGenerated)
-    if (this.deps.dojoDir && this.deps.dojoSessionBuilder) {
-      this.writeDojoSession(cycleId, cycle.name);
-    }
-
-    // 8e. Compute belt advancement (non-critical)
-    let beltResult: BeltComputeResult | undefined;
-    if (this.deps.beltCalculator && this.deps.projectStateFile) {
-      try {
-        const state = loadProjectState(this.deps.projectStateFile);
-        beltResult = this.deps.beltCalculator.computeAndStore(this.deps.projectStateFile, state);
-        if (beltResult.leveledUp) {
-          logger.info(`Belt advanced: ${beltResult.previous} → ${beltResult.belt}`);
-        }
-      } catch (err) {
-        logger.warn(`Belt computation failed: ${err instanceof Error ? err.message : String(err)}`);
-      }
-    }
-
-    // 8f. Compute per-agent confidence profiles (non-critical)
-    const agentConfidenceCalculator = this.deps.agentConfidenceCalculator ?? this.deps.katakaConfidenceCalculator;
-    const agentDir = this.deps.agentDir ?? this.deps.katakaDir;
-    if (agentConfidenceCalculator && agentDir) {
-      try {
-        const registry = new KataAgentRegistry(agentDir);
-        for (const agent of registry.list()) {
-          agentConfidenceCalculator.compute(agent.id, agent.name);
-        }
-      } catch (err) {
-        logger.warn(`Agent confidence computation failed: ${err instanceof Error ? err.message : String(err)}`);
-      }
-    }
-
-    // 8g. Generate LLM-driven next-keiko proposals (non-critical)
+    const ruleSuggestions = this.loadRuleSuggestions();
+    const synthesisProposals = this.readAppliedSynthesisProposals(synthesisInputId, acceptedProposalIds);
+    this.writeCompleteDiary({
+      cycleId,
+      cycleName: cycle.name,
+      cycle,
+      proposals,
+      runSummaries,
+      ruleSuggestions,
+      synthesisProposals,
+    });
+    this.writeOptionalDojoSession(cycleId, cycle.name);
+    const beltResult = this.computeOptionalBeltResult();
+    this.computeOptionalAgentConfidence();
     const nextKeikoResult = this.runNextKeikoProposals(cycle);
 
-    // Transition to complete
     this.deps.cycleManager.updateState(cycleId, 'complete');
 
     return {
@@ -704,7 +718,7 @@ export class CooldownSession {
 
       case 'update-learning': {
         const existing = this.deps.knowledgeStore.get(proposal.targetLearningId);
-        const newConfidence = Math.min(1, Math.max(0, existing.confidence + proposal.confidenceDelta));
+        const newConfidence = clampConfidenceWithDelta(existing.confidence, proposal.confidenceDelta);
         this.deps.knowledgeStore.update(proposal.targetLearningId, {
           content: proposal.proposedContent,
           confidence: newConfidence,
@@ -745,90 +759,105 @@ export class CooldownSession {
     report: CooldownReport,
     depth: import('@domain/types/synthesis.js').SynthesisDepth,
   ): { synthesisInputId: string; synthesisInputPath: string } {
-    const synthesisDir = this.deps.synthesisDir;
-    if (!synthesisDir) {
-      // No synthesisDir configured — skip writing, return empty sentinel
-      const id = crypto.randomUUID();
-      return { synthesisInputId: id, synthesisInputPath: '' };
+    const target = this.createSynthesisTarget();
+    if (!target.synthesisDir) {
+      return { synthesisInputId: target.id, synthesisInputPath: '' };
     }
 
-    const id = crypto.randomUUID();
-    const observations: Observation[] = [];
+    const synthesisInput = buildSynthesisInputRecord({
+      id: target.id,
+      cycleId,
+      createdAt: new Date().toISOString(),
+      depth,
+      observations: this.collectSynthesisObservations(cycleId, cycle),
+      learnings: this.loadSynthesisLearnings(),
+      cycleName: cycle.name,
+      tokenBudget: report.budget.tokenBudget,
+      tokensUsed: report.tokensUsed,
+    });
 
-    // Build a betId → runId map from bridge-run files (fallback for missing bet.runId).
-    // Only loaded when bridgeRunsDir is configured — lazy, O(n bridge-runs) at most once.
+    this.cleanupStaleSynthesisInputs(target.synthesisDir, cycleId);
+    JsonStore.write(target.filePath, synthesisInput, SynthesisInputSchema);
+
+    return { synthesisInputId: target.id, synthesisInputPath: target.filePath };
+  }
+
+  private createSynthesisTarget(): { id: string; synthesisDir?: string; filePath: string } {
+    const id = crypto.randomUUID();
+    const synthesisDir = this.deps.synthesisDir;
+    const filePath = synthesisDir ? join(synthesisDir, `pending-${id}.json`) : '';
+    return { id, synthesisDir, filePath };
+  }
+
+  private collectSynthesisObservations(cycleId: string, cycle: Cycle): Observation[] {
+    const observations: Observation[] = [];
+    if (!this.deps.runsDir) return observations;
+
     const bridgeRunIdByBetId = this.deps.bridgeRunsDir
       ? this.loadBridgeRunIdsByBetId(cycleId, this.deps.bridgeRunsDir)
       : new Map<string, string>();
 
-    // Collect all observations across every level for each bet
-    if (this.deps.runsDir) {
-      for (const bet of cycle.bets) {
-        // Prefer bet.runId (forward link set by prepare); fall back to bridge-run lookup
-        const runId = bet.runId ?? bridgeRunIdByBetId.get(bet.id);
-        if (!runId) continue;
-        try {
-          // Read run.json to get stageSequence for full-tree observation scan
-          let stageSequence: import('@domain/types/stage.js').StageCategory[] = [];
-          try {
-            const run = readRun(this.deps.runsDir, runId);
-            stageSequence = run.stageSequence;
-          } catch {
-            // run.json not found — fall back to run-level only
-          }
-          const runObs = readAllObservationsForRun(this.deps.runsDir, runId, stageSequence);
-          observations.push(...runObs);
-        } catch (err) {
-          logger.warn(`Failed to read observations for run ${runId} (bet ${bet.id}): ${err instanceof Error ? err.message : String(err)}`);
-        }
+    for (const bet of cycle.bets) {
+      const runId = bet.runId ?? bridgeRunIdByBetId.get(bet.id);
+      if (!runId) continue;
+
+      const runObs = this.readObservationsForRun(runId, bet.id);
+      if (runObs.length > 0) {
+        observations.push(...runObs);
       }
     }
 
-    // Load current active learnings from KnowledgeStore
-    let learnings: import('@domain/types/learning.js').Learning[] = [];
+    return observations;
+  }
+
+  private readObservationsForRun(runId: string, betId: string): Observation[] {
     try {
-      learnings = this.deps.knowledgeStore.query({});
+      const stageSequence = this.readStageSequence(runId);
+      return readAllObservationsForRun(this.deps.runsDir!, runId, stageSequence);
+    } catch (err) {
+      logger.warn(`Failed to read observations for run ${runId} (bet ${betId}): ${err instanceof Error ? err.message : String(err)}`);
+      return [];
+    }
+  }
+
+  private readStageSequence(runId: string): import('@domain/types/stage.js').StageCategory[] {
+    try {
+      return readRun(this.deps.runsDir!, runId).stageSequence;
+    } catch {
+      return [];
+    }
+  }
+
+  private loadSynthesisLearnings(): import('@domain/types/learning.js').Learning[] {
+    try {
+      return this.deps.knowledgeStore.query({});
     } catch (err) {
       logger.warn(`Failed to query learnings for synthesis input: ${err instanceof Error ? err.message : String(err)}`);
+      return [];
     }
+  }
 
-    const synthesisInput: SynthesisInput = {
-      id,
-      cycleId,
-      createdAt: new Date().toISOString(),
-      depth,
-      observations,
-      learnings,
-      cycleName: cycle.name,
-      tokenBudget: report.budget.tokenBudget,
-      tokensUsed: report.tokensUsed,
-    };
-
-    // Clean up stale pending synthesis files for the same cycleId (#330).
-    // Running --prepare multiple times would otherwise accumulate files and
-    // confuse `cooldown complete` about which is current.
+  private cleanupStaleSynthesisInputs(synthesisDir: string, cycleId: string): void {
     try {
-      const existing = readdirSync(synthesisDir).filter((f) => f.startsWith('pending-') && f.endsWith('.json'));
+      const existing = readdirSync(synthesisDir).filter((file) => file.startsWith('pending-') && file.endsWith('.json'));
       for (const file of existing) {
-        try {
-          const raw = readFileSync(join(synthesisDir, file), 'utf-8');
-          const meta = JSON.parse(raw) as { cycleId?: string };
-          if (meta.cycleId === cycleId) {
-            unlinkSync(join(synthesisDir, file));
-            logger.debug(`Removed stale synthesis input file: ${file}`);
-          }
-        } catch {
-          // Skip unreadable / already-deleted files
-        }
+        this.removeStaleSynthesisInputFile(synthesisDir, file, cycleId);
       }
     } catch {
       // Non-critical — if cleanup fails, still write the new file
     }
+  }
 
-    const filePath = join(synthesisDir, `pending-${id}.json`);
-    JsonStore.write(filePath, synthesisInput, SynthesisInputSchema);
-
-    return { synthesisInputId: id, synthesisInputPath: filePath };
+  private removeStaleSynthesisInputFile(synthesisDir: string, file: string, cycleId: string): void {
+    try {
+      const raw = readFileSync(join(synthesisDir, file), 'utf-8');
+      const meta = JSON.parse(raw) as { cycleId?: string };
+      if (meta.cycleId !== cycleId) return;
+      unlinkSync(join(synthesisDir, file));
+      logger.debug(`Removed stale synthesis input file: ${file}`);
+    } catch {
+      // Skip unreadable / already-deleted files
+    }
   }
 
   /**
@@ -844,26 +873,30 @@ export class CooldownSession {
     const result = new Map<string, string>();
     if (!existsSync(bridgeRunsDir)) return result;
 
-    let files: string[];
-    try {
-      files = readdirSync(bridgeRunsDir).filter((f) => f.endsWith('.json'));
-    } catch {
-      return result;
-    }
-
-    for (const file of files) {
-      try {
-        const raw = readFileSync(join(bridgeRunsDir, file), 'utf-8');
-        const meta = JSON.parse(raw) as { cycleId?: string; betId?: string; runId?: string };
-        if (meta.cycleId === cycleId && meta.betId && meta.runId) {
-          result.set(meta.betId, meta.runId);
-        }
-      } catch {
-        // Skip unreadable / invalid bridge-run files
+    for (const file of this.listJsonFiles(bridgeRunsDir)) {
+      const meta = this.readBridgeRunMeta(join(bridgeRunsDir, file));
+      if (meta?.cycleId === cycleId && meta.betId && meta.runId) {
+        result.set(meta.betId, meta.runId);
       }
     }
 
     return result;
+  }
+
+  private listJsonFiles(dir: string): string[] {
+    try {
+      return readdirSync(dir).filter((file) => file.endsWith('.json'));
+    } catch {
+      return [];
+    }
+  }
+
+  private readBridgeRunMeta(filePath: string): { cycleId?: string; betId?: string; runId?: string; status?: string } | undefined {
+    try {
+      return JSON.parse(readFileSync(filePath, 'utf-8')) as { cycleId?: string; betId?: string; runId?: string; status?: string };
+    } catch {
+      return undefined;
+    }
   }
 
   /**
@@ -881,23 +914,14 @@ export class CooldownSession {
     if (!bridgeRunsDir) return [];
 
     const cycle = this.deps.cycleManager.get(cycleId);
-    const toSync: Array<{ betId: string; outcome: 'complete' | 'partial'; notes?: string }> = [];
+    const toSync: BetOutcomeRecord[] = [];
 
     for (const bet of cycle.bets) {
-      if (bet.outcome !== 'pending') continue; // already resolved — don't overwrite
-      if (!bet.runId) continue;
+      if (bet.outcome !== 'pending' || !bet.runId) continue;
 
-      const bridgeRunPath = join(bridgeRunsDir, `${bet.runId}.json`);
-      try {
-        if (!existsSync(bridgeRunPath)) continue;
-        const raw = JSON.parse(readFileSync(bridgeRunPath, 'utf-8')) as { status?: string };
-        if (raw.status === 'complete') {
-          toSync.push({ betId: bet.id, outcome: 'complete' });
-        } else if (raw.status === 'failed') {
-          toSync.push({ betId: bet.id, outcome: 'partial' });
-        }
-      } catch {
-        // Non-critical — skip this bet silently
+      const outcome = this.readBridgeRunOutcome(bridgeRunsDir, bet.runId);
+      if (outcome) {
+        toSync.push({ betId: bet.id, outcome });
       }
     }
 
@@ -906,6 +930,16 @@ export class CooldownSession {
     }
 
     return toSync;
+  }
+
+  private readBridgeRunOutcome(
+    bridgeRunsDir: string,
+    runId: string,
+  ): BetOutcomeRecord['outcome'] | undefined {
+    const bridgeRunPath = join(bridgeRunsDir, `${runId}.json`);
+    if (!existsSync(bridgeRunPath)) return undefined;
+    const status = this.readBridgeRunMeta(bridgeRunPath)?.status;
+    return mapBridgeRunStatusToSyncedOutcome(status);
   }
 
   /**
@@ -934,24 +968,11 @@ export class CooldownSession {
     const tokensUsed = cycleTokens;
 
     // Recalculate utilization
-    const tokenBudget = report.budget.tokenBudget;
-    const utilizationPercent = tokenBudget && tokenBudget > 0
-      ? (tokensUsed / tokenBudget) * 100
-      : 0;
-
-    // Determine alert level
-    let alertLevel: BudgetAlertLevel | undefined = report.alertLevel;
-    if (tokenBudget) {
-      if (utilizationPercent >= 100) {
-        alertLevel = 'critical';
-      } else if (utilizationPercent >= 90) {
-        alertLevel = 'warning';
-      } else if (utilizationPercent >= 75) {
-        alertLevel = 'info';
-      } else {
-        alertLevel = undefined;
-      }
-    }
+    const { utilizationPercent, alertLevel } = buildCooldownBudgetUsage(
+      report.budget.tokenBudget,
+      tokensUsed,
+      report.alertLevel,
+    );
 
     return {
       ...report,
@@ -966,73 +987,50 @@ export class CooldownSession {
    * Creates a learning if the cycle had interesting patterns.
    */
   private captureCooldownLearnings(report: CooldownReport): number {
+    const attempts = this.captureCooldownLearningDrafts(report);
+    if (attempts.failed > 0) {
+      logger.warn(`${attempts.failed} of ${attempts.captured + attempts.failed} cooldown learnings failed to capture. Check previous warnings for details.`);
+    }
+
+    return attempts.captured;
+  }
+
+  private captureCooldownLearningDrafts(report: CooldownReport): { captured: number; failed: number } {
     let captured = 0;
     let failed = 0;
+    const recordedAt = new Date().toISOString();
+    const drafts = buildCooldownLearningDrafts({
+      cycleId: report.cycleId,
+      cycleName: report.cycleName,
+      completionRate: report.completionRate,
+      betCount: report.bets.length,
+      tokenBudget: report.budget.tokenBudget,
+      utilizationPercent: report.utilizationPercent,
+      tokensUsed: report.tokensUsed,
+    });
 
-    // Capture a learning if completion rate is notably low
-    if (report.bets.length > 0 && report.completionRate < 50) {
-      if (this.safeCaptureLearning({
+    for (const draft of drafts) {
+      const capturedDraft = this.safeCaptureLearning({
         tier: 'category',
-        category: 'cycle-management',
-        content: `Cycle "${report.cycleName ?? report.cycleId}" had low completion rate (${report.completionRate.toFixed(1)}%). Consider reducing scope or breaking bets into smaller chunks.`,
-        confidence: 0.6,
+        category: draft.category,
+        content: draft.content,
+        confidence: draft.confidence,
         evidence: [{
           pipelineId: report.cycleId,
           stageType: 'cooldown',
-          observation: `${report.bets.length} bets, ${report.completionRate.toFixed(1)}% completion`,
-          recordedAt: new Date().toISOString(),
+          observation: draft.observation,
+          recordedAt,
         }],
-      })) {
+      });
+
+      if (capturedDraft) {
         captured++;
       } else {
         failed++;
       }
     }
 
-    // Capture a learning if budget was significantly over/under-utilized
-    if (report.budget.tokenBudget) {
-      if (report.utilizationPercent > 100) {
-        if (this.safeCaptureLearning({
-          tier: 'category',
-          category: 'budget-management',
-          content: `Cycle "${report.cycleName ?? report.cycleId}" exceeded token budget (${report.utilizationPercent.toFixed(1)}% utilization). Consider more conservative estimates.`,
-          confidence: 0.7,
-          evidence: [{
-            pipelineId: report.cycleId,
-            stageType: 'cooldown',
-            observation: `${report.tokensUsed} tokens used of ${report.budget.tokenBudget} budget`,
-            recordedAt: new Date().toISOString(),
-          }],
-        })) {
-          captured++;
-        } else {
-          failed++;
-        }
-      } else if (report.utilizationPercent < 30 && report.bets.length > 0) {
-        if (this.safeCaptureLearning({
-          tier: 'category',
-          category: 'budget-management',
-          content: `Cycle "${report.cycleName ?? report.cycleId}" significantly under-utilized token budget (${report.utilizationPercent.toFixed(1)}%). Could have taken on more work.`,
-          confidence: 0.5,
-          evidence: [{
-            pipelineId: report.cycleId,
-            stageType: 'cooldown',
-            observation: `${report.tokensUsed} tokens used of ${report.budget.tokenBudget} budget`,
-            recordedAt: new Date().toISOString(),
-          }],
-        })) {
-          captured++;
-        } else {
-          failed++;
-        }
-      }
-    }
-
-    if (failed > 0) {
-      logger.warn(`${failed} of ${captured + failed} cooldown learnings failed to capture. Check previous warnings for details.`);
-    }
-
-    return captured;
+    return { captured, failed };
   }
 
   private safeCaptureLearning(params: Parameters<IKnowledgeStore['capture']>[0]): boolean {
@@ -1059,38 +1057,46 @@ export class CooldownSession {
 
     for (const bet of cycle.bets) {
       if (!bet.runId) continue;
-
-      // Prefer bridge-run metadata — it's updated by execute complete / kiai complete, unlike run.json
-      if (this.deps.bridgeRunsDir) {
-        const bridgeRunPath = join(this.deps.bridgeRunsDir, `${bet.runId}.json`);
-        try {
-          if (existsSync(bridgeRunPath)) {
-            const raw = JSON.parse(readFileSync(bridgeRunPath, 'utf-8')) as { status?: string };
-            // 'in-progress' = still running; 'complete'/'failed' = done
-            if (raw.status === 'in-progress') {
-              incomplete.push({ runId: bet.runId, betId: bet.id, status: 'running' });
-            }
-            continue; // bridge-run file found — don't fall through to run.json
-          }
-        } catch {
-          // fall through to run.json check
-        }
-      }
-
-      // Fall back to run.json only when bridge-run file is absent
-      if (this.deps.runsDir) {
-        try {
-          const run = readRun(this.deps.runsDir, bet.runId);
-          if (run.status === 'pending' || run.status === 'running') {
-            incomplete.push({ runId: bet.runId, betId: bet.id, status: run.status });
-          }
-        } catch {
-          // Run file missing or invalid — skip silently (run may not have started yet)
-        }
+      const status = this.resolveIncompleteRunStatus(bet.id, bet.runId);
+      if (status) {
+        incomplete.push({ runId: bet.runId, betId: bet.id, status });
       }
     }
 
     return incomplete;
+  }
+
+  private resolveIncompleteRunStatus(
+    betId: string,
+    runId: string,
+  ): IncompleteRunInfo['status'] | undefined {
+    const bridgeStatus = this.readIncompleteBridgeRunStatus(runId);
+    if (bridgeStatus !== undefined) return bridgeStatus ?? undefined;
+    return this.readIncompleteRunFileStatus(betId, runId);
+  }
+
+  private readIncompleteBridgeRunStatus(runId: string): IncompleteRunInfo['status'] | null | undefined {
+    if (!this.deps.bridgeRunsDir) return undefined;
+
+    const bridgeRunPath = join(this.deps.bridgeRunsDir, `${runId}.json`);
+    if (!existsSync(bridgeRunPath)) return undefined;
+    const status = this.readBridgeRunMeta(bridgeRunPath)?.status;
+    const incompleteStatus = mapBridgeRunStatusToIncompleteStatus(status);
+    return incompleteStatus ?? null;
+  }
+
+  private readIncompleteRunFileStatus(
+    _betId: string,
+    runId: string,
+  ): IncompleteRunInfo['status'] | undefined {
+    if (!this.deps.runsDir) return undefined;
+
+    try {
+      const run = readRun(this.deps.runsDir, runId);
+      return run.status === 'pending' || run.status === 'running' ? run.status : undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   /**
@@ -1126,7 +1132,7 @@ export class CooldownSession {
       ExecutionHistoryEntrySchema,
       { warnOnInvalid: false },
     );
-    return allEntries.filter((entry) => entry.cycleId === cycleId);
+    return filterExecutionHistoryForCycle(allEntries, cycleId);
   }
 
   /**
@@ -1136,15 +1142,7 @@ export class CooldownSession {
    */
   private runPredictionMatching(cycle: Cycle): void {
     if (!this.predictionMatcher) return;
-
-    for (const bet of cycle.bets) {
-      if (!bet.runId) continue;
-      try {
-        this.predictionMatcher.match(bet.runId);
-      } catch (err) {
-        logger.warn(`Prediction matching failed for run ${bet.runId}: ${err instanceof Error ? err.message : String(err)}`);
-      }
-    }
+    this.runForEachBetRun(cycle, (runId) => this.predictionMatcher!.match(runId), 'Prediction matching');
   }
 
   /**
@@ -1155,14 +1153,29 @@ export class CooldownSession {
    */
   private runCalibrationDetection(cycle: Cycle): void {
     if (!this.calibrationDetector) return;
+    this.runForEachBetRun(cycle, (runId) => this.calibrationDetector!.detect(runId), 'Calibration detection');
+  }
 
+  private runForEachBetRun(
+    cycle: Cycle,
+    runner: (runId: string) => void,
+    label: string,
+  ): void {
     for (const bet of cycle.bets) {
       if (!bet.runId) continue;
-      try {
-        this.calibrationDetector.detect(bet.runId);
-      } catch (err) {
-        logger.warn(`Calibration detection failed for run ${bet.runId}: ${err instanceof Error ? err.message : String(err)}`);
-      }
+      this.runForBetRun(bet.runId, runner, label);
+    }
+  }
+
+  private runForBetRun(
+    runId: string,
+    runner: (runId: string) => void,
+    label: string,
+  ): void {
+    try {
+      runner(runId);
+    } catch (err) {
+      logger.warn(`${label} failed for run ${runId}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
@@ -1188,12 +1201,9 @@ export class CooldownSession {
   private runExpiryCheck(): void {
     try {
       if (typeof this.deps.knowledgeStore.checkExpiry !== 'function') return;
-      const { archived, flaggedStale } = this.deps.knowledgeStore.checkExpiry();
-      if (archived.length > 0) {
-        logger.debug(`Expiry check: auto-archived ${archived.length} expired operational learnings`);
-      }
-      if (flaggedStale.length > 0) {
-        logger.debug(`Expiry check: flagged ${flaggedStale.length} stale strategic learnings for review`);
+      const result = this.deps.knowledgeStore.checkExpiry();
+      for (const message of buildExpiryCheckMessages(result)) {
+        logger.debug(message);
       }
     } catch (err) {
       logger.warn(`Learning expiry check failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -1207,15 +1217,7 @@ export class CooldownSession {
    */
   private runFrictionAnalysis(cycle: Cycle): void {
     if (!this.frictionAnalyzer) return;
-
-    for (const bet of cycle.bets) {
-      if (!bet.runId) continue;
-      try {
-        this.frictionAnalyzer.analyze(bet.runId);
-      } catch (err) {
-        logger.warn(`Friction analysis failed for run ${bet.runId}: ${err instanceof Error ? err.message : String(err)}`);
-      }
-    }
+    this.runForEachBetRun(cycle, (runId) => this.frictionAnalyzer!.analyze(runId), 'Friction analysis');
   }
 
   private writeDiaryEntry(input: {
@@ -1256,27 +1258,37 @@ export class CooldownSession {
    */
   private writeDojoSession(cycleId: string, cycleName?: string): void {
     try {
-      const dojoDir = this.deps.dojoDir!;
-      const diaryDir = join(dojoDir, 'diary');
-      const diaryStore = new DiaryStore(diaryDir);
-
-      const aggregator = new DataAggregator({
-        knowledgeStore: this.deps.knowledgeStore as import('@features/dojo/data-aggregator.js').IDojoKnowledgeStore,
-        diaryStore,
-        cycleManager: this.deps.cycleManager,
-        runsDir: this.deps.runsDir ?? join(dojoDir, '..', 'runs'),
-      });
-
-      const data = aggregator.gather({ maxDiaries: 5 });
-
-      const title = cycleName
-        ? `Cooldown — ${cycleName}`
-        : `Cooldown — ${cycleId.slice(0, 8)}`;
-
-      this.deps.dojoSessionBuilder!.build(data, { title });
+      const request = this.buildDojoSessionRequest(cycleId, cycleName);
+      const data = this.gatherDojoSessionData(request);
+      this.deps.dojoSessionBuilder!.build(data, { title: request.title });
     } catch (err) {
       logger.warn(`Failed to generate dojo session: ${err instanceof Error ? err.message : String(err)}`);
     }
+  }
+
+  private buildDojoSessionRequest(cycleId: string, cycleName?: string): {
+    diaryDir: string;
+    runsDir: string;
+    title: string;
+  } {
+    return buildDojoSessionBuildRequest({
+      dojoDir: this.deps.dojoDir!,
+      cycleId,
+      cycleName,
+      runsDir: this.deps.runsDir,
+    });
+  }
+
+  private gatherDojoSessionData(request: { diaryDir: string; runsDir: string }): ReturnType<DataAggregator['gather']> {
+    const diaryStore = new DiaryStore(request.diaryDir);
+    const aggregator = new DataAggregator({
+      knowledgeStore: this.deps.knowledgeStore as import('@features/dojo/data-aggregator.js').IDojoKnowledgeStore,
+      diaryStore,
+      cycleManager: this.deps.cycleManager,
+      runsDir: request.runsDir,
+    });
+
+    return aggregator.gather({ maxDiaries: 5 });
   }
 
   /**
@@ -1284,36 +1296,7 @@ export class CooldownSession {
    * Returns undefined when there are no proposals.
    */
   static buildAgentPerspectiveFromProposals(proposals: SynthesisProposal[]): string | undefined {
-    if (proposals.length === 0) return undefined;
-
-    const lines: string[] = ['## Agent Perspective (Synthesis)'];
-    lines.push('');
-
-    for (const p of proposals) {
-      switch (p.type) {
-        case 'new-learning':
-          lines.push(`**New learning** [${p.proposedTier}/${p.proposedCategory}] (confidence: ${p.confidence.toFixed(2)}):`);
-          lines.push(`  ${p.proposedContent}`);
-          break;
-        case 'update-learning':
-          lines.push(`**Updated learning** (confidence delta: ${p.confidenceDelta > 0 ? '+' : ''}${p.confidenceDelta.toFixed(2)}):`);
-          lines.push(`  ${p.proposedContent}`);
-          break;
-        case 'promote':
-          lines.push(`**Promoted learning** to ${p.toTier} tier.`);
-          break;
-        case 'archive':
-          lines.push(`**Archived learning**: ${p.reason}`);
-          break;
-        case 'methodology-recommendation':
-          lines.push(`**Methodology recommendation** (${p.area}):`);
-          lines.push(`  ${p.recommendation}`);
-          break;
-      }
-      lines.push('');
-    }
-
-    return lines.join('\n').trimEnd();
+    return buildAgentPerspectiveFromProposals(proposals);
   }
 
   /**
@@ -1325,22 +1308,22 @@ export class CooldownSession {
     if (!this._nextKeikoProposalGenerator || !this.deps.runsDir) return undefined;
 
     try {
-      const completedBets = cycle.bets
-        .filter((b) => b.outcome === 'complete' || b.outcome === 'partial')
-        .map((b) => b.description);
-
-      return this._nextKeikoProposalGenerator.generate({
-        cycle,
-        runsDir: this.deps.runsDir,
-        bridgeRunsDir: this.deps.bridgeRunsDir,
-        milestoneName: this.deps.nextKeikoMilestoneName,
-        completedBets,
-      });
+      return this.generateNextKeikoProposals(cycle);
     } catch (err) {
       logger.warn(
         `Next-keiko proposal generation failed: ${err instanceof Error ? err.message : String(err)}`,
       );
       return undefined;
     }
+  }
+
+  private generateNextKeikoProposals(cycle: Cycle): NextKeikoResult {
+    return this._nextKeikoProposalGenerator!.generate({
+      cycle,
+      runsDir: this.deps.runsDir!,
+      bridgeRunsDir: this.deps.bridgeRunsDir,
+      milestoneName: this.deps.nextKeikoMilestoneName,
+      completedBets: listCompletedBetDescriptions(cycle.bets),
+    });
   }
 }

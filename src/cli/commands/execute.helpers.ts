@@ -30,6 +30,34 @@ export type ParseSuccess = z.infer<typeof parseSuccessSchema>;
 export type ParseFailure = z.infer<typeof parseFailureSchema>;
 export type ParseResult = z.infer<typeof parseResultSchema>;
 export type ExplainMatchReport = z.infer<typeof explainMatchReportSchema>;
+export type CompletedRunArtifact = { name: string; path?: string };
+export type CompletedRunTokenUsage = {
+  hasTokens: boolean;
+  totalTokens?: number;
+  tokenUsage?: {
+    inputTokens?: number;
+    outputTokens?: number;
+    total: number;
+  };
+};
+
+export interface PreparedCycleOutput {
+  cycleName: string;
+  preparedRuns: ReadonlyArray<{
+    betName: string;
+    runId: string;
+    stages: readonly string[];
+    isolation: string;
+  }>;
+}
+
+export interface PreparedRunOutput {
+  betName: string;
+  runId: string;
+  cycleName: string;
+  stages: readonly string[];
+  isolation: string;
+}
 
 const _betOptionResultSchema = z.discriminatedUnion('ok', [
   parseSuccessSchema.extend({
@@ -47,6 +75,23 @@ const _hintFlagResultSchema = z.discriminatedUnion('ok', [
 
 type BetOptionResult = z.infer<typeof _betOptionResultSchema>;
 type HintFlagResult = z.infer<typeof _hintFlagResultSchema>;
+
+const _completedRunArtifactSchema = z.object({
+  name: z.string(),
+  path: z.string().optional(),
+}).passthrough();
+
+const _completedRunArtifactsSchema = z.array(_completedRunArtifactSchema);
+
+const _completedRunTokenUsageSchema = z.object({
+  hasTokens: z.boolean(),
+  totalTokens: z.number().nonnegative().optional(),
+  tokenUsage: z.object({
+    inputTokens: z.number().nonnegative().optional(),
+    outputTokens: z.number().nonnegative().optional(),
+    total: z.number().nonnegative(),
+  }).optional(),
+});
 
 export function formatExplain(
   stageCategory: string,
@@ -156,6 +201,121 @@ export function parseHintFlags(hints: readonly string[] | undefined): HintFlagRe
   }
 
   return { ok: true, value: result };
+}
+
+export function parseCompletedRunArtifacts(artifactsJson: string | undefined): ParseResult {
+  if (artifactsJson === undefined) {
+    return { ok: true, value: undefined };
+  }
+
+  try {
+    const parsed = JSON.parse(artifactsJson);
+    const artifacts = _completedRunArtifactsSchema.safeParse(parsed);
+    if (!artifacts.success) {
+      return {
+        ok: false,
+        error: Array.isArray(parsed)
+          ? 'Error: each artifact must have a "name" string property'
+          : 'Error: --artifacts must be a JSON array',
+      };
+    }
+
+    return { ok: true, value: artifacts.data as CompletedRunArtifact[] };
+  } catch {
+    return {
+      ok: false,
+      error: 'Error: --artifacts must be valid JSON',
+    };
+  }
+}
+
+export function parseCompletedRunTokenUsage(inputTokens: number | undefined, outputTokens: number | undefined): ParseResult {
+  if (inputTokens !== undefined && (Number.isNaN(inputTokens) || inputTokens < 0)) {
+    return {
+      ok: false,
+      error: 'Error: --input-tokens must be a non-negative integer',
+    };
+  }
+
+  if (outputTokens !== undefined && (Number.isNaN(outputTokens) || outputTokens < 0)) {
+    return {
+      ok: false,
+      error: 'Error: --output-tokens must be a non-negative integer',
+    };
+  }
+
+  const hasTokens = inputTokens !== undefined || outputTokens !== undefined;
+  const totalTokens = hasTokens ? (inputTokens ?? 0) + (outputTokens ?? 0) : undefined;
+
+  return {
+    ok: true,
+    value: _completedRunTokenUsageSchema.parse({
+      hasTokens,
+      totalTokens,
+      tokenUsage: hasTokens
+        ? {
+          inputTokens,
+          outputTokens,
+          total: totalTokens,
+        }
+        : undefined,
+    }) as CompletedRunTokenUsage,
+  };
+}
+
+export function formatAgentLoadError(agentId: string, message: string): string {
+  const normalizedMessage = message.trim();
+
+  if (/^Agent\b.*\bnot found\.?$/i.test(normalizedMessage)) {
+    return `Error: agent "${agentId}" not found. Use "kata agent list" to see registered agents.`;
+  }
+
+  const loadFailurePrefix = `Failed to load agent "${agentId}":`;
+  if (normalizedMessage.startsWith(loadFailurePrefix)) {
+    return `Error: ${normalizedMessage}`;
+  }
+
+  return `Error: Failed to load agent "${agentId}": ${normalizedMessage}`;
+}
+
+export function mergePinnedFlavors(
+  primaryPins: readonly string[] | undefined,
+  fallbackPins: readonly string[] | undefined,
+): string[] | undefined {
+  const merged = [...(primaryPins ?? []), ...(fallbackPins ?? [])];
+  return merged.length > 0 ? merged : undefined;
+}
+
+export function buildPreparedCycleOutputLines(result: PreparedCycleOutput): string[] {
+  const lines = [`Prepared ${result.preparedRuns.length} run(s) for cycle "${result.cycleName}"`];
+  for (const run of result.preparedRuns) {
+    lines.push(`  ${run.betName}`);
+    lines.push(`    Run ID: ${run.runId}`);
+    lines.push(`    Stages: ${run.stages.join(', ')}`);
+    lines.push(`    Isolation: ${run.isolation}`);
+  }
+  return lines;
+}
+
+export function buildPreparedRunOutputLines(result: PreparedRunOutput, agentContextBlock: string): string[] {
+  return [
+    `Prepared run for bet: "${result.betName}"`,
+    `  Run ID: ${result.runId}`,
+    `  Cycle: ${result.cycleName}`,
+    `  Stages: ${result.stages.join(', ')}`,
+    `  Isolation: ${result.isolation}`,
+    '',
+    'Agent context block (use "kata kiai context <run-id>" to fetch at dispatch time):',
+    agentContextBlock,
+  ];
+}
+
+export function assertValidKataName(name: string): void {
+  if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
+    throw new Error(
+      `Invalid kata name "${name}": names must contain only letters, digits, hyphens, and underscores.`,
+    );
+  }
 }
 
 export function formatDurationMs(ms: number): string {

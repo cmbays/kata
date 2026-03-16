@@ -600,6 +600,28 @@ describe('SessionExecutionBridge', () => {
       expect(() => bridge.getAgentContext(randomUUID())).toThrow(/No bridge run found/);
     });
 
+    it.each([
+      { success: true as const, terminalState: 'complete' },
+      { success: false as const, terminalState: 'failed' },
+    ])('should reject dispatch for %s bridge runs', ({ success, terminalState }) => {
+      const cycle = createCycle(kataDir, {
+        bets: [{
+          id: randomUUID(),
+          description: 'Terminal bet',
+          appetite: 15,
+          outcome: 'pending',
+        }],
+      });
+      const bridge = new SessionExecutionBridge(kataDir);
+      const prepared = bridge.prepare(cycle.bets[0]!.id);
+
+      bridge.complete(prepared.runId, { success });
+
+      expect(() => bridge.getAgentContext(prepared.runId)).toThrow(
+        `Run "${prepared.runId}" is in terminal state "${terminalState}" and cannot be dispatched.`,
+      );
+    });
+
     it('agentContext should NOT be present on PreparedRun returned by prepare() (#243)', () => {
       const cycle = createCycle(kataDir);
       const bridge = new SessionExecutionBridge(kataDir);
@@ -1033,6 +1055,48 @@ describe('SessionExecutionBridge', () => {
       expect(bridgeRunFiles).toHaveLength(cycle.bets.length);
     });
 
+    it('should reuse an in-progress bridge run by betId when the cycle bet lost its stored runId', () => {
+      const cycle = createCycle(kataDir, { state: 'planning' });
+      const bridge = new SessionExecutionBridge(kataDir);
+
+      const first = bridge.prepareCycle(cycle.id);
+      const cyclePath = join(kataDir, 'cycles', `${cycle.id}.json`);
+      const persistedCycle = CycleSchema.parse(JSON.parse(readFileSync(cyclePath, 'utf-8')));
+      delete persistedCycle.bets[0]!.runId;
+      writeFileSync(cyclePath, JSON.stringify(persistedCycle, null, 2));
+
+      const second = bridge.prepareCycle(cycle.id);
+
+      expect(second.preparedRuns[0]!.betId).toBe(first.preparedRuns[0]!.betId);
+      expect(second.preparedRuns[0]!.runId).toBe(first.preparedRuns[0]!.runId);
+    });
+
+    it('should create a fresh run when a pending bet only has terminal bridge-run metadata', () => {
+      const cycle = createCycle(kataDir, {
+        state: 'planning',
+        bets: [{
+          id: randomUUID(),
+          description: 'Retryable bet',
+          appetite: 20,
+          outcome: 'pending',
+        }],
+      });
+      const bridge = new SessionExecutionBridge(kataDir);
+
+      const first = bridge.prepareCycle(cycle.id);
+      bridge.complete(first.preparedRuns[0]!.runId, { success: false, notes: 'retry this one' });
+
+      const cyclePath = join(kataDir, 'cycles', `${cycle.id}.json`);
+      const persistedCycle = CycleSchema.parse(JSON.parse(readFileSync(cyclePath, 'utf-8')));
+      persistedCycle.bets[0]!.outcome = 'pending';
+      persistedCycle.updatedAt = new Date().toISOString();
+      writeFileSync(cyclePath, JSON.stringify(persistedCycle, null, 2));
+
+      const second = bridge.prepareCycle(cycle.id);
+
+      expect(second.preparedRuns[0]!.runId).not.toBe(first.preparedRuns[0]!.runId);
+    });
+
     it('should update cycle and bridge metadata names when an active cycle is re-prepared with a new name', () => {
       const cycle = createCycle(kataDir, { state: 'planning', name: 'Original Name' });
       const bridge = new SessionExecutionBridge(kataDir);
@@ -1088,6 +1152,7 @@ describe('SessionExecutionBridge', () => {
       expect(status.bets.length).toBe(2);
       expect(status.bets[0]!.status).toBe('pending');
       expect(status.bets[1]!.status).toBe('pending');
+      expect(status.bets.every((bet) => bet.runId === '')).toBe(true);
       expect(status.budgetUsed).toEqual({ percent: 0, tokenEstimate: 0 });
     });
 
@@ -1377,8 +1442,8 @@ describe('SessionExecutionBridge', () => {
       const firstMeta = JSON.parse(readFileSync(firstMetaPath, 'utf-8'));
       const secondMeta = JSON.parse(readFileSync(secondMetaPath, 'utf-8'));
 
-      firstMeta.startedAt = new Date(now.getTime() - (2 * 60 * 60_000)).toISOString();
-      secondMeta.startedAt = new Date(now.getTime() - (5 * 60_000)).toISOString();
+      firstMeta.startedAt = new Date(now.getTime() - (5 * 60_000)).toISOString();
+      secondMeta.startedAt = new Date(now.getTime() - (2 * 60 * 60_000)).toISOString();
       writeFileSync(firstMetaPath, JSON.stringify(firstMeta, null, 2));
       writeFileSync(secondMetaPath, JSON.stringify(secondMeta, null, 2));
 
@@ -1489,6 +1554,25 @@ describe('SessionExecutionBridge', () => {
 
       expect(summary.completedBets).toBe(2);
       expect(summary.tokenUsage).toEqual({ inputTokens: 10, outputTokens: 5, total: 15 });
+    });
+
+    it('should only write new history entries for runs that are still in progress', () => {
+      const cycle = createCycle(kataDir);
+      const bridge = new SessionExecutionBridge(kataDir);
+      const prepared = bridge.prepareCycle(cycle.id);
+
+      bridge.complete(prepared.preparedRuns[0]!.runId, { success: true, notes: 'already done' });
+
+      const historyDir = join(kataDir, 'history');
+      const historyCountBefore = readdirSync(historyDir).filter((file) => file.endsWith('.json')).length;
+
+      bridge.completeCycle(cycle.id, {
+        [prepared.preparedRuns[1]!.runId]: { success: true, notes: 'complete remaining run' },
+      });
+
+      const historyCountAfter = readdirSync(historyDir).filter((file) => file.endsWith('.json')).length;
+      expect(historyCountBefore).toBe(1);
+      expect(historyCountAfter).toBe(2);
     });
 
     it('should update all bet outcomes in cycle JSON after completeCycle() (#216)', () => {

@@ -9,6 +9,7 @@ import { SynthesisInputSchema } from '@domain/types/synthesis.js';
 import { appendObservation, createRunTree } from '@infra/persistence/run-store.js';
 import type { Run } from '@domain/types/run-state.js';
 import type { Observation } from '@domain/types/observation.js';
+import { logger } from '@shared/lib/logger.js';
 import {
   CooldownSession,
   type CooldownSessionDeps,
@@ -221,6 +222,34 @@ describe('CooldownSession.prepare()', () => {
     expect(cycleManager.get(cycle.id).state).toBe('active');
   });
 
+  it('logs an error when prepare() rollback also fails', async () => {
+    const cycle = cycleManager.create({ tokenBudget: 50000 });
+    cycleManager.updateState(cycle.id, 'active');
+
+    const errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => {});
+    const originalUpdateState = cycleManager.updateState.bind(cycleManager);
+    vi.spyOn(cycleManager, 'generateCooldown').mockImplementation(() => {
+      throw new Error('Simulated failure');
+    });
+    vi.spyOn(cycleManager, 'updateState').mockImplementation((cycleId, state) => {
+      if (state === 'active') {
+        throw new Error('Rollback exploded');
+      }
+      originalUpdateState(cycleId, state);
+    });
+
+    try {
+      await expect(session.prepare(cycle.id)).rejects.toThrow('Simulated failure');
+      expect(errorSpy).toHaveBeenCalledWith(
+        `Failed to roll back cycle "${cycle.id}" from cooldown to "active". Manual intervention may be required.`,
+        { rollbackError: 'Rollback exploded' },
+      );
+      expect(cycleManager.get(cycle.id).state).toBe('cooldown');
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
   it('works without synthesisDir (returns empty path)', async () => {
     const sessionNoSynthesis = new CooldownSession(makeDeps({ synthesisDir: undefined }));
     const cycle = cycleManager.create({ tokenBudget: 50000 });
@@ -292,6 +321,51 @@ describe('CooldownSession.complete()', () => {
 
     expect(cycleManager.get(cycle.id).state).toBe('complete');
     expect(result.synthesisProposals).toBeUndefined();
+  });
+
+  it('logs belt advancement during complete() only when the belt levels up', async () => {
+    const infoSpy = vi.spyOn(logger, 'info').mockImplementation(() => {});
+    const projectStateFile = join(baseDir, 'project-state-complete.json');
+
+    const leveledCycle = cycleManager.create({ tokenBudget: 50000 }, 'Leveled Complete Cycle');
+    const leveledSession = new CooldownSession(makeDeps({
+      projectStateFile,
+      beltCalculator: {
+        computeAndStore: vi.fn(() => ({
+          belt: 'san-kyu',
+          previous: 'yon-kyu',
+          leveledUp: true,
+        })),
+      },
+    }));
+    await leveledSession.prepare(leveledCycle.id);
+
+    const steadyCycle = cycleManager.create({ tokenBudget: 50000 }, 'Steady Complete Cycle');
+    const steadySession = new CooldownSession(makeDeps({
+      projectStateFile,
+      beltCalculator: {
+        computeAndStore: vi.fn(() => ({
+          belt: 'san-kyu',
+          previous: 'san-kyu',
+          leveledUp: false,
+        })),
+      },
+    }));
+    await steadySession.prepare(steadyCycle.id);
+
+    try {
+      const leveledResult = await leveledSession.complete(leveledCycle.id);
+      expect(leveledResult.beltResult?.leveledUp).toBe(true);
+      expect(infoSpy).toHaveBeenCalledWith('Belt advanced: yon-kyu → san-kyu');
+
+      infoSpy.mockClear();
+
+      const steadyResult = await steadySession.complete(steadyCycle.id);
+      expect(steadyResult.beltResult?.leveledUp).toBe(false);
+      expect(infoSpy).not.toHaveBeenCalled();
+    } finally {
+      infoSpy.mockRestore();
+    }
   });
 
   it('applies new-learning proposals from synthesis result', async () => {
@@ -375,6 +449,48 @@ describe('CooldownSession.complete()', () => {
     expect(updated.archived).toBe(true);
   });
 
+  it('applies update-learning proposals and clamps confidence into the valid range', async () => {
+    const session = new CooldownSession(makeDeps());
+    const learning = knowledgeStore.capture({
+      tier: 'stage',
+      category: 'testing',
+      content: 'Initial learning',
+      confidence: 0.95,
+    });
+    const cycle = cycleManager.create({ tokenBudget: 50000 });
+    await session.prepare(cycle.id);
+
+    const proposalId = crypto.randomUUID();
+    const synthesisInputId = crypto.randomUUID();
+    const synthesisResult = {
+      inputId: synthesisInputId,
+      proposals: [
+        {
+          id: proposalId,
+          type: 'update-learning',
+          confidence: 0.9,
+          confidenceDelta: 0.2,
+          citations: [crypto.randomUUID(), crypto.randomUUID()],
+          reasoning: 'Repeated evidence increased confidence',
+          createdAt: new Date().toISOString(),
+          targetLearningId: learning.id,
+          proposedContent: 'Updated learning content',
+        },
+      ],
+    };
+    JsonStore.write(
+      join(synthesisDir, `result-${synthesisInputId}.json`),
+      synthesisResult,
+      (await import('@domain/types/synthesis.js')).SynthesisResultSchema,
+    );
+
+    await session.complete(cycle.id, synthesisInputId, [proposalId]);
+
+    const updated = knowledgeStore.get(learning.id);
+    expect(updated.content).toBe('Updated learning content');
+    expect(updated.confidence).toBe(1);
+  });
+
   it('skips proposals not in acceptedProposalIds', async () => {
     const session = new CooldownSession(makeDeps());
     const cycle = cycleManager.create({ tokenBudget: 50000 });
@@ -438,6 +554,62 @@ describe('CooldownSession.complete()', () => {
 
     expect(cycleManager.get(cycle.id).state).toBe('complete');
     expect(result.synthesisProposals).toBeUndefined();
+  });
+
+  it('writes complete() diary entries with only resolved bets and synthesized agent perspective', async () => {
+    const dojoDir = join(baseDir, 'dojo-complete-diary');
+    const diaryDir = join(dojoDir, 'diary');
+    mkdirSync(diaryDir, { recursive: true });
+
+    const session = new CooldownSession(makeDeps({ dojoDir }));
+    const cycle = cycleManager.create({ tokenBudget: 50000 }, 'Diary Complete Cycle');
+    cycleManager.addBet(cycle.id, {
+      description: 'Done bet',
+      appetite: 20,
+      outcome: 'complete',
+      issueRefs: [],
+    });
+    cycleManager.addBet(cycle.id, {
+      description: 'Pending bet',
+      appetite: 20,
+      outcome: 'pending',
+      issueRefs: [],
+    });
+    await session.prepare(cycle.id);
+
+    const proposalId = crypto.randomUUID();
+    const synthesisInputId = crypto.randomUUID();
+    const synthesisResult = {
+      inputId: synthesisInputId,
+      proposals: [
+        {
+          id: proposalId,
+          type: 'new-learning',
+          confidence: 0.85,
+          citations: [crypto.randomUUID(), crypto.randomUUID()],
+          reasoning: 'Synthesis identified a reusable pattern',
+          createdAt: new Date().toISOString(),
+          proposedContent: 'Capture resolved bets in cooldown diary entries.',
+          proposedTier: 'stage',
+          proposedCategory: 'cycle-management',
+        },
+      ],
+    };
+    JsonStore.write(
+      join(synthesisDir, `result-${synthesisInputId}.json`),
+      synthesisResult,
+      (await import('@domain/types/synthesis.js')).SynthesisResultSchema,
+    );
+
+    await session.complete(cycle.id, synthesisInputId, [proposalId]);
+
+    const { DiaryStore } = await import('@infra/dojo/diary-store.js');
+    const entry = new DiaryStore(diaryDir).readByCycleId(cycle.id);
+    expect(entry).not.toBeNull();
+    expect(entry?.rawDataSummary).toContain('Done bet');
+    expect(entry?.rawDataSummary).not.toContain('Pending bet');
+    expect(entry?.agentPerspective).toContain('Agent Perspective (Synthesis)');
+    expect(entry?.agentPerspective).toContain('Capture resolved bets in cooldown diary entries.');
   });
 });
 
@@ -557,6 +729,33 @@ describe('CooldownSession.prepare() — observation wiring', () => {
     const input = SynthesisInputSchema.parse(JSON.parse(raw));
     expect(input.observations).toHaveLength(1);
     expect(input.observations[0]!.content).toBe('Discovered via bridge-run lookup');
+  });
+
+  it('ignores invalid, non-json, and foreign-cycle bridge-run files during fallback lookup', async () => {
+    const cycle = cycleManager.create({ tokenBudget: 50000 }, 'Filtered Bridge Lookup');
+    const withBet = cycleManager.addBet(cycle.id, { description: 'Target bet', appetite: 40, outcome: 'pending', issueRefs: [] });
+    const bet = withBet.bets[0]!;
+
+    const matchingRun = makeRun(cycle.id, bet.id);
+    const foreignRun = makeRun(randomUUID(), randomUUID());
+    createRunTree(runsDir, matchingRun);
+    createRunTree(runsDir, foreignRun);
+
+    writeFileSync(join(bridgeRunsDir, 'notes.txt'), 'ignore me');
+    writeFileSync(join(bridgeRunsDir, 'broken.json'), '{not-json');
+    writeBridgeRun(foreignRun.id, foreignRun.betId, foreignRun.cycleId);
+    writeBridgeRun(matchingRun.id, bet.id, cycle.id);
+
+    appendObservation(runsDir, matchingRun.id, makeObservation('Matching bridge-run observation'), { level: 'run' });
+    appendObservation(runsDir, foreignRun.id, makeObservation('Foreign bridge-run observation'), { level: 'run' });
+
+    const session = new CooldownSession(makeDeps());
+    const result = await session.prepare(cycle.id);
+
+    const raw = readFileSync(result.synthesisInputPath, 'utf-8');
+    const input = SynthesisInputSchema.parse(JSON.parse(raw));
+    expect(input.observations).toHaveLength(1);
+    expect(input.observations[0]!.content).toBe('Matching bridge-run observation');
   });
 
   it('collects stage-level observations in addition to run-level (#335)', async () => {

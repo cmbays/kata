@@ -7,6 +7,7 @@ import { registerExecuteCommands } from './execute.js';
 import { CycleManager } from '@domain/services/cycle-manager.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
 import { SessionExecutionBridge } from '@infra/execution/session-bridge.js';
+import { ProjectStateUpdater } from '@features/belt/belt-calculator.js';
 
 // ---------------------------------------------------------------------------
 // Hoist mock functions before modules are imported
@@ -17,6 +18,10 @@ const { mockRunStage, mockRunPipeline } = vi.hoisted(() => ({
   mockRunPipeline: vi.fn(),
 }));
 
+const { mockBridgeGaps } = vi.hoisted(() => ({
+  mockBridgeGaps: vi.fn(),
+}));
+
 // Mock WorkflowRunner as a class (required for Vitest to treat it as a constructor)
 vi.mock('@features/execute/workflow-runner.js', () => ({
   WorkflowRunner: class MockWorkflowRunner {
@@ -24,6 +29,12 @@ vi.mock('@features/execute/workflow-runner.js', () => ({
     runPipeline = mockRunPipeline;
   },
   listRecentArtifacts: vi.fn().mockReturnValue([]),
+}));
+
+vi.mock('@features/execute/gap-bridger.js', () => ({
+  GapBridger: class MockGapBridger {
+    bridge = mockBridgeGaps;
+  },
 }));
 
 // Stub status handlers so `execute status`/`execute stats` don't need real infra
@@ -87,6 +98,7 @@ describe('registerExecuteCommands', () => {
     errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     mockRunStage.mockResolvedValue(makeSingleResult());
     mockRunPipeline.mockResolvedValue(makePipelineResult(['build', 'review']));
+    mockBridgeGaps.mockReturnValue({ blocked: [], bridged: [] });
     process.exitCode = undefined as unknown as number;
   });
 
@@ -114,6 +126,16 @@ describe('registerExecuteCommands', () => {
         role: 'executor',
         skills: [],
         createdAt: new Date().toISOString(),
+        active: true,
+      }, null, 2),
+    );
+  }
+
+  function writeInvalidAgentRecord(id: string): void {
+    writeFileSync(
+      join(kataDir, 'kataka', `${id}.json`),
+      JSON.stringify({
+        id,
         active: true,
       }, null, 2),
     );
@@ -185,6 +207,33 @@ describe('registerExecuteCommands', () => {
   });
 
   describe('cycle subcommand', () => {
+    it('registers execute, stats, status, and cycle command descriptions and options', () => {
+      const program = createProgram();
+      const executeCmd = program.commands.find((c) => c.name() === 'execute');
+      expect(executeCmd).toBeDefined();
+      expect(executeCmd!.description()).toBe('Run stage orchestration — select and execute flavors (alias: kiai)');
+
+      const statusCmd = executeCmd!.commands.find((c) => c.name() === 'status');
+      expect(statusCmd).toBeDefined();
+      expect(statusCmd!.description()).toBe('Show project status (same as "kata status")');
+
+      const statsCmd = executeCmd!.commands.find((c) => c.name() === 'stats');
+      expect(statsCmd).toBeDefined();
+      expect(statsCmd!.description()).toBe('Show analytics (same as "kata stats")');
+      expect(statsCmd!.options.find((o) => o.long === '--category')?.description).toBe('Filter stats by stage category');
+      expect(statsCmd!.options.find((o) => o.long === '--gyo')?.description).toBe('Filter stats by stage category (alias)');
+
+      const cycleCmd = executeCmd!.commands.find((c) => c.name() === 'cycle');
+      expect(cycleCmd).toBeDefined();
+      expect(cycleCmd!.description()).toBe('Session bridge — prepare, monitor, or complete a cycle for in-session agent execution');
+      expect(cycleCmd!.options.find((o) => o.long === '--prepare')?.description).toBe('Prepare all pending bets in the cycle for agent dispatch');
+      expect(cycleCmd!.options.find((o) => o.long === '--status')?.description).toBe('Get aggregated status of all runs in the cycle');
+      expect(cycleCmd!.options.find((o) => o.long === '--complete')?.description).toBe('Complete all in-progress runs in the cycle');
+      expect(cycleCmd!.options.find((o) => o.long === '--agent')?.description).toBe('Agent ID to attribute all prepared runs to (only used with --prepare)');
+      expect(cycleCmd!.options.find((o) => o.long === '--kataka')?.description).toBe('Alias for --agent <id>');
+      expect(cycleCmd!.options.find((o) => o.long === '--json')?.description).toBe('Output as JSON');
+    });
+
     it('prepares all pending bets for session execution', async () => {
       const cycle = createCycleWithBets('Dispatch Cycle', [
         { description: 'Bet A', appetite: 20 },
@@ -198,6 +247,9 @@ describe('registerExecuteCommands', () => {
 
       const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
       expect(output).toContain('Prepared 2 run(s)');
+      expect(output).toContain('Bet A');
+      expect(output).toContain('Run ID:');
+      expect(output).toContain('Isolation:');
 
       const bridgeRunsDir = join(kataDir, 'bridge-runs');
       const files = existsSync(bridgeRunsDir)
@@ -285,6 +337,27 @@ describe('registerExecuteCommands', () => {
       expect(output).toContain('Cycle "Status Cycle"');
       expect(output).toContain('Budget: 3% used (~3000 tokens)');
       expect(output).toContain('kansatsu: 2, maki: 1, kime: 1');
+    });
+
+    it('renders pending, complete, and failed status markers for cycle bets', async () => {
+      const cycle = createCycleWithBets('Marker Cycle', [
+        { description: 'Prepared success', appetite: 20 },
+        { description: 'Prepared failure', appetite: 20 },
+        { description: 'Still pending', appetite: 20 },
+      ]);
+      const bridge = new SessionExecutionBridge(kataDir);
+      const successRun = bridge.prepare(cycle.bets[0]!.id);
+      const failedRun = bridge.prepare(cycle.bets[1]!.id);
+      bridge.complete(successRun.runId, { success: true });
+      bridge.complete(failedRun.runId, { success: false });
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', 'cycle', cycle.id, '--status']);
+
+      const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('✓ Prepared success [complete]');
+      expect(output).toContain('✗ Prepared failure [failed]');
+      expect(output).toContain('· Still pending [pending]');
     });
 
     it('completes a prepared cycle and emits json when requested', async () => {
@@ -456,6 +529,120 @@ describe('registerExecuteCommands', () => {
       const parsed = JSON.parse(consoleSpy.mock.calls[0]?.[0] as string);
       expect(parsed.tokenUsage).toEqual({ inputTokens: 0, outputTokens: 0, total: 0 });
     });
+
+    it('prints plain-text token usage when only one token side is provided', async () => {
+      const cycle = createCycleWithBets('Partial Token Cycle', [
+        { description: 'One-sided token run', appetite: 20 },
+      ]);
+      const prepared = prepareRunForBet(cycle.bets[0]!.id);
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir, 'execute', 'complete', prepared.runId,
+        '--input-tokens', '7',
+      ]);
+
+      const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('Run');
+      expect(output).toContain('marked as complete');
+      expect(output).toContain('tokens: 7 total, 7 in, 0 out');
+    });
+
+    it('rejects null artifact entries', async () => {
+      const cycle = createCycleWithBets('Artifact Null Cycle', [
+        { description: 'Bad artifact item', appetite: 20 },
+      ]);
+      const prepared = prepareRunForBet(cycle.bets[0]!.id);
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir, 'execute', 'complete', prepared.runId,
+        '--artifacts', '[null]',
+      ]);
+
+      expect(process.exitCode).toBe(1);
+      expect(errorSpy.mock.calls.map((c) => c[0]).join('\n')).toContain('"name" string property');
+    });
+  });
+
+  describe('prepare subcommand', () => {
+    it('renders prepared run details and the agent context block in plain text mode', async () => {
+      const cycle = createCycleWithBets('Prepare Text Cycle', [
+        { description: 'Prepared bet', appetite: 20 },
+      ]);
+      const previousKataDir = process.env['KATA_DIR'];
+      process.env['KATA_DIR'] = kataDir;
+
+      try {
+        const program = createProgram();
+        const executeCmd = program.commands.find((command) => command.name() === 'execute');
+        const prepareCmd = executeCmd?.commands.find((command) => command.name() === 'prepare');
+        await prepareCmd?.parseAsync(['node', 'test', '--bet', cycle.bets[0]!.id]);
+      } finally {
+        if (previousKataDir === undefined) {
+          delete process.env['KATA_DIR'];
+        } else {
+          process.env['KATA_DIR'] = previousKataDir;
+        }
+      }
+
+      const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('Prepared run for bet: "Prepared bet"');
+      expect(output).toContain('Run ID:');
+      expect(output).toContain('Agent context block');
+    });
+
+    it('emits prepared run data as json when local --json is provided', async () => {
+      const cycle = createCycleWithBets('Prepare Json Cycle', [
+        { description: 'Prepared bet', appetite: 20 },
+      ]);
+      const previousKataDir = process.env['KATA_DIR'];
+      process.env['KATA_DIR'] = kataDir;
+
+      try {
+        const program = createProgram();
+        const executeCmd = program.commands.find((command) => command.name() === 'execute');
+        const prepareCmd = executeCmd?.commands.find((command) => command.name() === 'prepare');
+        await prepareCmd?.parseAsync(['node', 'test', '--bet', cycle.bets[0]!.id, '--json']);
+      } finally {
+        if (previousKataDir === undefined) {
+          delete process.env['KATA_DIR'];
+        } else {
+          process.env['KATA_DIR'] = previousKataDir;
+        }
+      }
+
+      const parsed = JSON.parse(consoleSpy.mock.calls[0]?.[0] as string);
+      expect(parsed.betId).toBe(cycle.bets[0]!.id);
+      expect(parsed.runId).toBeTruthy();
+      expect(parsed.stages).toContain('build');
+    });
+
+    it('reports agent load failures separately from missing-agent errors', async () => {
+      const cycle = createCycleWithBets('Prepare Invalid Agent Cycle', [
+        { description: 'Prepared bet', appetite: 20 },
+      ]);
+      const invalidAgentId = '11111111-1111-4111-8111-111111111111';
+      writeInvalidAgentRecord(invalidAgentId);
+      const previousKataDir = process.env['KATA_DIR'];
+      process.env['KATA_DIR'] = kataDir;
+
+      try {
+        const program = createProgram();
+        const executeCmd = program.commands.find((command) => command.name() === 'execute');
+        const prepareCmd = executeCmd?.commands.find((command) => command.name() === 'prepare');
+        await prepareCmd?.parseAsync(['node', 'test', '--bet', cycle.bets[0]!.id, '--agent', invalidAgentId]);
+      } finally {
+        if (previousKataDir === undefined) {
+          delete process.env['KATA_DIR'];
+        } else {
+          process.env['KATA_DIR'] = previousKataDir;
+        }
+      }
+
+      expect(process.exitCode).toBe(1);
+      expect(errorSpy.mock.calls.map((c) => c[0]).join('\n')).toContain(`Failed to load agent "${invalidAgentId}"`);
+    });
   });
 
   describe('context subcommand', () => {
@@ -490,6 +677,33 @@ describe('registerExecuteCommands', () => {
       await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', 'pipeline', 'build', 'review']);
 
       expect(mockRunPipeline).toHaveBeenCalledWith(['build', 'review'], expect.anything());
+    });
+
+    it('merges --pin and --ryu flags for the hidden execute run alias', async () => {
+      const previousKataDir = process.env['KATA_DIR'];
+      process.env['KATA_DIR'] = kataDir;
+
+      try {
+        const program = createProgram();
+        const executeCmd = program.commands.find((command) => command.name() === 'execute');
+        const runCmd = executeCmd?.commands.find((command) => command.name() === 'run');
+        await runCmd?.parseAsync([
+          'node', 'test', 'build',
+          '--pin', 'legacy-build',
+          '--ryu', 'typescript-tdd',
+        ]);
+      } finally {
+        if (previousKataDir === undefined) {
+          delete process.env['KATA_DIR'];
+        } else {
+          process.env['KATA_DIR'] = previousKataDir;
+        }
+      }
+
+      expect(mockRunStage).toHaveBeenCalledWith(
+        'build',
+        expect.objectContaining({ pin: expect.arrayContaining(['legacy-build', 'typescript-tdd']) }),
+      );
     });
   });
 
@@ -552,6 +766,19 @@ describe('registerExecuteCommands', () => {
 
       const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
       expect(output).toContain('good-kata');
+    });
+
+    it('warns and skips kata files with invalid structure', async () => {
+      writeFileSync(join(kataDir, 'katas', 'broken-structure.json'), JSON.stringify({ name: 'broken-structure' }, null, 2));
+      writeFileSync(join(kataDir, 'katas', 'good-kata.json'), JSON.stringify({ name: 'good-kata', stages: ['plan'] }, null, 2));
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', '--list-katas']);
+
+      const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
+      const errors = errorSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('good-kata');
+      expect(errors).toContain('skipping invalid kata file "broken-structure.json"');
     });
 
     it('includes description when kata has one', async () => {
@@ -698,6 +925,14 @@ describe('registerExecuteCommands', () => {
       await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', '--kata', 'my_kata-1']);
       expect(process.exitCode).not.toBe(1);
     });
+
+    it('reports an invalid kata-name error before any file lookup for trailing separators', async () => {
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', '--delete-kata', 'safe/']);
+
+      expect(process.exitCode).toBe(1);
+      expect(errorSpy.mock.calls.map((c) => c[0]).join('\n')).toContain('Invalid kata name "safe/"');
+    });
   });
 
   // ---- --gyo <stages> ----
@@ -813,6 +1048,19 @@ describe('registerExecuteCommands', () => {
         'build',
         expect.objectContaining({ agentId, katakaId: agentId }),
       );
+    });
+
+    it('reports invalid agent records as load failures', async () => {
+      const agentId = '22222222-2222-4222-8222-222222222222';
+      writeInvalidAgentRecord(agentId);
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir, 'execute', 'build', '--agent', agentId,
+      ]);
+
+      expect(process.exitCode).toBe(1);
+      expect(errorSpy.mock.calls.map((c) => c[0]).join('\n')).toContain(`Failed to load agent "${agentId}"`);
     });
   });
 
@@ -954,6 +1202,15 @@ describe('registerExecuteCommands', () => {
       expect(output).toContain('dry-run');
     });
 
+    it('shows dry-run notice in output for a pipeline', async () => {
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', 'build', 'review', '--dry-run']);
+
+      const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('Pipeline: build -> review');
+      expect(output).toContain('dry-run');
+    });
+
     it('shows pipeline learnings in output', async () => {
       mockRunPipeline.mockResolvedValue({
         ...makePipelineResult(['build', 'review']),
@@ -977,6 +1234,75 @@ describe('registerExecuteCommands', () => {
       expect(executeCmd).toBeDefined();
       const bridgeGapsOpt = executeCmd!.options.find((o) => o.long === '--bridge-gaps');
       expect(bridgeGapsOpt).toBeDefined();
+    });
+
+    it('captures bridged gaps for a single-stage run', async () => {
+      const incrementGapsClosed = vi.spyOn(ProjectStateUpdater, 'incrementGapsClosed').mockImplementation(() => {});
+      mockRunStage.mockResolvedValue({
+        ...makeSingleResult('build'),
+        gaps: [{ description: 'Missing validation', severity: 'medium' }],
+      });
+      mockBridgeGaps.mockReturnValue({
+        blocked: [],
+        bridged: [{ description: 'Missing validation', severity: 'medium' }],
+      });
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', 'build', '--bridge-gaps']);
+
+      expect(mockBridgeGaps).toHaveBeenCalledWith([
+        expect.objectContaining({ description: 'Missing validation' }),
+      ]);
+      expect(consoleSpy.mock.calls.map((c) => c[0]).join('\n')).toContain('Captured 1 gap(s) as step-tier learnings.');
+      expect(incrementGapsClosed).toHaveBeenCalledWith(join(kataDir, 'project-state.json'), 1);
+    });
+
+    it('blocks pipeline execution when bridged gaps include high-severity blockers', async () => {
+      mockRunPipeline.mockResolvedValue({
+        ...makePipelineResult(['build', 'review']),
+        stageResults: [
+          { ...makeSingleResult('build'), gaps: [{ description: 'Prod access missing', severity: 'high' }] },
+          { ...makeSingleResult('review'), gaps: [] },
+        ],
+      });
+      mockBridgeGaps.mockReturnValue({
+        blocked: [{ description: 'Prod access missing', severity: 'high' }],
+        bridged: [],
+      });
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', 'build', 'review', '--bridge-gaps']);
+
+      expect(errorSpy.mock.calls.map((c) => c[0]).join('\n')).toContain('Blocked by 1 high-severity gap(s)');
+      expect(process.exitCode).toBe(1);
+    });
+
+    it('captures bridged gaps for a pipeline when no blockers remain', async () => {
+      const incrementGapsClosed = vi.spyOn(ProjectStateUpdater, 'incrementGapsClosed').mockImplementation(() => {});
+      mockRunPipeline.mockResolvedValue({
+        ...makePipelineResult(['build', 'review']),
+        stageResults: [
+          { ...makeSingleResult('build'), gaps: [{ description: 'Document fallback', severity: 'medium' }] },
+          { ...makeSingleResult('review'), gaps: [{ description: 'Clarify rollout', severity: 'low' }] },
+        ],
+      });
+      mockBridgeGaps.mockReturnValue({
+        blocked: [],
+        bridged: [
+          { description: 'Document fallback', severity: 'medium' },
+          { description: 'Clarify rollout', severity: 'low' },
+        ],
+      });
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', 'build', 'review', '--bridge-gaps']);
+
+      expect(mockBridgeGaps).toHaveBeenCalledWith([
+        expect.objectContaining({ description: 'Document fallback' }),
+        expect.objectContaining({ description: 'Clarify rollout' }),
+      ]);
+      expect(consoleSpy.mock.calls.map((c) => c[0]).join('\n')).toContain('Captured 2 gap(s) as step-tier learnings.');
+      expect(incrementGapsClosed).toHaveBeenCalledWith(join(kataDir, 'project-state.json'), 2);
     });
   });
 
