@@ -42,6 +42,25 @@ export function isNewerRun(startedAt: string, latestStartedAt: string | undefine
   return latestStartedAt === undefined || startedAt > latestStartedAt;
 }
 
+export function isAttributedToAgent(
+  entity: { agentId?: string; katakaId?: string },
+  agentId: string,
+): boolean {
+  return (entity.agentId ?? entity.katakaId) === agentId;
+}
+
+export function countObservationsByType(
+  observations: ReadonlyArray<{ type: string }>,
+): { count: number; byType: Record<string, number> } {
+  const byType: Record<string, number> = {};
+  let count = 0;
+  for (const obs of observations) {
+    count++;
+    byType[obs.type] = (byType[obs.type] ?? 0) + 1;
+  }
+  return { count, byType };
+}
+
 export function listRunDirectoryIds(runsDir: string): string[] {
   try {
     return readdirSync(runsDir, { withFileTypes: true })
@@ -103,7 +122,7 @@ export class KataAgentObservabilityAggregator {
         continue;
       }
 
-      if ((run.agentId ?? run.katakaId) !== agentId) continue;
+      if (!isAttributedToAgent(run, agentId)) continue;
 
       // Track the most recent run
       if (isNewerRun(run.startedAt, latestStartedAt)) {
@@ -129,12 +148,13 @@ export class KataAgentObservabilityAggregator {
       const allObs = [...runObs, ...stageObs];
 
       // --- Step 2b: filter to observations attributed to this agent ---
-      const attributed = allObs.filter((o) => (o.agentId ?? o.katakaId) === agentId);
+      const attributed = allObs.filter((o) => isAttributedToAgent(o, agentId));
 
       // --- Step 2c: count by type ---
-      for (const obs of attributed) {
-        stats.observationCount++;
-        stats.observationsByType[obs.type] = (stats.observationsByType[obs.type] ?? 0) + 1;
+      const counts = countObservationsByType(attributed);
+      stats.observationCount += counts.count;
+      for (const [type, count] of Object.entries(counts.byType)) {
+        stats.observationsByType[type] = (stats.observationsByType[type] ?? 0) + count;
       }
     }
 

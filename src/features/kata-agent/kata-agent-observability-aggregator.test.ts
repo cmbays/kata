@@ -2,7 +2,13 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
-import { KataAgentObservabilityAggregator, isNewerRun, listRunDirectoryIds } from './kata-agent-observability-aggregator.js';
+import {
+  KataAgentObservabilityAggregator,
+  countObservationsByType,
+  isAttributedToAgent,
+  isNewerRun,
+  listRunDirectoryIds,
+} from './kata-agent-observability-aggregator.js';
 import { createRunTree } from '@infra/persistence/run-store.js';
 import { appendObservation } from '@infra/persistence/run-store.js';
 import type { Run } from '@domain/types/run-state.js';
@@ -347,6 +353,50 @@ describe('isNewerRun', () => {
 
   it('returns false when startedAt equals latestStartedAt', () => {
     expect(isNewerRun('2025-01-01T00:00:00Z', '2025-01-01T00:00:00Z')).toBe(false);
+  });
+});
+
+describe('isAttributedToAgent', () => {
+  it('returns true when agentId matches', () => {
+    expect(isAttributedToAgent({ agentId: 'a1' }, 'a1')).toBe(true);
+  });
+
+  it('falls back to katakaId when agentId is undefined', () => {
+    expect(isAttributedToAgent({ katakaId: 'k1' }, 'k1')).toBe(true);
+  });
+
+  it('prefers agentId over katakaId', () => {
+    expect(isAttributedToAgent({ agentId: 'a1', katakaId: 'k1' }, 'a1')).toBe(true);
+    expect(isAttributedToAgent({ agentId: 'a1', katakaId: 'k1' }, 'k1')).toBe(false);
+  });
+
+  it('returns false when neither matches', () => {
+    expect(isAttributedToAgent({ agentId: 'other' }, 'a1')).toBe(false);
+    expect(isAttributedToAgent({}, 'a1')).toBe(false);
+  });
+});
+
+describe('countObservationsByType', () => {
+  it('returns zero count for empty array', () => {
+    expect(countObservationsByType([])).toEqual({ count: 0, byType: {} });
+  });
+
+  it('counts observations grouped by type', () => {
+    const obs = [
+      { type: 'insight' },
+      { type: 'friction' },
+      { type: 'insight' },
+      { type: 'prediction' },
+    ];
+    const result = countObservationsByType(obs);
+    expect(result.count).toBe(4);
+    expect(result.byType).toEqual({ insight: 2, friction: 1, prediction: 1 });
+  });
+
+  it('handles single observation', () => {
+    const result = countObservationsByType([{ type: 'insight' }]);
+    expect(result.count).toBe(1);
+    expect(result.byType).toEqual({ insight: 1 });
   });
 });
 
