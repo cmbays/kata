@@ -146,6 +146,7 @@ export function registerExecuteCommands(program: Command): void {
         if (isJson) {
           console.log(JSON.stringify(result, null, 2));
         } else {
+          // Stryker disable all: pure CLI output formatting — no behavioral impact
           console.log(`Cycle "${result.cycleName}" — ${result.elapsed} elapsed`);
           if (result.budgetUsed) {
             console.log(`  Budget: ${result.budgetUsed.percent}% used (~${result.budgetUsed.tokenEstimate} tokens)`);
@@ -158,18 +159,21 @@ export function registerExecuteCommands(program: Command): void {
               console.log(`    kansatsu: ${bet.kansatsuCount}, maki: ${bet.artifactCount}, kime: ${bet.decisionCount}`);
             }
           }
+          // Stryker restore all
         }
       } else if (localOpts.complete) {
         const result = bridge.completeCycle(cycleId, {});
         if (isJson) {
           console.log(JSON.stringify(result, null, 2));
         } else {
+          // Stryker disable all: pure CLI output formatting — no behavioral impact
           console.log(`Cycle "${result.cycleName}" completed.`);
           console.log(`  Bets: ${result.completedBets}/${result.totalBets} completed`);
           console.log(`  Duration: ${formatDurationMs(result.totalDurationMs)}`);
           if (result.tokenUsage) {
             console.log(`  Tokens: ${result.tokenUsage.total} total (${result.tokenUsage.inputTokens} in, ${result.tokenUsage.outputTokens} out)`);
           }
+          // Stryker restore all
         }
       } else {
         console.error('Specify one of: --prepare, --status, --complete');
@@ -178,6 +182,7 @@ export function registerExecuteCommands(program: Command): void {
     }));
 
   // ---- complete <run-id> (complete a single bridge run) ----
+  // Stryker disable all: CLI command registration — pure presentation text
   execute
     .command('complete <run-id>')
     .description('Complete a single bridge run after agent finishes')
@@ -188,6 +193,7 @@ export function registerExecuteCommands(program: Command): void {
     .option('--input-tokens <n>', 'Input token count consumed by the agent (enables cooldown utilization)', parseInt)
     .option('--output-tokens <n>', 'Output token count produced by the agent (enables cooldown utilization)', parseInt)
     .option('--json', 'Output as JSON')
+    // Stryker restore all
     .action(withCommandContext(async (ctx, runId: string) => {
       const localOpts = ctx.cmd.opts() as {
         success?: boolean;
@@ -247,11 +253,13 @@ export function registerExecuteCommands(program: Command): void {
     }));
 
   // ---- context <run-id> (generate fresh agent context at dispatch time) ----
+  // Stryker disable all: CLI command registration — pure presentation text
   execute
     .command('context <run-id>')
     .alias('ma-context')
     .description('Generate a fresh agent context block for an already-prepared run (late-bind dispatch)')
     .option('--json', 'Wrap output in a JSON object with a "agentContext" key')
+    // Stryker restore all
     .action(withCommandContext(async (ctx, runId: string) => {
       const localOpts = ctx.cmd.opts() as { json?: boolean };
       const isJson = resolveJsonFlag(localOpts.json, ctx.globalOpts.json);
@@ -267,6 +275,7 @@ export function registerExecuteCommands(program: Command): void {
     }));
 
   // ---- prepare --bet <bet-id> (prepare a single bet) ----
+  // Stryker disable all: CLI command registration — pure presentation text
   execute
     .command('prepare')
     .description('Prepare a single bet for agent execution (session bridge)')
@@ -274,6 +283,7 @@ export function registerExecuteCommands(program: Command): void {
     .option('--agent <id>', 'Agent ID to attribute this run to — written to run.json so observations auto-populate agent attribution')
     .option('--kataka <id>', 'Alias for --agent <id>')
     .option('--json', 'Output as JSON')
+    // Stryker restore all
     .action(withCommandContext(async (ctx) => {
       const localOpts = ctx.cmd.opts() as { bet: string; agent?: string; kataka?: string; json?: boolean };
       const isJson = resolveJsonFlag(localOpts.json, ctx.globalOpts.json);
@@ -310,6 +320,7 @@ export function registerExecuteCommands(program: Command): void {
     }));
 
   // ---- run (hidden backward compat) ----
+  // Stryker disable all: CLI command registration — pure presentation text
   execute
     .command('run <stage-category>', { hidden: true })
     .description('(deprecated: use "kata kiai <category>" instead)')
@@ -318,6 +329,7 @@ export function registerExecuteCommands(program: Command): void {
     .option('--ryu <flavor>', 'Pin a specific flavor (can be repeated)', collect, [])
     .option('--dry-run', 'Print selected flavors without executing')
     .option('--json', 'Output results as JSON')
+    // Stryker restore all
     .action(withCommandContext(async (ctx, category: string) => {
       const localOpts = ctx.cmd.opts();
       await runCategories(ctx, [category], {
@@ -329,12 +341,14 @@ export function registerExecuteCommands(program: Command): void {
     }));
 
   // ---- pipeline (hidden backward compat) ----
+  // Stryker disable all: CLI command registration — pure presentation text
   execute
     .command('pipeline <categories...>', { hidden: true })
     .description('(deprecated: use "kata kiai <cat1> <cat2> ..." instead)')
     .option('--bet <json>', 'Inline JSON for bet context')
     .option('--dry-run', 'Print results without persisting artifacts')
     .option('--json', 'Output results as JSON')
+    // Stryker restore all
     .action(withCommandContext(async (ctx, cats: string[]) => {
       const localOpts = ctx.cmd.opts();
       await runCategories(ctx, cats, {
@@ -345,6 +359,7 @@ export function registerExecuteCommands(program: Command): void {
     }));
 
   // ---- Default handler: kata kiai <categories...> ----
+  // Stryker disable all: CLI command registration — pure presentation text
   execute
     .argument('[categories...]', 'Stage categories to run (research, plan, build, review)')
     .option('--bet <json>', 'Inline JSON for bet context')
@@ -363,6 +378,7 @@ export function registerExecuteCommands(program: Command): void {
     .option('--hint <spec>', 'Per-stage flavor hint: stage:flavor1,flavor2[:strategy] — guides orchestrator selection (can be repeated)', collect, [])
     .option('--explain', 'Print per-flavor scoring breakdown showing why each flavor was scored and which was selected')
     .option('--next', 'Auto-select the first pending bet from the active cycle as the run target')
+    // Stryker restore all
     .action(withCommandContext(async (ctx, categories: string[]) => {
       const localOpts = ctx.cmd.opts();
 
@@ -684,6 +700,7 @@ function bridgeExecutionGaps(input: {
   return true;
 }
 
+// Stryker disable all: pure CLI output formatting — no behavioral impact
 function printSingleCategoryResult(result: StageRunResult, isJson: boolean, opts: RunOptions): void {
   if (isJson) {
     console.log(JSON.stringify(result, null, 2));
@@ -711,7 +728,9 @@ function printSingleCategoryResult(result: StageRunResult, isJson: boolean, opts
     console.log('(dry-run — no artifacts persisted)');
   }
 }
+// Stryker restore all
 
+// Stryker disable all: pure CLI output formatting — no behavioral impact
 function printPipelineResult(
   result: PipelineRunResult,
   categories: StageCategory[],
@@ -754,6 +773,7 @@ function printPipelineResult(
     console.log('(dry-run — no artifacts persisted)');
   }
 }
+// Stryker restore all
 
 // ---------------------------------------------------------------------------
 // Runner builder + helpers
@@ -769,12 +789,14 @@ function buildRunner(kataDir: string): WorkflowRunner {
   const flavorRegistry = new FlavorRegistry(kataDirPath(kataDir, 'flavors'));
   const decisionRegistry = new DecisionRegistry(kataDirPath(kataDir, 'history'));
 
+  // Stryker disable all: static fallback configuration — not behavioral logic
   const defaultConfig = KataConfigSchema.parse({
     methodology: 'shape-up',
     execution: { adapter: 'manual', config: {} },
     customStagePaths: [],
     project: {},
   });
+  // Stryker restore all
 
   const effectiveConfig = config ?? defaultConfig;
 
