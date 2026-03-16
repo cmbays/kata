@@ -2087,6 +2087,54 @@ describe('registerExecuteCommands', () => {
       expect(output).not.toContain('Kata "test-save" saved.');
     });
   });
+
+  describe('--bridge-gaps single stage blocking prevents saveKata', () => {
+    it('does NOT save kata when single-stage gaps block execution', async () => {
+      const gaps = [
+        { description: 'Critical gap', severity: 'high' as const, suggestedFlavors: [] },
+      ];
+      mockRunStage.mockResolvedValue({
+        ...makeSingleResult(),
+        gaps,
+      });
+      mockBridgeGaps.mockReturnValue({ blocked: gaps, bridged: [] });
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir, 'execute', 'build', '--bridge-gaps', '--save-kata', 'blocked-kata',
+      ]);
+
+      expect(process.exitCode).toBe(1);
+      // The kata should NOT have been saved
+      expect(existsSync(join(kataDir, 'katas', 'blocked-kata.json'))).toBe(false);
+    });
+  });
+
+  describe('--bridge-gaps pipeline blocking prevents saveKata', () => {
+    it('does NOT save kata when pipeline gaps block execution', async () => {
+      const gaps = [
+        { description: 'Pipeline blocker', severity: 'high' as const, suggestedFlavors: [] },
+      ];
+      mockRunPipeline.mockResolvedValue({
+        ...makePipelineResult(['build', 'review']),
+        stageResults: [
+          {
+            ...makePipelineResult(['build', 'review']).stageResults[0],
+            gaps,
+          },
+        ],
+      });
+      mockBridgeGaps.mockReturnValue({ blocked: gaps, bridged: [] });
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir, 'execute', 'build', 'review', '--bridge-gaps', '--save-kata', 'pipeline-blocked',
+      ]);
+
+      expect(process.exitCode).toBe(1);
+      expect(existsSync(join(kataDir, 'katas', 'pipeline-blocked.json'))).toBe(false);
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
