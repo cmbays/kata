@@ -8,6 +8,7 @@ import { RunSchema } from '@domain/types/run-state.js';
 import type { AgentCompletionResult } from '@domain/ports/session-bridge.js';
 import { logger } from '@shared/lib/logger.js';
 import { SessionExecutionBridge } from './session-bridge.js';
+import { canTransitionCycleState } from './session-bridge.helpers.js';
 
 function createTestDir(): string {
   const dir = join(tmpdir(), `kata-bridge-unit-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -188,14 +189,6 @@ describe('SessionExecutionBridge unit coverage', () => {
   });
 
   it('only allows adjacent forward cycle state transitions', () => {
-    const bridge = new SessionExecutionBridge(kataDir);
-    const canTransitionCycleState = (bridge as unknown as {
-      canTransitionCycleState: (
-        from: 'planning' | 'active' | 'cooldown' | 'complete',
-        to: 'planning' | 'active' | 'cooldown' | 'complete',
-      ) => boolean;
-    }).canTransitionCycleState;
-
     expect(canTransitionCycleState('planning', 'active')).toBe(true);
     expect(canTransitionCycleState('active', 'cooldown')).toBe(true);
     expect(canTransitionCycleState('cooldown', 'complete')).toBe(true);

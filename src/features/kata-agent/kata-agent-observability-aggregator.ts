@@ -1,4 +1,4 @@
-import { readdirSync, existsSync } from 'node:fs';
+import { readdirSync } from 'node:fs';
 import { RunSchema } from '@domain/types/run-state.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
 import { readObservations, runPaths } from '@infra/persistence/run-store.js';
@@ -32,6 +32,43 @@ export interface KataAgentObservabilityStats {
   lastRunCycleId?: string;
   /** ISO datetime of the most recent run's startedAt */
   lastActiveAt?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Pure helpers — extracted for direct unit testing and mutation coverage
+// ---------------------------------------------------------------------------
+
+export function isNewerRun(startedAt: string, latestStartedAt: string | undefined): boolean {
+  return latestStartedAt === undefined || startedAt > latestStartedAt;
+}
+
+export function isAttributedToAgent(
+  entity: { agentId?: string; katakaId?: string },
+  agentId: string,
+): boolean {
+  return (entity.agentId ?? entity.katakaId) === agentId;
+}
+
+export function countObservationsByType(
+  observations: ReadonlyArray<{ type: string }>,
+): { count: number; byType: Record<string, number> } {
+  const byType: Record<string, number> = {};
+  let count = 0;
+  for (const obs of observations) {
+    count++;
+    byType[obs.type] = (byType[obs.type] ?? 0) + 1;
+  }
+  return { count, byType };
+}
+
+export function listRunDirectoryIds(runsDir: string): string[] {
+  try {
+    return readdirSync(runsDir, { withFileTypes: true })
+      .filter((d) => d.isDirectory())
+      .map((d) => d.name);
+  } catch {
+    return [];
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -69,17 +106,7 @@ export class KataAgentObservabilityAggregator {
     };
 
     // --- Step 1: list run directories ---
-    let runIds: string[] = [];
-    if (existsSync(this.runsDir)) {
-      try {
-        runIds = readdirSync(this.runsDir, { withFileTypes: true })
-          .filter((d) => d.isDirectory())
-          .map((d) => d.name);
-      } catch {
-        // runsDir unreadable — return empty stats
-        return stats;
-      }
-    }
+    const runIds = listRunDirectoryIds(this.runsDir);
 
     // Track the most-recent run by startedAt (ISO string — lexicographic comparison is valid)
     let latestStartedAt: string | undefined;
@@ -95,10 +122,10 @@ export class KataAgentObservabilityAggregator {
         continue;
       }
 
-      if ((run.agentId ?? run.katakaId) !== agentId) continue;
+      if (!isAttributedToAgent(run, agentId)) continue;
 
       // Track the most recent run
-      if (latestStartedAt === undefined || run.startedAt > latestStartedAt) {
+      if (isNewerRun(run.startedAt, latestStartedAt)) {
         latestStartedAt = run.startedAt;
         stats.lastRunId = run.id;
         stats.lastRunCycleId = run.cycleId;
@@ -121,12 +148,13 @@ export class KataAgentObservabilityAggregator {
       const allObs = [...runObs, ...stageObs];
 
       // --- Step 2b: filter to observations attributed to this agent ---
-      const attributed = allObs.filter((o) => (o.agentId ?? o.katakaId) === agentId);
+      const attributed = allObs.filter((o) => isAttributedToAgent(o, agentId));
 
       // --- Step 2c: count by type ---
-      for (const obs of attributed) {
-        stats.observationCount++;
-        stats.observationsByType[obs.type] = (stats.observationsByType[obs.type] ?? 0) + 1;
+      const counts = countObservationsByType(attributed);
+      stats.observationCount += counts.count;
+      for (const [type, count] of Object.entries(counts.byType)) {
+        stats.observationsByType[type] = (stats.observationsByType[type] ?? 0) + count;
       }
     }
 

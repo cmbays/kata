@@ -292,3 +292,13 @@ export function listCompletedBetDescriptions(
     .filter((bet) => bet.outcome === 'complete' || bet.outcome === 'partial')
     .map((bet) => bet.description);
 }
+
+export { isJsonFile } from '@shared/lib/file-filters.js';
+
+export function isSynthesisPendingFile(filename: string): boolean {
+  return filename.startsWith('pending-') && filename.endsWith('.json');
+}
+
+export function hasFailedCaptures(failed: number): boolean {
+  return failed > 0;
+}

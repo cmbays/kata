@@ -53,6 +53,9 @@ import {
   shouldWarnOnIncompleteRuns,
   shouldWriteDojoDiary,
   shouldWriteDojoSession,
+  isJsonFile,
+  isSynthesisPendingFile,
+  hasFailedCaptures,
 } from './cooldown-session.helpers.js';
 
 /**
@@ -839,7 +842,7 @@ export class CooldownSession {
 
   private cleanupStaleSynthesisInputs(synthesisDir: string, cycleId: string): void {
     try {
-      const existing = readdirSync(synthesisDir).filter((file) => file.startsWith('pending-') && file.endsWith('.json'));
+      const existing = readdirSync(synthesisDir).filter(isSynthesisPendingFile);
       for (const file of existing) {
         this.removeStaleSynthesisInputFile(synthesisDir, file, cycleId);
       }
@@ -871,7 +874,6 @@ export class CooldownSession {
    */
   private loadBridgeRunIdsByBetId(cycleId: string, bridgeRunsDir: string): Map<string, string> {
     const result = new Map<string, string>();
-    if (!existsSync(bridgeRunsDir)) return result;
 
     for (const file of this.listJsonFiles(bridgeRunsDir)) {
       const meta = this.readBridgeRunMeta(join(bridgeRunsDir, file));
@@ -885,7 +887,7 @@ export class CooldownSession {
 
   private listJsonFiles(dir: string): string[] {
     try {
-      return readdirSync(dir).filter((file) => file.endsWith('.json'));
+      return readdirSync(dir).filter(isJsonFile);
     } catch {
       return [];
     }
@@ -937,7 +939,6 @@ export class CooldownSession {
     runId: string,
   ): BetOutcomeRecord['outcome'] | undefined {
     const bridgeRunPath = join(bridgeRunsDir, `${runId}.json`);
-    if (!existsSync(bridgeRunPath)) return undefined;
     const status = this.readBridgeRunMeta(bridgeRunPath)?.status;
     return mapBridgeRunStatusToSyncedOutcome(status);
   }
@@ -988,7 +989,7 @@ export class CooldownSession {
    */
   private captureCooldownLearnings(report: CooldownReport): number {
     const attempts = this.captureCooldownLearningDrafts(report);
-    if (attempts.failed > 0) {
+    if (hasFailedCaptures(attempts.failed)) {
       logger.warn(`${attempts.failed} of ${attempts.captured + attempts.failed} cooldown learnings failed to capture. Check previous warnings for details.`);
     }
 
