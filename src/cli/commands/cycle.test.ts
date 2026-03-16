@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { Command } from 'commander';
 import { CycleManager } from '@domain/services/cycle-manager.js';
@@ -261,7 +261,7 @@ describe('registerCycleCommands', () => {
   });
 
   describe('cycle start', () => {
-    it('starts a cycle with named kata and creates run trees', async () => {
+    it('starts a cycle with named kata and prepares bridge runs', async () => {
       // Write a saved kata file
       writeFileSync(
         join(katasDir, 'full-feature.json'),
@@ -288,6 +288,14 @@ describe('registerCycleCommands', () => {
 
       // Cycle should be active
       expect(manager.get(cycle.id).state).toBe('active');
+
+      const bridgeRunFiles = readdirSync(join(kataDir, 'bridge-runs')).filter((file) => file.endsWith('.json'));
+      expect(bridgeRunFiles).toHaveLength(1);
+
+      const runJsonPath = join(kataDir, 'runs', output.runs[0].runId, 'run.json');
+      expect(existsSync(runJsonPath)).toBe(true);
+      const runJson = JSON.parse(readFileSync(runJsonPath, 'utf-8')) as { status: string };
+      expect(runJson.status).toBe('running');
     });
 
     it('starts a cycle with ad-hoc kata', async () => {
@@ -394,6 +402,9 @@ describe('registerCycleCommands', () => {
       expect(output.runs).toHaveLength(2);
       expect(output.runs[0].stageSequence).toEqual(['research', 'build']);
       expect(output.runs[1].stageSequence).toEqual(['plan', 'build']);
+
+      const bridgeRunFiles = readdirSync(join(kataDir, 'bridge-runs')).filter((file) => file.endsWith('.json'));
+      expect(bridgeRunFiles).toHaveLength(2);
     });
   });
 
