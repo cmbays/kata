@@ -36,5 +36,9 @@ tmp/
 # Security scan artifacts
 gitleaks-report.json
 
+# Stryker mutation testing
+.stryker-tmp/
+survivors.txt
+
 # kata runtime data (local project state)
 .kata/
