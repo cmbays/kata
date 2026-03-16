@@ -1475,6 +1475,22 @@ describe('SessionExecutionBridge', () => {
       expect(summary.completedBets).toBe(2);
     });
 
+    it('should preserve persisted token usage from runs completed before completeCycle()', () => {
+      const cycle = createCycle(kataDir);
+      const bridge = new SessionExecutionBridge(kataDir);
+
+      const prepared = bridge.prepareCycle(cycle.id);
+      bridge.complete(prepared.preparedRuns[0]!.runId, {
+        success: true,
+        tokenUsage: { inputTokens: 10, outputTokens: 5, total: 15 },
+      });
+
+      const summary = bridge.completeCycle(cycle.id, {});
+
+      expect(summary.completedBets).toBe(2);
+      expect(summary.tokenUsage).toEqual({ inputTokens: 10, outputTokens: 5, total: 15 });
+    });
+
     it('should update all bet outcomes in cycle JSON after completeCycle() (#216)', () => {
       // Regression test for #216: kata cooldown showed 0% completion because
       // bet outcomes were never written to the cycle JSON.

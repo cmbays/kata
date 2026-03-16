@@ -32,3 +32,41 @@ Feature: Session bridge prepares in-session execution runs
     Then the prepared cycle includes 2 runs
     And the repeated prepare reuses the existing run ids
     And each pending bet has exactly one bridge run
+
+  Scenario: Cycle status distinguishes prepared bets from untouched bets
+    Given an active cycle named "Status Cycle" with pending bets "Fix the login bug, Tighten tests"
+    And the session bridge prepares the bet "Fix the login bug" for execution
+    When the session bridge reads the cycle execution status
+    Then the cycle status for bet "Fix the login bug" is "in-progress"
+    And the cycle status for bet "Fix the login bug" has a run id
+    And the cycle status for bet "Tighten tests" is "pending"
+
+  Scenario: Cycle status reflects completed and failed bridge runs
+    Given an active cycle named "Terminal Status Cycle" with pending bets "Fix the login bug, Tighten tests"
+    And the session bridge prepares the cycle for execution
+    And the prepared run for bet "Fix the login bug" completes successfully with 15 total tokens
+    And the prepared run for bet "Tighten tests" fails with 9 total tokens
+    When the session bridge reads the cycle execution status
+    Then the cycle status for bet "Fix the login bug" is "complete"
+    And the cycle status for bet "Tighten tests" is "failed"
+
+  Scenario: Completing a prepared cycle preserves persisted token usage for downstream reporting
+    Given an active cycle named "Completion Cycle" with pending bets "Fix the login bug, Tighten tests"
+    And the session bridge prepares the cycle for execution
+    And the prepared run for bet "Fix the login bug" completes successfully with 15 total tokens
+    When the session bridge completes the cycle
+    Then the cycle summary reports 2 total bets and 2 completed bets
+    And the cycle summary reports 15 total tokens
+    And the cycle history contains 2 entries for the cycle
+    And the cycle bet outcomes are "complete, complete"
+    And the cycle is marked "active"
+
+  Scenario: Cooldown reporting consumes the completed bridge-run data
+    Given an active cycle named "Cooldown Cycle" with pending bets "Fix the login bug, Tighten tests"
+    And the session bridge prepares the cycle for execution
+    And the prepared run for bet "Fix the login bug" completes successfully with 15 total tokens
+    And the prepared run for bet "Tighten tests" fails with 9 total tokens
+    When cooldown runs for the prepared cycle
+    Then the cooldown report shows 50 percent completion
+    And the cooldown report shows 24 total tokens used
+    And the cycle is marked "complete"

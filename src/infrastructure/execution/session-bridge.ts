@@ -22,6 +22,10 @@ import { createRunTree, readRun, writeRun, runPaths } from '@infra/persistence/r
 import { KATA_DIRS } from '@shared/constants/paths.js';
 import { logger } from '@shared/lib/logger.js';
 import { formatSessionBridgeAgentContext } from './session-bridge-agent-context.js';
+import {
+  summarizeCycleCompletion,
+  type CycleCompletionTotals,
+} from './session-bridge-cycle-completion.js';
 
 /**
  * Schema for bridge-run metadata stored at .kata/bridge-runs/<runId>.json.
@@ -53,12 +57,6 @@ const BridgeRunMetaSchema = z.object({
 });
 
 type BridgeRunMeta = z.infer<typeof BridgeRunMetaSchema>;
-
-type CycleCompletionTotals = {
-  completedBets: number;
-  totalDurationMs: number;
-  tokenUsage: { inputTokens: number; outputTokens: number; total: number } | null;
-};
 
 /**
  * SessionExecutionBridge — splits the adapter lifecycle for in-session execution.
@@ -248,7 +246,7 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
     const bridgeRuns = this.listBridgeRunsForCycle(cycleId);
 
     this.completePendingCycleRuns(bridgeRuns, results);
-    const totals = this.collectCycleCompletionTotals(bridgeRuns, results);
+    const totals = this.collectCycleCompletionTotals(bridgeRuns);
 
     return {
       cycleId: cycle.id,
@@ -406,41 +404,12 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
 
   private collectCycleCompletionTotals(
     bridgeRuns: BridgeRunMeta[],
-    results: Record<string, AgentCompletionResult>,
   ): CycleCompletionTotals {
-    const totals: CycleCompletionTotals = {
-      completedBets: 0,
-      totalDurationMs: 0,
-      tokenUsage: null,
-    };
-
-    for (const meta of bridgeRuns) {
-      const updated = this.readBridgeRunMeta(meta.runId);
-      if (!updated) {
-        continue;
-      }
-
-      totals.completedBets += updated.status === 'complete' ? 1 : 0;
-      totals.totalDurationMs += this.calculateRunDuration(updated) ?? 0;
-      totals.tokenUsage = this.mergeTokenUsage(totals.tokenUsage, results[meta.runId]?.tokenUsage);
-    }
-
-    return totals;
-  }
-
-  private mergeTokenUsage(
-    existing: CycleCompletionTotals['tokenUsage'],
-    tokenUsage?: AgentCompletionResult['tokenUsage'],
-  ): CycleCompletionTotals['tokenUsage'] {
-    if (!tokenUsage) {
-      return existing;
-    }
-
-    return {
-      inputTokens: (existing?.inputTokens ?? 0) + (tokenUsage.inputTokens ?? 0),
-      outputTokens: (existing?.outputTokens ?? 0) + (tokenUsage.outputTokens ?? 0),
-      total: (existing?.total ?? 0) + (tokenUsage.total ?? 0),
-    };
+    return summarizeCycleCompletion(
+      bridgeRuns
+        .map((meta) => this.readBridgeRunMeta(meta.runId))
+        .filter((meta): meta is BridgeRunMeta => meta !== null),
+    );
   }
 
   // ── Private helpers ───────────────────────────────────────────────────
