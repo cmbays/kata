@@ -8,10 +8,15 @@ export const integrationTestFiles = [
 
 export const mutationTestFiles = [
   'src/cli/commands/execute.test.ts',
+  'src/cli/commands/execute.helpers.test.ts',
   'src/features/execute/workflow-runner.test.ts',
   'src/features/cycle-management/cooldown-session.test.ts',
   'src/features/cycle-management/cooldown-session-prepare.test.ts',
+  'src/features/cycle-management/cooldown-session.unit.test.ts',
+  'src/features/cycle-management/cooldown-session.helpers.test.ts',
   'src/infrastructure/execution/session-bridge.test.ts',
+  'src/infrastructure/execution/session-bridge.unit.test.ts',
+  'src/infrastructure/execution/session-bridge.helpers.test.ts',
   'src/features/kata-agent/kata-agent-confidence-calculator.test.ts',
   'src/features/kata-agent/kata-agent-observability-aggregator.test.ts',
 ];

@@ -427,6 +427,22 @@ describe('registerExecuteCommands', () => {
       expect(parsed.bets).toHaveLength(1);
     });
 
+    it('renders cycle completion details in plain-text mode', async () => {
+      const cycle = createCycleWithBets('Plain Complete', [
+        { description: 'Plain bet', appetite: 20 },
+      ]);
+      const bridge = new SessionExecutionBridge(kataDir);
+      bridge.prepareCycle(cycle.id);
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', 'cycle', cycle.id, '--complete']);
+
+      const output = consoleSpy.mock.calls.map((c: unknown[]) => c[0]).join('\n');
+      expect(output).toContain('completed');
+      expect(output).toContain('Bets: 1/1');
+      expect(output).toContain('Duration:');
+    });
+
     it('requires an action flag for execute cycle', async () => {
       const cycle = createCycleWithBets();
 
@@ -548,6 +564,23 @@ describe('registerExecuteCommands', () => {
       expect(output).toContain('tokens: 7 total, 7 in, 0 out');
     });
 
+    it('prints plain-text completion without token line when no tokens provided', async () => {
+      const cycle = createCycleWithBets('No Token Cycle', [
+        { description: 'No token run', appetite: 20 },
+      ]);
+      const prepared = prepareRunForBet(cycle.bets[0]!.id);
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir, 'execute', 'complete', prepared.runId,
+      ]);
+
+      const output = consoleSpy.mock.calls.map((c: unknown[]) => c[0]).join('\n');
+      expect(output).toContain('marked as complete.');
+      // Token line should NOT appear when no tokens are provided
+      expect(output).not.toContain('tokens:');
+    });
+
     it('rejects null artifact entries', async () => {
       const cycle = createCycleWithBets('Artifact Null Cycle', [
         { description: 'Bad artifact item', appetite: 20 },
@@ -662,6 +695,23 @@ describe('registerExecuteCommands', () => {
       expect(parsed.agentContext).toContain(`**Run ID**: ${prepared.runId}`);
       expect(parsed.agentContext).toContain(`**Bet ID**: ${prepared.betId}`);
     });
+
+    it('renders plain-text context when --json is not passed', async () => {
+      const cycle = createCycleWithBets('Plain Context Cycle', [
+        { description: 'Plain text run', appetite: 25 },
+      ]);
+      const prepared = prepareRunForBet(cycle.bets[0]!.id);
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir, 'execute', 'context', prepared.runId,
+      ]);
+
+      const output = consoleSpy.mock.calls.map((c: unknown[]) => c[0]).join('\n');
+      // Plain text mode: should contain markdown, NOT wrapped in JSON
+      expect(output).toContain(`**Run ID**: ${prepared.runId}`);
+      expect(() => JSON.parse(output)).toThrow();
+    });
   });
 
   describe('hidden backward-compatible execute commands', () => {
@@ -677,6 +727,44 @@ describe('registerExecuteCommands', () => {
       await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', 'pipeline', 'build', 'review']);
 
       expect(mockRunPipeline).toHaveBeenCalledWith(['build', 'review'], expect.anything());
+    });
+
+    it('single-stage prints decision details in plain-text mode', async () => {
+      mockRunStage.mockResolvedValue({
+        ...makeSingleResult('build'),
+        decisions: [
+          { decisionType: 'flavor-selection', selection: 'typescript-tdd', confidence: 0.85 },
+        ],
+      });
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', 'run', 'build']);
+
+      const output = consoleSpy.mock.calls.map((c: unknown[]) => c[0]).join('\n');
+      expect(output).toContain('flavor-selection: typescript-tdd');
+      expect(output).toContain('Stage: build');
+      expect(output).toContain('build-synthesis');
+    });
+
+    it('pipeline prints per-stage details in plain-text mode', async () => {
+      mockRunPipeline.mockResolvedValue({
+        stageResults: [
+          { ...makeSingleResult('build'), stageCategory: 'build', selectedFlavors: ['ts-build'] },
+          { ...makeSingleResult('review'), stageCategory: 'review', selectedFlavors: ['code-review'] },
+        ],
+        pipelineReflection: { overallQuality: 'good', learnings: ['Learned something'] },
+      });
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', 'pipeline', 'build', 'review']);
+
+      const output = consoleSpy.mock.calls.map((c: unknown[]) => c[0]).join('\n');
+      expect(output).toContain('Pipeline: build -> review');
+      expect(output).toContain('build:');
+      expect(output).toContain('review:');
+      expect(output).toContain('Flavors:');
+      expect(output).toContain('Learnings:');
+      expect(output).toContain('Learned something');
     });
 
     it('merges --pin and --ryu flags for the hidden execute run alias', async () => {
@@ -971,6 +1059,16 @@ describe('registerExecuteCommands', () => {
       await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', '--gyo', ',,,']);
 
       expect(process.exitCode).toBe(1);
+    });
+
+    it('trims whitespace from --gyo categories', async () => {
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', '--gyo', ' build , review ']);
+
+      expect(mockRunPipeline).toHaveBeenCalledWith(
+        ['build', 'review'],
+        expect.anything(),
+      );
     });
   });
 
@@ -1703,6 +1801,92 @@ describe('registerExecuteCommands', () => {
         expect.objectContaining({ bet: expect.objectContaining({ description: 'Named kata bet' }) }),
       );
     });
+
+    it('picks the active cycle over a planning cycle when both exist', async () => {
+      mkdirSync(cyclesDir, { recursive: true });
+      const manager = new CycleManager(cyclesDir, JsonStore);
+
+      // Create a planning cycle first (would be found first if filter used `true`)
+      const planningCycle = manager.create({ tokenBudget: 50000 }, 'Planning Cycle');
+      manager.addBet(planningCycle.id, {
+        description: 'Planning bet', appetite: 30, outcome: 'pending', issueRefs: [],
+      });
+
+      // Create the active cycle second
+      const activeCycle = manager.create({ tokenBudget: 50000 }, 'Active Cycle');
+      manager.addBet(activeCycle.id, {
+        description: 'Active bet', appetite: 30, outcome: 'pending', issueRefs: [],
+      });
+      manager.updateState(activeCycle.id, 'active');
+
+      mockRunStage.mockResolvedValue(makeSingleResult('build'));
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', 'build', '--next']);
+
+      expect(mockRunStage).toHaveBeenCalledWith(
+        'build',
+        expect.objectContaining({ bet: expect.objectContaining({ description: 'Active bet' }) }),
+      );
+    });
+
+    it('uses the cycle name fallback (activeCycle.name ?? activeCycle.id) correctly', async () => {
+      mkdirSync(cyclesDir, { recursive: true });
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 50000 }, 'Named Cycle');
+      manager.addBet(cycle.id, { description: 'Done bet', appetite: 30, outcome: 'complete', issueRefs: [] });
+      manager.updateState(cycle.id, 'active');
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', '--next']);
+
+      const output = consoleSpy.mock.calls.map((c: unknown[]) => c[0]).join('\n');
+      // Should use cycle NAME, not ID
+      expect(output).toContain('Named Cycle');
+    });
+
+    it('skips kata resolution when explicit categories are provided alongside --next', async () => {
+      mkdirSync(cyclesDir, { recursive: true });
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 50000 }, 'Cat Override');
+      const withBet = manager.addBet(cycle.id, {
+        description: 'Override bet', appetite: 30, outcome: 'pending', issueRefs: [],
+      });
+      manager.updateBet(cycle.id, withBet.bets[0]!.id, { kata: { type: 'ad-hoc', stages: ['review'] } });
+      manager.updateState(cycle.id, 'active');
+
+      mockRunStage.mockResolvedValue(makeSingleResult('build'));
+
+      const program = createProgram();
+      // Explicit categories override bet's kata assignment
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', 'build', '--next']);
+
+      expect(mockRunStage).toHaveBeenCalledWith('build', expect.anything());
+    });
+  });
+
+  // ---- yolo flag ----
+
+  describe('--yolo', () => {
+    it('passes yolo=true to execution when --yolo flag is set', async () => {
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', 'build', '--yolo']);
+
+      expect(mockRunStage).toHaveBeenCalledWith(
+        'build',
+        expect.objectContaining({ yolo: true }),
+      );
+    });
+
+    it('does not pass yolo when --yolo flag is absent', async () => {
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', 'build']);
+
+      expect(mockRunStage).toHaveBeenCalledWith(
+        'build',
+        expect.objectContaining({ yolo: undefined }),
+      );
+    });
   });
 });
 
@@ -1814,6 +1998,22 @@ describe('saved kata CRUD functions', () => {
       expect(() => deleteSavedKata(tmpBase, 'nonexistent')).toThrow(
         'Kata "nonexistent" not found.',
       );
+    });
+  });
+
+  describe('listSavedKatas with non-json files', () => {
+    it('filters out non-json files from the katas directory', () => {
+      const dir = join(tmpBase, 'katas');
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, 'readme.txt'), 'not a kata');
+      writeFileSync(join(dir, 'valid.json'), JSON.stringify({
+        name: 'valid',
+        stages: ['build'],
+      }));
+
+      const katas = listSavedKatas(tmpBase);
+      expect(katas).toHaveLength(1);
+      expect(katas[0]!.name).toBe('valid');
     });
   });
 });
