@@ -344,36 +344,8 @@ export function formatDurationMs(ms: number): string {
 }
 
 /**
- * Pure predicate: returns true when there are no gaps to bridge.
- */
-export function hasNoGapsToBridge(gaps: readonly unknown[] | undefined): boolean {
-  return !gaps || gaps.length === 0;
-}
-
-/**
- * Pure predicate: returns true when bridged gaps should be reported.
- */
-export function hasBridgedGaps(bridged: readonly unknown[]): boolean {
-  return bridged.length > 0;
-}
-
-/**
- * Pure predicate: returns true when blocked gaps should halt execution.
- */
-export function hasBlockedGaps(blocked: readonly unknown[]): boolean {
-  return blocked.length > 0;
-}
-
-/**
  * Format confidence as a percentage string (0-100, no decimal).
  */
 export function formatConfidencePercent(confidence: number): string {
   return `${(confidence * 100).toFixed(0)}%`;
-}
-
-/**
- * Pure predicate: returns true when pipeline learnings should be printed.
- */
-export function hasPipelineLearnings(learnings: readonly string[]): boolean {
-  return learnings.length > 0;
 }

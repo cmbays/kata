@@ -26,14 +26,6 @@ export function hasBridgeRunMetadataChanged(
 }
 
 /**
- * Map a bridge-run status to the display status used by getCycleStatus.
- * 'in-progress' maps to 'in-progress', everything else passes through.
- */
-export function mapBridgeRunStatus<T extends string>(status: T): T {
-  return status;
-}
-
-/**
  * Find the earliest timestamp from a list of ISO strings.
  * Returns undefined if the array is empty.
  */

@@ -1,10 +1,9 @@
 import { join } from 'node:path';
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
 import type { Command } from 'commander';
 import { withCommandContext, kataDirPath } from '@cli/utils.js';
 import { getLexicon } from '@cli/lexicon.js';
 import { StageCategorySchema, type StageCategory } from '@domain/types/stage.js';
-import { SavedKataSchema, type FlavorHint } from '@domain/types/saved-kata.js';
+import type { FlavorHint } from '@domain/types/saved-kata.js';
 import { KataConfigSchema } from '@domain/types/config.js';
 import { StepRegistry } from '@infra/registries/step-registry.js';
 import { FlavorRegistry } from '@infra/registries/flavor-registry.js';
@@ -17,13 +16,11 @@ import { WorkflowRunner } from '@features/execute/workflow-runner.js';
 import { GapBridger } from '@features/execute/gap-bridger.js';
 import { KnowledgeStore } from '@infra/knowledge/knowledge-store.js';
 import { UsageAnalytics } from '@infra/tracking/usage-analytics.js';
-import { isJsonFile } from '@shared/lib/file-filters.js';
 import { KATA_DIRS } from '@shared/constants/paths.js';
 import { ProjectStateUpdater } from '@features/belt/belt-calculator.js';
 import { CycleManager } from '@domain/services/cycle-manager.js';
 import { SessionExecutionBridge } from '@infra/execution/session-bridge.js';
 import {
-  assertValidKataName,
   betStatusSymbol,
   buildPreparedCycleOutputLines,
   buildPreparedRunOutputLines,
@@ -31,10 +28,6 @@ import {
   formatDurationMs,
   formatAgentLoadError,
   formatExplain,
-  hasBlockedGaps,
-  hasBridgedGaps,
-  hasNoGapsToBridge,
-  hasPipelineLearnings,
   mergePinnedFlavors,
   parseBetOption,
   parseCompletedRunArtifacts,
@@ -43,6 +36,7 @@ import {
   resolveCompletionStatus,
   resolveJsonFlag,
 } from '@cli/commands/execute.helpers.js';
+import { listSavedKatas, loadSavedKata, saveSavedKata, deleteSavedKata } from '@cli/commands/saved-kata-store.js';
 import { resolveRef } from '@cli/resolve-ref.js';
 import { handleStatus, handleStats, parseCategoryFilter } from './status.js';
 
@@ -679,20 +673,20 @@ function bridgeExecutionGaps(input: {
     suggestedFlavors: string[];
   }>;
 }): boolean {
-  if (hasNoGapsToBridge(input.gaps)) return true;
+  if (!input.gaps || input.gaps.length === 0) return true;
 
   const store = new KnowledgeStore(kataDirPath(input.kataDir, 'knowledge'));
   const bridger = new GapBridger({ knowledgeStore: store });
   const { blocked, bridged } = bridger.bridge(input.gaps!);
 
-  if (hasBlockedGaps(blocked)) {
+  if (blocked.length > 0) {
     console.error(`[kata] Blocked by ${blocked.length} high-severity gap(s):`);
     for (const gap of blocked) console.error(`  • ${gap.description}`);
     process.exitCode = 1;
     return false;
   }
 
-  if (hasBridgedGaps(bridged)) {
+  if (bridged.length > 0) {
     console.log(`[kata] Captured ${bridged.length} gap(s) as step-tier learnings.`);
     ProjectStateUpdater.incrementGapsClosed(input.projectStateFile, bridged.length);
   }
@@ -760,7 +754,7 @@ function printPipelineResult(
     console.log(`    Artifact: ${stageResult.stageArtifact.name}`);
   }
 
-  if (hasPipelineLearnings(result.pipelineReflection.learnings)) {
+  if (result.pipelineReflection.learnings.length > 0) {
     console.log('');
     console.log('Learnings:');
     for (const learning of result.pipelineReflection.learnings) {
@@ -821,79 +815,5 @@ function collect(value: string, previous: string[]): string[] {
   return previous.concat([value]);
 }
 
-// ---------------------------------------------------------------------------
-// Saved kata helpers
-// ---------------------------------------------------------------------------
-
-function katasDir(kataDir: string): string {
-  return join(kataDir, KATA_DIRS.katas);
-}
-
-export function listSavedKatas(kataDir: string): Array<{ name: string; stages: StageCategory[]; description?: string }> {
-  const dir = katasDir(kataDir);
-  if (!existsSync(dir)) return [];
-  return readdirSync(dir)
-    .filter(isJsonFile)
-    .map((f) => {
-      try {
-        const raw = JSON.parse(readFileSync(join(dir, f), 'utf-8'));
-        return SavedKataSchema.parse(raw);
-      } catch (e) {
-        if (e instanceof SyntaxError || (e instanceof Error && e.constructor.name === 'ZodError')) {
-          console.error(`Warning: skipping invalid kata file "${f}": ${e.message}`);
-          return null;
-        }
-        throw e;
-      }
-    })
-    .filter((k): k is NonNullable<typeof k> => k !== null);
-}
-
-export function loadSavedKata(kataDir: string, name: string): { stages: StageCategory[]; flavorHints?: Record<string, FlavorHint> } {
-  assertValidKataName(name);
-  const filePath = join(katasDir(kataDir), `${name}.json`);
-  if (!existsSync(filePath)) {
-    throw new Error(`Kata "${name}" not found. Use --list-katas to see available katas.`);
-  }
-  let raw: unknown;
-  try {
-    raw = JSON.parse(readFileSync(filePath, 'utf-8'));
-  } catch (e) {
-    throw new Error(
-      `Kata "${name}" has invalid JSON: ${e instanceof Error ? e.message : String(e)}`,
-      { cause: e },
-    );
-  }
-  try {
-    return SavedKataSchema.parse(raw);
-  } catch (e) {
-    throw new Error(
-      `Kata "${name}" has invalid structure. Ensure it has "name" (string) and "stages" (array of categories).`,
-      { cause: e },
-    );
-  }
-}
-
-export function saveSavedKata(kataDir: string, name: string, stages: StageCategory[], flavorHints?: Record<string, FlavorHint>): void {
-  assertValidKataName(name);
-  const dir = katasDir(kataDir);
-  mkdirSync(dir, { recursive: true });
-  const kata = SavedKataSchema.parse({ name, stages, flavorHints });
-  writeFileSync(join(dir, `${name}.json`), JSON.stringify(kata, null, 2), 'utf-8');
-}
-
-export function deleteSavedKata(kataDir: string, name: string): void {
-  assertValidKataName(name);
-  const filePath = join(katasDir(kataDir), `${name}.json`);
-  if (!existsSync(filePath)) {
-    throw new Error(`Kata "${name}" not found. Use --list-katas to see available katas.`);
-  }
-  try {
-    unlinkSync(filePath);
-  } catch (e) {
-    throw new Error(
-      `Could not delete kata "${name}": ${e instanceof Error ? e.message : String(e)}`,
-      { cause: e },
-    );
-  }
-}
+// Re-export saved-kata CRUD for backward compatibility
+export { listSavedKatas, loadSavedKata, saveSavedKata, deleteSavedKata } from '@cli/commands/saved-kata-store.js';

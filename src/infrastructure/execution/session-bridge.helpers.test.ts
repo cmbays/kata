@@ -6,7 +6,7 @@ import {
   findEarliestTimestamp,
   hasBridgeRunMetadataChanged,
   isJsonFile,
-  mapBridgeRunStatus,
+
   matchesCycleRef,
   resolveAgentId,
   sumTokenTotals,
@@ -78,14 +78,6 @@ describe('session-bridge helpers', () => {
     it('is re-exported and callable', () => {
       expect(isJsonFile('data.json')).toBe(true);
       expect(isJsonFile('readme.md')).toBe(false);
-    });
-  });
-
-  describe('mapBridgeRunStatus', () => {
-    it('passes through all status values unchanged', () => {
-      expect(mapBridgeRunStatus('in-progress')).toBe('in-progress');
-      expect(mapBridgeRunStatus('complete')).toBe('complete');
-      expect(mapBridgeRunStatus('failed')).toBe('failed');
     });
   });
 

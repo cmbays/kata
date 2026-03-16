@@ -55,12 +55,8 @@ import {
   shouldWriteDojoSession,
   isJsonFile,
   isSynthesisPendingFile,
-  hasFailedCaptures,
   isSyncableBet,
   collectBridgeRunIds,
-  hasObservations,
-  shouldSyncOutcomes,
-  hasMethod,
 } from './cooldown-session.helpers.js';
 
 /**
@@ -819,7 +815,7 @@ export class CooldownSession {
 
       const runObs = this.readObservationsForRun(runId, bet.id);
       // Stryker disable next-line ConditionalExpression: push(...[]) is a no-op — guard is equivalent
-      if (hasObservations(runObs)) {
+      if (runObs.length > 0) {
         observations.push(...runObs);
       }
     }
@@ -942,7 +938,7 @@ export class CooldownSession {
       }
     }
 
-    if (shouldSyncOutcomes(toSync)) {
+    if (toSync.length > 0) {
       this.recordBetOutcomes(cycleId, toSync);
     }
 
@@ -1006,7 +1002,7 @@ export class CooldownSession {
   private captureCooldownLearnings(report: CooldownReport): number {
     const attempts = this.captureCooldownLearningDrafts(report);
     // Stryker disable next-line ConditionalExpression: gates a warning message — presentation logic
-    if (hasFailedCaptures(attempts.failed)) {
+    if (attempts.failed > 0) {
       logger.warn(`${attempts.failed} of ${attempts.captured + attempts.failed} cooldown learnings failed to capture. Check previous warnings for details.`);
     }
 
@@ -1228,7 +1224,7 @@ export class CooldownSession {
   private runExpiryCheck(): void {
     try {
       // Stryker disable next-line ConditionalExpression: guard redundant with catch — checkExpiry absence is swallowed
-      if (!hasMethod(this.deps.knowledgeStore, 'checkExpiry')) return;
+      if (typeof (this.deps.knowledgeStore as unknown as Record<string, unknown>)?.['checkExpiry'] !== 'function') return;
       const result = this.deps.knowledgeStore.checkExpiry();
       for (const message of buildExpiryCheckMessages(result)) {
         logger.debug(message);
