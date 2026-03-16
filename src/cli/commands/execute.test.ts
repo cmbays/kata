@@ -564,6 +564,23 @@ describe('registerExecuteCommands', () => {
       expect(output).toContain('tokens: 7 total, 7 in, 0 out');
     });
 
+    it('prints plain-text completion without token line when no tokens provided', async () => {
+      const cycle = createCycleWithBets('No Token Cycle', [
+        { description: 'No token run', appetite: 20 },
+      ]);
+      const prepared = prepareRunForBet(cycle.bets[0]!.id);
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir, 'execute', 'complete', prepared.runId,
+      ]);
+
+      const output = consoleSpy.mock.calls.map((c: unknown[]) => c[0]).join('\n');
+      expect(output).toContain('marked as complete.');
+      // Token line should NOT appear when no tokens are provided
+      expect(output).not.toContain('tokens:');
+    });
+
     it('rejects null artifact entries', async () => {
       const cycle = createCycleWithBets('Artifact Null Cycle', [
         { description: 'Bad artifact item', appetite: 20 },
