@@ -275,6 +275,22 @@ describe('KataAgentConfidenceCalculator', () => {
       );
     });
 
+    it('creates nested directories when agentDir does not exist yet (recursive mkdir)', () => {
+      const { runsDir, knowledgeDir } = makeDirs();
+      const base = join(tmpdir(), `kata-conf-calc-nested-${randomUUID()}`);
+      // agentDir does not exist at all — needs recursive creation
+      const agentDir = join(base, 'deeply', 'nested', 'agents');
+
+      const calc = new KataAgentConfidenceCalculator({ runsDir, knowledgeDir, agentDir });
+      const id = randomUUID();
+
+      // This should succeed because mkdirSync uses { recursive: true }
+      // Mutating recursive to false would cause ENOENT
+      const profile = calc.compute(id, 'test-agent');
+      expect(profile.katakaId).toBe(id);
+      expect(existsSync(join(agentDir, id, 'confidence.json'))).toBe(true);
+    });
+
     it('handles missing knowledgeDir gracefully (learningCount = 0, overallConfidence = 0)', () => {
       const base = join(tmpdir(), `kata-conf-calc-${randomUUID()}`);
       const runsDir = join(base, '.kata', 'runs');
