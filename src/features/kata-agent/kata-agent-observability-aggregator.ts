@@ -1,4 +1,4 @@
-import { readdirSync, existsSync } from 'node:fs';
+import { readdirSync } from 'node:fs';
 import { RunSchema } from '@domain/types/run-state.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
 import { readObservations, runPaths } from '@infra/persistence/run-store.js';
@@ -32,6 +32,24 @@ export interface KataAgentObservabilityStats {
   lastRunCycleId?: string;
   /** ISO datetime of the most recent run's startedAt */
   lastActiveAt?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Pure helpers — extracted for direct unit testing and mutation coverage
+// ---------------------------------------------------------------------------
+
+export function isNewerRun(startedAt: string, latestStartedAt: string | undefined): boolean {
+  return latestStartedAt === undefined || startedAt > latestStartedAt;
+}
+
+export function listRunDirectoryIds(runsDir: string): string[] {
+  try {
+    return readdirSync(runsDir, { withFileTypes: true })
+      .filter((d) => d.isDirectory())
+      .map((d) => d.name);
+  } catch {
+    return [];
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -69,17 +87,7 @@ export class KataAgentObservabilityAggregator {
     };
 
     // --- Step 1: list run directories ---
-    let runIds: string[] = [];
-    if (existsSync(this.runsDir)) {
-      try {
-        runIds = readdirSync(this.runsDir, { withFileTypes: true })
-          .filter((d) => d.isDirectory())
-          .map((d) => d.name);
-      } catch {
-        // runsDir unreadable — return empty stats
-        return stats;
-      }
-    }
+    const runIds = listRunDirectoryIds(this.runsDir);
 
     // Track the most-recent run by startedAt (ISO string — lexicographic comparison is valid)
     let latestStartedAt: string | undefined;
@@ -98,7 +106,7 @@ export class KataAgentObservabilityAggregator {
       if ((run.agentId ?? run.katakaId) !== agentId) continue;
 
       // Track the most recent run
-      if (latestStartedAt === undefined || run.startedAt > latestStartedAt) {
+      if (isNewerRun(run.startedAt, latestStartedAt)) {
         latestStartedAt = run.startedAt;
         stats.lastRunId = run.id;
         stats.lastRunCycleId = run.cycleId;

@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
-import { KataAgentObservabilityAggregator } from './kata-agent-observability-aggregator.js';
+import { KataAgentObservabilityAggregator, isNewerRun, listRunDirectoryIds } from './kata-agent-observability-aggregator.js';
 import { createRunTree } from '@infra/persistence/run-store.js';
 import { appendObservation } from '@infra/persistence/run-store.js';
 import type { Run } from '@domain/types/run-state.js';
@@ -306,5 +306,65 @@ describe('KataAgentObservabilityAggregator', () => {
       // KnowledgeStore.loadForAgent uses query() which excludes archived by default
       expect(stats.agentLearningCount).toBe(1);
     });
+  });
+
+  describe('lastRunId / lastActiveAt tracking', () => {
+    it('selects the run with the latest startedAt across multiple runs', () => {
+      const { runsDir, knowledgeDir } = makeDirs();
+      const agentId = randomUUID();
+
+      const olderRun = makeRun({ katakaId: agentId, startedAt: '2025-01-01T00:00:00Z' });
+      const newerRun = makeRun({ katakaId: agentId, startedAt: '2025-06-15T12:00:00Z' });
+
+      createRunTree(runsDir, olderRun);
+      createRunTree(runsDir, newerRun);
+
+      const aggregator = new KataAgentObservabilityAggregator(runsDir, knowledgeDir);
+      const stats = aggregator.computeStats(agentId, 'test-agent');
+
+      expect(stats.lastRunId).toBe(newerRun.id);
+      expect(stats.lastActiveAt).toBe('2025-06-15T12:00:00Z');
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Pure helper tests
+// ---------------------------------------------------------------------------
+
+describe('isNewerRun', () => {
+  it('returns true when latestStartedAt is undefined (first run)', () => {
+    expect(isNewerRun('2025-01-01T00:00:00Z', undefined)).toBe(true);
+  });
+
+  it('returns true when startedAt is strictly later', () => {
+    expect(isNewerRun('2025-06-15T00:00:00Z', '2025-01-01T00:00:00Z')).toBe(true);
+  });
+
+  it('returns false when startedAt is earlier', () => {
+    expect(isNewerRun('2025-01-01T00:00:00Z', '2025-06-15T00:00:00Z')).toBe(false);
+  });
+
+  it('returns false when startedAt equals latestStartedAt', () => {
+    expect(isNewerRun('2025-01-01T00:00:00Z', '2025-01-01T00:00:00Z')).toBe(false);
+  });
+});
+
+describe('listRunDirectoryIds', () => {
+  it('returns directory names from runsDir', () => {
+    const { runsDir } = makeDirs();
+    mkdirSync(join(runsDir, 'run-a'));
+    mkdirSync(join(runsDir, 'run-b'));
+    // Create a non-directory file to verify filtering
+    writeFileSync(join(runsDir, 'not-a-dir.json'), '{}');
+
+    const ids = listRunDirectoryIds(runsDir);
+    expect(ids).toContain('run-a');
+    expect(ids).toContain('run-b');
+    expect(ids).not.toContain('not-a-dir.json');
+  });
+
+  it('returns empty array for nonexistent directory', () => {
+    expect(listRunDirectoryIds('/nonexistent/path/xyz')).toEqual([]);
   });
 });
