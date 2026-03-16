@@ -1039,4 +1039,143 @@ describe('SessionExecutionBridge unit coverage', () => {
     const second = bridge.prepareCycle(cycle.id);
     expect(second.preparedRuns[0]!.runId).toBe(runId);
   });
+
+  describe('mutation coverage — bridge run metadata', () => {
+    it('bridge-run metadata files end with a trailing newline', () => {
+      const cycle = createCycle(kataDir);
+      const bridge = new SessionExecutionBridge(kataDir);
+      const prepared = bridge.prepare(cycle.bets[0]!.id);
+
+      const bridgeRunPath = join(kataDir, 'bridge-runs', `${prepared.runId}.json`);
+      const raw = readFileSync(bridgeRunPath, 'utf-8');
+      expect(raw.endsWith('\n')).toBe(true);
+    });
+
+    it('getAgentContext returns null-equivalent for nonexistent run (throws)', () => {
+      createCycle(kataDir);
+      const bridge = new SessionExecutionBridge(kataDir);
+      // getAgentContext with a non-existent runId should throw
+      expect(() => bridge.getAgentContext(randomUUID())).toThrow('No bridge run found');
+    });
+
+    it('history entry uses claude-native as adapter name', () => {
+      const cycle = createCycle(kataDir);
+      const bridge = new SessionExecutionBridge(kataDir);
+      const prepared = bridge.prepare(cycle.bets[0]!.id);
+
+      bridge.complete(prepared.runId, { success: true });
+
+      const historyDir = join(kataDir, 'history');
+      const historyFiles = readdirSync(historyDir).filter((f) => f.endsWith('.json'));
+      expect(historyFiles).toHaveLength(1);
+
+      const entry = JSON.parse(readFileSync(join(historyDir, historyFiles[0]!), 'utf-8'));
+      expect(entry.adapter).toBe('claude-native');
+    });
+
+    it('history entry stageType is a comma-joined stages list', () => {
+      const cycle = createCycle(kataDir);
+      const bridge = new SessionExecutionBridge(kataDir);
+      const prepared = bridge.prepare(cycle.bets[0]!.id);
+
+      bridge.complete(prepared.runId, { success: true });
+
+      const historyDir = join(kataDir, 'history');
+      const historyFiles = readdirSync(historyDir).filter((f) => f.endsWith('.json'));
+      const entry = JSON.parse(readFileSync(join(historyDir, historyFiles[0]!), 'utf-8'));
+      // stageType should be the stages joined with commas
+      expect(entry.stageType).toBe(prepared.stages.join(','));
+    });
+
+    it('history entry artifacts array from agent completion result', () => {
+      const cycle = createCycle(kataDir);
+      const bridge = new SessionExecutionBridge(kataDir);
+      const prepared = bridge.prepare(cycle.bets[0]!.id);
+
+      bridge.complete(prepared.runId, {
+        success: true,
+        artifacts: [{ name: 'test-artifact' }],
+      });
+
+      const historyDir = join(kataDir, 'history');
+      const historyFiles = readdirSync(historyDir).filter((f) => f.endsWith('.json'));
+      const entry = JSON.parse(readFileSync(join(historyDir, historyFiles[0]!), 'utf-8'));
+      expect(entry.artifactNames).toEqual(['test-artifact']);
+    });
+  });
+
+  describe('mutation coverage — cycle status edge cases', () => {
+    it('getCycleStatus returns 0m elapsed when no bridge runs exist', () => {
+      const cycle = createCycle(kataDir);
+      const bridge = new SessionExecutionBridge(kataDir);
+      // No runs prepared — elapsed should be "0m"
+      const status = bridge.getCycleStatus(cycle.id);
+      expect(status.elapsed).toBe('0m');
+    });
+
+    it('getCycleStatus counts observations from run data directories', () => {
+      const cycle = createCycle(kataDir);
+      const bridge = new SessionExecutionBridge(kataDir);
+      const prepared = bridge.prepare(cycle.bets[0]!.id);
+
+      // Create a stages dir with an observations.jsonl file
+      const runDir = join(kataDir, 'runs', prepared.runId);
+      const stagesDir = join(runDir, 'stages', 'build');
+      mkdirSync(stagesDir, { recursive: true });
+      writeFileSync(join(stagesDir, 'observations.jsonl'), '{"type":"note"}\n{"type":"note"}\n');
+
+      const status = bridge.getCycleStatus(cycle.id);
+      const bet = status.bets.find((b) => b.betId === cycle.bets[0]!.id);
+      expect(bet).toBeDefined();
+      // Should count the stage-level observations
+      expect(bet!.kansatsuCount).toBeGreaterThanOrEqual(2);
+    });
+
+    it('getCycleStatus handles non-existent jsonl files gracefully (returns 0)', () => {
+      const cycle = createCycle(kataDir);
+      const bridge = new SessionExecutionBridge(kataDir);
+      bridge.prepare(cycle.bets[0]!.id);
+
+      // Run dir exists but no observations.jsonl
+      const status = bridge.getCycleStatus(cycle.id);
+      const bet = status.bets.find((b) => b.betId === cycle.bets[0]!.id);
+      expect(bet).toBeDefined();
+      expect(bet!.kansatsuCount).toBe(0);
+      expect(bet!.artifactCount).toBe(0);
+      expect(bet!.decisionCount).toBe(0);
+    });
+  });
+
+  describe('mutation coverage — prepareCycle backfill path', () => {
+    it('prepareCycle backfills runId when bet has no prior runId but bridge run exists by betId', () => {
+      const betId = randomUUID();
+      const cycle = createCycle(kataDir, {
+        state: 'planning',
+        bets: [
+          { id: betId, description: 'No runId bet', appetite: 10, outcome: 'pending' },
+        ],
+      });
+      const bridge = new SessionExecutionBridge(kataDir);
+
+      // First prepare — creates bridge run and backfills
+      const first = bridge.prepareCycle(cycle.id);
+      const runId = first.preparedRuns[0]!.runId;
+
+      // Manually clear the bet.runId in the cycle JSON to simulate no runId
+      const cyclePath = join(kataDir, 'cycles', `${cycle.id}.json`);
+      const cycleData = JSON.parse(readFileSync(cyclePath, 'utf-8'));
+      cycleData.bets[0].runId = undefined;
+      writeFileSync(cyclePath, JSON.stringify(cycleData, null, 2));
+
+      // Second prepare — bet.runId is undefined but bridge run exists by betId
+      // The condition bet.runId !== refreshedMeta.runId is true (undefined !== runId)
+      // so backfill should happen
+      const second = bridge.prepareCycle(cycle.id);
+      expect(second.preparedRuns[0]!.runId).toBe(runId);
+
+      // Verify bet.runId was re-backfilled
+      const cycleAfter = CycleSchema.parse(JSON.parse(readFileSync(cyclePath, 'utf-8')));
+      expect(cycleAfter.bets[0]!.runId).toBe(runId);
+    });
+  });
 });
