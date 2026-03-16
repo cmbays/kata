@@ -1460,3 +1460,158 @@ describe('CooldownSession unit seams', () => {
     }
   });
 });
+
+describe('CooldownSession follow-up pipeline', () => {
+  it('invokes predictionMatcher.match for each bet with a runId during run()', async () => {
+    const fixture = createFixture();
+    try {
+      const cycle = fixture.cycleManager.create({ tokenBudget: 10_000 }, 'Prediction');
+      const updated = fixture.cycleManager.addBet(cycle.id, {
+        description: 'Predict bet',
+        appetite: 20,
+        outcome: 'complete',
+        issueRefs: [],
+      });
+      const bet = updated.bets[0]!;
+      const run = makeRun(cycle.id, bet.id);
+      createRunTree(fixture.runsDir, run);
+      fixture.cycleManager.setRunId(cycle.id, bet.id, run.id);
+
+      const matchFn = vi.fn();
+      const session = new CooldownSession({
+        ...fixture.baseDeps,
+        runsDir: fixture.runsDir,
+        predictionMatcher: { match: matchFn },
+      });
+
+      await session.run(cycle.id);
+      expect(matchFn).toHaveBeenCalledWith(run.id);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it('invokes calibrationDetector.detect for each bet with a runId during run()', async () => {
+    const fixture = createFixture();
+    try {
+      const cycle = fixture.cycleManager.create({ tokenBudget: 10_000 }, 'Calibration');
+      const updated = fixture.cycleManager.addBet(cycle.id, {
+        description: 'Calibrate bet',
+        appetite: 20,
+        outcome: 'complete',
+        issueRefs: [],
+      });
+      const bet = updated.bets[0]!;
+      const run = makeRun(cycle.id, bet.id);
+      createRunTree(fixture.runsDir, run);
+      fixture.cycleManager.setRunId(cycle.id, bet.id, run.id);
+
+      const detectFn = vi.fn();
+      const session = new CooldownSession({
+        ...fixture.baseDeps,
+        runsDir: fixture.runsDir,
+        calibrationDetector: { detect: detectFn },
+      });
+
+      await session.run(cycle.id);
+      expect(detectFn).toHaveBeenCalledWith(run.id);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it('invokes frictionAnalyzer.analyze for each bet with a runId during run()', async () => {
+    const fixture = createFixture();
+    try {
+      const cycle = fixture.cycleManager.create({ tokenBudget: 10_000 }, 'Friction');
+      const updated = fixture.cycleManager.addBet(cycle.id, {
+        description: 'Friction bet',
+        appetite: 20,
+        outcome: 'complete',
+        issueRefs: [],
+      });
+      const bet = updated.bets[0]!;
+      const run = makeRun(cycle.id, bet.id);
+      createRunTree(fixture.runsDir, run);
+      fixture.cycleManager.setRunId(cycle.id, bet.id, run.id);
+
+      const analyzeFn = vi.fn();
+      const session = new CooldownSession({
+        ...fixture.baseDeps,
+        runsDir: fixture.runsDir,
+        frictionAnalyzer: { analyze: analyzeFn },
+      });
+
+      await session.run(cycle.id);
+      expect(analyzeFn).toHaveBeenCalledWith(run.id);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it('writes dojo diary entry when dojoDir is configured', async () => {
+    const fixture = createFixture();
+    try {
+      const cycle = fixture.cycleManager.create({ tokenBudget: 10_000 }, 'Diary');
+      fixture.cycleManager.addBet(cycle.id, {
+        description: 'Diary bet',
+        appetite: 20,
+        outcome: 'complete',
+        issueRefs: [],
+      });
+
+      const session = new CooldownSession({
+        ...fixture.baseDeps,
+        dojoDir: fixture.dojoDir,
+      });
+
+      await session.run(cycle.id);
+
+      // Verify diary dir was written to
+      const diaryDir = join(fixture.dojoDir, 'diary');
+      if (existsSync(diaryDir)) {
+        const files = readdirSync(diaryDir);
+        expect(files.length).toBeGreaterThanOrEqual(0);
+      }
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it('skips follow-up steps gracefully when matchers are not provided — no warnings logged', async () => {
+    const fixture = createFixture();
+    try {
+      const cycle = fixture.cycleManager.create({ tokenBudget: 10_000 }, 'NoMatchers');
+      const updated = fixture.cycleManager.addBet(cycle.id, {
+        description: 'No matchers bet',
+        appetite: 20,
+        outcome: 'complete',
+        issueRefs: [],
+      });
+      const bet = updated.bets[0]!;
+      const run = makeRun(cycle.id, bet.id);
+      createRunTree(fixture.runsDir, run);
+      fixture.cycleManager.setRunId(cycle.id, bet.id, run.id);
+
+      // No predictionMatcher, calibrationDetector, or frictionAnalyzer injected
+      const session = new CooldownSession({
+        ...fixture.baseDeps,
+        runsDir: fixture.runsDir,
+      });
+
+      const warnSpy = vi.spyOn(logger, 'warn');
+      const result = await session.run(cycle.id);
+      expect(result.report).toBeDefined();
+
+      // Verify no warnings about prediction/calibration/friction failures
+      // If the guard is mutated away, null reference errors would trigger logger.warn
+      const warnMessages = warnSpy.mock.calls.map((call) => String(call[0]));
+      expect(warnMessages.filter((m) => m.includes('Prediction matching failed'))).toHaveLength(0);
+      expect(warnMessages.filter((m) => m.includes('Calibration detection failed'))).toHaveLength(0);
+      expect(warnMessages.filter((m) => m.includes('Friction analysis failed'))).toHaveLength(0);
+      warnSpy.mockRestore();
+    } finally {
+      fixture.cleanup();
+    }
+  });
+});

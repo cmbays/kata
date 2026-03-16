@@ -400,6 +400,67 @@ describe('countObservationsByType', () => {
   });
 });
 
+describe('KataAgentObservabilityAggregator — lastRunId tracking', () => {
+  it('tracks the most recent run by startedAt when multiple runs exist for the agent', () => {
+    const { runsDir, knowledgeDir } = makeDirs();
+    const agentId = randomUUID();
+
+    // Create an older run
+    const olderRun = makeRun({
+      agentId,
+      katakaId: agentId,
+      startedAt: '2026-01-01T00:00:00.000Z',
+    });
+    createRunTree(runsDir, olderRun);
+    appendObservation(runsDir, olderRun.id, makeObservation({ agentId, katakaId: agentId }), { level: 'run' });
+
+    // Create a newer run
+    const newerRun = makeRun({
+      agentId,
+      katakaId: agentId,
+      startedAt: '2026-03-16T00:00:00.000Z',
+    });
+    createRunTree(runsDir, newerRun);
+    appendObservation(runsDir, newerRun.id, makeObservation({ agentId, katakaId: agentId }), { level: 'run' });
+
+    const aggregator = new KataAgentObservabilityAggregator(runsDir, knowledgeDir);
+    const stats = aggregator.computeStats(agentId, 'test-agent');
+
+    // lastRunId should be the newer run, not the older one
+    expect(stats.lastRunId).toBe(newerRun.id);
+    expect(stats.lastActiveAt).toBe('2026-03-16T00:00:00.000Z');
+    // Total observations should include both runs
+    expect(stats.observationCount).toBe(2);
+  });
+
+  it('does not overwrite lastRunId with an older run', () => {
+    const { runsDir, knowledgeDir } = makeDirs();
+    const agentId = randomUUID();
+
+    // Create runs in reverse chronological order on disk
+    const newerRun = makeRun({
+      agentId,
+      katakaId: agentId,
+      startedAt: '2026-06-01T00:00:00.000Z',
+    });
+    createRunTree(runsDir, newerRun);
+
+    const olderRun = makeRun({
+      agentId,
+      katakaId: agentId,
+      startedAt: '2026-01-01T00:00:00.000Z',
+    });
+    createRunTree(runsDir, olderRun);
+
+    const aggregator = new KataAgentObservabilityAggregator(runsDir, knowledgeDir);
+    const stats = aggregator.computeStats(agentId, 'test-agent');
+
+    // Regardless of disk order, lastRunId should be the newer run
+    expect(stats.lastRunId).toBe(newerRun.id);
+    expect(stats.lastActiveAt).toBe('2026-06-01T00:00:00.000Z');
+  });
+});
+
 describe('listRunDirectoryIds', () => {
   it('returns directory names from runsDir', () => {
     const { runsDir } = makeDirs();
