@@ -1177,5 +1177,116 @@ describe('SessionExecutionBridge unit coverage', () => {
       const cycleAfter = CycleSchema.parse(JSON.parse(readFileSync(cyclePath, 'utf-8')));
       expect(cycleAfter.bets[0]!.runId).toBe(runId);
     });
+
+    it('findCycleForBet ignores non-json files in cycles directory', () => {
+      const betId = randomUUID();
+      createCycle(kataDir, {
+        state: 'active',
+        bets: [
+          { id: betId, description: 'Real bet', appetite: 10, outcome: 'pending' },
+        ],
+      });
+
+      // Add non-json files that should be filtered
+      const cyclesDir = join(kataDir, 'cycles');
+      writeFileSync(join(cyclesDir, 'README.txt'), 'Not a cycle');
+      writeFileSync(join(cyclesDir, '.DS_Store'), 'junk');
+
+      const bridge = new SessionExecutionBridge(kataDir);
+      // Should still find the bet — non-json files are filtered
+      const prepared = bridge.prepare(betId);
+      expect(prepared.betId).toBe(betId);
+    });
+
+    it('loadCycle ignores non-json files in cycles directory', () => {
+      const cycle = createCycle(kataDir, { state: 'active' });
+      const betId = cycle.bets[0]!.id;
+
+      // Add non-json files
+      const cyclesDir = join(kataDir, 'cycles');
+      writeFileSync(join(cyclesDir, 'notes.txt'), 'Not a cycle');
+
+      const bridge = new SessionExecutionBridge(kataDir);
+      const prepared = bridge.prepare(betId);
+      expect(prepared.runId).toBeDefined();
+    });
+
+    it('collectCycleCompletionTotals filters null bridge run reads', () => {
+      const betId = randomUUID();
+      const cycle = createCycle(kataDir, {
+        state: 'planning',
+        bets: [{ id: betId, description: 'Single bet', appetite: 10, outcome: 'pending' }],
+      });
+      const bridge = new SessionExecutionBridge(kataDir);
+
+      // prepareCycle will create bridge runs
+      const result = bridge.prepareCycle(cycle.id);
+      expect(result.preparedRuns).toHaveLength(1);
+
+      // Write an invalid bridge-run file to test null filtering
+      const bridgeRunsDir = join(kataDir, 'bridge-runs');
+      writeFileSync(join(bridgeRunsDir, 'invalid-run.json'), '{invalid json}}}');
+
+      // completeCycle reads all bridge runs — the invalid one should be filtered (null → filtered)
+      const completionResult = bridge.completeCycle(cycle.id, true);
+      expect(completionResult).toBeDefined();
+    });
+
+    it('writeCycleNameIfChanged only writes when name actually differs from existing', () => {
+      const betId = randomUUID();
+      const cycle = createCycle(kataDir, {
+        state: 'planning',
+        name: 'Original Name',
+        bets: [{ id: betId, description: 'Name test bet', appetite: 10, outcome: 'pending' }],
+      });
+      const bridge = new SessionExecutionBridge(kataDir);
+      const cyclePath = join(kataDir, 'cycles', `${cycle.id}.json`);
+
+      // First prepareCycle transitions planning → active and sets the name
+      bridge.prepareCycle(cycle.id, undefined, 'Original Name');
+      const afterFirst = CycleSchema.parse(JSON.parse(readFileSync(cyclePath, 'utf-8')));
+      expect(afterFirst.name).toBe('Original Name');
+      expect(afterFirst.state).toBe('active');
+
+      // Second prepareCycle with a DIFFERENT name — state is already active
+      // so writeCycleNameIfChanged is called, and (cycle.name !== name) triggers update
+      bridge.prepareCycle(cycle.id, undefined, 'Updated Name');
+      const afterSecond = CycleSchema.parse(JSON.parse(readFileSync(cyclePath, 'utf-8')));
+      expect(afterSecond.name).toBe('Updated Name');
+    });
+
+    it('prepareCycle deduplicates bridge runs by betId for the same bet', () => {
+      const betId = randomUUID();
+      const cycle = createCycle(kataDir, {
+        state: 'planning',
+        bets: [
+          { id: betId, description: 'Dedup bet', appetite: 10, outcome: 'pending' },
+        ],
+      });
+
+      const bridge = new SessionExecutionBridge(kataDir);
+
+      // First prepare creates a bridge run
+      const first = bridge.prepareCycle(cycle.id);
+      const runId = first.preparedRuns[0]!.runId;
+
+      // Write a second bridge run with same betId but different runId (simulating a race)
+      const bridgeRunsDir = join(kataDir, 'bridge-runs');
+      const secondRunId = randomUUID();
+      writeFileSync(join(bridgeRunsDir, `${secondRunId}.json`), JSON.stringify({
+        runId: secondRunId,
+        betId,
+        cycleId: cycle.id,
+        stages: ['build'],
+        isolation: 'shared',
+        startedAt: new Date().toISOString(),
+        cycleName: 'Test Cycle',
+        status: 'in-progress',
+      }, null, 2));
+
+      // Second prepare should reuse the first (already mapped by betId)
+      const second = bridge.prepareCycle(cycle.id);
+      expect(second.preparedRuns[0]!.runId).toBe(runId);
+    });
   });
 });
