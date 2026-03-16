@@ -825,4 +825,98 @@ describe('SessionExecutionBridge unit coverage', () => {
 
     expect(totals.completedBets).toBeGreaterThanOrEqual(1);
   });
+
+  it('readBridgeRunMeta returns null when file does not exist', () => {
+    const bridge = new SessionExecutionBridge(kataDir);
+    const result = (bridge as unknown as {
+      readBridgeRunMeta: (runId: string) => unknown;
+    }).readBridgeRunMeta('nonexistent-run-id');
+
+    expect(result).toBeNull();
+  });
+
+  it('updateRunJsonOnComplete is no-op when run.json does not exist', () => {
+    const bridge = new SessionExecutionBridge(kataDir);
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+
+    try {
+      // Create a bridge run but delete the run.json
+      const cycle = createCycle(kataDir);
+      const prepared = bridge.prepare(cycle.bets[0]!.id);
+      rmSync(join(kataDir, 'runs', prepared.runId, 'run.json'));
+
+      // Complete should succeed (history entry written) even if run.json is missing
+      bridge.complete(prepared.runId, { success: true });
+
+      // Check that run.json was NOT recreated
+      expect(existsSync(join(kataDir, 'runs', prepared.runId, 'run.json'))).toBe(false);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('updateRunJsonAgentAttribution is no-op when run.json does not exist', () => {
+    const bridge = new SessionExecutionBridge(kataDir);
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+
+    try {
+      const cycle = createCycle(kataDir, { state: 'planning' });
+      const first = bridge.prepareCycle(cycle.id);
+      const runId = first.preparedRuns[0]!.runId;
+
+      // Delete run.json
+      rmSync(join(kataDir, 'runs', runId, 'run.json'));
+
+      // Re-prepare with agent ID — should not crash
+      const agentId = randomUUID();
+      bridge.prepareCycle(cycle.id, agentId);
+
+      // run.json was NOT recreated
+      expect(existsSync(join(kataDir, 'runs', runId, 'run.json'))).toBe(false);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('completeCycle filters out null metadata from re-read bridgeRuns', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-03-16T10:00:00.000Z'));
+
+    const cycle = createCycle(kataDir);
+    const bridge = new SessionExecutionBridge(kataDir);
+    const prepared = bridge.prepareCycle(cycle.id);
+
+    // Delete one bridge-run metadata file to simulate a corrupt/missing state
+    const runIdToDelete = prepared.preparedRuns[1]!.runId;
+    rmSync(join(kataDir, 'bridge-runs', `${runIdToDelete}.json`));
+
+    // completeCycle should still work, filtering out the null
+    const summary = bridge.completeCycle(cycle.id, {});
+
+    // The cycle has 2 bets but only 1 bridge-run remains
+    expect(summary.totalBets).toBe(2);
+  });
+
+  it('prepareCycle handles bet.runId already matching reusable bridge run', () => {
+    const betId = randomUUID();
+    const cycle = createCycle(kataDir, {
+      state: 'planning',
+      bets: [
+        { id: betId, description: 'Match bet', appetite: 10, outcome: 'pending' },
+      ],
+    });
+    const bridge = new SessionExecutionBridge(kataDir);
+
+    // First prepare sets bet.runId
+    const first = bridge.prepareCycle(cycle.id);
+    const runId = first.preparedRuns[0]!.runId;
+
+    // Verify bet.runId is set
+    const cycleJson = CycleSchema.parse(JSON.parse(readFileSync(join(kataDir, 'cycles', `${cycle.id}.json`), 'utf-8')));
+    expect(cycleJson.bets[0]!.runId).toBe(runId);
+
+    // Re-prepare: bet.runId already matches the bridge-run runId — no redundant write
+    const second = bridge.prepareCycle(cycle.id);
+    expect(second.preparedRuns[0]!.runId).toBe(runId);
+  });
 });
