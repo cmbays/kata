@@ -662,6 +662,23 @@ describe('registerExecuteCommands', () => {
       expect(parsed.agentContext).toContain(`**Run ID**: ${prepared.runId}`);
       expect(parsed.agentContext).toContain(`**Bet ID**: ${prepared.betId}`);
     });
+
+    it('renders plain-text context when --json is not passed', async () => {
+      const cycle = createCycleWithBets('Plain Context Cycle', [
+        { description: 'Plain text run', appetite: 25 },
+      ]);
+      const prepared = prepareRunForBet(cycle.bets[0]!.id);
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir, 'execute', 'context', prepared.runId,
+      ]);
+
+      const output = consoleSpy.mock.calls.map((c: unknown[]) => c[0]).join('\n');
+      // Plain text mode: should contain markdown, NOT wrapped in JSON
+      expect(output).toContain(`**Run ID**: ${prepared.runId}`);
+      expect(() => JSON.parse(output)).toThrow();
+    });
   });
 
   describe('hidden backward-compatible execute commands', () => {
@@ -677,6 +694,44 @@ describe('registerExecuteCommands', () => {
       await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', 'pipeline', 'build', 'review']);
 
       expect(mockRunPipeline).toHaveBeenCalledWith(['build', 'review'], expect.anything());
+    });
+
+    it('single-stage prints decision details in plain-text mode', async () => {
+      mockRunStage.mockResolvedValue({
+        ...makeSingleResult('build'),
+        decisions: [
+          { decisionType: 'flavor-selection', selection: 'typescript-tdd', confidence: 0.85 },
+        ],
+      });
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', 'run', 'build']);
+
+      const output = consoleSpy.mock.calls.map((c: unknown[]) => c[0]).join('\n');
+      expect(output).toContain('flavor-selection: typescript-tdd');
+      expect(output).toContain('Stage: build');
+      expect(output).toContain('build-synthesis');
+    });
+
+    it('pipeline prints per-stage details in plain-text mode', async () => {
+      mockRunPipeline.mockResolvedValue({
+        stageResults: [
+          { ...makeSingleResult('build'), stageCategory: 'build', selectedFlavors: ['ts-build'] },
+          { ...makeSingleResult('review'), stageCategory: 'review', selectedFlavors: ['code-review'] },
+        ],
+        pipelineReflection: { overallQuality: 'good', learnings: ['Learned something'] },
+      });
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', 'pipeline', 'build', 'review']);
+
+      const output = consoleSpy.mock.calls.map((c: unknown[]) => c[0]).join('\n');
+      expect(output).toContain('Pipeline: build -> review');
+      expect(output).toContain('build:');
+      expect(output).toContain('review:');
+      expect(output).toContain('Flavors:');
+      expect(output).toContain('Learnings:');
+      expect(output).toContain('Learned something');
     });
 
     it('merges --pin and --ryu flags for the hidden execute run alias', async () => {
@@ -971,6 +1026,16 @@ describe('registerExecuteCommands', () => {
       await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', '--gyo', ',,,']);
 
       expect(process.exitCode).toBe(1);
+    });
+
+    it('trims whitespace from --gyo categories', async () => {
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', '--gyo', ' build , review ']);
+
+      expect(mockRunPipeline).toHaveBeenCalledWith(
+        ['build', 'review'],
+        expect.anything(),
+      );
     });
   });
 
@@ -1814,6 +1879,22 @@ describe('saved kata CRUD functions', () => {
       expect(() => deleteSavedKata(tmpBase, 'nonexistent')).toThrow(
         'Kata "nonexistent" not found.',
       );
+    });
+  });
+
+  describe('listSavedKatas with non-json files', () => {
+    it('filters out non-json files from the katas directory', () => {
+      const dir = join(tmpBase, 'katas');
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, 'readme.txt'), 'not a kata');
+      writeFileSync(join(dir, 'valid.json'), JSON.stringify({
+        name: 'valid',
+        stages: ['build'],
+      }));
+
+      const katas = listSavedKatas(tmpBase);
+      expect(katas).toHaveLength(1);
+      expect(katas[0]!.name).toBe('valid');
     });
   });
 });
