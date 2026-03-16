@@ -3,9 +3,14 @@ import {
   betStatusSymbol,
   buildPreparedCycleOutputLines,
   buildPreparedRunOutputLines,
+  formatConfidencePercent,
   formatDurationMs,
   formatAgentLoadError,
   formatExplain,
+  hasBlockedGaps,
+  hasBridgedGaps,
+  hasNoGapsToBridge,
+  hasPipelineLearnings,
   mergePinnedFlavors,
   parseBetOption,
   parseCompletedRunArtifacts,
@@ -475,6 +480,63 @@ describe('execute helpers', () => {
 
     it('returns complete when flag is undefined', () => {
       expect(resolveCompletionStatus(undefined)).toBe('complete');
+    });
+  });
+
+  describe('hasNoGapsToBridge', () => {
+    it('returns true when gaps is undefined', () => {
+      expect(hasNoGapsToBridge(undefined)).toBe(true);
+    });
+
+    it('returns true when gaps is empty', () => {
+      expect(hasNoGapsToBridge([])).toBe(true);
+    });
+
+    it('returns false when there are gaps', () => {
+      expect(hasNoGapsToBridge([{ description: 'gap' }])).toBe(false);
+    });
+  });
+
+  describe('hasBridgedGaps', () => {
+    it('returns true for non-empty bridged array', () => {
+      expect(hasBridgedGaps([{ id: '1' }])).toBe(true);
+    });
+
+    it('returns false for empty array', () => {
+      expect(hasBridgedGaps([])).toBe(false);
+    });
+  });
+
+  describe('hasBlockedGaps', () => {
+    it('returns true for non-empty blocked array', () => {
+      expect(hasBlockedGaps([{ id: '1' }])).toBe(true);
+    });
+
+    it('returns false for empty array', () => {
+      expect(hasBlockedGaps([])).toBe(false);
+    });
+  });
+
+  describe('formatConfidencePercent', () => {
+    it('converts decimal confidence to percent string', () => {
+      expect(formatConfidencePercent(0.75)).toBe('75%');
+      expect(formatConfidencePercent(1)).toBe('100%');
+      expect(formatConfidencePercent(0)).toBe('0%');
+    });
+
+    it('rounds to nearest integer', () => {
+      expect(formatConfidencePercent(0.333)).toBe('33%');
+      expect(formatConfidencePercent(0.667)).toBe('67%');
+    });
+  });
+
+  describe('hasPipelineLearnings', () => {
+    it('returns true for non-empty learnings', () => {
+      expect(hasPipelineLearnings(['learning 1'])).toBe(true);
+    });
+
+    it('returns false for empty learnings', () => {
+      expect(hasPipelineLearnings([])).toBe(false);
     });
   });
 });

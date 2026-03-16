@@ -26,9 +26,14 @@ import {
   betStatusSymbol,
   buildPreparedCycleOutputLines,
   buildPreparedRunOutputLines,
+  formatConfidencePercent,
   formatDurationMs,
   formatAgentLoadError,
   formatExplain,
+  hasBlockedGaps,
+  hasBridgedGaps,
+  hasNoGapsToBridge,
+  hasPipelineLearnings,
   mergePinnedFlavors,
   parseBetOption,
   parseCompletedRunArtifacts,
@@ -657,20 +662,20 @@ function bridgeExecutionGaps(input: {
     suggestedFlavors: string[];
   }>;
 }): boolean {
-  if (!input.gaps || input.gaps.length === 0) return true;
+  if (hasNoGapsToBridge(input.gaps)) return true;
 
   const store = new KnowledgeStore(kataDirPath(input.kataDir, 'knowledge'));
   const bridger = new GapBridger({ knowledgeStore: store });
-  const { blocked, bridged } = bridger.bridge(input.gaps);
+  const { blocked, bridged } = bridger.bridge(input.gaps!);
 
-  if (blocked.length > 0) {
+  if (hasBlockedGaps(blocked)) {
     console.error(`[kata] Blocked by ${blocked.length} high-severity gap(s):`);
     for (const gap of blocked) console.error(`  • ${gap.description}`);
     process.exitCode = 1;
     return false;
   }
 
-  if (bridged.length > 0) {
+  if (hasBridgedGaps(bridged)) {
     console.log(`[kata] Captured ${bridged.length} gap(s) as step-tier learnings.`);
     ProjectStateUpdater.incrementGapsClosed(input.projectStateFile, bridged.length);
   }
@@ -695,7 +700,7 @@ function printSingleCategoryResult(result: StageRunResult, isJson: boolean, opts
   console.log('');
   console.log('Decisions:');
   for (const decision of result.decisions) {
-    console.log(`  ${decision.decisionType}: ${decision.selection} (confidence: ${(decision.confidence * 100).toFixed(0)}%)`);
+    console.log(`  ${decision.decisionType}: ${decision.selection} (confidence: ${formatConfidencePercent(decision.confidence)})`);
   }
   console.log('');
   console.log(`Stage artifact: ${result.stageArtifact.name}`);
@@ -735,7 +740,7 @@ function printPipelineResult(
     console.log(`    Artifact: ${stageResult.stageArtifact.name}`);
   }
 
-  if (result.pipelineReflection.learnings.length > 0) {
+  if (hasPipelineLearnings(result.pipelineReflection.learnings)) {
     console.log('');
     console.log('Learnings:');
     for (const learning of result.pipelineReflection.learnings) {
