@@ -18,6 +18,11 @@ import { type Bet } from '@domain/types/bet.js';
 import { StageCategorySchema } from '@domain/types/stage.js';
 import { z } from 'zod/v4';
 import { JsonStore } from '@infra/persistence/json-store.js';
+import {
+  canTransitionCycleState,
+  hasBridgeRunMetadataChanged,
+  isJsonFile,
+} from './session-bridge.helpers.js';
 import { createRunTree, readRun, writeRun, runPaths } from '@infra/persistence/run-store.js';
 import { KATA_DIRS } from '@shared/constants/paths.js';
 import { logger } from '@shared/lib/logger.js';
@@ -420,7 +425,7 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
       throw new Error('No cycles directory found. Run "kata cycle new" first.');
     }
 
-    const files = readdirSync(cyclesDir).filter((f) => f.endsWith('.json'));
+    const files = readdirSync(cyclesDir).filter(isJsonFile);
     for (const file of files) {
       try {
         const cycle = JsonStore.read(join(cyclesDir, file), CycleSchema);
@@ -437,7 +442,7 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
 
   private loadCycle(cycleId: string): Cycle {
     const cyclesDir = join(this.kataDir, KATA_DIRS.cycles);
-    const files = readdirSync(cyclesDir).filter((f) => f.endsWith('.json'));
+    const files = readdirSync(cyclesDir).filter(isJsonFile);
 
     for (const file of files) {
       try {
@@ -520,7 +525,7 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
         this.writeCycleNameIfChanged(cyclePath, cycle, name);
         return;
       }
-      if (!this.canTransitionCycleState(cycle.state, state)) {
+      if (!this.canTransition(cycle.state, state)) {
         logger.warn(`Cannot transition cycle "${cycleId}" from "${cycle.state}" to "${state}".`);
         return;
       }
@@ -531,14 +536,9 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
     }
   }
 
-  private canTransitionCycleState(from: CycleState, to: CycleState): boolean {
-    const allowedTransitions: Partial<Record<CycleState, CycleState>> = {
-      planning: 'active',
-      active: 'cooldown',
-      cooldown: 'complete',
-    };
-
-    return allowedTransitions[from] === to;
+  // Delegates to the extracted pure helper for testability.
+  private canTransition(from: CycleState, to: CycleState): boolean {
+    return canTransitionCycleState(from, to);
   }
 
   private writeCycleNameIfChanged(cyclePath: string, cycle: Cycle, name?: string): void {
@@ -648,7 +648,7 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
       cycleName: cycle.name ?? cycle.id,
     };
 
-    let changed = refreshed.betName !== meta.betName || refreshed.cycleName !== meta.cycleName;
+    let changed = hasBridgeRunMetadataChanged(meta, refreshed);
 
     if (agentId && !meta.agentId) {
       refreshed.agentId = agentId;
