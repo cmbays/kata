@@ -1080,6 +1080,7 @@ export class CooldownSession {
     if (!this.deps.bridgeRunsDir) return undefined;
 
     const bridgeRunPath = join(this.deps.bridgeRunsDir, `${runId}.json`);
+    if (!existsSync(bridgeRunPath)) return undefined;
     const status = this.readBridgeRunMeta(bridgeRunPath)?.status;
     const incompleteStatus = mapBridgeRunStatusToIncompleteStatus(status);
     return incompleteStatus ?? null;
