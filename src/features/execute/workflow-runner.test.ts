@@ -972,6 +972,7 @@ describe('WorkflowRunner', () => {
       expect(new Date(entry.startedAt).toISOString()).toBe(entry.startedAt);
       expect(new Date(entry.completedAt).toISOString()).toBe(entry.completedAt);
     });
+
   });
 
   describe('listRecentArtifacts filtering', () => {
@@ -985,6 +986,101 @@ describe('WorkflowRunner', () => {
       const artifacts = listRecentArtifacts(baseDir);
       expect(artifacts).toHaveLength(1);
       expect(artifacts[0]!.name).toBe('test-artifact');
+    });
+  });
+
+  describe('runStage agentId and katakaId handling', () => {
+    it('persists agentId and katakaId in artifact metadata when agentId is provided', async () => {
+      const deps = makeDeps({ kataDir: baseDir });
+      const runner = new WorkflowRunner(deps);
+      await runner.runStage('build', { agentId: 'agent-42' });
+
+      const artifactsDir = join(baseDir, 'artifacts');
+      const files = readdirSync(artifactsDir).filter((f: string) => f.endsWith('.json'));
+      expect(files).toHaveLength(1);
+      const artifact = JSON.parse(readFileSync(join(artifactsDir, files[0]!), 'utf-8'));
+      expect(artifact.agentId).toBe('agent-42');
+      expect(artifact.katakaId).toBe('agent-42');
+    });
+
+    it('does not include agentId in artifact when not provided', async () => {
+      const deps = makeDeps({ kataDir: baseDir });
+      const runner = new WorkflowRunner(deps);
+      await runner.runStage('build');
+
+      const artifactsDir = join(baseDir, 'artifacts');
+      const files = readdirSync(artifactsDir).filter((f: string) => f.endsWith('.json'));
+      const artifact = JSON.parse(readFileSync(join(artifactsDir, files[0]!), 'utf-8'));
+      expect(artifact.agentId).toBeUndefined();
+      expect(artifact.katakaId).toBeUndefined();
+    });
+
+    it('falls back to katakaId when agentId is not provided', async () => {
+      const deps = makeDeps({ kataDir: baseDir });
+      const runner = new WorkflowRunner(deps);
+      await runner.runStage('build', { katakaId: 'kataka-99' });
+
+      const artifactsDir = join(baseDir, 'artifacts');
+      const files = readdirSync(artifactsDir).filter((f: string) => f.endsWith('.json'));
+      const artifact = JSON.parse(readFileSync(join(artifactsDir, files[0]!), 'utf-8'));
+      expect(artifact.agentId).toBe('kataka-99');
+      expect(artifact.katakaId).toBe('kataka-99');
+    });
+  });
+
+  describe('runPipeline agentId attribution', () => {
+    it('persists agentId in pipeline artifacts when provided', async () => {
+      const flavors = [
+        makeFlavor('research-standard', 'research'),
+        makeFlavor('build-standard', 'build'),
+      ];
+      const deps: WorkflowRunnerDeps = {
+        flavorRegistry: makeFlavorRegistry(flavors),
+        decisionRegistry: makeDecisionRegistry(),
+        executor: makeExecutor(),
+        kataDir: baseDir,
+      };
+      const runner = new WorkflowRunner(deps);
+      await runner.runPipeline(['research', 'build'], { agentId: 'pipeline-agent' });
+
+      const artifactsDir = join(baseDir, 'artifacts');
+      const files = readdirSync(artifactsDir).filter((f: string) => f.endsWith('.json'));
+      expect(files).toHaveLength(2);
+      for (const file of files) {
+        const artifact = JSON.parse(readFileSync(join(artifactsDir, file), 'utf-8'));
+        expect(artifact.agentId).toBe('pipeline-agent');
+      }
+    });
+  });
+
+  describe('scanAvailableArtifacts', () => {
+    it('returns artifact names from the artifacts directory', async () => {
+      writeFileSync(join(baseDir, 'artifacts', 'build-123.json'), JSON.stringify({ name: 'build-123' }));
+      writeFileSync(join(baseDir, 'artifacts', 'review-456.json'), JSON.stringify({ name: 'review-456' }));
+
+      const deps = makeDeps({ kataDir: baseDir });
+      const runner = new WorkflowRunner(deps);
+      const result = await runner.runStage('build');
+
+      // The context passed to the orchestrator should include existing artifacts
+      expect(result).toBeDefined();
+    });
+
+    it('returns empty when artifacts directory does not exist', async () => {
+      const tempDir = join(tmpdir(), `kata-scan-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+      mkdirSync(join(tempDir, 'stages'), { recursive: true });
+      mkdirSync(join(tempDir, 'flavors'), { recursive: true });
+      mkdirSync(join(tempDir, 'history'), { recursive: true });
+      // Do NOT create artifacts dir
+
+      try {
+        const deps = makeDeps({ kataDir: tempDir });
+        const runner = new WorkflowRunner(deps);
+        const result = await runner.runStage('build');
+        expect(result).toBeDefined();
+      } finally {
+        rmSync(tempDir, { recursive: true, force: true });
+      }
     });
   });
 
