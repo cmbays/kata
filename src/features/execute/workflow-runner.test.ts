@@ -14,6 +14,7 @@ import { FlavorNotFoundError, OrchestratorError } from '@shared/lib/errors.js';
 import { UsageAnalytics } from '@infra/tracking/usage-analytics.js';
 import { MetaOrchestrator } from '@domain/services/meta-orchestrator.js';
 import { ExecutionHistoryEntrySchema } from '@domain/types/history.js';
+import { logger } from '@shared/lib/logger.js';
 import { WorkflowRunner, type WorkflowRunnerDeps, listRecentArtifacts } from './workflow-runner.js';
 
 // ---------------------------------------------------------------------------
@@ -427,15 +428,24 @@ describe('WorkflowRunner', () => {
     });
 
     it('falls back to filename and unknown when artifact JSON is malformed', () => {
+      const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
       writeFileSync(join(baseDir, 'artifacts', 'broken.json'), '{ broken json ');
 
-      const [artifact] = listRecentArtifacts(baseDir);
+      try {
+        const [artifact] = listRecentArtifacts(baseDir);
 
-      expect(artifact).toEqual({
-        name: 'broken',
-        timestamp: 'unknown',
-        file: 'broken.json',
-      });
+        expect(artifact).toEqual({
+          name: 'broken',
+          timestamp: 'unknown',
+          file: 'broken.json',
+        });
+        expect(warnSpy).toHaveBeenCalledWith(
+          'Could not parse artifact file "broken.json" — showing partial info.',
+          { file: 'broken.json', error: expect.any(String) },
+        );
+      } finally {
+        warnSpy.mockRestore();
+      }
     });
   });
 
@@ -622,6 +632,7 @@ describe('WorkflowRunner', () => {
     });
 
     it('does not crash when analytics fails', async () => {
+      const debugSpy = vi.spyOn(logger, 'debug').mockImplementation(() => {});
       const analytics = {
         recordEvent: vi.fn(() => { throw new Error('Disk full'); }),
         getEvents: vi.fn(() => []),
@@ -629,9 +640,109 @@ describe('WorkflowRunner', () => {
       } as unknown as UsageAnalytics;
       const deps = makeDeps({ kataDir: baseDir, analytics });
       const runner = new WorkflowRunner(deps);
-      // Should not throw despite analytics failure
-      const result = await runner.runStage('build');
-      expect(result.stageCategory).toBe('build');
+
+      try {
+        const result = await runner.runStage('build');
+        expect(result.stageCategory).toBe('build');
+        expect(debugSpy).toHaveBeenCalledWith(
+          'Analytics recordEvent failed — non-fatal, continuing.',
+          { error: 'Disk full' },
+        );
+      } finally {
+        debugSpy.mockRestore();
+      }
+    });
+
+    it('logs analytics failures for each stage during runPipeline without crashing', async () => {
+      const debugSpy = vi.spyOn(logger, 'debug').mockImplementation(() => {});
+      const analytics = {
+        recordEvent: vi.fn(() => { throw new Error('Disk full'); }),
+        getEvents: vi.fn(() => []),
+        getStats: vi.fn(),
+      } as unknown as UsageAnalytics;
+      const flavors = [
+        makeFlavor('research-standard', 'research'),
+        makeFlavor('build-standard', 'build'),
+      ];
+      const deps: WorkflowRunnerDeps = {
+        flavorRegistry: makeFlavorRegistry(flavors),
+        decisionRegistry: makeDecisionRegistry(),
+        executor: makeExecutor(),
+        kataDir: baseDir,
+        analytics,
+      };
+      const runner = new WorkflowRunner(deps);
+
+      try {
+        const result = await runner.runPipeline(['research', 'build']);
+        expect(result.stageResults).toHaveLength(2);
+        expect(debugSpy).toHaveBeenCalledTimes(2);
+        expect(debugSpy).toHaveBeenNthCalledWith(
+          1,
+          'Analytics recordEvent failed — non-fatal, continuing.',
+          { error: 'Disk full' },
+        );
+        expect(debugSpy).toHaveBeenNthCalledWith(
+          2,
+          'Analytics recordEvent failed — non-fatal, continuing.',
+          { error: 'Disk full' },
+        );
+      } finally {
+        debugSpy.mockRestore();
+      }
+    });
+
+    it('logs a warning when stage artifact persistence fails but still returns a stage result', async () => {
+      const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+      const deps = makeDeps({ kataDir: baseDir });
+      const runner = new WorkflowRunner(deps);
+      vi.spyOn(runner as never, 'persistArtifact').mockImplementation(() => {
+        throw new Error('Artifact write exploded');
+      });
+
+      try {
+        const result = await runner.runStage('build');
+        expect(result.stageCategory).toBe('build');
+        expect(warnSpy).toHaveBeenCalledWith(
+          'Failed to persist stage artifact — result is still valid.',
+          { stageCategory: 'build', error: 'Artifact write exploded' },
+        );
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+
+    it('logs a warning when pipeline artifact persistence fails but still returns stage results', async () => {
+      const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+      const flavors = [
+        makeFlavor('research-standard', 'research'),
+        makeFlavor('build-standard', 'build'),
+      ];
+      const deps: WorkflowRunnerDeps = {
+        flavorRegistry: makeFlavorRegistry(flavors),
+        decisionRegistry: makeDecisionRegistry(),
+        executor: makeExecutor(),
+        kataDir: baseDir,
+      };
+      const runner = new WorkflowRunner(deps);
+      vi.spyOn(runner as never, 'persistArtifact').mockImplementation(() => {
+        throw new Error('Artifact write exploded');
+      });
+
+      try {
+        const result = await runner.runPipeline(['research', 'build']);
+        expect(result.stageResults).toHaveLength(2);
+        expect(warnSpy).toHaveBeenCalledWith(
+          'Failed to persist stage artifact — result is still valid.',
+          { stageCategory: 'research', error: 'Artifact write exploded' },
+        );
+        expect(warnSpy).toHaveBeenCalledWith(
+          'Failed to persist stage artifact — result is still valid.',
+          { stageCategory: 'build', error: 'Artifact write exploded' },
+        );
+      } finally {
+        warnSpy.mockRestore();
+      }
     });
   });
 

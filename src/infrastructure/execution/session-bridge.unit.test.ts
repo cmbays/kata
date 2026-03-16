@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CycleSchema } from '@domain/types/cycle.js';
 import { RunSchema } from '@domain/types/run-state.js';
 import type { AgentCompletionResult } from '@domain/ports/session-bridge.js';
+import { logger } from '@shared/lib/logger.js';
 import { SessionExecutionBridge } from './session-bridge.js';
 
 function createTestDir(): string {
@@ -168,6 +169,279 @@ describe('SessionExecutionBridge unit coverage', () => {
     const runJson = RunSchema.parse(JSON.parse(readFileSync(join(kataDir, 'runs', first.preparedRuns[0]!.runId, 'run.json'), 'utf-8')));
     expect(runJson.agentId).toBe(agentId);
     expect(runJson.katakaId).toBe(agentId);
+  });
+
+  it('warns and preserves cycle state for invalid state transitions', () => {
+    const cycle = createCycle(kataDir, { state: 'planning' });
+    const bridge = new SessionExecutionBridge(kataDir);
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+
+    try {
+      (bridge as unknown as { updateCycleState: (cycleId: string, state: 'complete') => void }).updateCycleState(cycle.id, 'complete');
+
+      const persisted = CycleSchema.parse(JSON.parse(readFileSync(join(kataDir, 'cycles', `${cycle.id}.json`), 'utf-8')));
+      expect(persisted.state).toBe('planning');
+      expect(warnSpy).toHaveBeenCalledWith(`Cannot transition cycle "${cycle.id}" from "planning" to "complete".`);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('only allows adjacent forward cycle state transitions', () => {
+    const bridge = new SessionExecutionBridge(kataDir);
+    const canTransitionCycleState = (bridge as unknown as {
+      canTransitionCycleState: (
+        from: 'planning' | 'active' | 'cooldown' | 'complete',
+        to: 'planning' | 'active' | 'cooldown' | 'complete',
+      ) => boolean;
+    }).canTransitionCycleState;
+
+    expect(canTransitionCycleState('planning', 'active')).toBe(true);
+    expect(canTransitionCycleState('active', 'cooldown')).toBe(true);
+    expect(canTransitionCycleState('cooldown', 'complete')).toBe(true);
+    expect(canTransitionCycleState('planning', 'complete')).toBe(false);
+    expect(canTransitionCycleState('active', 'complete')).toBe(false);
+    expect(canTransitionCycleState('complete', 'planning')).toBe(false);
+  });
+
+  it('warns when updateBetOutcomeInCycle cannot find the cycle file', () => {
+    const bridge = new SessionExecutionBridge(kataDir);
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+
+    try {
+      (bridge as unknown as {
+        updateBetOutcomeInCycle: (cycleId: string, betId: string, outcome: 'complete') => void;
+      }).updateBetOutcomeInCycle('missing-cycle', 'bet-1', 'complete');
+
+      expect(warnSpy).toHaveBeenCalledWith('Cannot update bet outcome: cycle file not found for cycle "missing-cycle".');
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('warns when backfillRunIdInCycle cannot find the target bet', () => {
+    const cycle = createCycle(kataDir);
+    const bridge = new SessionExecutionBridge(kataDir);
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+
+    try {
+      (bridge as unknown as {
+        backfillRunIdInCycle: (cycleId: string, betId: string, runId: string) => void;
+      }).backfillRunIdInCycle(cycle.id, 'missing-bet', 'run-123');
+
+      expect(warnSpy).toHaveBeenCalledWith(`Cannot backfill bet.runId: bet "missing-bet" not found in cycle "${cycle.id}".`);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('refreshes prepared-run metadata only when bet or cycle names change', () => {
+    const cycle = createCycle(kataDir, { name: 'Renamed Cycle' });
+    const bridge = new SessionExecutionBridge(kataDir);
+    const writeBridgeRunMeta = vi.spyOn(bridge as never, 'writeBridgeRunMeta').mockImplementation(() => {});
+    const updateRunJsonAgentAttribution = vi.spyOn(bridge as never, 'updateRunJsonAgentAttribution').mockImplementation(() => {});
+    const meta = {
+      runId: 'run-1',
+      betId: cycle.bets[0]!.id,
+      betName: 'Old Bet Name',
+      cycleId: cycle.id,
+      cycleName: 'Old Cycle Name',
+      stages: ['research', 'build'],
+      isolation: 'shared',
+      startedAt: '2026-03-15T10:00:00.000Z',
+      status: 'in-progress',
+    };
+
+    const updated = (bridge as unknown as {
+      refreshPreparedRunMeta: (meta: typeof meta, bet: typeof cycle.bets[number], cycle: typeof cycle, agentId?: string) => typeof meta;
+    }).refreshPreparedRunMeta(meta, { ...cycle.bets[0]!, description: 'New Bet Name' }, cycle);
+
+    expect(updated.betName).toBe('New Bet Name');
+    expect(updated.cycleName).toBe('Renamed Cycle');
+    expect(writeBridgeRunMeta).toHaveBeenCalledWith(expect.objectContaining({
+      runId: 'run-1',
+      betName: 'New Bet Name',
+      cycleName: 'Renamed Cycle',
+    }));
+    expect(updateRunJsonAgentAttribution).not.toHaveBeenCalled();
+  });
+
+  it('does not rewrite prepared-run metadata when nothing changed and no agent was added', () => {
+    const cycle = createCycle(kataDir, { name: 'Stable Cycle' });
+    const bridge = new SessionExecutionBridge(kataDir);
+    const writeBridgeRunMeta = vi.spyOn(bridge as never, 'writeBridgeRunMeta').mockImplementation(() => {});
+    const meta = {
+      runId: 'run-1',
+      betId: cycle.bets[0]!.id,
+      betName: cycle.bets[0]!.description,
+      cycleId: cycle.id,
+      cycleName: 'Stable Cycle',
+      stages: ['research', 'build'],
+      isolation: 'shared',
+      startedAt: '2026-03-15T10:00:00.000Z',
+      status: 'in-progress',
+    };
+
+    const updated = (bridge as unknown as {
+      refreshPreparedRunMeta: (meta: typeof meta, bet: typeof cycle.bets[number], cycle: typeof cycle, agentId?: string) => typeof meta;
+    }).refreshPreparedRunMeta(meta, cycle.bets[0]!, cycle);
+
+    expect(updated).toEqual(meta);
+    expect(writeBridgeRunMeta).not.toHaveBeenCalled();
+  });
+
+  it('rebuilds prepared runs with manifest metadata and canonical agent attribution fallback', () => {
+    const bridge = new SessionExecutionBridge(kataDir);
+    const meta = {
+      runId: 'run-1',
+      betId: 'bet-1',
+      betName: 'Bridge Bet',
+      cycleId: 'cycle-1',
+      cycleName: 'Bridge Cycle',
+      stages: ['research', 'build'],
+      isolation: 'shared',
+      startedAt: '2026-03-15T10:00:00.000Z',
+      status: 'in-progress',
+      katakaId: 'agent-123',
+    };
+
+    const prepared = (bridge as unknown as {
+      rebuildPreparedRun: (meta: typeof meta) => ReturnType<SessionExecutionBridge['prepare']>;
+    }).rebuildPreparedRun(meta);
+
+    expect(prepared.manifest.stageType).toBe('research,build');
+    expect(prepared.manifest.prompt).toBe('Execute the bet: "Bridge Bet"');
+    expect(prepared.manifest.context.metadata).toMatchObject({
+      betId: 'bet-1',
+      cycleId: 'cycle-1',
+      cycleName: 'Bridge Cycle',
+      runId: 'run-1',
+      adapter: 'claude-native',
+    });
+    expect(prepared.agentId).toBe('agent-123');
+    expect(prepared.katakaId).toBe('agent-123');
+  });
+
+  it('lists bridge runs for a cycle while ignoring invalid and non-json files', () => {
+    const bridgeRunsDir = join(kataDir, 'bridge-runs');
+    mkdirSync(bridgeRunsDir, { recursive: true });
+    writeFileSync(join(bridgeRunsDir, 'notes.txt'), JSON.stringify({ cycleId: 'cycle-1', runId: 'txt-run' }));
+    writeFileSync(join(bridgeRunsDir, 'broken.json'), '{ broken json ');
+    writeFileSync(join(bridgeRunsDir, 'other.json'), JSON.stringify({
+      runId: 'run-other',
+      betId: 'bet-other',
+      betName: 'Other Bet',
+      cycleId: 'other-cycle',
+      cycleName: 'Other Cycle',
+      stages: ['build'],
+      isolation: 'shared',
+      startedAt: '2026-03-15T10:00:00.000Z',
+      status: 'in-progress',
+    }));
+    writeFileSync(join(bridgeRunsDir, 'match.json'), JSON.stringify({
+      runId: 'run-match',
+      betId: 'bet-match',
+      betName: 'Matching Bet',
+      cycleId: 'cycle-1',
+      cycleName: 'Matching Cycle',
+      stages: ['build'],
+      isolation: 'shared',
+      startedAt: '2026-03-15T10:00:00.000Z',
+      status: 'in-progress',
+    }));
+
+    const bridge = new SessionExecutionBridge(kataDir);
+    const metas = (bridge as unknown as {
+      listBridgeRunsForCycle: (cycleId: string) => Array<{ runId: string; cycleId: string }>;
+    }).listBridgeRunsForCycle('cycle-1');
+
+    expect(metas).toHaveLength(1);
+    expect(metas[0]).toMatchObject({ runId: 'run-match', cycleId: 'cycle-1' });
+  });
+
+  it('ignores cycle-shaped non-json files when finding the cycle for a bet', () => {
+    const realCycle = createCycle(kataDir);
+    const fakeBetId = randomUUID();
+    const now = new Date().toISOString();
+    writeFileSync(join(kataDir, 'cycles', 'ignored.txt'), JSON.stringify({
+      id: 'txt-cycle',
+      name: 'Ignored Text Cycle',
+      budget: { tokenBudget: 100000 },
+      bets: [{
+        id: fakeBetId,
+        description: 'Text-backed bet',
+        appetite: 10,
+        outcome: 'pending',
+      }],
+      state: 'active',
+      createdAt: now,
+      updatedAt: now,
+    }, null, 2));
+
+    const bridge = new SessionExecutionBridge(kataDir);
+    const findCycleForBet = (bridge as unknown as {
+      findCycleForBet: (betId: string) => ReturnType<typeof CycleSchema.parse>;
+    }).findCycleForBet.bind(bridge);
+
+    expect(findCycleForBet(realCycle.bets[0]!.id).id).toBe(realCycle.id);
+    expect(() => findCycleForBet(fakeBetId)).toThrow(`No cycle found containing bet "${fakeBetId}".`);
+  });
+
+  it('ignores cycle-shaped non-json files when loading a cycle by id or name', () => {
+    const realCycle = createCycle(kataDir);
+    const now = new Date().toISOString();
+    writeFileSync(join(kataDir, 'cycles', 'shadow.txt'), JSON.stringify({
+      id: 'shadow-cycle',
+      name: 'Shadow Cycle',
+      budget: { tokenBudget: 100000 },
+      bets: [],
+      state: 'active',
+      createdAt: now,
+      updatedAt: now,
+    }, null, 2));
+
+    const bridge = new SessionExecutionBridge(kataDir);
+    const loadCycle = (bridge as unknown as {
+      loadCycle: (cycleId: string) => ReturnType<typeof CycleSchema.parse>;
+    }).loadCycle.bind(bridge);
+
+    expect(loadCycle(realCycle.id).id).toBe(realCycle.id);
+    expect(() => loadCycle('shadow-cycle')).toThrow('Cycle "shadow-cycle" not found.');
+    expect(() => loadCycle('Shadow Cycle')).toThrow('Cycle "Shadow Cycle" not found.');
+  });
+
+  it('counts zero run data when jsonl files and stage directories are absent', () => {
+    const bridge = new SessionExecutionBridge(kataDir);
+    const runDir = join(kataDir, 'runs', 'run-1');
+    mkdirSync(runDir, { recursive: true });
+
+    const counts = (bridge as unknown as {
+      countRunData: (runId: string) => { observations: number; artifacts: number; decisions: number; lastTimestamp: string | null };
+    }).countRunData('run-1');
+
+    expect(counts).toEqual({
+      observations: 0,
+      artifacts: 0,
+      decisions: 0,
+      lastTimestamp: null,
+    });
+  });
+
+  it('sums cycle history tokens while ignoring non-json and missing-token entries', () => {
+    const bridge = new SessionExecutionBridge(kataDir);
+    const historyDir = join(kataDir, 'history');
+    mkdirSync(historyDir, { recursive: true });
+
+    writeFileSync(join(historyDir, 'first.json'), JSON.stringify({ cycleId: 'cycle-1', tokenUsage: { total: 1200 } }));
+    writeFileSync(join(historyDir, 'missing.json'), JSON.stringify({ cycleId: 'cycle-1' }));
+    writeFileSync(join(historyDir, 'other.json'), JSON.stringify({ cycleId: 'other-cycle', tokenUsage: { total: 9999 } }));
+    writeFileSync(join(historyDir, 'notes.txt'), JSON.stringify({ cycleId: 'cycle-1', tokenUsage: { total: 5000 } }));
+
+    const total = (bridge as unknown as {
+      sumCycleHistoryTokens: (historyDir: string, cycleId: string) => number;
+    }).sumCycleHistoryTokens(historyDir, 'cycle-1');
+
+    expect(total).toBe(1200);
   });
 
   it('reports status counts from run data and estimates budget from matching history entries', () => {

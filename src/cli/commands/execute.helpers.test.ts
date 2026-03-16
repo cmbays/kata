@@ -1,7 +1,14 @@
 import {
+  assertValidKataName,
+  buildPreparedCycleOutputLines,
+  buildPreparedRunOutputLines,
   formatDurationMs,
+  formatAgentLoadError,
   formatExplain,
+  mergePinnedFlavors,
   parseBetOption,
+  parseCompletedRunArtifacts,
+  parseCompletedRunTokenUsage,
   parseHintFlags,
 } from '@cli/commands/execute.helpers.js';
 
@@ -233,6 +240,185 @@ describe('execute helpers', () => {
 
     it('formats hour durations with remainder minutes', () => {
       expect(formatDurationMs(7_440_000)).toBe('2h 4m');
+    });
+  });
+
+  describe('parseCompletedRunArtifacts', () => {
+    it('returns undefined when artifacts are omitted', () => {
+      expect(parseCompletedRunArtifacts(undefined)).toEqual({ ok: true, value: undefined });
+    });
+
+    it('parses a valid artifact array', () => {
+      expect(parseCompletedRunArtifacts('[{"name":"report.md","path":"reports/report.md"}]')).toEqual({
+        ok: true,
+        value: [{ name: 'report.md', path: 'reports/report.md' }],
+      });
+    });
+
+    it('rejects non-array JSON payloads', () => {
+      expect(parseCompletedRunArtifacts('{"name":"report.md"}')).toEqual({
+        ok: false,
+        error: 'Error: --artifacts must be a JSON array',
+      });
+    });
+
+    it('rejects array items without a string name', () => {
+      expect(parseCompletedRunArtifacts('[null]')).toEqual({
+        ok: false,
+        error: 'Error: each artifact must have a "name" string property',
+      });
+    });
+
+    it('rejects invalid JSON', () => {
+      expect(parseCompletedRunArtifacts('{broken}')).toEqual({
+        ok: false,
+        error: 'Error: --artifacts must be valid JSON',
+      });
+    });
+  });
+
+  describe('parseCompletedRunTokenUsage', () => {
+    it('returns no token usage when both values are omitted', () => {
+      expect(parseCompletedRunTokenUsage(undefined, undefined)).toEqual({
+        ok: true,
+        value: {
+          hasTokens: false,
+          tokenUsage: undefined,
+          totalTokens: undefined,
+        },
+      });
+    });
+
+    it('sums partial token usage and defaults the missing side to zero', () => {
+      expect(parseCompletedRunTokenUsage(7, undefined)).toEqual({
+        ok: true,
+        value: {
+          hasTokens: true,
+          tokenUsage: { inputTokens: 7, outputTokens: undefined, total: 7 },
+          totalTokens: 7,
+        },
+      });
+      expect(parseCompletedRunTokenUsage(undefined, 3)).toEqual({
+        ok: true,
+        value: {
+          hasTokens: true,
+          tokenUsage: { inputTokens: undefined, outputTokens: 3, total: 3 },
+          totalTokens: 3,
+        },
+      });
+    });
+
+    it('preserves explicit zero counts', () => {
+      expect(parseCompletedRunTokenUsage(0, 0)).toEqual({
+        ok: true,
+        value: {
+          hasTokens: true,
+          tokenUsage: { inputTokens: 0, outputTokens: 0, total: 0 },
+          totalTokens: 0,
+        },
+      });
+    });
+
+    it('rejects negative or invalid values', () => {
+      expect(parseCompletedRunTokenUsage(-1, undefined)).toEqual({
+        ok: false,
+        error: 'Error: --input-tokens must be a non-negative integer',
+      });
+      expect(parseCompletedRunTokenUsage(undefined, Number.NaN)).toEqual({
+        ok: false,
+        error: 'Error: --output-tokens must be a non-negative integer',
+      });
+    });
+  });
+
+  describe('assertValidKataName', () => {
+    it('accepts letters, digits, hyphens, and underscores', () => {
+      expect(() => assertValidKataName('my_kata-1')).not.toThrow();
+    });
+
+    it('rejects names with traversal or path separators', () => {
+      expect(() => assertValidKataName('../evil')).toThrow('Invalid kata name "../evil"');
+      expect(() => assertValidKataName('safe/')).toThrow('Invalid kata name "safe/"');
+    });
+  });
+
+  describe('formatAgentLoadError', () => {
+    it('maps missing agents to the not-found guidance', () => {
+      expect(formatAgentLoadError(
+        '1234',
+        'Agent "1234" not found.',
+      )).toBe('Error: agent "1234" not found. Use "kata agent list" to see registered agents.');
+    });
+
+    it('preserves wrapped registry load failures without duplicating the prefix', () => {
+      expect(formatAgentLoadError(
+        '1234',
+        'Failed to load agent "1234": Invalid input: expected string, received undefined',
+      )).toBe('Error: Failed to load agent "1234": Invalid input: expected string, received undefined');
+    });
+
+    it('wraps raw load failures with agent context', () => {
+      expect(formatAgentLoadError(
+        '1234',
+        'Invalid agent ID: "1234"',
+      )).toBe('Error: Failed to load agent "1234": Invalid agent ID: "1234"');
+    });
+  });
+
+  describe('mergePinnedFlavors', () => {
+    it('returns undefined when neither flag provided any values', () => {
+      expect(mergePinnedFlavors(undefined, undefined)).toBeUndefined();
+      expect(mergePinnedFlavors([], [])).toBeUndefined();
+    });
+
+    it('merges primary and fallback pins in order', () => {
+      expect(mergePinnedFlavors(['typescript-tdd'], ['legacy-build'])).toEqual([
+        'typescript-tdd',
+        'legacy-build',
+      ]);
+    });
+  });
+
+  describe('buildPreparedCycleOutputLines', () => {
+    it('renders a readable summary for each prepared cycle run', () => {
+      expect(buildPreparedCycleOutputLines({
+        cycleName: 'Dispatch Cycle',
+        preparedRuns: [
+          {
+            betName: 'Bet A',
+            runId: 'run-1',
+            stages: ['build', 'review'],
+            isolation: 'worktree',
+          },
+        ],
+      })).toEqual([
+        'Prepared 1 run(s) for cycle "Dispatch Cycle"',
+        '  Bet A',
+        '    Run ID: run-1',
+        '    Stages: build, review',
+        '    Isolation: worktree',
+      ]);
+    });
+  });
+
+  describe('buildPreparedRunOutputLines', () => {
+    it('renders the plain-text prepare output with the agent context block', () => {
+      expect(buildPreparedRunOutputLines({
+        betName: 'Prepared bet',
+        runId: 'run-1',
+        cycleName: 'Cycle A',
+        stages: ['build'],
+        isolation: 'worktree',
+      }, '**Run ID**: run-1')).toEqual([
+        'Prepared run for bet: "Prepared bet"',
+        '  Run ID: run-1',
+        '  Cycle: Cycle A',
+        '  Stages: build',
+        '  Isolation: worktree',
+        '',
+        'Agent context block (use "kata kiai context <run-id>" to fetch at dispatch time):',
+        '**Run ID**: run-1',
+      ]);
     });
   });
 });
