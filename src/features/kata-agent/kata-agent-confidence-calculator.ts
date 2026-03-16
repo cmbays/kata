@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { JsonStore } from '@infra/persistence/json-store.js';
 import { KnowledgeStore } from '@infra/knowledge/knowledge-store.js';
@@ -79,8 +79,7 @@ export class KataAgentConfidenceCalculator {
 
     const registryDir = resolveRegistryDir(this.deps.agentDir, this.deps.katakaDir);
     const confidencePath = join(registryDir, agentId, 'confidence.json');
-    const dir = dirname(confidencePath);
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    mkdirSync(dirname(confidencePath), { recursive: true });
     JsonStore.write(confidencePath, profile, KataAgentConfidenceProfileSchema);
 
     return profile;
@@ -92,7 +91,6 @@ export class KataAgentConfidenceCalculator {
   load(agentId: string): KataAgentConfidenceProfile | null {
     const registryDir = resolveRegistryDir(this.deps.agentDir, this.deps.katakaDir);
     const confidencePath = join(registryDir, agentId, 'confidence.json');
-    if (!existsSync(confidencePath)) return null;
     try {
       return JsonStore.read(confidencePath, KataAgentConfidenceProfileSchema);
     } catch {
