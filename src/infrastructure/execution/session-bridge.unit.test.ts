@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -895,6 +895,126 @@ describe('SessionExecutionBridge unit coverage', () => {
 
     // The cycle has 2 bets but only 1 bridge-run remains
     expect(summary.totalBets).toBe(2);
+  });
+
+  it('countJsonlLines returns 0 when file exists but is empty', () => {
+    const bridge = new SessionExecutionBridge(kataDir);
+    const countJsonlLines = (bridge as unknown as {
+      countJsonlLines: (filePath: string) => number;
+    }).countJsonlLines.bind(bridge);
+
+    const filePath = join(kataDir, 'empty.jsonl');
+    writeFileSync(filePath, '');
+    expect(countJsonlLines(filePath)).toBe(0);
+  });
+
+  it('listBridgeRunsForCycle filters non-json files from results', () => {
+    const bridgeRunsDir = join(kataDir, 'bridge-runs');
+    mkdirSync(bridgeRunsDir, { recursive: true });
+
+    // Write a valid bridge-run as .txt — should be filtered out by isJsonFile
+    writeFileSync(join(bridgeRunsDir, 'valid.txt'), JSON.stringify({
+      runId: 'run-txt',
+      betId: 'bet-txt',
+      betName: 'Text Bet',
+      cycleId: 'cycle-1',
+      cycleName: 'Test Cycle',
+      stages: ['build'],
+      isolation: 'shared',
+      startedAt: '2026-03-15T10:00:00.000Z',
+      status: 'in-progress',
+    }));
+
+    // Write the same as .json — should be included
+    writeFileSync(join(bridgeRunsDir, 'valid.json'), JSON.stringify({
+      runId: 'run-json',
+      betId: 'bet-json',
+      betName: 'Json Bet',
+      cycleId: 'cycle-1',
+      cycleName: 'Test Cycle',
+      stages: ['build'],
+      isolation: 'shared',
+      startedAt: '2026-03-15T10:00:00.000Z',
+      status: 'in-progress',
+    }));
+
+    const bridge = new SessionExecutionBridge(kataDir);
+    const metas = (bridge as unknown as {
+      listBridgeRunsForCycle: (cycleId: string) => Array<{ runId: string }>;
+    }).listBridgeRunsForCycle('cycle-1');
+
+    // Only the .json file should be included
+    expect(metas).toHaveLength(1);
+    expect(metas[0]!.runId).toBe('run-json');
+  });
+
+  it('complete writes token usage to run.json when tokens are reported', () => {
+    const cycle = createCycle(kataDir);
+    const bridge = new SessionExecutionBridge(kataDir);
+    const prepared = bridge.prepare(cycle.bets[0]!.id);
+
+    bridge.complete(prepared.runId, {
+      success: true,
+      tokenUsage: { inputTokens: 500, outputTokens: 200, total: 700 },
+    });
+
+    const runJson = RunSchema.parse(JSON.parse(readFileSync(join(kataDir, 'runs', prepared.runId, 'run.json'), 'utf-8')));
+    expect(runJson.status).toBe('completed');
+    expect(runJson.tokenUsage).toEqual({
+      inputTokens: 500,
+      outputTokens: 200,
+      totalTokens: 700,
+    });
+  });
+
+  it('complete does not write tokenUsage to run.json when no tokens reported', () => {
+    const cycle = createCycle(kataDir);
+    const bridge = new SessionExecutionBridge(kataDir);
+    const prepared = bridge.prepare(cycle.bets[0]!.id);
+
+    bridge.complete(prepared.runId, { success: true });
+
+    const runJson = JSON.parse(readFileSync(join(kataDir, 'runs', prepared.runId, 'run.json'), 'utf-8'));
+    expect(runJson.tokenUsage).toBeUndefined();
+  });
+
+  it('toHistoryTokenUsage returns undefined when no tokenUsage provided', () => {
+    const cycle = createCycle(kataDir);
+    const bridge = new SessionExecutionBridge(kataDir);
+    const prepared = bridge.prepare(cycle.bets[0]!.id);
+
+    // Complete without token usage
+    bridge.complete(prepared.runId, { success: true });
+
+    // Read the history entry — should not have tokenUsage
+    const historyDir = join(kataDir, 'history');
+    const historyFiles = readdirSync(historyDir).filter((f: string) => f.endsWith('.json'));
+    expect(historyFiles.length).toBeGreaterThan(0);
+
+    const entry = JSON.parse(readFileSync(join(historyDir, historyFiles[0]!), 'utf-8'));
+    expect(entry.tokenUsage).toBeUndefined();
+  });
+
+  it('toHistoryTokenUsage maps tokenUsage correctly when provided', () => {
+    const cycle = createCycle(kataDir);
+    const bridge = new SessionExecutionBridge(kataDir);
+    const prepared = bridge.prepare(cycle.bets[0]!.id);
+
+    bridge.complete(prepared.runId, {
+      success: true,
+      tokenUsage: { inputTokens: 100, outputTokens: 50, total: 150 },
+    });
+
+    const historyDir = join(kataDir, 'history');
+    const historyFiles = readdirSync(historyDir).filter((f: string) => f.endsWith('.json'));
+    const entry = JSON.parse(readFileSync(join(historyDir, historyFiles[0]!), 'utf-8'));
+    expect(entry.tokenUsage).toEqual({
+      inputTokens: 100,
+      outputTokens: 50,
+      total: 150,
+      cacheCreationTokens: 0,
+      cacheReadTokens: 0,
+    });
   });
 
   it('prepareCycle handles bet.runId already matching reusable bridge run', () => {
