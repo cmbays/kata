@@ -9,7 +9,6 @@ import {
 
   matchesCycleRef,
   resolveAgentId,
-  sumTokenTotals,
 } from './session-bridge.helpers.js';
 
 describe('session-bridge helpers', () => {
@@ -172,20 +171,6 @@ describe('session-bridge helpers', () => {
         { cycleId: 'c1', tokenUsage: {} },
         'c1',
       )).toBeNull();
-    });
-  });
-
-  describe('sumTokenTotals', () => {
-    it('sums numeric values treating null as 0', () => {
-      expect(sumTokenTotals([100, null, 200, null, 300])).toBe(600);
-    });
-
-    it('returns 0 for empty input', () => {
-      expect(sumTokenTotals([])).toBe(0);
-    });
-
-    it('returns 0 for all-null input', () => {
-      expect(sumTokenTotals([null, null])).toBe(0);
     });
   });
 

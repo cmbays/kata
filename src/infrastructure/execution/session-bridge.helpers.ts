@@ -82,13 +82,6 @@ export function extractHistoryTokenTotal(
 }
 
 /**
- * Sum token totals from multiple entries, treating null as 0.
- */
-export function sumTokenTotals(totals: readonly (number | null)[]): number {
-  return totals.reduce<number>((sum, t) => sum + (t ?? 0), 0);
-}
-
-/**
  * Count non-empty lines in a JSONL-format content string.
  * Returns 0 for empty or whitespace-only content.
  */

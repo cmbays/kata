@@ -540,7 +540,7 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
         this.writeCycleNameIfChanged(cyclePath, cycle, name);
         return;
       }
-      if (!this.canTransition(cycle.state, state)) {
+      if (!canTransitionCycleState(cycle.state, state)) {
         logger.warn(`Cannot transition cycle "${cycleId}" from "${cycle.state}" to "${state}".`);
         return;
       }
@@ -549,11 +549,6 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
     } catch (err) {
       logger.warn(`Failed to update cycle state for cycle "${cycleId}": ${err instanceof Error ? err.message : String(err)}`);
     }
-  }
-
-  // Delegates to the extracted pure helper for testability.
-  private canTransition(from: CycleState, to: CycleState): boolean {
-    return canTransitionCycleState(from, to);
   }
 
   private writeCycleNameIfChanged(cyclePath: string, cycle: Cycle, name?: string): void {
