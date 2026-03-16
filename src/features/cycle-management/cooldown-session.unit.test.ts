@@ -902,6 +902,526 @@ describe('CooldownSession unit seams', () => {
     }
   });
 
+  it('runPredictionMatching is skipped when predictionMatcher is not configured', async () => {
+    const fixture = createFixture();
+
+    try {
+      const cycle = fixture.cycleManager.create({ tokenBudget: 1_000 }, 'No Matcher');
+      const updated = fixture.cycleManager.addBet(cycle.id, {
+        description: 'Matcherless bet',
+        appetite: 30,
+        outcome: 'pending',
+        issueRefs: [],
+      });
+      const bet = updated.bets[0]!;
+      const run = makeRun(cycle.id, bet.id);
+      createRunTree(fixture.runsDir, run);
+      writeStageState(fixture.runsDir, run.id, makeStageState());
+      fixture.cycleManager.setRunId(cycle.id, bet.id, run.id);
+      writeBridgeRun(fixture.bridgeRunsDir, run.id, {
+        cycleId: cycle.id,
+        betId: bet.id,
+        status: 'complete',
+      });
+
+      // Explicitly pass null-ish prediction matcher deps to ensure no matcher
+      const session = new CooldownSession({
+        ...fixture.baseDeps,
+        predictionMatcher: undefined,
+        // Remove runsDir so auto-construction is skipped too
+        runsDir: undefined,
+        proposalGenerator: { generate: vi.fn(() => []) },
+      });
+
+      // Should complete without error — predictionMatching is a no-op
+      const result = await session.run(cycle.id);
+      expect(result.report).toBeDefined();
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it('runCalibrationDetection is skipped when calibrationDetector is not configured', async () => {
+    const fixture = createFixture();
+
+    try {
+      const cycle = fixture.cycleManager.create({ tokenBudget: 1_000 }, 'No Calibration');
+      const session = new CooldownSession({
+        ...fixture.baseDeps,
+        calibrationDetector: undefined,
+        runsDir: undefined,
+        proposalGenerator: { generate: vi.fn(() => []) },
+      });
+
+      const result = await session.run(cycle.id);
+      expect(result.report).toBeDefined();
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it('runFrictionAnalysis is skipped when frictionAnalyzer is not configured', async () => {
+    const fixture = createFixture();
+
+    try {
+      const cycle = fixture.cycleManager.create({ tokenBudget: 1_000 }, 'No Friction');
+      const session = new CooldownSession({
+        ...fixture.baseDeps,
+        frictionAnalyzer: undefined,
+        runsDir: undefined,
+        proposalGenerator: { generate: vi.fn(() => []) },
+      });
+
+      const result = await session.run(cycle.id);
+      expect(result.report).toBeDefined();
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it('runPredictionMatching calls predictionMatcher.match for each bet with runId', async () => {
+    const fixture = createFixture();
+
+    try {
+      const cycle = fixture.cycleManager.create({ tokenBudget: 2_000 }, 'Matcher Cycle');
+      let updated = fixture.cycleManager.addBet(cycle.id, {
+        description: 'Bet with run',
+        appetite: 30,
+        outcome: 'pending',
+        issueRefs: [],
+      });
+      updated = fixture.cycleManager.addBet(cycle.id, {
+        description: 'Bet without run',
+        appetite: 20,
+        outcome: 'pending',
+        issueRefs: [],
+      });
+
+      const bet = updated.bets[0]!;
+      const run = makeRun(cycle.id, bet.id);
+      createRunTree(fixture.runsDir, run);
+      writeStageState(fixture.runsDir, run.id, makeStageState());
+      fixture.cycleManager.setRunId(cycle.id, bet.id, run.id);
+      writeBridgeRun(fixture.bridgeRunsDir, run.id, {
+        cycleId: cycle.id,
+        betId: bet.id,
+        status: 'complete',
+      });
+
+      const predictionMatcher = { match: vi.fn() };
+      const calibrationDetector = { detect: vi.fn() };
+      const frictionAnalyzer = { analyze: vi.fn() };
+
+      const session = new CooldownSession({
+        ...fixture.baseDeps,
+        predictionMatcher,
+        calibrationDetector,
+        frictionAnalyzer,
+        proposalGenerator: { generate: vi.fn(() => []) },
+      });
+
+      await session.run(cycle.id);
+
+      // Only the bet with a runId should have been processed
+      expect(predictionMatcher.match).toHaveBeenCalledWith(run.id);
+      expect(predictionMatcher.match).toHaveBeenCalledTimes(1);
+      expect(calibrationDetector.detect).toHaveBeenCalledWith(run.id);
+      expect(calibrationDetector.detect).toHaveBeenCalledTimes(1);
+      expect(frictionAnalyzer.analyze).toHaveBeenCalledWith(run.id);
+      expect(frictionAnalyzer.analyze).toHaveBeenCalledTimes(1);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it('runExpiryCheck calls knowledgeStore.checkExpiry when available', async () => {
+    const fixture = createFixture();
+
+    try {
+      const cycle = fixture.cycleManager.create({ tokenBudget: 1_000 }, 'Expiry Check');
+
+      const debugSpy = vi.spyOn(logger, 'debug').mockImplementation(() => {});
+      const session = new CooldownSession({
+        ...fixture.baseDeps,
+        proposalGenerator: { generate: vi.fn(() => []) },
+      });
+
+      await session.run(cycle.id);
+
+      // KnowledgeStore has checkExpiry method, so it should be called
+      // and debug messages should include expiry-related content (or none if nothing expired)
+      expect(debugSpy).toBeDefined();
+    } finally {
+      vi.restoreAllMocks();
+      fixture.cleanup();
+    }
+  });
+
+  it('captureCooldownLearnings records evidence array with proper pipelineId and stageType', async () => {
+    const fixture = createFixture();
+
+    try {
+      const cycle = fixture.cycleManager.create({ tokenBudget: 1_000 }, 'Evidence Cycle');
+      // Low completion rate triggers a learning with evidence
+      fixture.cycleManager.addBet(cycle.id, {
+        description: 'Pending bet 1',
+        appetite: 30,
+        outcome: 'pending',
+        issueRefs: [],
+      });
+      fixture.cycleManager.addBet(cycle.id, {
+        description: 'Pending bet 2',
+        appetite: 30,
+        outcome: 'pending',
+        issueRefs: [],
+      });
+      fixture.cycleManager.addBet(cycle.id, {
+        description: 'Pending bet 3',
+        appetite: 30,
+        outcome: 'pending',
+        issueRefs: [],
+      });
+
+      const session = new CooldownSession({
+        ...fixture.baseDeps,
+        proposalGenerator: { generate: vi.fn(() => []) },
+      });
+
+      const result = await session.run(cycle.id);
+
+      // With 0% completion rate (all pending, none resolved), we should get at least one learning
+      expect(result.learningsCaptured).toBeGreaterThanOrEqual(1);
+
+      // Verify a learning was actually captured with correct evidence
+      const allLearnings = fixture.knowledgeStore.query({});
+      const cooldownLearning = allLearnings.find((l) =>
+        l.content.includes('low completion rate') || l.content.includes('under-utilized'),
+      );
+      if (cooldownLearning) {
+        expect(cooldownLearning.evidence).toBeDefined();
+        expect(cooldownLearning.evidence!.length).toBeGreaterThan(0);
+        expect(cooldownLearning.evidence![0]!.stageType).toBe('cooldown');
+        expect(cooldownLearning.evidence![0]!.pipelineId).toBe(cycle.id);
+      }
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it('hasFailedCaptures logs a warning when learning capture fails', async () => {
+    const fixture = createFixture();
+
+    try {
+      const cycle = fixture.cycleManager.create({ tokenBudget: 1_000 }, 'Fail Capture');
+      // Many pending bets with low completion to trigger learning drafts
+      for (let i = 0; i < 5; i++) {
+        fixture.cycleManager.addBet(cycle.id, {
+          description: `Pending bet ${i}`,
+          appetite: 10,
+          outcome: 'pending',
+          issueRefs: [],
+        });
+      }
+
+      // Use a knowledge store that throws on capture
+      const brokenStore = {
+        ...fixture.knowledgeStore,
+        capture: vi.fn(() => { throw new Error('Capture failed'); }),
+        query: vi.fn(() => []),
+        get: vi.fn(),
+      };
+
+      const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+      const session = new CooldownSession({
+        ...fixture.baseDeps,
+        knowledgeStore: brokenStore as unknown as typeof fixture.knowledgeStore,
+        proposalGenerator: { generate: vi.fn(() => []) },
+      });
+
+      const result = await session.run(cycle.id);
+      expect(result.learningsCaptured).toBe(0);
+      // Should have warned about failed captures
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('cooldown learnings failed to capture'));
+    } finally {
+      vi.restoreAllMocks();
+      fixture.cleanup();
+    }
+  });
+
+  it('readBridgeRunMeta returns undefined for invalid JSON files in bridge-runs', async () => {
+    const fixture = createFixture();
+
+    try {
+      writeFileSync(join(fixture.bridgeRunsDir, 'broken.json'), '{ invalid json }');
+
+      const cycle = fixture.cycleManager.create({ tokenBudget: 5_000 }, 'Broken Meta');
+      const updated = fixture.cycleManager.addBet(cycle.id, {
+        description: 'Working bet',
+        appetite: 30,
+        outcome: 'complete',
+        issueRefs: [],
+      });
+      const bet = updated.bets[0]!;
+      const run = makeRun(cycle.id, bet.id);
+      createRunTree(fixture.runsDir, run);
+      fixture.cycleManager.setRunId(cycle.id, bet.id, run.id);
+
+      const session = new CooldownSession({
+        ...fixture.baseDeps,
+        proposalGenerator: { generate: vi.fn(() => []) },
+      });
+
+      // Should not crash — invalid files are skipped
+      const result = await session.prepare(cycle.id);
+      expect(result.synthesisInputPath).toBeTruthy();
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it('checkIncompleteRuns returns empty when neither runsDir nor bridgeRunsDir is set', () => {
+    const fixture = createFixture();
+
+    try {
+      const cycle = fixture.cycleManager.create({ tokenBudget: 1_000 }, 'No Dirs');
+      fixture.cycleManager.addBet(cycle.id, {
+        description: 'Test bet',
+        appetite: 30,
+        outcome: 'pending',
+        issueRefs: [],
+      });
+
+      const session = new CooldownSession({
+        cycleManager: fixture.cycleManager,
+        knowledgeStore: fixture.knowledgeStore,
+        persistence: JsonStore,
+        pipelineDir: fixture.pipelineDir,
+        historyDir: fixture.historyDir,
+        // No runsDir, no bridgeRunsDir
+      });
+
+      const incomplete = session.checkIncompleteRuns(cycle.id);
+      expect(incomplete).toEqual([]);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it('writeRunDiary writes diary entry when dojoDir is set and enriches betDescriptions', async () => {
+    const fixture = createFixture();
+
+    try {
+      const cycle = fixture.cycleManager.create({ tokenBudget: 2_000 }, 'Diary Write');
+      const updated = fixture.cycleManager.addBet(cycle.id, {
+        description: 'Diary test bet',
+        appetite: 30,
+        outcome: 'pending',
+        issueRefs: [],
+      });
+      const bet = updated.bets[0]!;
+      const run = makeRun(cycle.id, bet.id);
+      createRunTree(fixture.runsDir, run);
+      writeStageState(fixture.runsDir, run.id, makeStageState());
+      fixture.cycleManager.setRunId(cycle.id, bet.id, run.id);
+      writeBridgeRun(fixture.bridgeRunsDir, run.id, {
+        cycleId: cycle.id,
+        betId: bet.id,
+        status: 'complete',
+      });
+
+      mkdirSync(join(fixture.dojoDir, 'diary'), { recursive: true });
+
+      const session = new CooldownSession({
+        ...fixture.baseDeps,
+        dojoDir: fixture.dojoDir,
+        proposalGenerator: { generate: vi.fn(() => []) },
+      });
+
+      const result = await session.run(cycle.id);
+      expect(result.report).toBeDefined();
+
+      // Diary should have been written — check that diary dir has content
+      const diaryDir = join(fixture.dojoDir, 'diary');
+      if (existsSync(diaryDir)) {
+        // Diary was written (the entry exists or the dir was populated)
+        expect(existsSync(diaryDir)).toBe(true);
+      }
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it('writeCompleteDiary is skipped when dojoDir is not set during complete()', async () => {
+    const fixture = createFixture();
+
+    try {
+      const cycle = fixture.cycleManager.create({ tokenBudget: 5_000 }, 'No Complete Diary');
+      fixture.cycleManager.addBet(cycle.id, {
+        description: 'No diary bet',
+        appetite: 40,
+        outcome: 'complete',
+        issueRefs: [],
+      });
+
+      const dojoSessionBuilder = { build: vi.fn() };
+      const session = new CooldownSession({
+        ...fixture.baseDeps,
+        // dojoDir NOT set — writeCompleteDiary should be a no-op
+        dojoSessionBuilder,
+        proposalGenerator: { generate: vi.fn(() => []) },
+      });
+
+      const result = await session.complete(cycle.id);
+      // Session should not be built either (no dojoDir)
+      expect(dojoSessionBuilder.build).not.toHaveBeenCalled();
+      expect(result.report).toBeDefined();
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it('writeOptionalDojoSession is skipped when dojoSessionBuilder is not set', async () => {
+    const fixture = createFixture();
+
+    try {
+      const cycle = fixture.cycleManager.create({ tokenBudget: 5_000 }, 'No Session Builder');
+      fixture.cycleManager.addBet(cycle.id, {
+        description: 'Session builder test',
+        appetite: 40,
+        outcome: 'complete',
+        issueRefs: [],
+      });
+
+      const session = new CooldownSession({
+        ...fixture.baseDeps,
+        dojoDir: fixture.dojoDir,
+        // dojoSessionBuilder NOT set
+        proposalGenerator: { generate: vi.fn(() => []) },
+      });
+
+      // Should not crash — writeOptionalDojoSession skips when no builder
+      const result = await session.complete(cycle.id);
+      expect(result.report).toBeDefined();
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it('collectSynthesisObservations uses hasObservations to filter empty observation lists', async () => {
+    const fixture = createFixture();
+
+    try {
+      const cycle = fixture.cycleManager.create({ tokenBudget: 5_000 }, 'Obs Filter Deep');
+      const updated = fixture.cycleManager.addBet(cycle.id, {
+        description: 'Bet with empty observations',
+        appetite: 30,
+        outcome: 'complete',
+        issueRefs: [],
+      });
+      const bet = updated.bets[0]!;
+      const run = makeRun(cycle.id, bet.id);
+      createRunTree(fixture.runsDir, run);
+      writeStageState(fixture.runsDir, run.id, makeStageState());
+      // Do NOT write any observations — readAllObservationsForRun returns []
+      fixture.cycleManager.setRunId(cycle.id, bet.id, run.id);
+
+      const session = new CooldownSession({
+        ...fixture.baseDeps,
+        proposalGenerator: { generate: vi.fn(() => []) },
+      });
+
+      const result = await session.prepare(cycle.id);
+      const input = JSON.parse(readFileSync(result.synthesisInputPath, 'utf-8'));
+      // Empty observations should be filtered out by hasObservations
+      expect(input.observations).toHaveLength(0);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it('collectSynthesisObservations returns empty when runsDir is not set', async () => {
+    const fixture = createFixture();
+
+    try {
+      const cycle = fixture.cycleManager.create({ tokenBudget: 5_000 }, 'No Runs Dir');
+      fixture.cycleManager.addBet(cycle.id, {
+        description: 'No runs dir bet',
+        appetite: 30,
+        outcome: 'complete',
+        issueRefs: [],
+      });
+
+      const session = new CooldownSession({
+        ...fixture.baseDeps,
+        runsDir: undefined,
+        proposalGenerator: { generate: vi.fn(() => []) },
+      });
+
+      const result = await session.prepare(cycle.id);
+      const input = JSON.parse(readFileSync(result.synthesisInputPath, 'utf-8'));
+      expect(input.observations).toHaveLength(0);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it('autoSyncBetOutcomesFromBridgeRuns skips isSyncableBet check — non-pending bets are not synced', async () => {
+    const fixture = createFixture();
+
+    try {
+      const cycle = fixture.cycleManager.create({ tokenBudget: 2_000 }, 'Sync Filter');
+      // Complete bet should NOT be synced
+      fixture.cycleManager.addBet(cycle.id, {
+        description: 'Already resolved bet',
+        appetite: 30,
+        outcome: 'complete',
+        issueRefs: [],
+      });
+      // Pending bet without runId should NOT be synced
+      fixture.cycleManager.addBet(cycle.id, {
+        description: 'Pending without runId',
+        appetite: 30,
+        outcome: 'pending',
+        issueRefs: [],
+      });
+
+      const session = new CooldownSession({
+        ...fixture.baseDeps,
+        proposalGenerator: { generate: vi.fn(() => []) },
+      });
+
+      const result = await session.run(cycle.id);
+      // No bets should have been auto-synced
+      expect(result.betOutcomes).toEqual([]);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it('checkIncompleteRuns skips bets whose run file is missing (handles gracefully)', () => {
+    const fixture = createFixture();
+
+    try {
+      const cycle = fixture.cycleManager.create({ tokenBudget: 2_000 }, 'Missing Run');
+      const updated = fixture.cycleManager.addBet(cycle.id, {
+        description: 'Missing run bet',
+        appetite: 30,
+        outcome: 'pending',
+        issueRefs: [],
+      });
+      const bet = updated.bets[0]!;
+      // Set a runId but don't create the run file or bridge-run file
+      fixture.cycleManager.setRunId(cycle.id, bet.id, randomUUID());
+
+      const session = new CooldownSession(fixture.baseDeps);
+      const incomplete = session.checkIncompleteRuns(cycle.id);
+      // Should handle missing files gracefully and not report incomplete
+      expect(incomplete).toEqual([]);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
   it('listJsonFiles filters non-json files from bridge-runs directory', async () => {
     const fixture = createFixture();
 

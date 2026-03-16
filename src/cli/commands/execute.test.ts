@@ -1887,6 +1887,205 @@ describe('registerExecuteCommands', () => {
         expect.objectContaining({ yolo: undefined }),
       );
     });
+
+    it('marks ProjectStateUpdater.markRanWithYolo only when --yolo is set', async () => {
+      const markYoloSpy = vi.spyOn(ProjectStateUpdater, 'markRanWithYolo').mockImplementation(() => {});
+      try {
+        const program = createProgram();
+        await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', 'build', '--yolo']);
+        expect(markYoloSpy).toHaveBeenCalled();
+        markYoloSpy.mockClear();
+
+        const program2 = createProgram();
+        await program2.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', 'build']);
+        expect(markYoloSpy).not.toHaveBeenCalled();
+      } finally {
+        markYoloSpy.mockRestore();
+      }
+    });
+  });
+
+  describe('--dry-run', () => {
+    it('prints dry-run message for single-stage execution', async () => {
+      mockRunStage.mockResolvedValue({
+        ...makeSingleResult(),
+        matchReports: [],
+      });
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', 'build', '--dry-run']);
+
+      const output = consoleSpy.mock.calls.map((c: unknown[]) => c[0]).join('\n');
+      expect(output).toContain('(dry-run');
+    });
+
+    it('prints dry-run message for pipeline execution', async () => {
+      mockRunPipeline.mockResolvedValue(makePipelineResult(['build', 'review']));
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', 'build', 'review', '--dry-run']);
+
+      const output = consoleSpy.mock.calls.map((c: unknown[]) => c[0]).join('\n');
+      expect(output).toContain('(dry-run');
+    });
+
+    it('does NOT print dry-run message when --dry-run is absent', async () => {
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', 'build']);
+
+      const output = consoleSpy.mock.calls.map((c: unknown[]) => c[0]).join('\n');
+      expect(output).not.toContain('dry-run');
+    });
+  });
+
+  describe('--explain', () => {
+    it('prints explain scoring when --explain is set for a pipeline run', async () => {
+      mockRunPipeline.mockResolvedValue({
+        ...makePipelineResult(['build', 'review']),
+        stageResults: [
+          {
+            stageCategory: 'build',
+            selectedFlavors: ['typescript-tdd'],
+            executionMode: 'sequential',
+            stageArtifact: { name: 'build-synthesis', content: 'x', timestamp: new Date().toISOString() },
+            decisions: [],
+            matchReports: [{ flavorName: 'typescript-tdd', score: 0.9, keywordHits: 3, ruleAdjustments: 0, learningBoost: 0, reasoning: 'winner' }],
+          },
+          {
+            stageCategory: 'review',
+            selectedFlavors: ['default'],
+            executionMode: 'sequential',
+            stageArtifact: { name: 'review-synthesis', content: 'y', timestamp: new Date().toISOString() },
+            decisions: [],
+            matchReports: [],
+          },
+        ],
+        pipelineReflection: { overallQuality: 'good', learnings: [] },
+      });
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', 'build', 'review', '--explain']);
+
+      const output = consoleSpy.mock.calls.map((c: unknown[]) => c[0]).join('\n');
+      expect(output).toContain('Flavor scor');
+    });
+
+    it('does NOT print explain when --explain is absent for pipeline', async () => {
+      mockRunPipeline.mockResolvedValue(makePipelineResult(['build', 'review']));
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', 'build', 'review']);
+
+      const output = consoleSpy.mock.calls.map((c: unknown[]) => c[0]).join('\n');
+      expect(output).not.toContain('Flavor scor');
+    });
+  });
+
+  describe('pipeline learnings', () => {
+    it('prints learnings section when pipeline produces learnings', async () => {
+      mockRunPipeline.mockResolvedValue({
+        ...makePipelineResult(['build', 'review']),
+        pipelineReflection: { overallQuality: 'good', learnings: ['Use more assertions'] },
+      });
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', 'build', 'review']);
+
+      const output = consoleSpy.mock.calls.map((c: unknown[]) => c[0]).join('\n');
+      expect(output).toContain('Learnings:');
+      expect(output).toContain('Use more assertions');
+    });
+
+    it('does NOT print learnings section when pipeline has no learnings', async () => {
+      mockRunPipeline.mockResolvedValue(makePipelineResult(['build', 'review']));
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', 'build', 'review']);
+
+      const output = consoleSpy.mock.calls.map((c: unknown[]) => c[0]).join('\n');
+      expect(output).not.toContain('Learnings:');
+    });
+  });
+
+  describe('cycle --status', () => {
+    it('shows kansatsu/maki/kime counts for prepared bets in plain-text mode', async () => {
+      const cycle = createCycleWithBets('Status Cycle', [
+        { description: 'Prepared bet', appetite: 20 },
+      ]);
+
+      const bridge = new SessionExecutionBridge(kataDir);
+      bridge.prepareCycle(cycle.id);
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'execute', 'cycle', cycle.id, '--status']);
+
+      const output = consoleSpy.mock.calls.map((c: unknown[]) => c[0]).join('\n');
+      // Prepared bet should show kansatsu/maki/kime
+      expect(output).toContain('kansatsu:');
+      expect(output).toContain('Prepared bet');
+    });
+  });
+
+  describe('--bridge-gaps pipeline blocking', () => {
+    it('returns false from runPipelineMode when gaps block execution', async () => {
+      const gaps = [
+        { description: 'Critical gap', severity: 'high' as const, suggestedFlavors: [] },
+      ];
+      mockRunPipeline.mockResolvedValue({
+        ...makePipelineResult(['build', 'review']),
+        stageResults: [
+          {
+            ...makePipelineResult(['build', 'review']).stageResults[0],
+            gaps,
+          },
+        ],
+      });
+      mockBridgeGaps.mockReturnValue({ blocked: gaps, bridged: [] });
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir, 'execute', 'build', 'review', '--bridge-gaps',
+      ]);
+
+      expect(process.exitCode).toBe(1);
+      const errorOutput = errorSpy.mock.calls.map((c: unknown[]) => c[0]).join('\n');
+      expect(errorOutput).toContain('Blocked by');
+    });
+
+    it('pipeline continues when gaps are bridged without blocking', async () => {
+      const gaps = [
+        { description: 'Minor gap', severity: 'low' as const, suggestedFlavors: [] },
+      ];
+      mockRunPipeline.mockResolvedValue({
+        ...makePipelineResult(['build', 'review']),
+        stageResults: [
+          {
+            ...makePipelineResult(['build', 'review']).stageResults[0],
+            gaps,
+          },
+        ],
+      });
+      mockBridgeGaps.mockReturnValue({ blocked: [], bridged: [{ id: '1' }] });
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir, 'execute', 'build', 'review', '--bridge-gaps',
+      ]);
+
+      const output = consoleSpy.mock.calls.map((c: unknown[]) => c[0]).join('\n');
+      expect(output).toContain('Captured 1 gap');
+      expect(output).toContain('Pipeline:');
+    });
+  });
+
+  describe('--save-kata with --json', () => {
+    it('suppresses the "Kata saved" confirmation when --json is set', async () => {
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--json', '--cwd', baseDir, 'execute', 'build', '--save-kata', 'test-save']);
+
+      const output = consoleSpy.mock.calls.map((c: unknown[]) => c[0]).join('\n');
+      expect(output).not.toContain('Kata "test-save" saved.');
+    });
   });
 });
 
@@ -1951,24 +2150,34 @@ describe('saved kata CRUD functions', () => {
       );
     });
 
-    it('throws for invalid JSON content', () => {
+    it('throws for invalid JSON content with cause', () => {
       const katasDir = join(tmpBase, 'katas');
       mkdirSync(katasDir, { recursive: true });
       writeFileSync(join(katasDir, 'broken.json'), '{ broken }');
 
-      expect(() => loadSavedKata(tmpBase, 'broken')).toThrow(
-        'Kata "broken" has invalid JSON:',
-      );
+      try {
+        loadSavedKata(tmpBase, 'broken');
+        expect.fail('Should have thrown');
+      } catch (err) {
+        expect(err).toBeInstanceOf(Error);
+        expect((err as Error).message).toContain('Kata "broken" has invalid JSON:');
+        expect((err as Error).cause).toBeDefined();
+      }
     });
 
-    it('throws for valid JSON with invalid schema', () => {
+    it('throws for valid JSON with invalid schema and includes cause', () => {
       const katasDir = join(tmpBase, 'katas');
       mkdirSync(katasDir, { recursive: true });
       writeFileSync(join(katasDir, 'bad.json'), JSON.stringify({ name: 123 }));
 
-      expect(() => loadSavedKata(tmpBase, 'bad')).toThrow(
-        'Kata "bad" has invalid structure.',
-      );
+      try {
+        loadSavedKata(tmpBase, 'bad');
+        expect.fail('Should have thrown');
+      } catch (err) {
+        expect(err).toBeInstanceOf(Error);
+        expect((err as Error).message).toContain('Kata "bad" has invalid structure.');
+        expect((err as Error).cause).toBeDefined();
+      }
     });
   });
 
