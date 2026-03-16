@@ -52,7 +52,14 @@ function calculateRunDurationMs(run: PersistedBridgeRunCompletionSnapshot): numb
     return 0;
   }
 
-  return new Date(run.completedAt).getTime() - new Date(run.startedAt).getTime();
+  const startedAtMs = Date.parse(run.startedAt);
+  const completedAtMs = Date.parse(run.completedAt);
+
+  if (!Number.isFinite(startedAtMs) || !Number.isFinite(completedAtMs)) {
+    return 0;
+  }
+
+  return Math.max(0, completedAtMs - startedAtMs);
 }
 
 function mergeTokenUsage(

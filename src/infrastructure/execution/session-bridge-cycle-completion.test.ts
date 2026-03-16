@@ -40,4 +40,23 @@ describe('summarizeCycleCompletion', () => {
     expect(totals.totalDurationMs).toBe(180_000);
     expect(totals.tokenUsage).toBeNull();
   });
+
+  it('clamps malformed or out-of-order timestamps to zero duration', () => {
+    const totals = summarizeCycleCompletion([
+      {
+        status: 'complete',
+        startedAt: 'not-a-date',
+        completedAt: '2026-03-15T12:02:00.000Z',
+      },
+      {
+        status: 'failed',
+        startedAt: '2026-03-15T12:05:00.000Z',
+        completedAt: '2026-03-15T12:04:00.000Z',
+      },
+    ]);
+
+    expect(totals.completedBets).toBe(1);
+    expect(totals.totalDurationMs).toBe(0);
+    expect(totals.tokenUsage).toBeNull();
+  });
 });
