@@ -25,7 +25,7 @@ import { formatSessionBridgeAgentContext } from './session-bridge-agent-context.
 import {
   summarizeCycleCompletion,
   type CycleCompletionTotals,
-} from './session-bridge-cycle-completion.js';
+} from '@infra/execution/session-bridge-cycle-completion.js';
 
 /**
  * Schema for bridge-run metadata stored at .kata/bridge-runs/<runId>.json.

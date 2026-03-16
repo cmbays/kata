@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { summarizeCycleCompletion } from './session-bridge-cycle-completion.js';
+import { summarizeCycleCompletion } from '@infra/execution/session-bridge-cycle-completion.js';
 
 describe('summarizeCycleCompletion', () => {
   it('sums durations and persisted token usage across completed and failed runs', () => {

@@ -1,21 +1,33 @@
-export interface PersistedBridgeRunTokenUsage {
-  inputTokens: number;
-  outputTokens: number;
-  totalTokens: number;
-}
+import { z } from 'zod/v4';
 
-export interface PersistedBridgeRunCompletionSnapshot {
-  status: 'in-progress' | 'complete' | 'failed';
-  startedAt: string;
-  completedAt?: string;
-  tokenUsage?: PersistedBridgeRunTokenUsage;
-}
+export const PersistedBridgeRunTokenUsageSchema = z.object({
+  inputTokens: z.number().int().min(0),
+  outputTokens: z.number().int().min(0),
+  totalTokens: z.number().int().min(0),
+});
 
-export interface CycleCompletionTotals {
-  completedBets: number;
-  totalDurationMs: number;
-  tokenUsage: { inputTokens: number; outputTokens: number; total: number } | null;
-}
+export type PersistedBridgeRunTokenUsage = z.infer<typeof PersistedBridgeRunTokenUsageSchema>;
+
+export const PersistedBridgeRunCompletionSnapshotSchema = z.object({
+  status: z.enum(['in-progress', 'complete', 'failed']),
+  startedAt: z.string().datetime(),
+  completedAt: z.string().datetime().optional(),
+  tokenUsage: PersistedBridgeRunTokenUsageSchema.optional(),
+});
+
+export type PersistedBridgeRunCompletionSnapshot = z.infer<typeof PersistedBridgeRunCompletionSnapshotSchema>;
+
+export const CycleCompletionTotalsSchema = z.object({
+  completedBets: z.number().int().min(0),
+  totalDurationMs: z.number().min(0),
+  tokenUsage: z.object({
+    inputTokens: z.number().int().min(0),
+    outputTokens: z.number().int().min(0),
+    total: z.number().int().min(0),
+  }).nullable(),
+});
+
+export type CycleCompletionTotals = z.infer<typeof CycleCompletionTotalsSchema>;
 
 export function summarizeCycleCompletion(
   runs: PersistedBridgeRunCompletionSnapshot[],
