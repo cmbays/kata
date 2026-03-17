@@ -52,10 +52,6 @@ export function shouldWarnOnIncompleteRuns(incompleteRunsCount: number, force: b
   return incompleteRunsCount > 0 && !force;
 }
 
-export function shouldRecordBetOutcomes(outcomes: readonly CooldownHelperBetOutcome[]): boolean {
-  return outcomes.length > 0;
-}
-
 export function selectEffectiveBetOutcomes(
   explicitBetOutcomes: readonly CooldownHelperBetOutcome[],
   syncedBetOutcomes: readonly CooldownHelperBetOutcome[],
@@ -74,14 +70,6 @@ export function buildDiaryBetOutcomesFromCycleBets(bets: readonly CooldownDiaryB
       notes: bet.outcomeNotes,
       betDescription: bet.description,
     }));
-}
-
-export function shouldWriteDojoDiary(dojoDir: string | undefined): boolean {
-  return Boolean(dojoDir);
-}
-
-export function shouldWriteDojoSession(dojoDir: string | undefined, dojoSessionBuilder: unknown): boolean {
-  return Boolean(dojoDir && dojoSessionBuilder);
 }
 
 export function clampConfidenceWithDelta(existingConfidence: number, confidenceDelta: number): number {
