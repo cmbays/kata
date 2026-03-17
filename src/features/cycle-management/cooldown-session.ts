@@ -49,10 +49,7 @@ import {
   mapBridgeRunStatusToSyncedOutcome,
   resolveAppliedProposalIds,
   selectEffectiveBetOutcomes,
-  shouldRecordBetOutcomes,
   shouldWarnOnIncompleteRuns,
-  shouldWriteDojoDiary,
-  shouldWriteDojoSession,
   isJsonFile,
   isSynthesisPendingFile,
   isSyncableBet,
@@ -397,7 +394,7 @@ export class CooldownSession {
   }
 
   private recordExplicitBetOutcomes(cycleId: string, betOutcomes: BetOutcomeRecord[]): void {
-    if (!shouldRecordBetOutcomes(betOutcomes)) return;
+    if (betOutcomes.length === 0) return;
     this.recordBetOutcomes(cycleId, betOutcomes);
   }
 
@@ -454,7 +451,7 @@ export class CooldownSession {
     humanPerspective?: string;
   }): void {
     // Stryker disable next-line ConditionalExpression: guard redundant with catch in writeDiaryEntry
-    if (!shouldWriteDojoDiary(this.deps.dojoDir)) return;
+    if (!this.deps.dojoDir) return;
 
     this.writeDiaryEntry({
       cycleId: input.cycleId,
@@ -486,7 +483,7 @@ export class CooldownSession {
     ruleSuggestions?: RuleSuggestion[];
     synthesisProposals?: SynthesisProposal[];
   }): void {
-    if (!shouldWriteDojoDiary(this.deps.dojoDir)) return;
+    if (!this.deps.dojoDir) return;
 
     this.writeDiaryEntry({
       cycleId: input.cycleId,
@@ -501,7 +498,7 @@ export class CooldownSession {
   }
 
   private writeOptionalDojoSession(cycleId: string, cycleName?: string): void {
-    if (!shouldWriteDojoSession(this.deps.dojoDir, this.deps.dojoSessionBuilder)) return;
+    if (!this.deps.dojoDir || !this.deps.dojoSessionBuilder) return;
     this.writeDojoSession(cycleId, cycleName);
   }
 
@@ -1224,7 +1221,7 @@ export class CooldownSession {
   private runExpiryCheck(): void {
     try {
       // Stryker disable next-line ConditionalExpression: guard redundant with catch — checkExpiry absence is swallowed
-      if (typeof (this.deps.knowledgeStore as unknown as Record<string, unknown>)?.['checkExpiry'] !== 'function') return;
+      if (typeof (this.deps.knowledgeStore as { checkExpiry?: unknown }).checkExpiry !== 'function') return;
       const result = this.deps.knowledgeStore.checkExpiry();
       for (const message of buildExpiryCheckMessages(result)) {
         logger.debug(message);

@@ -19,10 +19,7 @@ import {
   mapBridgeRunStatusToSyncedOutcome,
   resolveAppliedProposalIds,
   selectEffectiveBetOutcomes,
-  shouldRecordBetOutcomes,
   shouldWarnOnIncompleteRuns,
-  shouldWriteDojoDiary,
-  shouldWriteDojoSession,
 } from './cooldown-session.helpers.js';
 
 describe('cooldown-session helpers', () => {
@@ -31,13 +28,6 @@ describe('cooldown-session helpers', () => {
       expect(shouldWarnOnIncompleteRuns(0, false)).toBe(false);
       expect(shouldWarnOnIncompleteRuns(1, true)).toBe(false);
       expect(shouldWarnOnIncompleteRuns(2, false)).toBe(true);
-    });
-  });
-
-  describe('shouldRecordBetOutcomes', () => {
-    it('returns true only for non-empty explicit outcomes', () => {
-      expect(shouldRecordBetOutcomes([])).toBe(false);
-      expect(shouldRecordBetOutcomes([{ betId: 'bet-1', outcome: 'complete' }])).toBe(true);
     });
   });
 
@@ -67,16 +57,6 @@ describe('cooldown-session helpers', () => {
         { betId: 'bet-2', outcome: 'complete', notes: 'done', betDescription: 'Done bet' },
         { betId: 'bet-3', outcome: 'partial', notes: undefined, betDescription: 'Partial bet' },
       ]);
-    });
-  });
-
-  describe('dojo helpers', () => {
-    it('requires dojoDir to write diary and session outputs', () => {
-      expect(shouldWriteDojoDiary(undefined)).toBe(false);
-      expect(shouldWriteDojoDiary('/tmp/dojo')).toBe(true);
-      expect(shouldWriteDojoSession(undefined, { build: vi.fn() })).toBe(false);
-      expect(shouldWriteDojoSession('/tmp/dojo', undefined)).toBe(false);
-      expect(shouldWriteDojoSession('/tmp/dojo', { build: vi.fn() })).toBe(true);
     });
   });
 

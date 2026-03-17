@@ -9,7 +9,7 @@ import {
 
   matchesCycleRef,
   resolveAgentId,
-} from './session-bridge.helpers.js';
+} from '@infra/execution/session-bridge.helpers.js';
 
 describe('session-bridge helpers', () => {
   describe('canTransitionCycleState', () => {

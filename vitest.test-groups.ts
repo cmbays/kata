@@ -9,6 +9,7 @@ export const integrationTestFiles = [
 export const mutationTestFiles = [
   'src/cli/commands/execute.test.ts',
   'src/cli/commands/execute.helpers.test.ts',
+  'src/cli/commands/saved-kata-store.test.ts',
   'src/features/execute/workflow-runner.test.ts',
   'src/features/cycle-management/cooldown-session.test.ts',
   'src/features/cycle-management/cooldown-session-prepare.test.ts',

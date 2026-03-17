@@ -1306,7 +1306,7 @@ describe('CooldownSession unit seams', () => {
     }
   });
 
-  it('collectSynthesisObservations uses hasObservations to filter empty observation lists', async () => {
+  it('collectSynthesisObservations filters out runs with no observations', async () => {
     const fixture = createFixture();
 
     try {
@@ -1331,7 +1331,7 @@ describe('CooldownSession unit seams', () => {
 
       const result = await session.prepare(cycle.id);
       const input = JSON.parse(readFileSync(result.synthesisInputPath, 'utf-8'));
-      // Empty observations should be filtered out by hasObservations
+      // Empty observations should be filtered out
       expect(input.observations).toHaveLength(0);
     } finally {
       fixture.cleanup();
@@ -1676,7 +1676,7 @@ describe('CooldownSession follow-up pipeline', () => {
     }
   });
 
-  it('hasObservations filters out runs with empty observations from synthesis input', async () => {
+  it('synthesis input excludes runs with empty observations', async () => {
     const fixture = createFixture();
 
     try {
