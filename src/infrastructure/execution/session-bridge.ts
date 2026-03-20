@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { join, dirname } from 'node:path';
-import { existsSync, readdirSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { detectLaunchMode, detectSessionContext } from '@shared/lib/session-context.js';
 import type {
   ISessionExecutionBridge,
@@ -25,14 +25,15 @@ import {
   listBridgeRunsForCycle,
 } from '@infra/persistence/bridge-run-store.js';
 import {
-  computeBudgetPercent,
-  countJsonlContent,
-  extractHistoryTokenTotal,
   findEarliestTimestamp,
   hasBridgeRunMetadataChanged,
-  isJsonFile,
   resolveAgentId,
 } from './session-bridge.helpers.js';
+import {
+  countRunData,
+  estimateBudgetUsage,
+  formatDuration,
+} from './session-bridge-run-stats.js';
 import { createRunTree, readRun, writeRun, runPaths } from '@infra/persistence/run-store.js';
 import { KATA_DIRS } from '@shared/constants/paths.js';
 import { logger } from '@shared/lib/logger.js';
@@ -242,7 +243,7 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
       cycleName: cycle.name ?? cycle.id,
       bets: [...preparedBetStatuses, ...pendingBetStatuses],
       elapsed: this.formatElapsedDuration(bridgeRuns),
-      budgetUsed: this.estimateBudgetUsage(cycle),
+      budgetUsed: estimateBudgetUsage(this.kataDir, cycle),
     };
   }
 
@@ -354,7 +355,7 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
   }
 
   private buildPreparedBetStatus(meta: BridgeRunMeta): RunStatus {
-    const counts = this.countRunData(meta.runId);
+    const counts = countRunData(this.kataDir, meta.runId);
 
     return {
       betId: meta.betId,
@@ -387,7 +388,7 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
     const earliestStart = findEarliestTimestamp(bridgeRuns.map((meta) => meta.startedAt));
 
     return earliestStart
-      ? this.formatDuration(Date.now() - new Date(earliestStart).getTime())
+      ? formatDuration(Date.now() - new Date(earliestStart).getTime())
       : '0m';
   }
 
@@ -653,104 +654,4 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
     }
   }
 
-  // ── Data counting for status ──────────────────────────────────────────
-
-  private countRunData(runId: string): {
-    observations: number;
-    artifacts: number;
-    decisions: number;
-    lastTimestamp: string | null;
-  } {
-    const runsDir = join(this.kataDir, KATA_DIRS.runs);
-    const runDir = join(runsDir, runId);
-
-    if (!existsSync(runDir)) {
-      return { observations: 0, artifacts: 0, decisions: 0, lastTimestamp: null };
-    }
-
-    // Standard run-store paths
-    let observations = this.countJsonlLines(join(runDir, 'observations.jsonl'));
-    const artifacts = this.countJsonlLines(join(runDir, 'artifacts.jsonl'));
-    let decisions = this.countJsonlLines(join(runDir, 'decisions.jsonl'));
-
-    // Also check stage-level observations
-    const stagesDir = join(runDir, 'stages');
-    if (existsSync(stagesDir)) {
-      for (const stageDir of readdirSync(stagesDir)) {
-        observations += this.countJsonlLines(join(stagesDir, stageDir, 'observations.jsonl'));
-        decisions += this.countJsonlLines(join(stagesDir, stageDir, 'decisions.jsonl'));
-      }
-    }
-
-    const lastTimestamp = this.resolveLastActivityTimestamp(runId);
-
-    return { observations, artifacts, decisions, lastTimestamp };
-  }
-
-  private countJsonlLines(filePath: string): number {
-    // Stryker disable next-line ConditionalExpression: guard redundant with catch — readFileSync throws for missing file
-    if (!existsSync(filePath)) return 0;
-    try {
-      return countJsonlContent(readFileSync(filePath, 'utf-8'));
-    } catch {
-      return 0;
-    }
-  }
-
-  private resolveLastActivityTimestamp(runId: string): string | null {
-    const meta = readBridgeRunMeta(this.bridgeRunsDir,runId);
-
-    if (meta?.completedAt) {
-      return meta.completedAt;
-    }
-    if (meta?.startedAt) {
-      return meta.startedAt;
-    }
-
-    return null;
-  }
-
-  private estimateBudgetUsage(cycle: Cycle): { percent: number; tokenEstimate: number } | null {
-    if (!cycle.budget.tokenBudget) return null;
-
-    const historyDir = join(this.kataDir, KATA_DIRS.history);
-    if (!existsSync(historyDir)) return { percent: 0, tokenEstimate: 0 };
-
-    const totalTokens = this.sumCycleHistoryTokens(historyDir, cycle.id);
-    return computeBudgetPercent(totalTokens, cycle.budget.tokenBudget);
-  }
-
-  private sumCycleHistoryTokens(historyDir: string, cycleId: string): number {
-    let totalTokens = 0;
-
-    for (const file of readdirSync(historyDir).filter(isJsonFile)) {
-      const entryTotal = this.readHistoryTokenTotal(join(historyDir, file), cycleId);
-      totalTokens += entryTotal ?? 0;
-    }
-
-    return totalTokens;
-  }
-
-  private readHistoryTokenTotal(filePath: string, cycleId: string): number | null {
-    try {
-      const entry = JSON.parse(readFileSync(filePath, 'utf-8'));
-      return extractHistoryTokenTotal(entry, cycleId);
-    } catch {
-      return null;
-    }
-  }
-
-  private formatDuration(ms: number): string {
-    const seconds = Math.floor(ms / 1000);
-    const minutes = Math.floor(seconds / 60);
-    const hours = Math.floor(minutes / 60);
-
-    if (hours > 0) {
-      return `${hours}h ${minutes % 60}m`;
-    }
-    if (minutes > 0) {
-      return `${minutes}m`;
-    }
-    return `${seconds}s`;
-  }
 }

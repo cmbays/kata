@@ -346,39 +346,7 @@ describe('SessionExecutionBridge unit coverage', () => {
   // findCycleForBet and loadCycle tests moved to domain/services/cycle-manager.test.ts
   // (findBetCycle, get)
 
-  it('counts zero run data when jsonl files and stage directories are absent', () => {
-    const bridge = new SessionExecutionBridge(kataDir);
-    const runDir = join(kataDir, 'runs', 'run-1');
-    mkdirSync(runDir, { recursive: true });
-
-    const counts = (bridge as unknown as {
-      countRunData: (runId: string) => { observations: number; artifacts: number; decisions: number; lastTimestamp: string | null };
-    }).countRunData('run-1');
-
-    expect(counts).toEqual({
-      observations: 0,
-      artifacts: 0,
-      decisions: 0,
-      lastTimestamp: null,
-    });
-  });
-
-  it('sums cycle history tokens while ignoring non-json and missing-token entries', () => {
-    const bridge = new SessionExecutionBridge(kataDir);
-    const historyDir = join(kataDir, 'history');
-    mkdirSync(historyDir, { recursive: true });
-
-    writeFileSync(join(historyDir, 'first.json'), JSON.stringify({ cycleId: 'cycle-1', tokenUsage: { total: 1200 } }));
-    writeFileSync(join(historyDir, 'missing.json'), JSON.stringify({ cycleId: 'cycle-1' }));
-    writeFileSync(join(historyDir, 'other.json'), JSON.stringify({ cycleId: 'other-cycle', tokenUsage: { total: 9999 } }));
-    writeFileSync(join(historyDir, 'notes.txt'), JSON.stringify({ cycleId: 'cycle-1', tokenUsage: { total: 5000 } }));
-
-    const total = (bridge as unknown as {
-      sumCycleHistoryTokens: (historyDir: string, cycleId: string) => number;
-    }).sumCycleHistoryTokens(historyDir, 'cycle-1');
-
-    expect(total).toBe(1200);
-  });
+  // countRunData, sumCycleHistoryTokens tests moved to session-bridge-run-stats.test.ts
 
   it('reports status counts from run data and estimates budget from matching history entries', () => {
     const cycle = createCycle(kataDir);
@@ -485,64 +453,7 @@ describe('SessionExecutionBridge unit coverage', () => {
     expect(existsSync(join(kataDir, 'history'))).toBe(true);
   });
 
-  it('estimateBudgetUsage returns null when cycle has no tokenBudget', () => {
-    const cycle = createCycle(kataDir, { budget: {} });
-    const bridge = new SessionExecutionBridge(kataDir);
-
-    const result = (bridge as unknown as {
-      estimateBudgetUsage: (cycle: typeof cycle) => { percent: number; tokenEstimate: number } | null;
-    }).estimateBudgetUsage(cycle);
-
-    expect(result).toBeNull();
-  });
-
-  it('estimateBudgetUsage returns zero when history dir is missing', () => {
-    const cycle = createCycle(kataDir);
-    const bridge = new SessionExecutionBridge(kataDir);
-
-    const result = (bridge as unknown as {
-      estimateBudgetUsage: (cycle: typeof cycle) => { percent: number; tokenEstimate: number } | null;
-    }).estimateBudgetUsage(cycle);
-
-    expect(result).toEqual({ percent: 0, tokenEstimate: 0 });
-  });
-
-  it('countJsonlLines returns 0 for missing files and counts lines for present files', () => {
-    const bridge = new SessionExecutionBridge(kataDir);
-    const countJsonlLines = (bridge as unknown as {
-      countJsonlLines: (filePath: string) => number;
-    }).countJsonlLines.bind(bridge);
-
-    // Missing file should return 0
-    expect(countJsonlLines(join(kataDir, 'nonexistent.jsonl'))).toBe(0);
-
-    // Present file with content
-    const filePath = join(kataDir, 'test.jsonl');
-    writeFileSync(filePath, '{"a":1}\n{"b":2}\n');
-    expect(countJsonlLines(filePath)).toBe(2);
-  });
-
-  it('countRunData returns zero counts and null lastTimestamp when run directory is missing', () => {
-    const bridge = new SessionExecutionBridge(kataDir);
-
-    const counts = (bridge as unknown as {
-      countRunData: (runId: string) => { observations: number; artifacts: number; decisions: number; lastTimestamp: string | null };
-    }).countRunData('nonexistent-run-id');
-
-    expect(counts).toEqual({ observations: 0, artifacts: 0, decisions: 0, lastTimestamp: null });
-  });
-
-  it('countRunData gracefully handles stagesDir that exists but contains no stage subdirectories', () => {
-    const bridge = new SessionExecutionBridge(kataDir);
-    const runDir = join(kataDir, 'runs', 'run-empty-stages');
-    mkdirSync(join(runDir, 'stages'), { recursive: true });
-
-    const counts = (bridge as unknown as {
-      countRunData: (runId: string) => { observations: number; artifacts: number; decisions: number; lastTimestamp: string | null };
-    }).countRunData('run-empty-stages');
-
-    expect(counts).toEqual({ observations: 0, artifacts: 0, decisions: 0, lastTimestamp: null });
-  });
+  // estimateBudgetUsage, countJsonlLines, countRunData tests moved to session-bridge-run-stats.test.ts
 
   it('prepareCycle deduplicates bridge runs by betId keeping only the first match per bet', () => {
     const betId = randomUUID();
@@ -661,18 +572,7 @@ describe('SessionExecutionBridge unit coverage', () => {
 
   // writeCycleNameIfChanged tests moved to domain/services/cycle-manager.test.ts (transitionState)
 
-  it('formatDuration handles hours, minutes, and seconds', () => {
-    const bridge = new SessionExecutionBridge(kataDir);
-    const formatDuration = (bridge as unknown as {
-      formatDuration: (ms: number) => string;
-    }).formatDuration.bind(bridge);
-
-    expect(formatDuration(500)).toBe('0s');
-    expect(formatDuration(30000)).toBe('30s');
-    expect(formatDuration(60000)).toBe('1m');
-    expect(formatDuration(90000)).toBe('1m');
-    expect(formatDuration(3660000)).toBe('1h 1m');
-  });
+  // formatDuration tests moved to session-bridge-run-stats.test.ts
 
   // updateCycleState no-op test moved to domain/services/cycle-manager.test.ts (transitionState)
 
@@ -761,16 +661,7 @@ describe('SessionExecutionBridge unit coverage', () => {
     expect(summary.totalBets).toBe(2);
   });
 
-  it('countJsonlLines returns 0 when file exists but is empty', () => {
-    const bridge = new SessionExecutionBridge(kataDir);
-    const countJsonlLines = (bridge as unknown as {
-      countJsonlLines: (filePath: string) => number;
-    }).countJsonlLines.bind(bridge);
-
-    const filePath = join(kataDir, 'empty.jsonl');
-    writeFileSync(filePath, '');
-    expect(countJsonlLines(filePath)).toBe(0);
-  });
+  // countJsonlLines empty file test moved to session-bridge-run-stats.test.ts
 
   it('listBridgeRunsForCycle filters non-json files from results', () => {
     const bridgeRunsDir = join(kataDir, 'bridge-runs');
