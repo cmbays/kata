@@ -100,7 +100,7 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
     };
 
     // Persist bridge run metadata so getCycleStatus() can find it
-    writeBridgeRunMeta(this.bridgeRunsDir,{
+    writeBridgeRunMeta(this.bridgeRunsDir, {
       runId,
       betId: bet.id,
       betName: bet.description,
@@ -146,7 +146,7 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
   }
 
   getAgentContext(runId: string): string {
-    const meta = readBridgeRunMeta(this.bridgeRunsDir,runId);
+    const meta = readBridgeRunMeta(this.bridgeRunsDir, runId);
     if (!meta) {
       throw new Error(`No bridge run found for run ID "${runId}". Was it prepared via the session bridge?`);
     }
@@ -158,7 +158,7 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
   }
 
   complete(runId: string, result: AgentCompletionResult): void {
-    const meta = readBridgeRunMeta(this.bridgeRunsDir,runId);
+    const meta = readBridgeRunMeta(this.bridgeRunsDir, runId);
     if (!meta) {
       throw new Error(`No bridge run found for run ID "${runId}". Was it prepared via the session bridge?`);
     }
@@ -190,7 +190,7 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
     this.cycleManager.transitionState(cycle.id, 'active', name);
     const updatedCycle = this.cycleManager.get(cycle.id);
     const resolvedName = updatedCycle.name ?? cycle.id;
-    const inProgressBridgeRuns = listBridgeRunsForCycle(this.bridgeRunsDir,cycle.id)
+    const inProgressBridgeRuns = listBridgeRunsForCycle(this.bridgeRunsDir, cycle.id)
       .filter((meta) => meta.status === 'in-progress');
     const bridgeRunsByRunId = new Map(inProgressBridgeRuns.map((meta) => [meta.runId, meta]));
     const bridgeRunsByBetId = new Map<string, BridgeRunMeta>();
@@ -232,7 +232,7 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
 
   getCycleStatus(cycleId: string): CycleExecutionStatus {
     const cycle = this.cycleManager.get(cycleId);
-    const bridgeRuns = listBridgeRunsForCycle(this.bridgeRunsDir,cycleId);
+    const bridgeRuns = listBridgeRunsForCycle(this.bridgeRunsDir, cycleId);
     const preparedBetStatuses = bridgeRuns.map((meta) => this.buildPreparedBetStatus(meta));
     const pendingBetStatuses = cycle.bets
       .filter((bet) => !bridgeRuns.some((meta) => meta.betId === bet.id))
@@ -249,7 +249,7 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
 
   completeCycle(cycleId: string, results: Record<string, AgentCompletionResult>): CycleSummary {
     const cycle = this.cycleManager.get(cycleId);
-    const bridgeRuns = listBridgeRunsForCycle(this.bridgeRunsDir,cycleId);
+    const bridgeRuns = listBridgeRunsForCycle(this.bridgeRunsDir, cycleId);
 
     this.completePendingCycleRuns(bridgeRuns, results);
     const totals = this.collectCycleCompletionTotals(bridgeRuns);
@@ -351,7 +351,7 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
       } : {}),
     } satisfies BridgeRunMeta;
 
-    writeBridgeRunMeta(this.bridgeRunsDir,updatedMeta);
+    writeBridgeRunMeta(this.bridgeRunsDir, updatedMeta);
   }
 
   private buildPreparedBetStatus(meta: BridgeRunMeta): RunStatus {
@@ -418,7 +418,7 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
   ): CycleCompletionTotals {
     return summarizeCycleCompletion(
       bridgeRuns
-        .map((meta) => readBridgeRunMeta(this.bridgeRunsDir,meta.runId))
+        .map((meta) => readBridgeRunMeta(this.bridgeRunsDir, meta.runId))
         // Stryker disable next-line ConditionalExpression: filter redundant — summarize handles null gracefully
         .filter((meta): meta is BridgeRunMeta => meta !== null),
     );
@@ -498,7 +498,7 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
     }
 
     if (changed) {
-      writeBridgeRunMeta(this.bridgeRunsDir,refreshed);
+      writeBridgeRunMeta(this.bridgeRunsDir, refreshed);
     }
 
     return refreshed;

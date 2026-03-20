@@ -6,8 +6,8 @@ import {
   computeBudgetPercent,
   countJsonlContent,
   extractHistoryTokenTotal,
-  isJsonFile,
 } from './session-bridge.helpers.js';
+import { isJsonFile } from '@shared/lib/file-filters.js';
 import { KATA_DIRS } from '@shared/constants/paths.js';
 import { logger } from '@shared/lib/logger.js';
 

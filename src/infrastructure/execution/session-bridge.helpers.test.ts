@@ -4,9 +4,9 @@ import {
   extractHistoryTokenTotal,
   findEarliestTimestamp,
   hasBridgeRunMetadataChanged,
-  isJsonFile,
   resolveAgentId,
 } from '@infra/execution/session-bridge.helpers.js';
+import { isJsonFile } from '@shared/lib/file-filters.js';
 
 // canTransitionCycleState tests moved to domain/rules/cycle-rules.test.ts
 // matchesCycleRef removed — functionality now in CycleManager.get()

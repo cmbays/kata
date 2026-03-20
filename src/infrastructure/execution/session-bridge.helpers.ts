@@ -1,5 +1,3 @@
-export { isJsonFile } from '@shared/lib/file-filters.js';
-
 /**
  * Detect whether bridge-run metadata has changed vs its refreshed values.
  */
