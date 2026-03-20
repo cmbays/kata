@@ -247,6 +247,13 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
     };
   }
 
+  /**
+   * Complete all in-progress runs for a cycle and return summary totals.
+   *
+   * Runs not present in the results map default to `{ success: true }` with
+   * a warning logged. Callers must provide explicit results if they do not
+   * want unreported runs treated as successful.
+   */
   completeCycle(cycleId: string, results: Record<string, AgentCompletionResult>): CycleSummary {
     const cycle = this.cycleManager.get(cycleId);
     const bridgeRuns = listBridgeRunsForCycle(this.bridgeRunsDir, cycleId);
