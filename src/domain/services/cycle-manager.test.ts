@@ -758,3 +758,41 @@ describe('CycleManager.setRunId', () => {
     ).toThrow(KataError);
   });
 });
+
+describe('CycleManager.removeBet', () => {
+  it('removes a bet from a planning cycle', () => {
+    const cycle = manager.create(makeBudget());
+    const withBet = manager.addBet(cycle.id, makeBetInput());
+    const betId = withBet.bets[0]!.id;
+
+    const updated = manager.removeBet(cycle.id, betId);
+    expect(updated.bets).toHaveLength(0);
+  });
+
+  it('persists the removal to disk', () => {
+    const cycle = manager.create(makeBudget());
+    const withBet = manager.addBet(cycle.id, makeBetInput());
+    const betId = withBet.bets[0]!.id;
+
+    manager.removeBet(cycle.id, betId);
+    const retrieved = manager.get(cycle.id);
+    expect(retrieved.bets).toHaveLength(0);
+  });
+
+  it('throws when cycle is not in planning state', () => {
+    const cycle = manager.create(makeBudget());
+    const withBet = manager.addBet(cycle.id, makeBetInput());
+    manager.updateState(cycle.id, 'active');
+
+    expect(() => manager.removeBet(cycle.id, withBet.bets[0]!.id)).toThrow(
+      /Only planning cycles support bet removal/,
+    );
+  });
+
+  it('throws when bet is not found', () => {
+    const cycle = manager.create(makeBudget());
+    expect(() => manager.removeBet(cycle.id, 'nonexistent')).toThrow(
+      /Bet "nonexistent" not found/,
+    );
+  });
+});
