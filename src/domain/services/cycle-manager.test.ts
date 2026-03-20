@@ -314,6 +314,123 @@ describe('CycleManager.updateState', () => {
   });
 });
 
+describe('CycleManager.transitionState', () => {
+  it('transitions planning → active', () => {
+    const cycle = manager.create(makeBudget());
+    const updated = manager.transitionState(cycle.id, 'active');
+    expect(updated.state).toBe('active');
+  });
+
+  it('transitions active → cooldown', () => {
+    const cycle = manager.create(makeBudget());
+    manager.updateState(cycle.id, 'active');
+    const updated = manager.transitionState(cycle.id, 'cooldown');
+    expect(updated.state).toBe('cooldown');
+  });
+
+  it('transitions cooldown → complete', () => {
+    const cycle = manager.create(makeBudget());
+    manager.updateState(cycle.id, 'cooldown');
+    const updated = manager.transitionState(cycle.id, 'complete');
+    expect(updated.state).toBe('complete');
+  });
+
+  it('throws on invalid transition (planning → complete)', () => {
+    const cycle = manager.create(makeBudget());
+    expect(() => manager.transitionState(cycle.id, 'complete')).toThrow(
+      /Cannot transition cycle.*from "planning" to "complete"/,
+    );
+  });
+
+  it('throws on backward transition (active → planning)', () => {
+    const cycle = manager.create(makeBudget());
+    manager.updateState(cycle.id, 'active');
+    expect(() => manager.transitionState(cycle.id, 'planning')).toThrow(
+      /Cannot transition cycle/,
+    );
+  });
+
+  it('sets name at transition time', () => {
+    const cycle = manager.create(makeBudget());
+    const updated = manager.transitionState(cycle.id, 'active', 'Keiko 12');
+    expect(updated.name).toBe('Keiko 12');
+    expect(updated.state).toBe('active');
+  });
+
+  it('updates name on same-state call without changing state', () => {
+    const cycle = manager.create(makeBudget());
+    manager.updateState(cycle.id, 'active');
+    const updated = manager.transitionState(cycle.id, 'active', 'Renamed');
+    expect(updated.state).toBe('active');
+    expect(updated.name).toBe('Renamed');
+  });
+
+  it('is a no-op when same state and no name change', () => {
+    const cycle = manager.create(makeBudget(), 'Original');
+    manager.updateState(cycle.id, 'active');
+    const before = manager.get(cycle.id);
+    const updated = manager.transitionState(cycle.id, 'active');
+    expect(updated.updatedAt).toBe(before.updatedAt);
+  });
+
+  it('persists to disk', () => {
+    const cycle = manager.create(makeBudget());
+    manager.transitionState(cycle.id, 'active', 'Keiko 12');
+    const retrieved = manager.get(cycle.id);
+    expect(retrieved.state).toBe('active');
+    expect(retrieved.name).toBe('Keiko 12');
+  });
+
+  it('throws CycleNotFoundError for nonexistent cycle', () => {
+    expect(() => manager.transitionState(crypto.randomUUID(), 'active')).toThrow(
+      CycleNotFoundError,
+    );
+  });
+});
+
+describe('CycleManager.setBetOutcome', () => {
+  it('sets outcome on a pending bet', () => {
+    const cycle = manager.create(makeBudget());
+    const withBet = manager.addBet(cycle.id, makeBetInput());
+    const betId = withBet.bets[0]!.id;
+
+    const updated = manager.setBetOutcome(cycle.id, betId, 'complete');
+    expect(updated.bets[0]!.outcome).toBe('complete');
+  });
+
+  it('does not overwrite a non-pending bet', () => {
+    const cycle = manager.create(makeBudget());
+    const withBet = manager.addBet(cycle.id, makeBetInput({ outcome: 'partial' }));
+    const betId = withBet.bets[0]!.id;
+
+    const updated = manager.setBetOutcome(cycle.id, betId, 'complete');
+    expect(updated.bets[0]!.outcome).toBe('partial');
+  });
+
+  it('persists to disk', () => {
+    const cycle = manager.create(makeBudget());
+    const withBet = manager.addBet(cycle.id, makeBetInput());
+    const betId = withBet.bets[0]!.id;
+
+    manager.setBetOutcome(cycle.id, betId, 'complete');
+    const retrieved = manager.get(cycle.id);
+    expect(retrieved.bets[0]!.outcome).toBe('complete');
+  });
+
+  it('throws for unknown bet', () => {
+    const cycle = manager.create(makeBudget());
+    expect(() => manager.setBetOutcome(cycle.id, 'nonexistent', 'complete')).toThrow(
+      /Bet "nonexistent" not found/,
+    );
+  });
+
+  it('throws CycleNotFoundError for nonexistent cycle', () => {
+    expect(() => manager.setBetOutcome(crypto.randomUUID(), 'bet', 'complete')).toThrow(
+      CycleNotFoundError,
+    );
+  });
+});
+
 describe('CycleManager.updateBetOutcomes', () => {
   it('updates bet outcomes and persists to disk', () => {
     const cycle = manager.create(makeBudget());
@@ -639,5 +756,43 @@ describe('CycleManager.setRunId', () => {
     expect(() =>
       manager.setRunId(cycle.id, crypto.randomUUID(), crypto.randomUUID()),
     ).toThrow(KataError);
+  });
+});
+
+describe('CycleManager.removeBet', () => {
+  it('removes a bet from a planning cycle', () => {
+    const cycle = manager.create(makeBudget());
+    const withBet = manager.addBet(cycle.id, makeBetInput());
+    const betId = withBet.bets[0]!.id;
+
+    const updated = manager.removeBet(cycle.id, betId);
+    expect(updated.bets).toHaveLength(0);
+  });
+
+  it('persists the removal to disk', () => {
+    const cycle = manager.create(makeBudget());
+    const withBet = manager.addBet(cycle.id, makeBetInput());
+    const betId = withBet.bets[0]!.id;
+
+    manager.removeBet(cycle.id, betId);
+    const retrieved = manager.get(cycle.id);
+    expect(retrieved.bets).toHaveLength(0);
+  });
+
+  it('throws when cycle is not in planning state', () => {
+    const cycle = manager.create(makeBudget());
+    const withBet = manager.addBet(cycle.id, makeBetInput());
+    manager.updateState(cycle.id, 'active');
+
+    expect(() => manager.removeBet(cycle.id, withBet.bets[0]!.id)).toThrow(
+      /Only planning cycles support bet removal/,
+    );
+  });
+
+  it('throws when bet is not found', () => {
+    const cycle = manager.create(makeBudget());
+    expect(() => manager.removeBet(cycle.id, 'nonexistent')).toThrow(
+      /Bet "nonexistent" not found/,
+    );
   });
 });

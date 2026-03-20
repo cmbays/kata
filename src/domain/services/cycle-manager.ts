@@ -8,6 +8,7 @@ import type { CycleState } from '@domain/types/cycle.js';
 import { CycleNotFoundError, KataError } from '@shared/lib/errors.js';
 import { validateAppetite } from '@domain/rules/budget-rules.js';
 import { calculateUtilization } from '@domain/rules/budget-rules.js';
+import { canTransitionCycleState } from '@domain/rules/cycle-rules.js';
 
 export interface CooldownReport {
   cycleId: string;
@@ -274,11 +275,72 @@ export class CycleManager {
   }
 
   /**
-   * Transition cycle state.
+   * Transition cycle state without validation.
+   *
+   * Prefer `transitionState()` for forward transitions — it validates the
+   * state machine. Use `updateState()` only for error recovery rollbacks
+   * and test fixture setup where skipping states is intentional.
    */
   updateState(cycleId: string, state: CycleState): Cycle {
     const cycle = this.get(cycleId);
     cycle.state = state;
+    cycle.updatedAt = new Date().toISOString();
+    this.save(cycle);
+    return cycle;
+  }
+
+  /**
+   * Transition cycle state with validation.
+   *
+   * Enforces the linear state machine: planning → active → cooldown → complete.
+   * Throws on invalid transitions. Optionally sets the cycle name at transition time.
+   */
+  transitionState(cycleId: string, state: CycleState, name?: string): Cycle {
+    const cycle = this.get(cycleId);
+
+    if (cycle.state === state) {
+      // Same-state: only update name if provided
+      if (name !== undefined && cycle.name !== name) {
+        cycle.name = name;
+        cycle.updatedAt = new Date().toISOString();
+        this.save(cycle);
+      }
+      return cycle;
+    }
+
+    if (!canTransitionCycleState(cycle.state, state)) {
+      throw new KataError(
+        `Cannot transition cycle "${cycle.name ?? cycleId}" from "${cycle.state}" to "${state}".`,
+      );
+    }
+
+    cycle.state = state;
+    if (name !== undefined) {
+      cycle.name = name;
+    }
+    cycle.updatedAt = new Date().toISOString();
+    this.save(cycle);
+    return cycle;
+  }
+
+  /**
+   * Set a bet's outcome, but only if it is currently pending.
+   *
+   * This prevents overwriting a manually-set outcome (e.g., user ran cooldown
+   * before bridge complete). Returns the updated cycle.
+   */
+  setBetOutcome(cycleId: string, betId: string, outcome: 'complete' | 'partial'): Cycle {
+    const cycle = this.get(cycleId);
+    const bet = cycle.bets.find((b) => b.id === betId);
+    if (!bet) {
+      throw new KataError(`Bet "${betId}" not found in cycle "${cycle.name ?? cycleId}".`);
+    }
+
+    if (bet.outcome !== 'pending') {
+      return cycle;
+    }
+
+    bet.outcome = outcome;
     cycle.updatedAt = new Date().toISOString();
     this.save(cycle);
     return cycle;

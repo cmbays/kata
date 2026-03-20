@@ -1,48 +1,17 @@
 import {
-  canTransitionCycleState,
   computeBudgetPercent,
   countJsonlContent,
   extractHistoryTokenTotal,
   findEarliestTimestamp,
   hasBridgeRunMetadataChanged,
-  isJsonFile,
-
-  matchesCycleRef,
   resolveAgentId,
 } from '@infra/execution/session-bridge.helpers.js';
+import { isJsonFile } from '@shared/lib/file-filters.js';
+
+// canTransitionCycleState tests moved to domain/rules/cycle-rules.test.ts
+// matchesCycleRef removed — functionality now in CycleManager.get()
 
 describe('session-bridge helpers', () => {
-  describe('canTransitionCycleState', () => {
-    it('allows planning → active', () => {
-      expect(canTransitionCycleState('planning', 'active')).toBe(true);
-    });
-
-    it('allows active → cooldown', () => {
-      expect(canTransitionCycleState('active', 'cooldown')).toBe(true);
-    });
-
-    it('allows cooldown → complete', () => {
-      expect(canTransitionCycleState('cooldown', 'complete')).toBe(true);
-    });
-
-    it('rejects active → complete (skipping cooldown)', () => {
-      expect(canTransitionCycleState('active', 'complete')).toBe(false);
-    });
-
-    it('rejects planning → cooldown (skipping active)', () => {
-      expect(canTransitionCycleState('planning', 'cooldown')).toBe(false);
-    });
-
-    it('rejects backward transitions', () => {
-      expect(canTransitionCycleState('active', 'planning')).toBe(false);
-      expect(canTransitionCycleState('complete', 'active')).toBe(false);
-    });
-
-    it('rejects same-state transitions', () => {
-      expect(canTransitionCycleState('active', 'active')).toBe(false);
-    });
-  });
-
   describe('hasBridgeRunMetadataChanged', () => {
     it('returns false when both fields match', () => {
       expect(hasBridgeRunMetadataChanged(
@@ -95,25 +64,6 @@ describe('session-bridge helpers', () => {
 
     it('returns the only element for single-item arrays', () => {
       expect(findEarliestTimestamp(['2026-03-16T12:00:00.000Z'])).toBe('2026-03-16T12:00:00.000Z');
-    });
-  });
-
-  describe('matchesCycleRef', () => {
-    it('matches by id', () => {
-      expect(matchesCycleRef({ id: 'c1', name: 'Keiko 1' }, 'c1')).toBe(true);
-    });
-
-    it('matches by name', () => {
-      expect(matchesCycleRef({ id: 'c1', name: 'Keiko 1' }, 'Keiko 1')).toBe(true);
-    });
-
-    it('returns false when neither id nor name matches', () => {
-      expect(matchesCycleRef({ id: 'c1', name: 'Keiko 1' }, 'c2')).toBe(false);
-    });
-
-    it('handles undefined name', () => {
-      expect(matchesCycleRef({ id: 'c1' }, 'c1')).toBe(true);
-      expect(matchesCycleRef({ id: 'c1' }, 'something')).toBe(false);
     });
   });
 

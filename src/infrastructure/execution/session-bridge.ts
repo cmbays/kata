@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { join, dirname } from 'node:path';
-import { existsSync, readdirSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { detectLaunchMode, detectSessionContext } from '@shared/lib/session-context.js';
 import type {
   ISessionExecutionBridge,
@@ -13,22 +13,27 @@ import type {
 } from '@domain/ports/session-bridge.js';
 import type { ExecutionManifest } from '@domain/types/manifest.js';
 import { ExecutionHistoryEntrySchema } from '@domain/types/history.js';
-import { CycleSchema, type Cycle, type CycleState } from '@domain/types/cycle.js';
+import type { Cycle } from '@domain/types/cycle.js';
+import type { BridgeRunMeta } from '@domain/types/bridge-run.js';
 import { type Bet } from '@domain/types/bet.js';
 import { StageCategorySchema } from '@domain/types/stage.js';
-import { z } from 'zod/v4';
+import { CycleManager } from '@domain/services/cycle-manager.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
 import {
-  canTransitionCycleState,
-  computeBudgetPercent,
-  countJsonlContent,
-  extractHistoryTokenTotal,
+  writeBridgeRunMeta,
+  readBridgeRunMeta,
+  listBridgeRunsForCycle,
+} from '@infra/persistence/bridge-run-store.js';
+import {
   findEarliestTimestamp,
   hasBridgeRunMetadataChanged,
-  isJsonFile,
-  matchesCycleRef,
   resolveAgentId,
 } from './session-bridge.helpers.js';
+import {
+  countRunData,
+  estimateBudgetUsage,
+  formatDuration,
+} from './session-bridge-run-stats.js';
 import { createRunTree, readRun, writeRun, runPaths } from '@infra/persistence/run-store.js';
 import { KATA_DIRS } from '@shared/constants/paths.js';
 import { logger } from '@shared/lib/logger.js';
@@ -37,37 +42,6 @@ import {
   summarizeCycleCompletion,
   type CycleCompletionTotals,
 } from '@infra/execution/session-bridge-cycle-completion.js';
-
-/**
- * Schema for bridge-run metadata stored at .kata/bridge-runs/<runId>.json.
- */
-const BridgeRunMetaSchema = z.object({
-  runId: z.string(),
-  betId: z.string(),
-  betName: z.string(),
-  cycleId: z.string(),
-  cycleName: z.string(),
-  stages: z.array(z.string()),
-  isolation: z.enum(['worktree', 'shared']),
-  startedAt: z.string(),
-  completedAt: z.string().optional(),
-  status: z.enum(['in-progress', 'complete', 'failed']),
-  /** Canonical agent attribution for this run — written to run.json on prepare. */
-  agentId: z.string().uuid().optional(),
-  /** Compatibility alias for older kataka-attributed metadata. */
-  katakaId: z.string().uuid().optional(),
-  /**
-   * Token usage for this run — populated by complete() when the agent
-   * reports token counts via AgentCompletionResult.tokenUsage.
-   */
-  tokenUsage: z.object({
-    inputTokens: z.number().int().min(0),
-    outputTokens: z.number().int().min(0),
-    totalTokens: z.number().int().min(0),
-  }).optional(),
-});
-
-type BridgeRunMeta = z.infer<typeof BridgeRunMetaSchema>;
 
 /**
  * SessionExecutionBridge — splits the adapter lifecycle for in-session execution.
@@ -81,17 +55,23 @@ type BridgeRunMeta = z.infer<typeof BridgeRunMetaSchema>;
  * different from the direct stage execution adapter path.
  */
 export class SessionExecutionBridge implements ISessionExecutionBridge {
-  constructor(private readonly kataDir: string) {}
+  private readonly cycleManager: CycleManager;
+  private readonly bridgeRunsDir: string;
+
+  constructor(private readonly kataDir: string, cycleManager?: CycleManager) {
+    this.cycleManager = cycleManager
+      ?? new CycleManager(join(kataDir, KATA_DIRS.cycles), JsonStore);
+    this.bridgeRunsDir = join(kataDir, KATA_DIRS.bridgeRuns);
+  }
 
   // ── Run-level primitives ──────────────────────────────────────────────
 
   prepare(betId: string, agentId?: string): PreparedRun {
-    const cycle = this.findCycleForBet(betId);
-    const bet = cycle.bets.find((b) => b.id === betId);
-    if (!bet) {
-      // Stryker disable next-line all: error message formatting — presentation text
-      throw new Error(`Bet "${betId}" not found in cycle "${cycle.name ?? cycle.id}".`);
+    const found = this.cycleManager.findBetCycle(betId);
+    if (!found) {
+      throw new Error(`No cycle found containing bet "${betId}".`);
     }
+    const { cycle, bet } = found;
 
     const runId = randomUUID();
     const startedAt = new Date().toISOString();
@@ -120,7 +100,7 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
     };
 
     // Persist bridge run metadata so getCycleStatus() can find it
-    this.writeBridgeRunMeta({
+    writeBridgeRunMeta(this.bridgeRunsDir, {
       runId,
       betId: bet.id,
       betName: bet.description,
@@ -138,7 +118,11 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
     // and reports that look up "the run for a bet" can do O(1) forward lookup.
     // Non-critical: errors are logged as warnings — a failed backfill should
     // not abort prepare() since the bridge-run metadata was already persisted.
-    this.backfillRunIdInCycle(cycle.id, bet.id, runId);
+    try {
+      this.cycleManager.setRunId(cycle.id, bet.id, runId);
+    } catch (err) {
+      logger.warn(`Failed to backfill bet.runId in cycle "${cycle.id}" for bet "${bet.id}": ${err instanceof Error ? err.message : String(err)}`);
+    }
 
     // Write run.json to runs/<run-id>/run.json so kata watch can discover
     // this run. BridgeRunMeta uses status "in-progress" but RunSchema requires
@@ -162,7 +146,7 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
   }
 
   getAgentContext(runId: string): string {
-    const meta = this.readBridgeRunMeta(runId);
+    const meta = readBridgeRunMeta(this.bridgeRunsDir, runId);
     if (!meta) {
       throw new Error(`No bridge run found for run ID "${runId}". Was it prepared via the session bridge?`);
     }
@@ -174,7 +158,7 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
   }
 
   complete(runId: string, result: AgentCompletionResult): void {
-    const meta = this.readBridgeRunMeta(runId);
+    const meta = readBridgeRunMeta(this.bridgeRunsDir, runId);
     if (!meta) {
       throw new Error(`No bridge run found for run ID "${runId}". Was it prepared via the session bridge?`);
     }
@@ -184,13 +168,17 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
     this.writeHistoryEntry(runId, meta, result, completedAt, durationMs);
     this.writeCompletedBridgeRunMeta(meta, result, completedAt);
     this.updateRunJsonOnComplete(runId, completedAt, result.success, result.tokenUsage);
-    this.updateBetOutcomeInCycle(meta.cycleId, meta.betId, result.success ? 'complete' : 'partial');
+    try {
+      this.cycleManager.setBetOutcome(meta.cycleId, meta.betId, result.success ? 'complete' : 'partial');
+    } catch (err) {
+      logger.warn(`Failed to update bet outcome in cycle "${meta.cycleId}" for bet "${meta.betId}": ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   // ── Cycle-level convenience ───────────────────────────────────────────
 
   prepareCycle(cycleId: string, agentId?: string, name?: string): PreparedCycle {
-    const cycle = this.loadCycle(cycleId);
+    const cycle = this.cycleManager.get(cycleId);
     const pendingBets = cycle.bets.filter((b) => b.outcome === 'pending');
 
     if (pendingBets.length === 0) {
@@ -199,10 +187,10 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
 
     // Write name and transition state BEFORE preparing runs so each bridge-run
     // file is written with the resolved cycle name (#346).
-    this.updateCycleState(cycle.id, 'active', name);
-    const updatedCycle = this.loadCycle(cycle.id);
+    this.cycleManager.transitionState(cycle.id, 'active', name);
+    const updatedCycle = this.cycleManager.get(cycle.id);
     const resolvedName = updatedCycle.name ?? cycle.id;
-    const inProgressBridgeRuns = this.listBridgeRunsForCycle(cycle.id)
+    const inProgressBridgeRuns = listBridgeRunsForCycle(this.bridgeRunsDir, cycle.id)
       .filter((meta) => meta.status === 'in-progress');
     const bridgeRunsByRunId = new Map(inProgressBridgeRuns.map((meta) => [meta.runId, meta]));
     const bridgeRunsByBetId = new Map<string, BridgeRunMeta>();
@@ -225,7 +213,11 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
       const refreshedMeta = this.refreshPreparedRunMeta(reusableMeta, bet, updatedCycle, agentId);
       // Stryker disable next-line ConditionalExpression: backfill is idempotent — always writing is functionally equivalent
       if (bet.runId !== refreshedMeta.runId) {
-        this.backfillRunIdInCycle(updatedCycle.id, bet.id, refreshedMeta.runId);
+        try {
+          this.cycleManager.setRunId(updatedCycle.id, bet.id, refreshedMeta.runId);
+        } catch (err) {
+          logger.warn(`Failed to backfill bet.runId: ${err instanceof Error ? err.message : String(err)}`);
+        }
       }
 
       return this.rebuildPreparedRun(refreshedMeta);
@@ -239,8 +231,8 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
   }
 
   getCycleStatus(cycleId: string): CycleExecutionStatus {
-    const cycle = this.loadCycle(cycleId);
-    const bridgeRuns = this.listBridgeRunsForCycle(cycleId);
+    const cycle = this.cycleManager.get(cycleId);
+    const bridgeRuns = listBridgeRunsForCycle(this.bridgeRunsDir, cycleId);
     const preparedBetStatuses = bridgeRuns.map((meta) => this.buildPreparedBetStatus(meta));
     const pendingBetStatuses = cycle.bets
       .filter((bet) => !bridgeRuns.some((meta) => meta.betId === bet.id))
@@ -251,13 +243,20 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
       cycleName: cycle.name ?? cycle.id,
       bets: [...preparedBetStatuses, ...pendingBetStatuses],
       elapsed: this.formatElapsedDuration(bridgeRuns),
-      budgetUsed: this.estimateBudgetUsage(cycle),
+      budgetUsed: estimateBudgetUsage(this.kataDir, cycle),
     };
   }
 
+  /**
+   * Complete all in-progress runs for a cycle and return summary totals.
+   *
+   * Runs not present in the results map default to `{ success: true }` with
+   * a warning logged. Callers must provide explicit results if they do not
+   * want unreported runs treated as successful.
+   */
   completeCycle(cycleId: string, results: Record<string, AgentCompletionResult>): CycleSummary {
-    const cycle = this.loadCycle(cycleId);
-    const bridgeRuns = this.listBridgeRunsForCycle(cycleId);
+    const cycle = this.cycleManager.get(cycleId);
+    const bridgeRuns = listBridgeRunsForCycle(this.bridgeRunsDir, cycleId);
 
     this.completePendingCycleRuns(bridgeRuns, results);
     const totals = this.collectCycleCompletionTotals(bridgeRuns);
@@ -359,11 +358,11 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
       } : {}),
     } satisfies BridgeRunMeta;
 
-    this.writeBridgeRunMeta(updatedMeta);
+    writeBridgeRunMeta(this.bridgeRunsDir, updatedMeta);
   }
 
   private buildPreparedBetStatus(meta: BridgeRunMeta): RunStatus {
-    const counts = this.countRunData(meta.runId);
+    const counts = countRunData(this.kataDir, meta.runId);
 
     return {
       betId: meta.betId,
@@ -396,7 +395,7 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
     const earliestStart = findEarliestTimestamp(bridgeRuns.map((meta) => meta.startedAt));
 
     return earliestStart
-      ? this.formatDuration(Date.now() - new Date(earliestStart).getTime())
+      ? formatDuration(Date.now() - new Date(earliestStart).getTime())
       : '0m';
   }
 
@@ -412,7 +411,11 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
   ): void {
     for (const meta of bridgeRuns) {
       if (meta.status === 'in-progress') {
-        this.complete(meta.runId, results[meta.runId] ?? { success: true });
+        const result = results[meta.runId];
+        if (!result) {
+          logger.warn(`No completion result provided for run "${meta.runId}" — defaulting to success.`);
+        }
+        this.complete(meta.runId, result ?? { success: true });
       }
     }
   }
@@ -422,54 +425,13 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
   ): CycleCompletionTotals {
     return summarizeCycleCompletion(
       bridgeRuns
-        .map((meta) => this.readBridgeRunMeta(meta.runId))
+        .map((meta) => readBridgeRunMeta(this.bridgeRunsDir, meta.runId))
         // Stryker disable next-line ConditionalExpression: filter redundant — summarize handles null gracefully
         .filter((meta): meta is BridgeRunMeta => meta !== null),
     );
   }
 
   // ── Private helpers ───────────────────────────────────────────────────
-
-  private findCycleForBet(betId: string): Cycle {
-    const cyclesDir = join(this.kataDir, KATA_DIRS.cycles);
-    if (!existsSync(cyclesDir)) {
-      throw new Error('No cycles directory found. Run "kata cycle new" first.');
-    }
-
-    // Stryker disable next-line MethodExpression: filter redundant — catch skips non-json files
-    const files = readdirSync(cyclesDir).filter(isJsonFile);
-    for (const file of files) {
-      try {
-        const cycle = JsonStore.read(join(cyclesDir, file), CycleSchema);
-        if (cycle.bets.some((b) => b.id === betId)) {
-          return cycle;
-        }
-      } catch {
-        // Skip invalid cycle files
-      }
-    }
-
-    throw new Error(`No cycle found containing bet "${betId}".`);
-  }
-
-  private loadCycle(cycleId: string): Cycle {
-    const cyclesDir = join(this.kataDir, KATA_DIRS.cycles);
-    // Stryker disable next-line MethodExpression: filter redundant — catch skips non-json files
-    const files = readdirSync(cyclesDir).filter(isJsonFile);
-
-    for (const file of files) {
-      try {
-        const cycle = JsonStore.read(join(cyclesDir, file), CycleSchema);
-        if (matchesCycleRef(cycle, cycleId)) {
-          return cycle;
-        }
-      } catch {
-        // Skip invalid cycle files
-      }
-    }
-
-    throw new Error(`Cycle "${cycleId}" not found.`);
-  }
 
   private resolveStages(bet: Bet): string[] {
     if (bet.kata) {
@@ -484,8 +446,11 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
           const raw = JSON.parse(readFileSync(kataPath, 'utf-8'));
           return raw.stages ?? ['research', 'plan', 'build', 'review'];
         }
-      } catch {
-        // Fall through to default
+      } catch (err) {
+        logger.warn(`Failed to load kata "${bet.kata.pattern}" — falling back to default stages.`, {
+          pattern: bet.kata.pattern,
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
     }
     return ['research', 'plan', 'build', 'review'];
@@ -518,135 +483,6 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
     };
   }
 
-  // ── Cycle JSON update ─────────────────────────────────────────────────
-
-  /**
-   * Transition cycle state directly in the cycle JSON file.
-   * Called by prepareCycle() to move a planning cycle to active (#322).
-   * Optionally sets a human-readable name on the cycle at launch time (#346).
-   */
-  private updateCycleState(cycleId: string, state: CycleState, name?: string): void {
-    try {
-      const cyclesDir = join(this.kataDir, KATA_DIRS.cycles);
-      const cyclePath = join(cyclesDir, `${cycleId}.json`);
-      // Stryker disable next-line ConditionalExpression: guard redundant with outer catch block
-      if (!existsSync(cyclePath)) {
-        logger.warn(`Cannot update cycle state: cycle file not found for cycle "${cycleId}".`);
-        return;
-      }
-
-      const cycle = JsonStore.read(cyclePath, CycleSchema);
-      if (cycle.state === state) {
-        this.writeCycleNameIfChanged(cyclePath, cycle, name);
-        return;
-      }
-      if (!canTransitionCycleState(cycle.state, state)) {
-        logger.warn(`Cannot transition cycle "${cycleId}" from "${cycle.state}" to "${state}".`);
-        return;
-      }
-
-      this.writeCycleState(cyclePath, cycle, state, name);
-    } catch (err) {
-      logger.warn(`Failed to update cycle state for cycle "${cycleId}": ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
-
-  private writeCycleNameIfChanged(cyclePath: string, cycle: Cycle, name?: string): void {
-    if (name === undefined || cycle.name === name) {
-      return;
-    }
-
-    cycle.name = name;
-    cycle.updatedAt = new Date().toISOString();
-    JsonStore.write(cyclePath, cycle, CycleSchema);
-  }
-
-  private writeCycleState(cyclePath: string, cycle: Cycle, state: CycleState, name?: string): void {
-    cycle.state = state;
-    if (name !== undefined) {
-      cycle.name = name;
-    }
-    cycle.updatedAt = new Date().toISOString();
-    JsonStore.write(cyclePath, cycle, CycleSchema);
-  }
-
-  /**
-   * Update a bet's outcome field directly in the cycle JSON file.
-   * Non-critical: errors are logged as warnings — a failed update should not
-   * abort the run completion, since the history entry was already persisted.
-   *
-   * Only updates bets that are currently 'pending' to avoid overwriting
-   * a manually-set outcome (e.g. user ran kata cooldown before bridge complete).
-   */
-  private updateBetOutcomeInCycle(
-    cycleId: string,
-    betId: string,
-    outcome: 'complete' | 'partial',
-  ): void {
-    try {
-      const cyclesDir = join(this.kataDir, KATA_DIRS.cycles);
-      const cyclePath = join(cyclesDir, `${cycleId}.json`);
-      if (!existsSync(cyclePath)) {
-        logger.warn(`Cannot update bet outcome: cycle file not found for cycle "${cycleId}".`);
-        return;
-      }
-
-      const cycle = JsonStore.read(cyclePath, CycleSchema);
-      const bet = cycle.bets.find((b) => b.id === betId);
-      if (!bet) {
-        logger.warn(`Cannot update bet outcome: bet "${betId}" not found in cycle "${cycleId}".`);
-        return;
-      }
-
-      // Only update if still pending — don't overwrite a manually-set outcome
-      if (bet.outcome !== 'pending') {
-        return;
-      }
-
-      bet.outcome = outcome;
-      cycle.updatedAt = new Date().toISOString();
-      JsonStore.write(cyclePath, cycle, CycleSchema);
-    } catch (err) {
-      logger.warn(`Failed to update bet outcome in cycle "${cycleId}" for bet "${betId}": ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
-
-  /**
-   * Backfill the runId onto the bet record in the cycle JSON file.
-   *
-   * Called by prepare() after the bridge-run metadata and run.json are written.
-   * This is the staged-workflow equivalent of CycleManager.setRunId() used by
-   * `kata cycle start` — it enables O(1) forward lookup of "the run for a bet".
-   *
-   * Idempotent: overwrites any previously stored runId without error (safe on retry).
-   * Non-critical: errors are logged as warnings — the bridge-run metadata was already
-   * persisted and the agent can still execute.
-   */
-  private backfillRunIdInCycle(cycleId: string, betId: string, runId: string): void {
-    try {
-      const cyclesDir = join(this.kataDir, KATA_DIRS.cycles);
-      const cyclePath = join(cyclesDir, `${cycleId}.json`);
-      // Stryker disable next-line ConditionalExpression: guard redundant with outer catch block
-      if (!existsSync(cyclePath)) {
-        logger.warn(`Cannot backfill bet.runId: cycle file not found for cycle "${cycleId}".`);
-        return;
-      }
-
-      const cycle = JsonStore.read(cyclePath, CycleSchema);
-      const bet = cycle.bets.find((b) => b.id === betId);
-      if (!bet) {
-        logger.warn(`Cannot backfill bet.runId: bet "${betId}" not found in cycle "${cycleId}".`);
-        return;
-      }
-
-      bet.runId = runId;
-      cycle.updatedAt = new Date().toISOString();
-      JsonStore.write(cyclePath, cycle, CycleSchema);
-    } catch (err) {
-      logger.warn(`Failed to backfill bet.runId in cycle "${cycleId}" for bet "${betId}": ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
-
   private refreshPreparedRunMeta(
     meta: BridgeRunMeta,
     bet: Bet,
@@ -669,7 +505,7 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
     }
 
     if (changed) {
-      this.writeBridgeRunMeta(refreshed);
+      writeBridgeRunMeta(this.bridgeRunsDir, refreshed);
     }
 
     return refreshed;
@@ -832,147 +668,4 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
     }
   }
 
-  // ── Bridge run metadata persistence ───────────────────────────────────
-
-  private bridgeRunsDir(): string {
-    return join(this.kataDir, KATA_DIRS.bridgeRuns);
-  }
-
-  private writeBridgeRunMeta(meta: BridgeRunMeta): void {
-    const dir = this.bridgeRunsDir();
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(
-      join(dir, `${meta.runId}.json`),
-      JSON.stringify(meta, null, 2) + '\n',
-    );
-  }
-
-  private readBridgeRunMeta(runId: string): BridgeRunMeta | null {
-    const path = join(this.bridgeRunsDir(), `${runId}.json`);
-    // Stryker disable next-line ConditionalExpression: guard redundant with catch — readFileSync throws for missing file
-    if (!existsSync(path)) return null;
-    try {
-      return BridgeRunMetaSchema.parse(JSON.parse(readFileSync(path, 'utf-8')));
-    } catch {
-      return null;
-    }
-  }
-
-  private listBridgeRunsForCycle(cycleId: string): BridgeRunMeta[] {
-    const dir = this.bridgeRunsDir();
-    if (!existsSync(dir)) return [];
-
-    return readdirSync(dir)
-      .filter(isJsonFile)
-      .map((f) => {
-        try {
-          const meta = BridgeRunMetaSchema.parse(JSON.parse(readFileSync(join(dir, f), 'utf-8')));
-          return meta.cycleId === cycleId ? meta : null;
-        } catch {
-          return null;
-        }
-      })
-      .filter((m): m is BridgeRunMeta => m !== null);
-  }
-
-  // ── Data counting for status ──────────────────────────────────────────
-
-  private countRunData(runId: string): {
-    observations: number;
-    artifacts: number;
-    decisions: number;
-    lastTimestamp: string | null;
-  } {
-    const runsDir = join(this.kataDir, KATA_DIRS.runs);
-    const runDir = join(runsDir, runId);
-
-    if (!existsSync(runDir)) {
-      return { observations: 0, artifacts: 0, decisions: 0, lastTimestamp: null };
-    }
-
-    // Standard run-store paths
-    let observations = this.countJsonlLines(join(runDir, 'observations.jsonl'));
-    const artifacts = this.countJsonlLines(join(runDir, 'artifacts.jsonl'));
-    let decisions = this.countJsonlLines(join(runDir, 'decisions.jsonl'));
-
-    // Also check stage-level observations
-    const stagesDir = join(runDir, 'stages');
-    if (existsSync(stagesDir)) {
-      for (const stageDir of readdirSync(stagesDir)) {
-        observations += this.countJsonlLines(join(stagesDir, stageDir, 'observations.jsonl'));
-        decisions += this.countJsonlLines(join(stagesDir, stageDir, 'decisions.jsonl'));
-      }
-    }
-
-    const lastTimestamp = this.resolveLastActivityTimestamp(runId);
-
-    return { observations, artifacts, decisions, lastTimestamp };
-  }
-
-  private countJsonlLines(filePath: string): number {
-    // Stryker disable next-line ConditionalExpression: guard redundant with catch — readFileSync throws for missing file
-    if (!existsSync(filePath)) return 0;
-    try {
-      return countJsonlContent(readFileSync(filePath, 'utf-8'));
-    } catch {
-      return 0;
-    }
-  }
-
-  private resolveLastActivityTimestamp(runId: string): string | null {
-    const meta = this.readBridgeRunMeta(runId);
-
-    if (meta?.completedAt) {
-      return meta.completedAt;
-    }
-    if (meta?.startedAt) {
-      return meta.startedAt;
-    }
-
-    return null;
-  }
-
-  private estimateBudgetUsage(cycle: Cycle): { percent: number; tokenEstimate: number } | null {
-    if (!cycle.budget.tokenBudget) return null;
-
-    const historyDir = join(this.kataDir, KATA_DIRS.history);
-    if (!existsSync(historyDir)) return { percent: 0, tokenEstimate: 0 };
-
-    const totalTokens = this.sumCycleHistoryTokens(historyDir, cycle.id);
-    return computeBudgetPercent(totalTokens, cycle.budget.tokenBudget);
-  }
-
-  private sumCycleHistoryTokens(historyDir: string, cycleId: string): number {
-    let totalTokens = 0;
-
-    for (const file of readdirSync(historyDir).filter(isJsonFile)) {
-      const entryTotal = this.readHistoryTokenTotal(join(historyDir, file), cycleId);
-      totalTokens += entryTotal ?? 0;
-    }
-
-    return totalTokens;
-  }
-
-  private readHistoryTokenTotal(filePath: string, cycleId: string): number | null {
-    try {
-      const entry = JSON.parse(readFileSync(filePath, 'utf-8'));
-      return extractHistoryTokenTotal(entry, cycleId);
-    } catch {
-      return null;
-    }
-  }
-
-  private formatDuration(ms: number): string {
-    const seconds = Math.floor(ms / 1000);
-    const minutes = Math.floor(seconds / 60);
-    const hours = Math.floor(minutes / 60);
-
-    if (hours > 0) {
-      return `${hours}h ${minutes % 60}m`;
-    }
-    if (minutes > 0) {
-      return `${minutes}m`;
-    }
-    return `${seconds}s`;
-  }
 }
