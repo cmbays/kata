@@ -2,6 +2,7 @@ import { join } from 'node:path';
 import { existsSync, readdirSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { BridgeRunMetaSchema, type BridgeRunMeta } from '@domain/types/bridge-run.js';
 import { isJsonFile } from '@shared/lib/file-filters.js';
+import { logger } from '@shared/lib/logger.js';
 
 /**
  * Persist a bridge-run metadata record to .kata/bridge-runs/<runId>.json.
@@ -24,7 +25,11 @@ export function readBridgeRunMeta(bridgeRunsDir: string, runId: string): BridgeR
   if (!existsSync(path)) return null;
   try {
     return BridgeRunMetaSchema.parse(JSON.parse(readFileSync(path, 'utf-8')));
-  } catch {
+  } catch (err) {
+    logger.warn(`Bridge-run metadata at "${path}" exists but failed to parse — treating as missing.`, {
+      runId,
+      error: err instanceof Error ? err.message : String(err),
+    });
     return null;
   }
 }
@@ -42,7 +47,12 @@ export function listBridgeRunsForCycle(bridgeRunsDir: string, cycleId: string): 
       try {
         const meta = BridgeRunMetaSchema.parse(JSON.parse(readFileSync(join(bridgeRunsDir, f), 'utf-8')));
         return meta.cycleId === cycleId ? meta : null;
-      } catch {
+      } catch (err) {
+        logger.warn(`Skipping unreadable bridge-run file "${f}" in cycle listing.`, {
+          file: f,
+          cycleId,
+          error: err instanceof Error ? err.message : String(err),
+        });
         return null;
       }
     })

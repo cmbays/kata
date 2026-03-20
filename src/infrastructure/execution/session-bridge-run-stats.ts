@@ -9,6 +9,7 @@ import {
   isJsonFile,
 } from './session-bridge.helpers.js';
 import { KATA_DIRS } from '@shared/constants/paths.js';
+import { logger } from '@shared/lib/logger.js';
 
 /**
  * Count observations, artifacts, and decisions for a run.
@@ -83,7 +84,10 @@ function countJsonlLines(filePath: string): number {
   if (!existsSync(filePath)) return 0;
   try {
     return countJsonlContent(readFileSync(filePath, 'utf-8'));
-  } catch {
+  } catch (err) {
+    logger.debug(`Failed to count lines in "${filePath}" — reporting 0.`, {
+      error: err instanceof Error ? err.message : String(err),
+    });
     return 0;
   }
 }
@@ -100,8 +104,12 @@ function sumCycleHistoryTokens(historyDir: string, cycleId: string): number {
     try {
       const entry = JSON.parse(readFileSync(join(historyDir, file), 'utf-8'));
       totalTokens += extractHistoryTokenTotal(entry, cycleId) ?? 0;
-    } catch {
-      // Skip invalid history entries
+    } catch (err) {
+      logger.warn(`Skipping unreadable history entry "${file}" — budget estimate may be low.`, {
+        file,
+        cycleId,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 

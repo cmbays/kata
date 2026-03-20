@@ -404,7 +404,11 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
   ): void {
     for (const meta of bridgeRuns) {
       if (meta.status === 'in-progress') {
-        this.complete(meta.runId, results[meta.runId] ?? { success: true });
+        const result = results[meta.runId];
+        if (!result) {
+          logger.warn(`No completion result provided for run "${meta.runId}" — defaulting to success.`);
+        }
+        this.complete(meta.runId, result ?? { success: true });
       }
     }
   }
@@ -435,8 +439,11 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
           const raw = JSON.parse(readFileSync(kataPath, 'utf-8'));
           return raw.stages ?? ['research', 'plan', 'build', 'review'];
         }
-      } catch {
-        // Fall through to default
+      } catch (err) {
+        logger.warn(`Failed to load kata "${bet.kata.pattern}" — falling back to default stages.`, {
+          pattern: bet.kata.pattern,
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
     }
     return ['research', 'plan', 'build', 'review'];
