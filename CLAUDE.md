@@ -24,10 +24,11 @@ npm run test:coverage  # Coverage (v8, thresholds: 80% statements/functions/line
 npm run test:coverage:unit # Unit-only coverage artifact generation for CRAP analysis
 npm run test:crap      # CRAP analysis against changed files
 npm run test:arch      # dependency-cruiser architecture checks
+npm run test:arch:unit # ArchUnit structural rules (LCOM, naming, layer deps, custom)
 npm run lint           # ESLint on src/
 npm run typecheck      # tsc --noEmit
 npm run verify         # Lint + typecheck + unit + integration + e2e + build
-npm run verify:quality # Coverage generation + CRAP + architecture
+npm run verify:quality # Coverage generation + CRAP + architecture (dep-cruiser + ArchUnit)
 ```
 
 Run a single test file: `npx vitest run src/path/to/file.test.ts`

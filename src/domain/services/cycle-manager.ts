@@ -1,35 +1,17 @@
 import { join } from 'node:path';
 import type { IPersistence } from '@domain/ports/persistence.js';
 import { CycleSchema } from '@domain/types/cycle.js';
-import type { Cycle, Budget, BudgetStatus, BudgetAlertLevel } from '@domain/types/cycle.js';
-import { BetSchema, BetOutcome } from '@domain/types/bet.js';
+import type { Cycle, Budget, BudgetStatus, CycleState } from '@domain/types/cycle.js';
+import type { CooldownReport } from '@domain/types/cooldown.js';
 import type { Bet, KataAssignment } from '@domain/types/bet.js';
-import type { CycleState } from '@domain/types/cycle.js';
 import { CycleNotFoundError, KataError } from '@shared/lib/errors.js';
-import { validateAppetite } from '@domain/rules/budget-rules.js';
 import { calculateUtilization } from '@domain/rules/budget-rules.js';
 import { canTransitionCycleState } from '@domain/rules/cycle-rules.js';
+import { createBet, requireBet, trySetBetOutcome, applyBetOutcomes } from '@domain/rules/bet-rules.js';
+import { generateCooldownReport } from '@domain/services/cooldown-reporter.js';
 
-export interface CooldownReport {
-  cycleId: string;
-  cycleName?: string;
-  budget: Budget;
-  tokensUsed: number;
-  utilizationPercent: number;
-  alertLevel?: BudgetAlertLevel;
-  bets: CooldownBetReport[];
-  completionRate: number;
-  summary: string;
-}
-
-export interface CooldownBetReport {
-  betId: string;
-  description: string;
-  appetite: number;
-  outcome: string;
-  outcomeNotes?: string;
-  pipelineCount: number;
-}
+// Re-export for backwards compatibility — consumers import from here
+export type { CooldownReport, CooldownBetReport } from '@domain/types/cooldown.js';
 
 /**
  * Manages development cycles (time-boxed work periods with budgets and bets).
@@ -45,9 +27,8 @@ export class CycleManager {
     this.persistence.ensureDir(basePath);
   }
 
-  /**
-   * Create a new cycle with a budget and optional name.
-   */
+  // --- Cycle CRUD ---
+
   create(budget: Budget, name?: string): Cycle {
     const now = new Date().toISOString();
     const cycle: Cycle = {
@@ -61,14 +42,10 @@ export class CycleManager {
       createdAt: now,
       updatedAt: now,
     };
-
     this.save(cycle);
     return cycle;
   }
 
-  /**
-   * Retrieve a cycle by ID. Throws CycleNotFoundError if missing.
-   */
   get(cycleId: string): Cycle {
     const path = this.cyclePath(cycleId);
     if (!this.persistence.exists(path)) {
@@ -77,81 +54,77 @@ export class CycleManager {
     return this.persistence.read(path, CycleSchema);
   }
 
-  /**
-   * List all cycles.
-   */
   list(): Cycle[] {
     return this.persistence.list(this.basePath, CycleSchema);
   }
 
-  /**
-   * Add a bet to a cycle. Generates UUID for the bet.
-   * Validates that total appetite (all bets + cooldown reserve) does not exceed 100%.
-   */
-  addBet(cycleId: string, bet: Omit<Bet, 'id'>): Cycle {
+  deleteCycle(cycleId: string): void {
     const cycle = this.get(cycleId);
-
-    const newBet: Bet = {
-      ...BetSchema.parse({
-        ...bet,
-        id: crypto.randomUUID(),
-      }),
-    };
-
-    // Validate appetite before adding
-    const allBets = [...cycle.bets, newBet];
-    const validation = validateAppetite(allBets, cycle.cooldownReserve);
-    if (!validation.valid) {
+    if (cycle.state !== 'planning') {
       throw new Error(
-        `Cannot add bet: ${validation.errors.join('; ')}`,
+        `Cannot delete cycle "${cycleId}": cycle is in state "${cycle.state}". Only planning-state cycles can be deleted.`,
       );
     }
-
-    cycle.bets.push(newBet);
-    cycle.updatedAt = new Date().toISOString();
-    this.save(cycle);
-    return cycle;
+    this.persistence.delete(this.cyclePath(cycleId));
   }
 
-  /**
-   * Record the run UUID created for a bet during `kata cycle start`.
-   *
-   * Idempotent: overwrites any previously stored runId without error — safe to call
-   * again on retry. Throws CycleNotFoundError for unknown cycleId; throws KataError
-   * for unknown betId (the betId must exist in the cycle's bets array).
-   */
+  // --- Bet operations ---
+
+  addBet(cycleId: string, bet: Omit<Bet, 'id'>): Cycle {
+    const cycle = this.get(cycleId);
+    const newBet = createBet(cycle, bet);
+    cycle.bets.push(newBet);
+    return this.touch(cycle);
+  }
+
   setRunId(cycleId: string, betId: string, runId: string): Cycle {
     const cycle = this.get(cycleId);
-    const bet = cycle.bets.find((b) => b.id === betId);
-    if (!bet) {
-      throw new KataError(`Bet "${betId}" not found in cycle "${cycleId}"`);
-    }
+    const bet = requireBet(cycle, betId);
     bet.runId = runId;
-    cycle.updatedAt = new Date().toISOString();
-    this.save(cycle);
-    return cycle;
+    return this.touch(cycle);
   }
 
-  /**
-   * Update the kata assignment for an existing bet.
-   * Throws if the bet is not found in the cycle.
-   */
   updateBet(cycleId: string, betId: string, updates: { kata: KataAssignment }): Cycle {
     const cycle = this.get(cycleId);
-    const bet = cycle.bets.find((b) => b.id === betId);
-    if (!bet) {
-      throw new Error(`Bet "${betId}" not found in cycle "${cycleId}"`);
-    }
+    const bet = requireBet(cycle, betId);
     bet.kata = updates.kata;
-    cycle.updatedAt = new Date().toISOString();
-    this.save(cycle);
-    return cycle;
+    return this.touch(cycle);
   }
 
-  /**
-   * Scan all cycles to find the cycle containing a given bet ID.
-   * Returns null if no cycle contains the bet.
-   */
+  setBetOutcome(cycleId: string, betId: string, outcome: 'complete' | 'partial'): Cycle {
+    const cycle = this.get(cycleId);
+    const changed = trySetBetOutcome(cycle, betId, outcome);
+    if (!changed) return cycle;
+    return this.touch(cycle);
+  }
+
+  updateBetOutcomes(
+    cycleId: string,
+    outcomes: Array<{ betId: string; outcome: string; notes?: string }>,
+  ): { cycle: Cycle; unmatchedBetIds: string[] } {
+    const cycle = this.get(cycleId);
+    const unmatchedBetIds = applyBetOutcomes(cycle, outcomes);
+    if (unmatchedBetIds.length === outcomes.length && outcomes.length > 0) {
+      return { cycle, unmatchedBetIds };
+    }
+    return { cycle: this.touch(cycle), unmatchedBetIds };
+  }
+
+  removeBet(cycleId: string, betId: string): Cycle {
+    const cycle = this.get(cycleId);
+    if (cycle.state !== 'planning') {
+      throw new Error(
+        `Cannot remove a bet from cycle "${cycleId}": cycle is in state "${cycle.state}". Only planning cycles support bet removal.`,
+      );
+    }
+    const betIndex = cycle.bets.findIndex((b) => b.id === betId);
+    if (betIndex === -1) {
+      throw new KataError(`Bet "${betId}" not found in cycle "${cycle.name ?? cycle.id}".`);
+    }
+    cycle.bets.splice(betIndex, 1);
+    return this.touch(cycle);
+  }
+
   findBetCycle(betId: string): { cycle: Cycle; bet: Bet } | null {
     for (const cycle of this.list()) {
       const bet = cycle.bets.find((b) => b.id === betId);
@@ -160,150 +133,36 @@ export class CycleManager {
     return null;
   }
 
-  /**
-   * Validate that all bets have kata assignments and transition the cycle to active.
-   * Returns the list of bet descriptions that are missing kata assignments.
-   * Callers should check `betsWithoutKata` before proceeding with run creation.
-   */
-  startCycle(cycleId: string): { cycle: Cycle; betsWithoutKata: string[] } {
-    const cycle = this.get(cycleId);
-
-    if (cycle.state === 'active' || cycle.state === 'cooldown' || cycle.state === 'complete') {
-      throw new Error(
-        `Cannot start cycle "${cycleId}": already in state "${cycle.state}". Only planning cycles can be started.`,
-      );
-    }
-
-    const betsWithoutKata = cycle.bets
-      .filter((b) => !b.kata)
-      .map((b) => b.description);
-
-    if (betsWithoutKata.length > 0) {
-      return { cycle, betsWithoutKata };
-    }
-
-    const updated = this.updateState(cycleId, 'active');
-    return { cycle: updated, betsWithoutKata: [] };
-  }
-
-  /**
-   * Link a pipeline execution to a bet within a cycle.
-   */
   mapPipeline(cycleId: string, betId: string, pipelineId: string): Cycle {
     const cycle = this.get(cycleId);
-
-    // Verify the bet exists in this cycle
-    const bet = cycle.bets.find((b) => b.id === betId);
-    if (!bet) {
-      throw new Error(`Bet "${betId}" not found in cycle "${cycleId}"`);
-    }
-
+    requireBet(cycle, betId);
     cycle.pipelineMappings.push({ pipelineId, betId });
-    cycle.updatedAt = new Date().toISOString();
-    this.save(cycle);
-    return cycle;
+    return this.touch(cycle);
   }
 
-  /**
-   * Calculate current budget utilization.
-   * Includes per-bet breakdown and alert level.
-   */
-  getBudgetStatus(cycleId: string): BudgetStatus {
-    const cycle = this.get(cycleId);
-
-    // For now, tokensUsed is tracked externally via TokenTracker.
-    // This method computes the structure; callers provide actual usage.
-    const tokensUsed = 0;
-    const { percent, alertLevel } = calculateUtilization(cycle.budget, tokensUsed);
-
-    const perBet = cycle.bets.map((bet) => {
-      const allocated = cycle.budget.tokenBudget
-        ? Math.round((bet.appetite / 100) * cycle.budget.tokenBudget)
-        : 0;
-      return {
-        betId: bet.id,
-        allocated,
-        used: 0,
-        utilizationPercent: 0,
-      };
-    });
-
-    return {
-      cycleId,
-      budget: cycle.budget,
-      tokensUsed,
-      utilizationPercent: percent,
-      alertLevel,
-      perBet,
-    };
-  }
-
-  /**
-   * Update bet outcomes on a cycle. Skips unknown betIds and returns the list of unmatched IDs.
-   */
-  updateBetOutcomes(
-    cycleId: string,
-    outcomes: Array<{ betId: string; outcome: string; notes?: string }>,
-  ): { cycle: Cycle; unmatchedBetIds: string[] } {
-    const cycle = this.get(cycleId);
-    const unmatchedBetIds: string[] = [];
-
-    for (const record of outcomes) {
-      const parsed = BetOutcome.safeParse(record.outcome);
-      if (!parsed.success) {
-        throw new Error(`Invalid bet outcome "${record.outcome}". Must be one of: pending, complete, partial, abandoned`);
-      }
-
-      const bet = cycle.bets.find((b) => b.id === record.betId);
-      if (bet) {
-        bet.outcome = parsed.data;
-        if (record.notes) {
-          bet.outcomeNotes = record.notes;
-        }
-      } else {
-        unmatchedBetIds.push(record.betId);
-      }
-    }
-
-    if (unmatchedBetIds.length === outcomes.length && outcomes.length > 0) {
-      return { cycle, unmatchedBetIds };
-    }
-
-    cycle.updatedAt = new Date().toISOString();
-    this.save(cycle);
-    return { cycle, unmatchedBetIds };
-  }
+  // --- State transitions ---
 
   /**
    * Transition cycle state without validation.
-   *
-   * Prefer `transitionState()` for forward transitions — it validates the
-   * state machine. Use `updateState()` only for error recovery rollbacks
-   * and test fixture setup where skipping states is intentional.
+   * Use only for error recovery rollbacks and test fixture setup.
    */
   updateState(cycleId: string, state: CycleState): Cycle {
     const cycle = this.get(cycleId);
     cycle.state = state;
-    cycle.updatedAt = new Date().toISOString();
-    this.save(cycle);
-    return cycle;
+    return this.touch(cycle);
   }
 
   /**
    * Transition cycle state with validation.
-   *
-   * Enforces the linear state machine: planning → active → cooldown → complete.
-   * Throws on invalid transitions. Optionally sets the cycle name at transition time.
+   * Enforces: planning → active → cooldown → complete.
    */
   transitionState(cycleId: string, state: CycleState, name?: string): Cycle {
     const cycle = this.get(cycleId);
 
     if (cycle.state === state) {
-      // Same-state: only update name if provided
       if (name !== undefined && cycle.name !== name) {
         cycle.name = name;
-        cycle.updatedAt = new Date().toISOString();
-        this.save(cycle);
+        return this.touch(cycle);
       }
       return cycle;
     }
@@ -318,110 +177,45 @@ export class CycleManager {
     if (name !== undefined) {
       cycle.name = name;
     }
-    cycle.updatedAt = new Date().toISOString();
-    this.save(cycle);
-    return cycle;
+    return this.touch(cycle);
   }
 
-  /**
-   * Set a bet's outcome, but only if it is currently pending.
-   *
-   * This prevents overwriting a manually-set outcome (e.g., user ran cooldown
-   * before bridge complete). Returns the updated cycle.
-   */
-  setBetOutcome(cycleId: string, betId: string, outcome: 'complete' | 'partial'): Cycle {
+  startCycle(cycleId: string): { cycle: Cycle; betsWithoutKata: string[] } {
     const cycle = this.get(cycleId);
-    const bet = cycle.bets.find((b) => b.id === betId);
-    if (!bet) {
-      throw new KataError(`Bet "${betId}" not found in cycle "${cycle.name ?? cycleId}".`);
+    if (cycle.state !== 'planning') {
+      throw new Error(
+        `Cannot start cycle "${cycleId}": already in state "${cycle.state}". Only planning cycles can be started.`,
+      );
     }
-
-    if (bet.outcome !== 'pending') {
-      return cycle;
+    const betsWithoutKata = cycle.bets
+      .filter((b) => !b.kata)
+      .map((b) => b.description);
+    if (betsWithoutKata.length > 0) {
+      return { cycle, betsWithoutKata };
     }
-
-    bet.outcome = outcome;
-    cycle.updatedAt = new Date().toISOString();
-    this.save(cycle);
-    return cycle;
+    return { cycle: this.transitionState(cycleId, 'active'), betsWithoutKata: [] };
   }
 
-  /**
-   * Generate a cooldown report for the cycle.
-   */
+  // --- Reporting ---
+
+  getBudgetStatus(cycleId: string): BudgetStatus {
+    const cycle = this.get(cycleId);
+    const tokensUsed = 0;
+    const { percent, alertLevel } = calculateUtilization(cycle.budget, tokensUsed);
+    const perBet = cycle.bets.map((bet) => {
+      const allocated = cycle.budget.tokenBudget
+        ? Math.round((bet.appetite / 100) * cycle.budget.tokenBudget)
+        : 0;
+      return { betId: bet.id, allocated, used: 0, utilizationPercent: 0 };
+    });
+    return { cycleId, budget: cycle.budget, tokensUsed, utilizationPercent: percent, alertLevel, perBet };
+  }
+
   generateCooldown(cycleId: string): CooldownReport {
-    const cycle = this.get(cycleId);
-
-    const { percent, alertLevel } = calculateUtilization(cycle.budget, 0);
-
-    const bets: CooldownBetReport[] = cycle.bets.map((bet) => ({
-      betId: bet.id,
-      description: bet.description,
-      appetite: bet.appetite,
-      outcome: bet.outcome,
-      outcomeNotes: bet.outcomeNotes,
-      pipelineCount: cycle.pipelineMappings.filter((m) => m.betId === bet.id).length,
-    }));
-
-    const completedBets = cycle.bets.filter((b) => b.outcome === 'complete').length;
-    const totalBets = cycle.bets.length;
-    const completionRate = totalBets > 0 ? (completedBets / totalBets) * 100 : 0;
-
-    const summary = buildCooldownSummary(cycle, completionRate, bets);
-
-    return {
-      cycleId,
-      cycleName: cycle.name,
-      budget: cycle.budget,
-      tokensUsed: 0,
-      utilizationPercent: percent,
-      alertLevel,
-      bets,
-      completionRate,
-      summary,
-    };
+    return generateCooldownReport(this.get(cycleId));
   }
 
-  /**
-   * Remove a bet from a cycle by bet ID.
-   * Only allowed on planning-state cycles.
-   * Throws if the bet is not found.
-   */
-  removeBet(cycleId: string, betId: string): Cycle {
-    const cycle = this.get(cycleId);
-
-    if (cycle.state !== 'planning') {
-      throw new Error(
-        `Cannot remove a bet from cycle "${cycleId}": cycle is in state "${cycle.state}". Only planning cycles support bet removal.`,
-      );
-    }
-
-    const betIndex = cycle.bets.findIndex((b) => b.id === betId);
-    if (betIndex === -1) {
-      throw new Error(`Bet "${betId}" not found in cycle "${cycleId}"`);
-    }
-
-    cycle.bets.splice(betIndex, 1);
-    cycle.updatedAt = new Date().toISOString();
-    this.save(cycle);
-    return cycle;
-  }
-
-  /**
-   * Delete a cycle entirely. Only allowed on planning-state cycles.
-   * Throws if the cycle is not in planning state.
-   */
-  deleteCycle(cycleId: string): void {
-    const cycle = this.get(cycleId);
-
-    if (cycle.state !== 'planning') {
-      throw new Error(
-        `Cannot delete cycle "${cycleId}": cycle is in state "${cycle.state}". Only planning-state cycles can be deleted.`,
-      );
-    }
-
-    this.persistence.delete(this.cyclePath(cycleId));
-  }
+  // --- Private helpers ---
 
   private cyclePath(cycleId: string): string {
     return join(this.basePath, `${cycleId}.json`);
@@ -430,34 +224,11 @@ export class CycleManager {
   private save(cycle: Cycle): void {
     this.persistence.write(this.cyclePath(cycle.id), cycle, CycleSchema);
   }
-}
 
-function buildCooldownSummary(
-  cycle: Cycle,
-  completionRate: number,
-  bets: CooldownBetReport[],
-): string {
-  const lines: string[] = [];
-  lines.push(`Cycle: ${cycle.name ?? cycle.id}`);
-  lines.push(`State: ${cycle.state}`);
-  lines.push(`Bets: ${bets.length}`);
-  lines.push(`Completion rate: ${completionRate.toFixed(1)}%`);
-
-  if (cycle.budget.tokenBudget) {
-    lines.push(`Token budget: ${cycle.budget.tokenBudget.toLocaleString()}`);
+  /** Update timestamp and persist. Returns the saved cycle. */
+  private touch(cycle: Cycle): Cycle {
+    cycle.updatedAt = new Date().toISOString();
+    this.save(cycle);
+    return cycle;
   }
-  if (cycle.budget.timeBudget) {
-    lines.push(`Time budget: ${cycle.budget.timeBudget}`);
-  }
-
-  const outcomes = bets.reduce<Record<string, number>>((acc, bet) => {
-    acc[bet.outcome] = (acc[bet.outcome] ?? 0) + 1;
-    return acc;
-  }, {});
-
-  for (const [outcome, count] of Object.entries(outcomes)) {
-    lines.push(`  ${outcome}: ${count}`);
-  }
-
-  return lines.join('\n');
 }
