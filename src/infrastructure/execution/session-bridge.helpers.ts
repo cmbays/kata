@@ -1,19 +1,4 @@
-import type { CycleState } from '@domain/types/cycle.js';
-
 export { isJsonFile } from '@shared/lib/file-filters.js';
-
-/**
- * Check whether a cycle state transition is allowed.
- * Valid transitions: planning → active → cooldown → complete.
- */
-export function canTransitionCycleState(from: CycleState, to: CycleState): boolean {
-  const allowedTransitions: Partial<Record<CycleState, CycleState>> = {
-    planning: 'active',
-    active: 'cooldown',
-    cooldown: 'complete',
-  };
-  return allowedTransitions[from] === to;
-}
 
 /**
  * Detect whether bridge-run metadata has changed vs its refreshed values.
@@ -32,16 +17,6 @@ export function hasBridgeRunMetadataChanged(
 export function findEarliestTimestamp(timestamps: readonly string[]): string | undefined {
   if (timestamps.length === 0) return undefined;
   return [...timestamps].sort()[0];
-}
-
-/**
- * Match a cycle by ID or name. Used by loadCycle.
- */
-export function matchesCycleRef(
-  cycle: { id: string; name?: string },
-  ref: string,
-): boolean {
-  return cycle.id === ref || cycle.name === ref;
 }
 
 /**

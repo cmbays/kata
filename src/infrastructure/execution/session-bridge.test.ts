@@ -206,7 +206,7 @@ describe('SessionExecutionBridge', () => {
     it('should throw when no cycles exist', () => {
       const bridge = new SessionExecutionBridge(kataDir);
 
-      expect(() => bridge.prepare(randomUUID())).toThrow(/No cycles directory/);
+      expect(() => bridge.prepare(randomUUID())).toThrow(/No cycle found containing bet/);
     });
 
     it('should use ad-hoc stages from bet kata assignment', () => {
