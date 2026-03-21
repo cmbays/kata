@@ -642,6 +642,13 @@ describe('CycleManager.startCycle', () => {
     expect(result.cycle.state).toBe('active');
   });
 
+  it('rejects starting an unnamed empty cycle when activation would begin immediately', () => {
+    const cycle = manager.create(makeBudget());
+
+    expect(() => manager.startCycle(cycle.id)).toThrow(/cycle name is required before activation/i);
+    expect(manager.get(cycle.id).state).toBe('planning');
+  });
+
   it('rejects starting an unnamed cycle when activation would begin immediately', () => {
     const cycle = manager.create(makeBudget());
     const withBet = manager.addBet(cycle.id, makeBetInput());

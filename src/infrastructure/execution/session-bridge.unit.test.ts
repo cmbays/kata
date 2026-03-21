@@ -456,9 +456,10 @@ describe('SessionExecutionBridge unit coverage', () => {
 
       expect(warnSpy).toHaveBeenCalledTimes(1);
       expect(warnSpy).toHaveBeenCalledWith(
-        expect.stringContaining(`No completion result provided for run "${secondRunId}"`),
+        expect.stringMatching(
+          new RegExp(`No completion result provided for run "${secondRunId}"[\\s\\S]*defaulting to success`),
+        ),
       );
-      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('defaulting to success'));
     } finally {
       warnSpy.mockRestore();
     }
