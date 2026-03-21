@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach } from 'vitest';
 import { CycleSchema } from '@domain/types/cycle.js';
 import { RunSchema } from '@domain/types/run-state.js';
 import type { AgentCompletionResult } from '@domain/ports/session-bridge.js';
