@@ -3,8 +3,8 @@
 > How the Dojo transforms Kata's execution data into an interactive training experience for the developer — diary entries, session generation, the Japanese dojo design system, and the curated source registry.
 >
 > **Companion documents**:
-> - [Kata System Guide](kata-system-guide.md) — Overview hub for the whole system
-> - [Meta-Learning Architecture](meta-learning-architecture.md) — The observation and knowledge systems that feed the Dojo
+> - [Kata System Guide](../guides/system-guide.md) — Overview hub for the whole system
+> - [Meta-Learning Architecture](meta-learning.md) — The observation and knowledge systems that feed the Dojo
 
 ---
 
@@ -294,4 +294,4 @@ The Dojo is a **consumer** of meta-learning data — it reads whatever exists an
 
 ---
 
-*See [Kata System Guide](kata-system-guide.md) for how the Dojo fits into the broader system.*
+*See [Kata System Guide](../guides/system-guide.md) for how the Dojo fits into the broader system.*

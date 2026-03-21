@@ -19,7 +19,9 @@ import { UsageAnalytics } from '@infra/tracking/usage-analytics.js';
 import { KATA_DIRS } from '@shared/constants/paths.js';
 import { ProjectStateUpdater } from '@features/belt/belt-calculator.js';
 import { CycleManager } from '@domain/services/cycle-manager.js';
+import { resolveCycleActivationName } from '@features/cycle-management/cycle-activation-name-resolver.js';
 import { SessionExecutionBridge } from '@infra/execution/session-bridge.js';
+import { promptForCycleActivationName, shouldPromptForCycleName } from '@cli/cycle-name-prompt.js';
 import {
   betStatusSymbol,
   buildPreparedCycleOutputLines,
@@ -95,6 +97,7 @@ export function registerExecuteCommands(program: Command): void {
     .option('--complete', 'Complete all in-progress runs in the cycle')
     .option('--agent <id>', 'Agent ID to attribute all prepared runs to (only used with --prepare)')
     .option('--kataka <id>', 'Alias for --agent <id>')
+    .option('--name <name>', 'Human-readable name to assign before activation when preparing an unnamed planning cycle')
     .option('--json', 'Output as JSON')
     .action(withCommandContext(async (ctx, cycleRef: string) => {
       const localOpts = ctx.cmd.optsWithGlobals() as {
@@ -103,12 +106,12 @@ export function registerExecuteCommands(program: Command): void {
         complete?: boolean;
         agent?: string;
         kataka?: string;
+        name?: string;
         json?: boolean;
       };
       const isJson = resolveJsonFlag(localOpts.json, ctx.globalOpts.json);
       const bridge = new SessionExecutionBridge(ctx.kataDir);
       const agentId = localOpts.agent ?? localOpts.kataka;
-
       // Resolve cycle ref to ID
       const manager = new CycleManager(kataDirPath(ctx.kataDir, 'cycles'), JsonStore);
       const cycleId = resolveRef(cycleRef, manager.list(), 'cycle').id;
@@ -127,7 +130,16 @@ export function registerExecuteCommands(program: Command): void {
           }
         }
 
-        const result = bridge.prepareCycle(cycleId, agentId);
+        const cycle = manager.get(cycleId);
+        const activationName = await resolveCycleActivationName({
+          cycle,
+          providedName: localOpts.name,
+          promptForName: shouldPromptForCycleName(isJson)
+            ? promptForCycleActivationName
+            : undefined,
+        });
+
+        const result = bridge.prepareCycle(cycleId, agentId, activationName.name);
         if (isJson) {
           console.log(JSON.stringify(result, null, 2));
         } else {
@@ -525,47 +537,62 @@ async function runCategories(
   rawCategories: string[],
   opts: RunOptions,
 ): Promise<void> {
-  const categories: StageCategory[] = [];
-  for (const cat of rawCategories) {
-    const parseResult = StageCategorySchema.safeParse(cat);
-    if (!parseResult.success) {
-      const valid = StageCategorySchema.options.join(', ');
-      console.error(`Invalid stage category: "${cat}". Valid categories: ${valid}`);
-      process.exitCode = 1;
-      return;
-    }
-    categories.push(parseResult.data);
-  }
+  const executionSetup = prepareExecutionRun(ctx, rawCategories, opts);
+  if (!executionSetup) return;
 
-  const runner = buildRunner(ctx.kataDir);
-  const parsedBet = parseBetOption(opts.bet);
-  if (!parsedBet.ok) {
-    console.error(parsedBet.error);
-    process.exitCode = 1;
-    return;
+  const shouldContinue = await runExecutionMode(ctx, executionSetup, opts);
+  if (!shouldContinue) return;
+
+  const { categories, isJson, projectStateFile } = executionSetup;
+  if (opts.saveKata && !opts.dryRun) {
+    finalizeSavedKata(ctx.kataDir, opts.saveKata, categories, opts.flavorHints, projectStateFile, isJson);
   }
-  const bet = parsedBet.value;
+}
+
+type ExecutionSetup = {
+  categories: StageCategory[];
+  bet: Record<string, unknown> | undefined;
+  agentId?: string;
+  isJson: boolean;
+  projectStateFile: string;
+  runner: WorkflowRunner;
+};
+
+function prepareExecutionRun(
+  ctx: { kataDir: string; globalOpts: { json?: boolean } },
+  rawCategories: string[],
+  opts: RunOptions,
+): ExecutionSetup | undefined {
+  const categories = parseExecutionCategories(rawCategories);
+  if (!categories) return undefined;
+
+  const betResult = resolveExecutionBet(opts.bet);
+  if (!betResult.ok) return undefined;
+
   const agentId = opts.agentId ?? opts.katakaId;
   const projectStateFile = join(ctx.kataDir, 'project-state.json');
-  ProjectStateUpdater.markDiscovery(projectStateFile, 'ranFirstExecution');
-  if (opts.yolo) ProjectStateUpdater.markRanWithYolo(projectStateFile);
+  markExecutionProjectState(projectStateFile, opts.yolo);
+  if (!validateExecutionAgent(ctx.kataDir, agentId)) return undefined;
 
-  if (agentId) {
-    try {
-      const agentRegistry = new KataAgentRegistry(join(ctx.kataDir, KATA_DIRS.kataka));
-      agentRegistry.get(agentId);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error(formatAgentLoadError(agentId, msg));
-      process.exitCode = 1;
-      return;
-    }
-  }
+  return {
+    categories,
+    bet: betResult.value,
+    agentId,
+    isJson: Boolean(ctx.globalOpts.json || opts.json),
+    projectStateFile,
+    runner: buildRunner(ctx.kataDir),
+  };
+}
 
-  const isJson = Boolean(ctx.globalOpts.json || opts.json);
+async function runExecutionMode(
+  ctx: RunContext,
+  executionSetup: ExecutionSetup,
+  opts: RunOptions,
+): Promise<boolean> {
+  const { categories, runner, bet, agentId, isJson, projectStateFile } = executionSetup;
 
-  if (categories.length === 1) {
-    const shouldContinue = await runSingleCategoryMode({
+  return categories.length === 1
+    ? runSingleCategoryMode({
       ctx,
       runner,
       category: categories[0]!,
@@ -574,10 +601,8 @@ async function runCategories(
       isJson,
       opts,
       projectStateFile,
-    });
-    if (!shouldContinue) return;
-  } else {
-    const shouldContinue = await runPipelineMode({
+    })
+    : runPipelineMode({
       ctx,
       runner,
       categories,
@@ -587,13 +612,70 @@ async function runCategories(
       opts,
       projectStateFile,
     });
-    if (!shouldContinue) return;
+}
+
+function parseExecutionCategories(rawCategories: string[]): StageCategory[] | undefined {
+  const categories: StageCategory[] = [];
+  for (const cat of rawCategories) {
+    const parseResult = StageCategorySchema.safeParse(cat);
+    if (!parseResult.success) {
+      const valid = StageCategorySchema.options.join(', ');
+      console.error(`Invalid stage category: "${cat}". Valid categories: ${valid}`);
+      process.exitCode = 1;
+      return undefined;
+    }
+    categories.push(parseResult.data);
+  }
+  return categories;
+}
+
+function resolveExecutionBet(betJson: string | undefined): { ok: true; value: Record<string, unknown> | undefined } | { ok: false } {
+  const parsedBet = parseBetOption(betJson);
+  if (!parsedBet.ok) {
+    console.error(parsedBet.error);
+    process.exitCode = 1;
+    return { ok: false };
   }
 
-  if (opts.saveKata && !opts.dryRun) {
-    saveSavedKata(ctx.kataDir, opts.saveKata, categories, opts.flavorHints);
-    ProjectStateUpdater.markDiscovery(projectStateFile, 'savedKataSequence');
-    if (!isJson) console.log(`\nKata "${opts.saveKata}" saved.`);
+  return { ok: true, value: parsedBet.value };
+}
+
+function markExecutionProjectState(projectStateFile: string, yolo: boolean | undefined): void {
+  ProjectStateUpdater.markDiscovery(projectStateFile, 'ranFirstExecution');
+  if (yolo) {
+    ProjectStateUpdater.markRanWithYolo(projectStateFile);
+  }
+}
+
+function validateExecutionAgent(kataDir: string, agentId: string | undefined): boolean {
+  if (!agentId) {
+    return true;
+  }
+
+  try {
+    const agentRegistry = new KataAgentRegistry(join(kataDir, KATA_DIRS.kataka));
+    agentRegistry.get(agentId);
+    return true;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(formatAgentLoadError(agentId, msg));
+    process.exitCode = 1;
+    return false;
+  }
+}
+
+function finalizeSavedKata(
+  kataDir: string,
+  saveKataName: string,
+  categories: StageCategory[],
+  flavorHints: Record<string, FlavorHint> | undefined,
+  projectStateFile: string,
+  isJson: boolean,
+): void {
+  saveSavedKata(kataDir, saveKataName, categories, flavorHints);
+  ProjectStateUpdater.markDiscovery(projectStateFile, 'savedKataSequence');
+  if (!isJson) {
+    console.log(`\nKata "${saveKataName}" saved.`);
   }
 }
 

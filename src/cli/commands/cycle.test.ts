@@ -99,12 +99,41 @@ describe('registerCycleCommands', () => {
         'cycle', 'new',
         '--skip-prompts',
         '--budget', '100000',
+        '--name', 'JSON Cycle',
       ]);
 
       const firstCall = consoleSpy.mock.calls[0]?.[0] as string;
       const parsed = JSON.parse(firstCall);
       expect(parsed.status).toBeDefined();
       expect(parsed.cycle).toBeDefined();
+      expect(parsed.cycle.name).toBe('JSON Cycle');
+    });
+
+    it('creates an unnamed draft cycle when --skip-prompts is used without a name', async () => {
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--json', '--cwd', baseDir,
+        'cycle', 'new',
+        '--skip-prompts',
+        '--budget', '100000',
+      ]);
+
+      const firstCall = consoleSpy.mock.calls[0]?.[0] as string;
+      const parsed = JSON.parse(firstCall);
+      expect(parsed.cycle.name).toBeUndefined();
+      expect(parsed.cycle.state).toBe('planning');
+    });
+
+    it('normalizes a whitespace-only draft name to unnamed at creation time', async () => {
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--json', '--cwd', baseDir,
+        'cycle', 'new', '--skip-prompts', '--name', '   ',
+      ]);
+
+      const firstCall = consoleSpy.mock.calls[0]?.[0] as string;
+      const parsed = JSON.parse(firstCall);
+      expect(parsed.cycle.name).toBeUndefined();
     });
   });
 
@@ -278,11 +307,12 @@ describe('registerCycleCommands', () => {
       const program = createProgram();
       await program.parseAsync([
         'node', 'test', '--json', '--cwd', baseDir,
-        'cycle', 'start', cycle.id,
+        'cycle', 'start', cycle.id, '--name', 'Start Named Cycle',
       ]);
 
       const output = JSON.parse(consoleSpy.mock.calls[0]![0] as string);
       expect(output.status).toBe('active');
+      expect(output.cycleName).toBe('Start Named Cycle');
       expect(output.runs).toHaveLength(1);
       expect(output.runs[0].stageSequence).toEqual(['research', 'build']);
 
@@ -311,11 +341,38 @@ describe('registerCycleCommands', () => {
       const program = createProgram();
       await program.parseAsync([
         'node', 'test', '--json', '--cwd', baseDir,
-        'cycle', 'start', cycle.id,
+        'cycle', 'start', cycle.id, '--name', 'Ad Hoc Start Cycle',
       ]);
 
       const output = JSON.parse(consoleSpy.mock.calls[0]![0] as string);
+      expect(output.cycleName).toBe('Ad Hoc Start Cycle');
       expect(output.runs[0].stageSequence).toEqual(['build', 'review']);
+    });
+
+    it('auto-suggests a cycle name when starting an unnamed cycle without --name', async () => {
+      writeFileSync(
+        join(katasDir, 'full-feature.json'),
+        JSON.stringify({ name: 'full-feature', stages: ['research', 'build'] }),
+      );
+
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 50000 });
+      const withBet = manager.addBet(cycle.id, {
+        description: 'Auth feature', appetite: 30, outcome: 'pending', issueRefs: [],
+      });
+      manager.updateBet(cycle.id, withBet.bets[0]!.id, { kata: { type: 'named', pattern: 'full-feature' } });
+
+      await withStubbedClaudeOutput('Auth Launch Cycle', async () => {
+        const program = createProgram();
+        await program.parseAsync([
+          'node', 'test', '--json', '--cwd', baseDir,
+          'cycle', 'start', cycle.id,
+        ]);
+      });
+
+      const output = JSON.parse(consoleSpy.mock.calls[0]![0] as string);
+      expect(output.cycleName).toBe('Auth Launch Cycle');
+      expect(manager.get(cycle.id).name).toBe('Auth Launch Cycle');
     });
 
     it('errors when bets lack kata assignment', async () => {
@@ -394,7 +451,7 @@ describe('registerCycleCommands', () => {
       const program = createProgram();
       await program.parseAsync([
         'node', 'test', '--json', '--cwd', baseDir,
-        'cycle', 'start', cycle.id,
+        'cycle', 'start', cycle.id, '--name', 'Multi Bet Start Cycle',
       ]);
 
       const output = JSON.parse(consoleSpy.mock.calls[0]![0] as string);
@@ -829,6 +886,35 @@ describe('registerCycleCommands', () => {
       await program.parseAsync(['node', 'test', '--cwd', baseDir, 'cycle', 'staged', 'launch']);
 
       expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('no bets'));
+    });
+
+    it('auto-suggests a name when staged cycle has no name and no --name override', async () => {
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 50000 });
+      manager.addBet(cycle.id, { description: 'Unnamed launch bet', appetite: 20, outcome: 'pending', issueRefs: [] });
+
+      await withStubbedClaudeOutput('Suggested Launch Cycle', async () => {
+        const program = createProgram();
+        await program.parseAsync(['node', 'test', '--cwd', baseDir, 'cycle', 'staged', 'launch']);
+      });
+
+      const updated = manager.get(cycle.id);
+      expect(updated.state).toBe('active');
+      expect(updated.name).toBe('Suggested Launch Cycle');
+      const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('Suggested Launch Cycle');
+    });
+
+    it('rejects a whitespace-only --name when launching a staged cycle', async () => {
+      const manager = new CycleManager(cyclesDir, JsonStore);
+      const cycle = manager.create({ tokenBudget: 50000 });
+      manager.addBet(cycle.id, { description: 'Whitespace launch bet', appetite: 20, outcome: 'pending', issueRefs: [] });
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', '--cwd', baseDir, 'cycle', 'staged', 'launch', '--name', '   ']);
+
+      expect(process.exitCode).toBe(1);
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Cycle name must be non-empty when provided.'));
     });
 
     it('outputs JSON with --json flag and preserves cycleId', async () => {

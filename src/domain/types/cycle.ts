@@ -49,6 +49,7 @@ export type BudgetStatus = z.infer<typeof BudgetStatusSchema>;
 
 export const CycleSchema = z.object({
   id: z.string().uuid(),
+  /** Planning cycles may be unnamed until they are activated. */
   name: z.string().optional(),
   budget: BudgetSchema,
   bets: z.array(BetSchema).default([]),

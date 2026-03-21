@@ -1,6 +1,6 @@
 # Kata Orchestration — Mapping to Claude Code
 
-> How Kata methodology concepts map to Claude Code teams and tasks.
+> How Kata methodology concepts map to Claude Code orchestration and worker tasks.
 
 ---
 
@@ -8,17 +8,17 @@
 
 | Kata Concept | Claude Code Equivalent |
 |-------------|----------------------|
-| **Bet** | Top-level `Task` call / teammate agent |
-| **Stage** | A loop iteration in the bet teammate's execution |
+| **Bet** | A run/workstream tracked by the top-level sensei session |
+| **Stage** | A loop iteration in sensei's execution for a specific run |
 | **Flavor** | A named composition of steps (defined in `.kata/flavors/<stage>.<name>.json`) |
 | **Step** | Atomic work unit within a flavor; stored as `<type>.json` in `.kata/stages/` |
-| **Parallel flavors** | Multiple `Task` calls in one message |
-| **Sequential flavors** | Sequential `Task` calls (await each before starting next) |
-| **Synthesis** | Bet teammate collects flavor outputs, writes `synthesis.md` |
-| **Human gate** | Bet teammate pauses, messages user, waits for `kata approve` |
-| **Confidence gate** | Bet teammate surfaces the low-confidence decision to user |
-| **Step execution** | Flavor sub-agent reads prompt from `kata step next --json`, does the work |
-| **Artifact recording** | Flavor sub-agent runs `kata artifact record` after completing work |
+| **Parallel flavors** | Multiple worker `Task` calls dispatched directly by sensei |
+| **Sequential flavors** | Worker `Task` calls dispatched one at a time by sensei |
+| **Synthesis** | Sensei collects worker outputs, writes `synthesis.md` |
+| **Human gate** | Sensei pauses, messages user, waits for `kata approve` |
+| **Confidence gate** | Sensei surfaces the low-confidence decision to the user |
+| **Step execution** | A delegated worker receives prompt/context from sensei and does the work |
+| **Artifact recording** | A delegated worker runs `kata artifact record` after completing work |
 
 ---
 
@@ -26,16 +26,16 @@
 
 ```
 User
-└── Bet Teammate (spawned per bet)
+└── Sensei (top-level orchestrator)
     ├── Calls kata cycle start, kata step next
     ├── Handles gates (pauses on human-gate, surfaces confidence-gate)
-    ├── Spawns Flavor Sub-Agents in parallel for each selected flavor
-    │   └── Flavor Sub-Agent
-    │       ├── Reads step prompts from kata step next --json
-    │       ├── Does the actual work (editing code, running tests, etc.)
+    ├── Tracks active runs across bets
+    ├── Spawns delegated worker agents for each selected flavor
+    │   └── Worker Agent
+    │       ├── Executes the assigned flavor/step work
     │       ├── Records artifacts via kata artifact record
     │       └── Records decisions via kata decision record
-    └── Writes stage synthesis after all flavors complete
+    └── Writes stage synthesis after all workers complete
 ```
 
 ---
@@ -200,7 +200,7 @@ When `kata step next` returns a pending gate:
 }
 ```
 
-The bet teammate **messages the user**:
+Sensei **messages the user**:
 > "Gate `human-approved-plan-review` requires human approval. Run `kata approve human-approved-plan-review` to unblock."
 
 Then **pauses** — does not call `kata step next` again until approval confirmation.
@@ -237,7 +237,7 @@ Step definitions **win** on name conflicts — if both the step and the flavor d
 }
 ```
 
-The executing agent (flavor sub-agent) should consult `resources` to discover available tools, agents, and skills for the current work. If the flavor is not registered, `resources` falls back to the step's own resources.
+The executing worker should consult `resources` to discover available tools, agents, and skills for the current work. If the flavor is not registered, `resources` falls back to the step's own resources.
 
 ---
 
@@ -435,11 +435,11 @@ kata stage vocab seed review eslint prettier security --cwd ./my-app
 
 ## Key Rules
 
-1. **One bet, one teammate** — don't try to run multiple bets in a single agent's loop.
+1. **Keep orchestration centralized** — one sensei session owns scheduling across bets and runs.
 2. **Flavor name ≠ step types** — record decisions using the flavor NAME, but put step TYPES in `selectedFlavors`.
-3. **Parallel flavors = parallel Task calls** — always spawn flavor sub-agents simultaneously when running in parallel mode.
+3. **Parallel flavors = parallel Task calls** — sensei should spawn flavor workers directly and simultaneously when running in parallel mode.
 4. **Gates always block** — never skip a gate or proceed past `status: "waiting"` without user approval.
-5. **Sub-agents don't call `kata step next` at the run level** — only the bet teammate does that. Flavor sub-agents work within their assigned flavor.
+5. **Delegated workers don't call `kata step next` at the run level** — only sensei does that. Workers stay within their assigned flavor.
 6. **Record every orchestration decision** — flavor selection, execution mode choice, and gap assessments are all recorded automatically. Reflect phase mines these decisions and generates rule suggestions. This data drives self-improvement during cooldown.
 7. **`kata step complete` to advance steps** — after completing a step, run `kata step complete` to mark it done. Flavor status updates automatically.
 8. **`kata stage complete` to advance stages** — marks stage done, copies synthesis, and advances `run.currentStage`. Run status becomes `completed` after the last stage.

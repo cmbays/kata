@@ -3,15 +3,15 @@
 > Living reference for how Kata works — its primitives, data flows, and the meta-learning loop that makes the system compound over time. Written for humans.
 >
 > **Companion documents** (deep dives):
-> - [Product Design](v1-product-design.md) — Problem, scope, and success criteria
-> - [Design Rationale](v1-design-vision.md) — Why Kata is built the way it is: architectural trade-offs and decisions
-> - [User Journeys](v1-user-journeys.md) — What users can accomplish (stories + story mapping)
-> - [Interaction Design](v1-interaction-design.md) — Orchestration flows, CLI patterns, data model
-> - [Meta-Learning Architecture](meta-learning-architecture.md) — Observation system, knowledge graph, self-improvement loop
-> - [Dojo Architecture](dojo-architecture.md) — Personal training environment: diary, sessions, design system
-> - [Kataka Architecture](kataka-architecture.md) — Agent system: kataka, skills, three-layer model
-> - [Sensei Orchestration](sensei-orchestration.md) — Pipeline execution, gap bridging, execution modes
-> - [Project Setup](project-setup.md) — KATA.md, init scanning, project context lifecycle
+> - [Product Design](../product-design/product-design.md) — Problem, scope, and success criteria
+> - [Design Rationale](../product-design/design-vision.md) — Why Kata is built the way it is: architectural trade-offs and decisions
+> - [User Journeys](../product-design/user-journeys.md) — What users can accomplish (stories + story mapping)
+> - [Interaction Design](../product-design/interaction-design.md) — Orchestration flows, CLI patterns, data model
+> - [Meta-Learning Architecture](../architecture/meta-learning.md) — Observation system, knowledge graph, self-improvement loop
+> - [Dojo Architecture](../architecture/dojo.md) — Personal training environment: diary, sessions, design system
+> - [Kataka Architecture](../architecture/kataka.md) — Agent system: kataka, skills, three-layer model
+> - [Sensei Orchestration](../architecture/sensei-orchestration.md) — Pipeline execution, gap bridging, execution modes
+> - [Project Setup](../getting-started/project-setup.md) — KATA.md, init scanning, project context lifecycle
 
 ---
 
@@ -106,7 +106,7 @@ Every file in the run tree is append-only or write-once. Nothing is deleted duri
 | **Autonomous** | `--yolo` | Skip human-approval mon, log confidence for post-hoc review |
 | **Self-healing** | `--yolo --bridge-gaps` | Full autonomous + create missing resources mid-run |
 
-See [Sensei Orchestration](sensei-orchestration.md) for the full execution model.
+See [Sensei Orchestration](../architecture/sensei-orchestration.md) for the full execution model.
 
 ### Ma (Cooldown)
 After all bets complete, the keiko enters **ma** (cooldown) — a structured reflection phase:
@@ -142,13 +142,13 @@ Kata uses four categories of persistent data:
 - `.kata/dojo/sessions/` — Generated Dojo training sessions
 
 ### Context — write-at-init, refresh-at-ma
-- `.kata/KATA.md` — Project context file for all agents and skills — see [Project Setup](project-setup.md)
+- `.kata/KATA.md` — Project context file for all agents and skills — see [Project Setup](../getting-started/project-setup.md)
 
 ---
 
 ## 5. The Kansatsu (Observation) System
 
-> See [Meta-Learning Architecture](meta-learning-architecture.md) for the full deep dive on kansatsu, the knowledge graph, and the self-improvement loop.
+> See [Meta-Learning Architecture](../architecture/meta-learning.md) for the full deep dive on kansatsu, the knowledge graph, and the self-improvement loop.
 
 Kansatsu (observations) are the raw signals captured during kiai — the primary input to the entire meta-learning system. Seven types (kime, prediction, friction, gap, outcome, assumption, insight) are recorded as append-only JSONL at every level of the execution hierarchy (run, gyo, ryu, waza). Once written, kansatsu are never modified — creating an immutable audit trail that the bunkai graph builds on.
 
@@ -156,7 +156,7 @@ Kansatsu (observations) are the raw signals captured during kiai — the primary
 
 ## 6. The Bunkai (Knowledge) Graph
 
-> See [Meta-Learning Architecture](meta-learning-architecture.md) for the full deep dive including learning schema fields, graph emergence, detection engines, and LLM synthesis.
+> See [Meta-Learning Architecture](../architecture/meta-learning.md) for the full deep dive including learning schema fields, graph emergence, detection engines, and LLM synthesis.
 
 The bunkai graph transforms raw kansatsu into working knowledge. It has three layers: **kansatsu** (immutable JSONL), **learnings** (versioned JSON with citations, confidence, lineage), and a **graph index** (lightweight edges making the graph traversable). Knowledge emerges bottom-up — kansatsu accumulate, pattern detection creates learnings with citations, reinforcement strengthens them, and LLM synthesis consolidates them into higher-order insights. The basic bunkai store (learnings, capture, query, loading) is shipped. Graph enrichments — citations, reinforcement, versioning, permanence, detection engines, LLM synthesis — ship progressively.
 
@@ -164,7 +164,7 @@ The bunkai graph transforms raw kansatsu into working knowledge. It has three la
 
 ## 7. The Self-Improvement Loop
 
-> See [Meta-Learning Architecture](meta-learning-architecture.md) for the full loop diagram and detailed walkthrough of each phase.
+> See [Meta-Learning Architecture](../architecture/meta-learning.md) for the full loop diagram and detailed walkthrough of each phase.
 
 The self-improvement loop is the mechanism that makes Kata compound over time: **Kiai** (agents run gyo, kansatsu pile up) → **Ma** (pattern detection, learning creation, synthesis) → **Bunkai Store** (learnings with citations, confidence scores, graph edges) → **Manifest Builder** (reads learnings, injects into agent prompts) → **Next Kiai** (agent has better context). Each keiko adds kansatsu, strengthens learnings, and produces better prompts. The system gets better through use — not through manual configuration.
 
@@ -172,7 +172,7 @@ The self-improvement loop is the mechanism that makes Kata compound over time: *
 
 ## 8. The Dojo — Personal Training Environment
 
-> See [Dojo Architecture](dojo-architecture.md) for the full deep dive on diary entries, session generation, the design system, and the source registry.
+> See [Dojo Architecture](../architecture/dojo.md) for the full deep dive on diary entries, session generation, the design system, and the source registry.
 
 The Dojo transforms Kata's kiai (execution) data into an interactive training experience for the developer. Each session covers four knowledge directions: **ushiro** (backward — what happened), **uchi** (inward — current state + personal focus), **soto** (outward — industry best practices), and **mae** (forward — what's next). After each ma (cooldown), a diary entry captures the keiko's narrative. Sessions are self-contained HTML experiences with a Japanese dojo theme, generated through conversation with Claude and saved as a personal training archive.
 
@@ -180,7 +180,7 @@ The Dojo transforms Kata's kiai (execution) data into an interactive training ex
 
 ## 9. The Kataka System — Methodology-Aware Agents
 
-> See [Kataka Architecture](kataka-architecture.md) for the full deep dive.
+> See [Kataka Architecture](../architecture/kataka.md) for the full deep dive.
 
 Kataka (型家, "kata practitioner") is the Kata-native AI agent wrapper. The `-ka` suffix signals a methodology-aware agent.
 

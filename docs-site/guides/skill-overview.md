@@ -105,29 +105,29 @@ Returns full run state: all stages, flavors, steps, decisions, and artifacts.
 
 ---
 
-## 4. Sub-Agent Model
+## 4. Delegated Worker Model
 
-For parallel flavor execution within a stage, spawn one sub-agent per flavor:
+For parallel flavor execution within a stage, the top-level sensei spawns one worker agent per flavor:
 
 ```
-# In the bet teammate (you):
+# In the sensei session (you):
 kata step next <run-id> --json          # → learn you're in "build" stage
-# Spawn flavor sub-agents in parallel:
+# Spawn flavor workers in parallel:
 Task("Execute rust-compilation flavor for run <run-id>", context=...)
 Task("Execute integration-test flavor for run <run-id>", context=...)
 # Wait for both to complete, then do synthesis
 ```
 
-**Bet teammate** (top-level agent):
-- Owns the run lifecycle: calls `kata step next`, handles stage transitions, does synthesis
-- Spawns flavor sub-agents for parallel work
+**Sensei** (top-level orchestrator):
+- Owns scheduling across runs and the run lifecycle: calls `kata step next`, handles stage transitions, does synthesis
+- Spawns worker agents for parallel flavor work
 - Handles gates (pauses and surfaces to user)
 
-**Flavor sub-agent** (spawned by bet teammate):
+**Delegated worker agent** (spawned by sensei):
 - Executes a single flavor's steps sequentially
 - Records artifacts and decisions for that flavor
 - Does NOT call `kata step next` at the run level
-- Reports completion to the bet teammate
+- Reports completion to sensei
 
 See `orchestration.md` for a concrete example. See `context-flow.md` for what context to pass each tier.
 
@@ -140,7 +140,7 @@ When recording a decision with `confidence < 0.7` (the default threshold), Kata 
 - **Without `--yolo`**: Decision is recorded, gate is set in stage state. `kata step next` will return `status: "waiting"`. Surface the low-confidence decision to the user.
 - **With `--yolo`**: Decision is recorded, gate is skipped. Execution continues. The decision log notes `lowConfidence: true` for cooldown review.
 
-Use `--yolo` for decisions where pausing would be more disruptive than the risk of the low-confidence choice (e.g., minor flavor sub-selection where the user has already trusted you with the bet).
+Use `--yolo` for decisions where pausing would be more disruptive than the risk of the low-confidence choice (e.g., minor flavor sub-selection where the user has already trusted sensei with the run).
 
 ---
 

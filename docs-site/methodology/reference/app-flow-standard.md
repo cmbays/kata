@@ -352,9 +352,9 @@ Before considering an APP_FLOW document complete:
 
 ## Related Documents
 
-- [FRONTEND_GUIDELINES.md](../reference/FRONTEND_GUIDELINES.md) - Design system and components
-- [PLAYGROUND_AUDIT_PROTOCOL.md](./PLAYGROUND_AUDIT_PROTOCOL.md) - Quality checklist
-- [WORKFLOW_STAGES.md](../reference/WORKFLOW_STAGES.md) - Development workflow
+- `FRONTEND_GUIDELINES.md` - Design system and components
+- `PLAYGROUND_AUDIT_PROTOCOL.md` - Quality checklist
+- `WORKFLOW_STAGES.md` - Development workflow
 
 ---
 

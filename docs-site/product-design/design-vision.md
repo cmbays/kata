@@ -2,7 +2,7 @@
 
 > Why Kata is built the way it is — architectural trade-offs and decisions that shaped the system, in ADR format (Context → Decision → Consequences).
 >
-> For *how* the system works, see [Kata System Guide](kata-system-guide.md).
+> For *how* the system works, see [Kata System Guide](../guides/system-guide.md).
 > Implementation sequencing is tracked separately from this public design rationale.
 
 ## Core Thesis
@@ -101,4 +101,4 @@ Kata separates **deterministic structure** (waza, mon, maki, seido) from **non-d
 
 ---
 
-*For the full meta-learning system, see [Meta-Learning Architecture](meta-learning-architecture.md).*
+*For the full meta-learning system, see [Meta-Learning Architecture](../architecture/meta-learning.md).*

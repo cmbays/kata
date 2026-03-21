@@ -8,6 +8,24 @@ import { fileURLToPath } from 'node:url';
 const ref = process.argv[2] ?? 'origin/main';
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
+function findUp(relativePath) {
+  let currentDir = repoRoot;
+
+  while (true) {
+    const candidate = resolve(currentDir, relativePath);
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+
+    const parentDir = resolve(currentDir, '..');
+    if (parentDir === currentDir) {
+      return null;
+    }
+
+    currentDir = parentDir;
+  }
+}
+
 function runGit(args) {
   return spawnSync('git', args, {
     encoding: 'utf-8',
@@ -65,16 +83,16 @@ if (changedFiles.length === 0) {
 }
 
 function resolveCrapRunner() {
-  const localBin = resolve(repoRoot, 'node_modules/.bin/crap4ts');
-  if (existsSync(localBin)) {
+  const localBin = findUp('node_modules/.bin/crap4ts');
+  if (localBin) {
     return {
       command: localBin,
       args: ['--strict', '--include', ...changedFiles],
     };
   }
 
-  const sourceCli = resolve(repoRoot, 'node_modules/crap4ts/src/cli/cli.ts');
-  if (existsSync(sourceCli)) {
+  const sourceCli = findUp('node_modules/crap4ts/src/cli/cli.ts');
+  if (sourceCli) {
     return {
       command: 'node',
       args: ['--import', 'tsx', sourceCli, '--strict', '--include', ...changedFiles],

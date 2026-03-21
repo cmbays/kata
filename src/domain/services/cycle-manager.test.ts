@@ -1,4 +1,3 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -58,8 +57,18 @@ describe('CycleManager.create', () => {
     expect(cycle.name).toBe('Sprint 1');
   });
 
+  it('trims a provided cycle name', () => {
+    const cycle = manager.create(makeBudget(), '  Sprint 1  ');
+    expect(cycle.name).toBe('Sprint 1');
+  });
+
   it('creates a cycle without a name', () => {
     const cycle = manager.create(makeBudget());
+    expect(cycle.name).toBeUndefined();
+  });
+
+  it('normalizes a blank cycle name to undefined', () => {
+    const cycle = manager.create(makeBudget(), '   ');
     expect(cycle.name).toBeUndefined();
   });
 
@@ -315,10 +324,11 @@ describe('CycleManager.updateState', () => {
 });
 
 describe('CycleManager.transitionState', () => {
-  it('transitions planning → active', () => {
-    const cycle = manager.create(makeBudget());
+  it('transitions planning → active when the draft cycle already has a name', () => {
+    const cycle = manager.create(makeBudget(), 'Launch Cycle');
     const updated = manager.transitionState(cycle.id, 'active');
     expect(updated.state).toBe('active');
+    expect(updated.name).toBe('Launch Cycle');
   });
 
   it('transitions active → cooldown', () => {
@@ -352,9 +362,16 @@ describe('CycleManager.transitionState', () => {
 
   it('sets name at transition time', () => {
     const cycle = manager.create(makeBudget());
-    const updated = manager.transitionState(cycle.id, 'active', 'Keiko 12');
+    const updated = manager.transitionState(cycle.id, 'active', '  Keiko 12  ');
     expect(updated.name).toBe('Keiko 12');
     expect(updated.state).toBe('active');
+  });
+
+  it('rejects planning → active when no cycle name is available', () => {
+    const cycle = manager.create(makeBudget());
+    expect(() => manager.transitionState(cycle.id, 'active')).toThrow(
+      /cycle name is required before activation/i,
+    );
   });
 
   it('updates name on same-state call without changing state', () => {
@@ -578,15 +595,16 @@ describe('CycleManager.findBetCycle', () => {
 });
 
 describe('CycleManager.startCycle', () => {
-  it('transitions cycle to active when all bets have kata', () => {
+  it('transitions cycle to active when all bets have kata and a launch name is provided', () => {
     const cycle = manager.create(makeBudget());
     const withBet = manager.addBet(cycle.id, makeBetInput());
     const betId = withBet.bets[0]!.id;
     manager.updateBet(cycle.id, betId, { kata: { type: 'named', pattern: 'full-feature' } });
 
-    const result = manager.startCycle(cycle.id);
+    const result = manager.startCycle(cycle.id, 'Launch Cycle');
     expect(result.betsWithoutKata).toHaveLength(0);
     expect(result.cycle.state).toBe('active');
+    expect(result.cycle.name).toBe('Launch Cycle');
   });
 
   it('returns unassigned bets without transitioning when bets lack kata', () => {
@@ -619,9 +637,25 @@ describe('CycleManager.startCycle', () => {
 
   it('allows starting a cycle with no bets', () => {
     const cycle = manager.create(makeBudget());
-    const result = manager.startCycle(cycle.id);
+    const result = manager.startCycle(cycle.id, 'Empty Launch');
     expect(result.betsWithoutKata).toHaveLength(0);
     expect(result.cycle.state).toBe('active');
+  });
+
+  it('rejects starting an unnamed empty cycle when activation would begin immediately', () => {
+    const cycle = manager.create(makeBudget());
+
+    expect(() => manager.startCycle(cycle.id)).toThrow(/cycle name is required before activation/i);
+    expect(manager.get(cycle.id).state).toBe('planning');
+  });
+
+  it('rejects starting an unnamed cycle when activation would begin immediately', () => {
+    const cycle = manager.create(makeBudget());
+    const withBet = manager.addBet(cycle.id, makeBetInput());
+    const betId = withBet.bets[0]!.id;
+    manager.updateBet(cycle.id, betId, { kata: { type: 'named', pattern: 'full-feature' } });
+
+    expect(() => manager.startCycle(cycle.id)).toThrow(/cycle name is required before activation/i);
   });
 
   it('throws CycleNotFoundError for nonexistent cycle', () => {

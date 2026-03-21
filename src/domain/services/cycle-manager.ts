@@ -8,7 +8,18 @@ import { CycleNotFoundError, KataError } from '@shared/lib/errors.js';
 import { calculateUtilization } from '@domain/rules/budget-rules.js';
 import { canTransitionCycleState } from '@domain/rules/cycle-rules.js';
 import { createBet, requireBet, trySetBetOutcome, applyBetOutcomes } from '@domain/rules/bet-rules.js';
+import { normalizeCycleName } from '@domain/services/cycle-name.js';
 import { generateCooldownReport } from '@domain/services/cooldown-reporter.js';
+
+function requireCycleNameForActivation(cycle: Cycle, name: string | undefined): string {
+  const resolvedName = normalizeCycleName(name) ?? normalizeCycleName(cycle.name);
+  if (!resolvedName) {
+    throw new KataError(
+      `Cannot transition cycle "${cycle.id}" from "planning" to "active": cycle name is required before activation.`,
+    );
+  }
+  return resolvedName;
+}
 
 // Re-export for backwards compatibility — consumers import from here
 export type { CooldownReport, CooldownBetReport } from '@domain/types/cooldown.js';
@@ -33,7 +44,7 @@ export class CycleManager {
     const now = new Date().toISOString();
     const cycle: Cycle = {
       id: crypto.randomUUID(),
-      name,
+      name: normalizeCycleName(name),
       budget,
       bets: [],
       pipelineMappings: [],
@@ -158,29 +169,19 @@ export class CycleManager {
    */
   transitionState(cycleId: string, state: CycleState, name?: string): Cycle {
     const cycle = this.get(cycleId);
+    const normalizedName = normalizeCycleName(name);
 
     if (cycle.state === state) {
-      if (name !== undefined && cycle.name !== name) {
-        cycle.name = name;
-        return this.touch(cycle);
-      }
-      return cycle;
+      return this.renameCycleIfNeeded(cycle, normalizedName);
     }
 
-    if (!canTransitionCycleState(cycle.state, state)) {
-      throw new KataError(
-        `Cannot transition cycle "${cycle.name ?? cycleId}" from "${cycle.state}" to "${state}".`,
-      );
-    }
-
+    this.assertTransitionAllowed(cycle, cycleId, state);
+    this.applyTransitionName(cycle, state, normalizedName);
     cycle.state = state;
-    if (name !== undefined) {
-      cycle.name = name;
-    }
     return this.touch(cycle);
   }
 
-  startCycle(cycleId: string): { cycle: Cycle; betsWithoutKata: string[] } {
+  startCycle(cycleId: string, name?: string): { cycle: Cycle; betsWithoutKata: string[] } {
     const cycle = this.get(cycleId);
     if (cycle.state !== 'planning') {
       throw new Error(
@@ -193,7 +194,7 @@ export class CycleManager {
     if (betsWithoutKata.length > 0) {
       return { cycle, betsWithoutKata };
     }
-    return { cycle: this.transitionState(cycleId, 'active'), betsWithoutKata: [] };
+    return { cycle: this.transitionState(cycleId, 'active', name), betsWithoutKata: [] };
   }
 
   // --- Reporting ---
@@ -223,6 +224,37 @@ export class CycleManager {
 
   private save(cycle: Cycle): void {
     this.persistence.write(this.cyclePath(cycle.id), cycle, CycleSchema);
+  }
+
+  private renameCycleIfNeeded(cycle: Cycle, normalizedName: string | undefined): Cycle {
+    if (normalizedName !== undefined && cycle.name !== normalizedName) {
+      cycle.name = normalizedName;
+      return this.touch(cycle);
+    }
+    return cycle;
+  }
+
+  private assertTransitionAllowed(cycle: Cycle, cycleId: string, state: CycleState): void {
+    if (!canTransitionCycleState(cycle.state, state)) {
+      throw new KataError(
+        `Cannot transition cycle "${cycle.name ?? cycleId}" from "${cycle.state}" to "${state}".`,
+      );
+    }
+  }
+
+  private applyTransitionName(cycle: Cycle, state: CycleState, normalizedName: string | undefined): void {
+    if (this.requiresActivationName(cycle.state, state)) {
+      cycle.name = requireCycleNameForActivation(cycle, normalizedName);
+      return;
+    }
+
+    if (normalizedName !== undefined) {
+      cycle.name = normalizedName;
+    }
+  }
+
+  private requiresActivationName(currentState: CycleState, nextState: CycleState): boolean {
+    return currentState === 'planning' && nextState === 'active';
   }
 
   /** Update timestamp and persist. Returns the saved cycle. */

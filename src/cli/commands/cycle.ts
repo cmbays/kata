@@ -5,8 +5,10 @@ import { KnowledgeStore } from '@infra/knowledge/knowledge-store.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
 import { RuleRegistry } from '@infra/registries/rule-registry.js';
 import { CooldownSession, type BetOutcomeRecord } from '@features/cycle-management/cooldown-session.js';
+import { resolveCycleActivationName } from '@features/cycle-management/cycle-activation-name-resolver.js';
 import { NextKeikoProposalGenerator } from '@features/cycle-management/next-keiko-proposal-generator.js';
 import type { SuggestionReviewRecord } from '@features/cycle-management/types.js';
+import { promptForCycleActivationName, shouldPromptForCycleName } from '@cli/cycle-name-prompt.js';
 import { withCommandContext, kataDirPath } from '@cli/utils.js';
 import { resolveRef } from '@cli/resolve-ref.js';
 import {
@@ -56,7 +58,7 @@ export function registerCycleCommands(parent: Command): void {
     .description('Create a new cycle')
     .option('-b, --budget <tokens>', 'Token budget', parseInt)
     .option('-t, --time <duration>', 'Time budget (e.g., "2 weeks")')
-    .option('-n, --name <name>', 'Cycle name')
+    .option('-n, --name <name>', 'Optional name for the draft cycle')
     .option('--skip-prompts', 'Skip interactive prompts')
     .action(withCommandContext(async (ctx) => {
       const localOpts = ctx.cmd.opts();
@@ -64,15 +66,12 @@ export function registerCycleCommands(parent: Command): void {
 
       let tokenBudget: number | undefined = localOpts.budget;
       let timeBudget: string | undefined = localOpts.time;
-      let cycleName: string | undefined = localOpts.name;
+      const cycleName = (localOpts.name as string | undefined)?.trim() || undefined;
 
       // Interactive mode: prompt for budget details and bets
       if (!localOpts.skipPrompts) {
         const { input, confirm } = await import('@inquirer/prompts');
 
-        if (!cycleName) {
-          cycleName = await input({ message: 'Cycle name (optional):', default: '' }) || undefined;
-        }
         if (tokenBudget === undefined) {
           const budgetStr = await input({ message: 'Token budget (press Enter to skip):', default: '' });
           if (budgetStr) {
@@ -354,7 +353,9 @@ export function registerCycleCommands(parent: Command): void {
   cycle
     .command('start <cycle-id>')
     .description('Start a cycle — validates kata assignments and prepares session-bridge runs for each bet')
+    .option('--name <name>', 'Human-readable name to assign before activation when the cycle is unnamed')
     .action(withCommandContext(async (ctx, rawCycleId: string) => {
+      const localOpts = ctx.cmd.opts() as { name?: string };
       const manager = new CycleManager(kataDirPath(ctx.kataDir, 'cycles'), JsonStore);
       const cycleId = resolveCycleId(manager, rawCycleId);
       const katasDir = kataDirPath(ctx.kataDir, 'katas');
@@ -393,7 +394,14 @@ export function registerCycleCommands(parent: Command): void {
       // staged launch, and execute cycle --prepare share the same preparation seam.
       const { SessionExecutionBridge } = await import('@infra/execution/session-bridge.js');
       const bridge = new SessionExecutionBridge(ctx.kataDir);
-      const prepared = bridge.prepareCycle(cycleId);
+      const activationName = await resolveCycleActivationName({
+        cycle: draftCycle,
+        providedName: localOpts.name,
+        promptForName: shouldPromptForCycleName(Boolean(ctx.globalOpts.json))
+          ? promptForCycleActivationName
+          : undefined,
+      });
+      const prepared = bridge.prepareCycle(cycleId, undefined, activationName.name);
 
       const runs: Array<{
         runId: string;
@@ -422,9 +430,9 @@ export function registerCycleCommands(parent: Command): void {
       });
 
       if (ctx.globalOpts.json) {
-        console.log(JSON.stringify({ cycleId, status: 'active', runs }, null, 2));
+        console.log(JSON.stringify({ cycleId, cycleName: prepared.cycleName, status: 'active', runs }, null, 2));
       } else {
-        console.log(`Cycle started! ${runs.length} run(s) created.`);
+        console.log(`Cycle "${prepared.cycleName}" started! ${runs.length} run(s) created.`);
         for (const r of runs) {
           console.log(`\n  Run:      ${r.runId}`);
           console.log(`  Bet:      ${r.betPrompt}`);
@@ -681,7 +689,7 @@ export function registerCycleCommands(parent: Command): void {
     .description('Launch the staged cycle — prepare all runs and transition to active')
     .option('--agent <id>', 'Agent ID to attribute all prepared runs to')
     .option('--kataka <id>', 'Alias for --agent <id>')
-    .option('--name <name>', 'Human-readable name for the cycle (set at launch time)')
+    .option('--name <name>', 'Human-readable name to assign before activation when the staged cycle is unnamed')
     .option('--force', 'Skip staleness check entirely and launch without warnings')
     .option('--block-on-refs', 'Block launch (exit 1) when any bet references a GitHub issue number')
     .action(withCommandContext(async (ctx) => {
@@ -738,6 +746,13 @@ export function registerCycleCommands(parent: Command): void {
       // Delegate to the session bridge (same as kata kiai cycle <id> --prepare)
       const { SessionExecutionBridge } = await import('@infra/execution/session-bridge.js');
       const bridge = new SessionExecutionBridge(ctx.kataDir);
+      const activationName = await resolveCycleActivationName({
+        cycle: stagedCycle,
+        providedName: localOpts.name,
+        promptForName: shouldPromptForCycleName(Boolean(ctx.globalOpts.json))
+          ? promptForCycleActivationName
+          : undefined,
+      });
 
       if (agentId) {
         const { KataAgentRegistry } = await import('@infra/registries/kata-agent-registry.js');
@@ -760,7 +775,7 @@ export function registerCycleCommands(parent: Command): void {
 
       // prepareCycle() transitions planning → active via updateCycleState internally
       // Pass --name if provided so it's written to the cycle record at launch time (#346).
-      const result = bridge.prepareCycle(stagedCycle.id, agentId, localOpts.name);
+      const result = bridge.prepareCycle(stagedCycle.id, agentId, activationName.name);
 
       if (ctx.globalOpts.json) {
         console.log(JSON.stringify(result, null, 2));

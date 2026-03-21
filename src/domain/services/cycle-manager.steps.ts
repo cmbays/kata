@@ -52,7 +52,11 @@ function createCycleInState(
   const stateOrder: CycleState[] = ['planning', 'active', 'cooldown', 'complete'];
   const targetIdx = stateOrder.indexOf(state);
   for (let i = 1; i <= targetIdx; i++) {
-    w.cmCycle = w.cmManager!.transitionState(w.cmCycle.id, stateOrder[i]!);
+    const nextState = stateOrder[i]!;
+    const transitionName = nextState === 'active'
+      ? (name ?? 'Acceptance Cycle')
+      : undefined;
+    w.cmCycle = w.cmManager!.transitionState(w.cmCycle.id, nextState, transitionName);
   }
 
   w.cmUpdatedAtBefore = w.cmCycle.updatedAt;
@@ -201,6 +205,14 @@ Then(
   (world: CmWorld) => {
     expect(world.cmError).toBeDefined();
     expect(world.cmError!.message).toMatch(/Cannot transition/);
+  },
+);
+
+Then(
+  'the transition is rejected because the cycle has no name',
+  (world: CmWorld) => {
+    expect(world.cmError).toBeDefined();
+    expect(world.cmError!.message).toMatch(/cycle name is required before activation/i);
   },
 );
 

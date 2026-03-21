@@ -3,9 +3,9 @@
 > User Story Map — what users can accomplish with Kata, grouped by capability. This is a living document that grows as new features ship.
 >
 > **Companion documents**:
-> - [Product Design](v1-product-design.md) — Problem, scope, and success criteria
-> - [Interaction Design](v1-interaction-design.md) — How the user interacts with the system
-> - [Kata System Guide](kata-system-guide.md) — How the system works today
+> - [Product Design](product-design.md) — Problem, scope, and success criteria
+> - [Interaction Design](interaction-design.md) — How the user interacts with the system
+> - [Kata System Guide](../guides/system-guide.md) — How the system works today
 
 ---
 

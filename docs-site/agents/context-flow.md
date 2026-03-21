@@ -1,6 +1,6 @@
 # Kata Context Flow — Progressive Context Narrowing
 
-> Context flows down the agent tree. Each tier receives what it needs — nothing more.
+> Context flows down from the top-level orchestrator. Each tier receives what it needs — nothing more.
 
 ---
 
@@ -8,15 +8,15 @@
 
 ```
 User
-└── Bet Teammate — full skill package + bet context
-    └── Flavor Sub-Agent — focused skill subset + flavor context
+└── Sensei — full skill package + cycle/run context
+    └── Delegated Worker Agent — focused skill subset + flavor context
 ```
 
-Context narrows as you go deeper. Sub-agents do not receive the full skill package — only what they need to execute their flavor.
+Context narrows as you go deeper. Worker agents do not receive the full skill package — only what they need to execute their flavor.
 
 ---
 
-## Tier 1: Bet Teammate
+## Tier 1: Sensei
 
 **Receives from the user (or cycle start)**:
 
@@ -26,46 +26,46 @@ Context narrows as you go deeper. Sub-agents do not receive the full skill packa
 | `cli-reference.md` | `.kata/skill/cli-reference.md` | All CLI commands with JSON schemas |
 | `file-structure.md` | `.kata/skill/file-structure.md` | How to read state files |
 | `orchestration.md` | `.kata/skill/orchestration.md` | How to manage flavors and gates |
-| `context-flow.md` | `.kata/skill/context-flow.md` | This file — for sub-agent context construction |
-| `run-id` | from `kata cycle start --json` | Identifies the specific bet's run |
+| `context-flow.md` | `.kata/skill/context-flow.md` | This file — for worker context construction |
+| `run-id` | from `kata cycle start --json` | Identifies the active run being orchestrated |
 | `cycle-id` | from user or `kata cycle start --json` | Parent cycle context |
-| `bet-prompt` | from `run.json` or `kata cycle start --json` | The north star for this bet |
+| `bet-prompt` | from `run.json` or `kata cycle start --json` | The north star for the active run |
 | `kata-pattern` | from `run.json` | Which named pattern (e.g., "full-feature") |
 
 **Does NOT receive**:
 - Step-level prompts (those come from `kata step next --json`)
-- Flavor-specific resources (those go to flavor sub-agents)
+- Flavor-specific resources (those go to delegated workers)
 
 ---
 
-## Tier 2: Flavor Sub-Agent
+## Tier 2: Delegated Worker Agent
 
-**Receives from the bet teammate**:
+**Receives from sensei**:
 
 | Context Item | Source | Why |
 |-------------|--------|-----|
 | Condensed `skill.md` | `.kata/skill/skill.md` (workflow + CLI sections only) | Understands the basics without full overhead |
 | `cli-reference.md` | `.kata/skill/cli-reference.md` | Needs artifact and decision CLI commands |
-| `run-id` | from bet teammate | To call `kata artifact record` and `kata decision record` |
-| `stage` | from bet teammate | The stage category being executed |
-| `flavor` | from bet teammate | This agent's assigned flavor |
-| `bet-prompt` | from bet teammate | The north star context |
+| `run-id` | from sensei | To call `kata artifact record` and `kata decision record` |
+| `stage` | from sensei | The stage category being executed |
+| `flavor` | from sensei | This agent's assigned flavor |
+| `bet-prompt` | from sensei | The north star context |
 | `step-prompt` | from `kata step next --json` `.prompt` field | The actual instructions for the current step |
 | `step-resources` | from `kata step next --json` `.resources` field | Which tools/agents to use |
 | `prior-artifacts` | from `kata step next --json` `.priorArtifacts` field | Artifacts from earlier steps in this flavor |
 | `prior-stage-syntheses` | from `kata step next --json` `.priorStageSyntheses` field | Stage-level handoffs from completed stages |
 
 **Does NOT receive**:
-- `orchestration.md` — sub-agents don't orchestrate, they execute
-- `context-flow.md` — sub-agents don't spawn further sub-agents
-- `file-structure.md` — sub-agents don't need to browse state files; they use the artifact paths provided
-- Full run state — sub-agents work within their flavor only
+- `orchestration.md` — workers don't orchestrate, they execute
+- `context-flow.md` — workers don't spawn further workers
+- `file-structure.md` — workers don't need to browse state files; they use the artifact paths provided
+- Full run state — workers work within their flavor only
 
 ---
 
 ## What `kata step next --json` Provides
 
-The `kata step next --json` output is the **primary context injection mechanism**. When the bet teammate calls it, the response includes everything the active flavor needs:
+The `kata step next --json` output is the **primary context injection mechanism**. When sensei calls it, the response includes everything the active flavor needs:
 
 ```json
 {
@@ -91,13 +91,13 @@ The `kata step next --json` output is the **primary context injection mechanism*
 }
 ```
 
-The bet teammate extracts this context and passes the relevant fields to the flavor sub-agent.
+Sensei extracts this context and passes the relevant fields to the delegated worker.
 
 ---
 
-## Constructing Flavor Sub-Agent Context
+## Constructing Delegated Worker Context
 
-When spawning a flavor sub-agent, pass:
+When spawning a delegated worker, pass:
 
 ```
 You are executing the "<flavor>" flavor for stage "<stage>" in run "<run-id>".
@@ -134,8 +134,8 @@ Step: <step>
 
 ---
 
-## Key Principle: Minimal Context for Sub-Agents
+## Key Principle: Minimal Context for Worker Agents
 
-Flavor sub-agents work within a narrow, well-defined scope. Providing too much context creates confusion and wastes tokens. Provide only what is listed above.
+Worker agents operate within a narrow, well-defined scope. Providing too much context creates confusion and wastes tokens. Provide only what is listed above.
 
-The bet teammate holds the full picture. The sub-agent executes a slice of it.
+Sensei holds the full picture. The worker executes a slice of it.

@@ -25,6 +25,18 @@ Feature: Session bridge prepares in-session execution runs
     And each pending bet has exactly one bridge run
     And each prepared cycle run has a running run record
 
+  Scenario: Preparing an unnamed planning cycle is rejected
+    Given a planning cycle without a name and with pending bets "Fix the login bug"
+    When the session bridge tries to prepare the cycle for execution
+    Then preparing the cycle is rejected because the cycle has no name
+
+  Scenario: Preparing an unnamed planning cycle with a provided name activates it
+    Given a planning cycle without a name and with pending bets "Fix the login bug"
+    When the session bridge prepares the cycle for execution with name "Launch Cycle"
+    Then the cycle is marked "active"
+    And the cycle name becomes "Launch Cycle"
+    And the prepared cycle includes 1 run
+
   Scenario: Preparing the same cycle twice reuses the existing bridge runs
     Given a planning cycle named "Launch Cycle" with pending bets "Fix the login bug, Tighten tests"
     When the session bridge prepares the cycle for execution

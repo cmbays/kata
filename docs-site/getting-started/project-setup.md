@@ -3,9 +3,9 @@
 > KATA.md generation, init scanning, and the ongoing project context lifecycle.
 >
 > **Companion documents**:
-> - [Kataka Architecture](kataka-architecture.md) — What kataka are (agent identity, wrapping, attribution)
-> - [Sensei Orchestration](sensei-orchestration.md) — What the sensei does (execution, gap bridging)
-> - [Kata System Guide](kata-system-guide.md) — How the system works today
+> - [Kataka Architecture](../architecture/kataka.md) — What kataka are (agent identity, wrapping, attribution)
+> - [Sensei Orchestration](../architecture/sensei-orchestration.md) — What the sensei does (execution, gap bridging)
+> - [Kata System Guide](../guides/system-guide.md) — How the system works today
 
 ---
 
@@ -136,4 +136,4 @@ Classification is recorded as a kime with confidence. Low-confidence classificat
 
 ---
 
-*See [Kataka Architecture](kataka-architecture.md) for agent identity and wrapping mechanics.*
+*See [Kataka Architecture](../architecture/kataka.md) for agent identity and wrapping mechanics.*
