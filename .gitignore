@@ -29,6 +29,15 @@ Thumbs.db
 # npm pack output
 *.tgz
 
+# Claude Code config
+.claude/*
+!.claude/bin/
+!.claude/hooks/
+!.claude/rules/
+!.claude/skills/
+!.claude/settings.json
+!.claude/settings.local.json
+
 # Local worktrees and scratch space
 .claude/worktrees/
 tmp/

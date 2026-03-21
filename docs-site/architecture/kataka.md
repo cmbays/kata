@@ -4,9 +4,9 @@
 >
 > **Companion documents**:
 > - [Sensei Orchestration](sensei-orchestration.md) — What the sensei does (execution, gap bridging)
-> - [Project Setup](project-setup.md) — How you set up and maintain a project (KATA.md, init scanning)
-> - [Kata System Guide](kata-system-guide.md) — How the system works today
-> - [Meta-Learning Architecture](meta-learning-architecture.md) — The observation and knowledge systems
+> - [Project Setup](../getting-started/project-setup.md) — How you set up and maintain a project (KATA.md, init scanning)
+> - [Kata System Guide](../guides/system-guide.md) — How the system works today
+> - [Meta-Learning Architecture](meta-learning.md) — The observation and knowledge systems
 >
 > The kataka system is designed but not yet fully built.
 
@@ -28,7 +28,7 @@ Kata is a methodology engine. It encodes how work should flow — gyo, ryu, waza
 
 ## 2. The Kata Lexicon
 
-> The complete vocabulary lives in [System Guide — The Kata Lexicon](kata-system-guide.md#11-the-kata-lexicon). This section covers only kataka-specific terms.
+> The complete vocabulary lives in [System Guide — The Kata Lexicon](../guides/system-guide.md#11-the-kata-lexicon). This section covers only kataka-specific terms.
 
 The `-ka` suffix (家, "practitioner") on an agent name signals it is a **Kata-native wrapper agent**. The convention comes from Japanese martial arts — judoka (柔道家), karateka (空手家), kendoka (剣道家). A kataka (型家) is a practitioner of kata (型, form).
 
@@ -55,7 +55,7 @@ Always-loaded ambient knowledge about the project.
 | `AGENTS.md` | Cross-tool project context | Build commands, test instructions, code style |
 | `.kata/config.json` | Kata configuration | Gyo, ryu, adapter, thresholds |
 
-`.kata/KATA.md` is generated/updated by `kata rei` and refreshed by `kata ma`. See [Project Setup](project-setup.md) for details.
+`.kata/KATA.md` is generated/updated by `kata rei` and refreshed by `kata ma`. See [Project Setup](../getting-started/project-setup.md) for details.
 
 ### Layer 2: Skills — "How to do things"
 

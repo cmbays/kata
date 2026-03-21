@@ -986,6 +986,17 @@ describe('SessionExecutionBridge', () => {
       expect(() => bridge.prepareCycle(cycle.id)).toThrow(cycle.id);
     });
 
+    it('should reject preparing a planning cycle without a name', () => {
+      const cycle = createCycle(kataDir, { state: 'planning' });
+      const cyclePath = join(kataDir, 'cycles', `${cycle.id}.json`);
+      const stored = JSON.parse(readFileSync(cyclePath, 'utf-8')) as Record<string, unknown>;
+      delete stored['name'];
+      writeFileSync(cyclePath, JSON.stringify(stored, null, 2));
+      const bridge = new SessionExecutionBridge(kataDir);
+
+      expect(() => bridge.prepareCycle(cycle.id)).toThrow(/must have a non-empty name/);
+    });
+
     it('should resolve cycle by name', () => {
       const cycle = createCycle(kataDir, { name: 'My Cycle' });
       const bridge = new SessionExecutionBridge(kataDir);
@@ -1102,7 +1113,7 @@ describe('SessionExecutionBridge', () => {
       const bridge = new SessionExecutionBridge(kataDir);
 
       const first = bridge.prepareCycle(cycle.id);
-      const second = bridge.prepareCycle(cycle.id, undefined, 'Renamed Cycle');
+      const second = bridge.prepareCycle(cycle.id, undefined, '  Renamed Cycle  ');
 
       expect(second.preparedRuns.map((run) => run.runId)).toEqual(
         first.preparedRuns.map((run) => run.runId),

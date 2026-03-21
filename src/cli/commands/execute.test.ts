@@ -84,8 +84,10 @@ function makePipelineResult(categories: string[]) {
 describe('registerExecuteCommands', () => {
   const baseDir = join(tmpdir(), `kata-execute-cmd-test-${Date.now()}`);
   const kataDir = join(baseDir, '.kata');
+  const testBinDir = join(baseDir, '.test-bin');
   let consoleSpy: ReturnType<typeof vi.spyOn>;
   let errorSpy: ReturnType<typeof vi.spyOn>;
+  let originalPath: string | undefined;
 
   beforeEach(() => {
     mkdirSync(join(kataDir, 'stages'), { recursive: true });
@@ -94,8 +96,10 @@ describe('registerExecuteCommands', () => {
     mkdirSync(join(kataDir, 'tracking'), { recursive: true });
     mkdirSync(join(kataDir, 'katas'), { recursive: true });
     mkdirSync(join(kataDir, 'kataka'), { recursive: true });
+    mkdirSync(testBinDir, { recursive: true });
     consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    originalPath = process.env['PATH'];
     mockRunStage.mockResolvedValue(makeSingleResult());
     mockRunPipeline.mockResolvedValue(makePipelineResult(['build', 'review']));
     mockBridgeGaps.mockReturnValue({ blocked: [], bridged: [] });
@@ -104,6 +108,7 @@ describe('registerExecuteCommands', () => {
 
   afterEach(() => {
     rmSync(baseDir, { recursive: true, force: true });
+    process.env['PATH'] = originalPath;
     consoleSpy.mockRestore();
     errorSpy.mockRestore();
     vi.clearAllMocks();
@@ -129,6 +134,22 @@ describe('registerExecuteCommands', () => {
         active: true,
       }, null, 2),
     );
+  }
+
+  async function withStubbedClaudeOutput<T>(output: string, run: () => Promise<T>): Promise<T> {
+    writeFileSync(
+      join(testBinDir, 'claude'),
+      `#!/usr/bin/env node\nprocess.stdout.write(${JSON.stringify(`${output}\n`)});\n`,
+      { encoding: 'utf-8', mode: 0o755 },
+    );
+
+    process.env['PATH'] = `${testBinDir}${process.platform === 'win32' ? ';' : ':'}${originalPath ?? ''}`;
+
+    try {
+      return await run();
+    } finally {
+      process.env['PATH'] = originalPath;
+    }
   }
 
   function writeInvalidAgentRecord(id: string): void {
@@ -231,6 +252,7 @@ describe('registerExecuteCommands', () => {
       expect(cycleCmd!.options.find((o) => o.long === '--complete')?.description).toBe('Complete all in-progress runs in the cycle');
       expect(cycleCmd!.options.find((o) => o.long === '--agent')?.description).toBe('Agent ID to attribute all prepared runs to (only used with --prepare)');
       expect(cycleCmd!.options.find((o) => o.long === '--kataka')?.description).toBe('Alias for --agent <id>');
+      expect(cycleCmd!.options.find((o) => o.long === '--name')?.description).toBe('Human-readable name to assign before activation when preparing an unnamed planning cycle');
       expect(cycleCmd!.options.find((o) => o.long === '--json')?.description).toBe('Output as JSON');
     });
 
@@ -302,6 +324,110 @@ describe('registerExecuteCommands', () => {
 
       expect(process.exitCode).toBe(1);
       expect(errorSpy.mock.calls.map((c) => c[0]).join('\n')).toContain(`agent "${missingAgentId}" not found`);
+    });
+
+    it('auto-suggests a name when preparing an unnamed cycle without --name', async () => {
+      const manager = new CycleManager(join(kataDir, 'cycles'), JsonStore);
+      const cycle = manager.create({ tokenBudget: 100000 });
+      manager.addBet(cycle.id, {
+        description: 'Unnamed bet',
+        appetite: 20,
+        outcome: 'pending',
+        issueRefs: [],
+      });
+
+      await withStubbedClaudeOutput('Prepared Cycle Name', async () => {
+        const program = createProgram();
+        await program.parseAsync([
+          'node', 'test', '--cwd', baseDir, 'execute', 'cycle', cycle.id, '--prepare',
+        ]);
+      });
+
+      const output = consoleSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('Prepared Cycle Name');
+      expect(manager.get(cycle.id).name).toBe('Prepared Cycle Name');
+    });
+
+    it('allows --name to prepare an unnamed cycle', async () => {
+      const manager = new CycleManager(join(kataDir, 'cycles'), JsonStore);
+      const cycle = manager.create({ tokenBudget: 100000 });
+      manager.addBet(cycle.id, {
+        description: 'Unnamed bet',
+        appetite: 20,
+        outcome: 'pending',
+        issueRefs: [],
+      });
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--json', '--cwd', baseDir,
+        'execute', 'cycle', cycle.id, '--prepare', '--name', '  Prepared By Name  ',
+      ]);
+
+      const parsed = JSON.parse(consoleSpy.mock.calls[0]?.[0] as string);
+      expect(parsed.cycleName).toBe('Prepared By Name');
+
+      expect(manager.get(cycle.id).name).toBe('Prepared By Name');
+    });
+
+    it('rejects whitespace-only --name when preparing an unnamed cycle', async () => {
+      const manager = new CycleManager(join(kataDir, 'cycles'), JsonStore);
+      const cycle = manager.create({ tokenBudget: 100000 });
+      manager.addBet(cycle.id, {
+        description: 'Unnamed bet',
+        appetite: 20,
+        outcome: 'pending',
+        issueRefs: [],
+      });
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir,
+        'execute', 'cycle', cycle.id, '--prepare', '--name', '   ',
+      ]);
+
+      expect(process.exitCode).toBe(1);
+      expect(errorSpy.mock.calls.map((c) => c[0]).join('\n')).toContain(
+        'Cycle name must be non-empty when provided.',
+      );
+    });
+
+    it('treats a whitespace-only stored cycle name as unnamed and auto-suggests a replacement', async () => {
+      const manager = new CycleManager(join(kataDir, 'cycles'), JsonStore);
+      const cycle = manager.create({ tokenBudget: 100000 }, 'Placeholder');
+      manager.addBet(cycle.id, {
+        description: 'Whitespace name bet',
+        appetite: 20,
+        outcome: 'pending',
+        issueRefs: [],
+      });
+
+      const cyclePath = join(kataDir, 'cycles', `${cycle.id}.json`);
+      const storedCycle = JSON.parse(readFileSync(cyclePath, 'utf-8'));
+      storedCycle.name = '   ';
+      writeFileSync(cyclePath, JSON.stringify(storedCycle, null, 2));
+
+      await withStubbedClaudeOutput('Recovered Cycle Name', async () => {
+        const program = createProgram();
+        await program.parseAsync([
+          'node', 'test', '--cwd', baseDir, 'execute', 'cycle', cycle.id, '--prepare',
+        ]);
+      });
+
+      expect(manager.get(cycle.id).name).toBe('Recovered Cycle Name');
+    });
+
+    it('reports unresolved refs as cycles when execute cycle cannot resolve the target', async () => {
+      const program = createProgram();
+
+      await program.parseAsync([
+        'node', 'test', '--cwd', baseDir, 'execute', 'cycle', 'missing-cycle', '--status',
+      ]);
+
+      expect(process.exitCode).toBe(1);
+      expect(errorSpy.mock.calls.map((c) => c[0]).join('\n')).toContain(
+        'Cycle "missing-cycle" not found.',
+      );
     });
 
     it('renders cycle status with budget and activity counts', async () => {
@@ -2136,4 +2262,3 @@ describe('registerExecuteCommands', () => {
     });
   });
 });
-

@@ -188,7 +188,7 @@ describe('SessionExecutionBridge unit coverage', () => {
 
     const first = bridge.prepareCycle(cycle.id);
     const agentId = randomUUID();
-    const second = bridge.prepareCycle(cycle.id, agentId, 'Renamed Cycle');
+    const second = bridge.prepareCycle(cycle.id, agentId, '  Renamed Cycle  ');
 
     expect(second.preparedRuns.map((run) => run.runId)).toEqual(first.preparedRuns.map((run) => run.runId));
     expect(second.preparedRuns.every((run) => run.agentId === agentId)).toBe(true);
@@ -435,22 +435,33 @@ describe('SessionExecutionBridge unit coverage', () => {
         tokenUsage: { inputTokens: 1000, outputTokens: 400, total: 1400 },
       },
     };
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
 
-    const summary = bridge.completeCycle(cycle.id, results);
+    try {
+      const summary = bridge.completeCycle(cycle.id, results);
 
-    expect(summary.completedBets).toBe(1);
-    expect(summary.totalBets).toBe(2);
-    expect(summary.totalDurationMs).toBe(180000);
-    expect(summary.tokenUsage).toEqual({ inputTokens: 1000, outputTokens: 400, total: 1400 });
+      expect(summary.completedBets).toBe(1);
+      expect(summary.totalBets).toBe(2);
+      expect(summary.totalDurationMs).toBe(180000);
+      expect(summary.tokenUsage).toEqual({ inputTokens: 1000, outputTokens: 400, total: 1400 });
 
-    const firstRun = RunSchema.parse(JSON.parse(readFileSync(join(kataDir, 'runs', firstRunId, 'run.json'), 'utf-8')));
-    const secondRun = RunSchema.parse(JSON.parse(readFileSync(join(kataDir, 'runs', secondRunId, 'run.json'), 'utf-8')));
-    expect(firstRun.status).toBe('failed');
-    expect(secondRun.status).toBe('completed');
+      const firstRun = RunSchema.parse(JSON.parse(readFileSync(join(kataDir, 'runs', firstRunId, 'run.json'), 'utf-8')));
+      const secondRun = RunSchema.parse(JSON.parse(readFileSync(join(kataDir, 'runs', secondRunId, 'run.json'), 'utf-8')));
+      expect(firstRun.status).toBe('failed');
+      expect(secondRun.status).toBe('completed');
 
-    const updatedCycle = CycleSchema.parse(JSON.parse(readFileSync(join(kataDir, 'cycles', `${cycle.id}.json`), 'utf-8')));
-    expect(updatedCycle.bets.map((bet) => bet.outcome)).toEqual(expect.arrayContaining(['partial', 'complete']));
-    expect(existsSync(join(kataDir, 'history'))).toBe(true);
+      const updatedCycle = CycleSchema.parse(JSON.parse(readFileSync(join(kataDir, 'cycles', `${cycle.id}.json`), 'utf-8')));
+      expect(updatedCycle.bets.map((bet) => bet.outcome)).toEqual(expect.arrayContaining(['partial', 'complete']));
+      expect(existsSync(join(kataDir, 'history'))).toBe(true);
+
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining(`No completion result provided for run "${secondRunId}"`),
+      );
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('defaulting to success'));
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 
   // estimateBudgetUsage, countJsonlLines, countRunData tests moved to session-bridge-run-stats.test.ts
@@ -586,12 +597,24 @@ describe('SessionExecutionBridge unit coverage', () => {
 
     // Use standalone store function to list bridge runs
     const bridgeRuns = bridgeRunStore.listBridgeRunsForCycle(join(kataDir, 'bridge-runs'), cycle.id);
+    const originalReadBridgeRunMeta = bridgeRunStore.readBridgeRunMeta;
+    const readBridgeRunMetaSpy = vi.spyOn(bridgeRunStore, 'readBridgeRunMeta').mockImplementation((dir, runId) => {
+      if (runId === prepared.preparedRuns[1]!.runId) {
+        return null;
+      }
 
-    const totals = (bridge as unknown as {
-      collectCycleCompletionTotals: (bridgeRuns: Array<{ runId: string }>) => { completedBets: number; totalDurationMs: number };
-    }).collectCycleCompletionTotals(bridgeRuns);
+      return originalReadBridgeRunMeta(dir, runId);
+    });
 
-    expect(totals.completedBets).toBeGreaterThanOrEqual(1);
+    try {
+      const totals = (bridge as unknown as {
+        collectCycleCompletionTotals: (bridgeRuns: Array<{ runId: string }>) => { completedBets: number; totalDurationMs: number };
+      }).collectCycleCompletionTotals(bridgeRuns);
+
+      expect(totals.completedBets).toBe(1);
+    } finally {
+      readBridgeRunMetaSpy.mockRestore();
+    }
   });
 
   it('readBridgeRunMeta returns null when file does not exist', () => {

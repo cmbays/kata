@@ -1,9 +1,14 @@
 Feature: CycleManager enforces domain rules for state transitions and bet outcomes
 
-  Scenario: transitionState advances a planning cycle to active
-    Given a cycle in "planning" state with bet "Ship the feature"
+  Scenario: transitionState advances a named planning cycle to active
+    Given a cycle in "planning" state with bet "Ship the feature" named "Launch Cycle"
     When the cycle transitions to "active"
     Then the cycle state is "active"
+
+  Scenario: transitionState rejects activating an unnamed planning cycle
+    Given a cycle in "planning" state with bet "Ship the feature"
+    When the cycle transitions to "active"
+    Then the transition is rejected because the cycle has no name
 
   Scenario: transitionState advances an active cycle to cooldown
     Given a cycle in "active" state with bet "Ship the feature"

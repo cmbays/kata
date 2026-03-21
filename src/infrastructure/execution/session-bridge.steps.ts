@@ -25,6 +25,7 @@ class SessionBridgeWorld extends QuickPickleWorld {
   kataDir?: string;
   bridge?: SessionExecutionBridge;
   cycle?: Cycle;
+  error?: Error;
   prepared?: PreparedRun;
   preparedCycle?: PreparedCycle;
   initialPreparedRunIds?: string[];
@@ -83,6 +84,29 @@ function createCycleWithBets(kataDir: string, name: string, state: 'planning' | 
       outcome: 'pending',
     })),
     state,
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  const cyclesDir = join(kataDir, KATA_DIRS.cycles);
+  mkdirSync(cyclesDir, { recursive: true });
+  writeFileSync(join(cyclesDir, `${cycle.id}.json`), JSON.stringify(cycle, null, 2));
+
+  return cycle;
+}
+
+function createUnnamedPlanningCycle(kataDir: string, betDescriptions: string[]): Cycle {
+  const now = new Date().toISOString();
+  const cycle = CycleSchema.parse({
+    id: randomUUID(),
+    budget: { tokenBudget: 100000 },
+    bets: betDescriptions.map((description) => ({
+      id: randomUUID(),
+      description,
+      appetite: 30,
+      outcome: 'pending',
+    })),
+    state: 'planning',
     createdAt: now,
     updatedAt: now,
   });
@@ -174,6 +198,18 @@ Given(
 );
 
 Given(
+  'a planning cycle without a name and with pending bets {string}',
+  (world: SessionBridgeWorld, betNames: string) => {
+    world.kataDir = createTestDir();
+    world.cycle = createUnnamedPlanningCycle(
+      world.kataDir,
+      betNames.split(',').map((bet) => bet.trim()).filter(Boolean),
+    );
+    world.bridge = new SessionExecutionBridge(world.kataDir);
+  },
+);
+
+Given(
   'an active cycle named {string} with pending bets {string}',
   (world: SessionBridgeWorld, cycleName: string, betNames: string) => {
     world.kataDir = createTestDir();
@@ -243,6 +279,30 @@ When('the session bridge prepares the cycle for execution', (world: SessionBridg
 
   world.preparedCycle = world.bridge.prepareCycle(world.cycle.id);
   world.initialPreparedRunIds = world.preparedCycle.preparedRuns.map((run) => run.runId);
+});
+
+When(
+  'the session bridge prepares the cycle for execution with name {string}',
+  (world: SessionBridgeWorld, cycleName: string) => {
+    if (!world.bridge || !world.cycle) {
+      throw new Error('Expected a planning cycle and session bridge before preparing a cycle.');
+    }
+
+    world.preparedCycle = world.bridge.prepareCycle(world.cycle.id, undefined, cycleName);
+    world.initialPreparedRunIds = world.preparedCycle.preparedRuns.map((run) => run.runId);
+  },
+);
+
+When('the session bridge tries to prepare the cycle for execution', (world: SessionBridgeWorld) => {
+  if (!world.bridge || !world.cycle) {
+    throw new Error('Expected a planning cycle and session bridge before preparing a cycle.');
+  }
+
+  try {
+    world.preparedCycle = world.bridge.prepareCycle(world.cycle.id);
+  } catch (error) {
+    world.error = error as Error;
+  }
 });
 
 When('the session bridge prepares the same cycle again', (world: SessionBridgeWorld) => {
@@ -357,6 +417,16 @@ Then('the cycle is marked {string}', (world: SessionBridgeWorld, state: string) 
   expect(updated.state).toBe(state);
 });
 
+Then('the cycle name becomes {string}', (world: SessionBridgeWorld, cycleName: string) => {
+  if (!world.kataDir || !world.cycle) {
+    throw new Error('Expected a cycle before checking its name.');
+  }
+
+  const cyclePath = join(world.kataDir, KATA_DIRS.cycles, `${world.cycle.id}.json`);
+  const updated = CycleSchema.parse(JSON.parse(readFileSync(cyclePath, 'utf-8')));
+  expect(updated.name).toBe(cycleName);
+});
+
 Then('the prepared cycle includes {int} runs', (world: SessionBridgeWorld, count: number) => {
   expect(world.preparedCycle?.preparedRuns).toHaveLength(count);
 });
@@ -394,6 +464,11 @@ Then('each prepared cycle run has a running run record', (world: SessionBridgeWo
 
 Then('the repeated prepare reuses the existing run ids', (world: SessionBridgeWorld) => {
   expect(world.preparedCycle?.preparedRuns.map((run) => run.runId)).toEqual(world.initialPreparedRunIds);
+});
+
+Then('preparing the cycle is rejected because the cycle has no name', (world: SessionBridgeWorld) => {
+  expect(world.error).toBeDefined();
+  expect(world.error!.message).toContain('must have a non-empty name');
 });
 
 Then('the cycle status for bet {string} is {string}', (world: SessionBridgeWorld, betName: string, status: string) => {

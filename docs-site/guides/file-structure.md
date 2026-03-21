@@ -18,7 +18,7 @@
       stages/
         <category>/            # research | plan | build | review
           state.json           # Stage state
-          synthesis.md         # Stage-level synthesis (written DIRECTLY by bet teammate — no CLI)
+          synthesis.md         # Stage-level synthesis (written DIRECTLY by sensei/top-level orchestrator — no CLI)
           flavors/
             <step-type>/       # NOTE: currently keyed by step type, not flavor name
               state.json                   # FlavorState — must be written manually to advance steps
@@ -135,7 +135,7 @@ Location: `.kata/runs/<run-id>/stages/<category>/state.json`
 | `executionMode` | enum? | `parallel` \| `sequential`; set by orchestrator |
 | `selectedFlavors` | string[] | Flavors chosen for this stage; empty until orchestrator selects |
 | `gaps` | Gap[] | Gap analysis findings; may be empty |
-| `synthesisArtifact` | string? | Relative path to synthesis.md once written directly by bet teammate |
+| `synthesisArtifact` | string? | Relative path to synthesis.md once written directly by sensei/top-level orchestrator |
 | `decisions` | UUID[] | Decision IDs recorded in this stage |
 | `pendingGate` | PendingGate? | Present when a gate is blocking; cleared by `kata approve` |
 | `approvedGates` | ApprovedGate[] | History of approved gates |

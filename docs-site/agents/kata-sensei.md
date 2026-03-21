@@ -191,7 +191,7 @@ When running a full cycle with Claude Code teams, the sensei acts as the **team 
 
 - Sensei is the meta-orchestrator for the **entire cycle and all its bets**.
 - Create a team with `TeamCreate`, then manage work via the task list.
-- One task per bet; subtasks for individual stages/flavors within each bet.
+- Keep scheduling centralized in sensei; dispatch worker tasks directly for the active stage/flavor work instead of relying on workers to spawn more workers.
 
 ### Session Bridge
 

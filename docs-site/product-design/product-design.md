@@ -3,10 +3,10 @@
 > Linear Project Brief — what Kata is, what's in scope for v1, and how we know it's working.
 >
 > **Companion documents**:
-> - [Design Rationale](v1-design-vision.md) — Why Kata is built the way it is
-> - [User Journeys](v1-user-journeys.md) — What users can accomplish (stories + story mapping)
-> - [Interaction Design](v1-interaction-design.md) — How the user interacts with the system
-> - [Kata System Guide](kata-system-guide.md) — How the system works today
+> - [Design Rationale](design-vision.md) — Why Kata is built the way it is
+> - [User Journeys](user-journeys.md) — What users can accomplish (stories + story mapping)
+> - [Interaction Design](interaction-design.md) — How the user interacts with the system
+> - [Kata System Guide](../guides/system-guide.md) — How the system works today
 
 ---
 
@@ -77,7 +77,7 @@ Kata is the railroad tracks. The AI agent is the train. Different trains (Claude
 
 6. **The skill file is the primary agent interface.** A well-written skill package is more important than a complex API.
 
-7. **Themed vocabulary.** Japanese karate aliases are the default experience. `--plain` mode shows English equivalents. See [System Guide — The Kata Lexicon](kata-system-guide.md#11-the-kata-lexicon) for the complete vocabulary.
+7. **Themed vocabulary.** Japanese karate aliases are the default experience. `--plain` mode shows English equivalents. See [System Guide — The Kata Lexicon](../guides/system-guide.md#11-the-kata-lexicon) for the complete vocabulary.
 
 ---
 

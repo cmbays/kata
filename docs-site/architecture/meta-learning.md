@@ -3,9 +3,9 @@
 > How Kata learns from its own execution — the observation system, knowledge graph, and self-improvement loop that make the system compound over time.
 >
 > **Companion documents**:
-> - [Kata System Guide](kata-system-guide.md) — Overview hub for the whole system
-> - [Design Rationale](v1-design-vision.md) — Why Kata is built the way it is
-> - [Dojo Architecture](dojo-architecture.md) — The personal training environment that consumes meta-learning data
+> - [Kata System Guide](../guides/system-guide.md) — Overview hub for the whole system
+> - [Design Rationale](../product-design/design-vision.md) — Why Kata is built the way it is
+> - [Dojo Architecture](dojo.md) — The personal training environment that consumes meta-learning data
 >
 > The basic self-improvement loop (LearningExtractor, PromptUpdater, cooldown capture) is implemented. The observation system, knowledge graph enrichment, detection engines, and LLM synthesis described here ship progressively.
 
@@ -487,4 +487,4 @@ The kataka can make informed kime about how much to trust each piece of bunkai. 
 
 ---
 
-*See [Kata System Guide](kata-system-guide.md) for how meta-learning fits into the broader system.*
+*See [Kata System Guide](../guides/system-guide.md) for how meta-learning fits into the broader system.*

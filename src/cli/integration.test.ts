@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
@@ -131,6 +131,29 @@ describe('Integration: cycle flow', () => {
     const output = logSpy.mock.calls.map((c) => c[0]).join('\n');
     expect(output).toContain('Cycle created');
     expect(output).toContain('test-cycle');
+  });
+
+  it('kata cycle new --skip-prompts can create an unnamed draft cycle', async () => {
+    const p1 = makeProgram();
+    await p1.parseAsync(['node', 'test', '--cwd', baseDir, 'init', '--skip-prompts']);
+    logSpy.mockClear();
+
+    const p2 = makeProgram();
+    await p2.parseAsync([
+      'node', 'test', '--cwd', baseDir,
+      'cycle', 'new', '--skip-prompts', '-b', '100000',
+    ]);
+
+    const output = logSpy.mock.calls.map((c) => c[0]).join('\n');
+    expect(output).toContain('Cycle created');
+
+    const cyclesDir = join(baseDir, KATA_DIRS.root, KATA_DIRS.cycles);
+    const cycleFiles = readdirSync(cyclesDir).filter((entry) => entry.endsWith('.json'));
+    expect(cycleFiles).toHaveLength(1);
+
+    const cycle = JSON.parse(readFileSync(join(cyclesDir, cycleFiles[0]!), 'utf-8')) as { name?: string; state: string };
+    expect(cycle.name).toBeUndefined();
+    expect(cycle.state).toBe('planning');
   });
 
   it('kata cycle status shows the created cycle', async () => {

@@ -43,6 +43,11 @@ import {
   type CycleCompletionTotals,
 } from '@infra/execution/session-bridge-cycle-completion.js';
 
+function normalizeCycleName(name: string | undefined): string | undefined {
+  const trimmed = name?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
 /**
  * SessionExecutionBridge — splits the adapter lifecycle for in-session execution.
  *
@@ -180,16 +185,21 @@ export class SessionExecutionBridge implements ISessionExecutionBridge {
   prepareCycle(cycleId: string, agentId?: string, name?: string): PreparedCycle {
     const cycle = this.cycleManager.get(cycleId);
     const pendingBets = cycle.bets.filter((b) => b.outcome === 'pending');
+    const resolvedName = normalizeCycleName(name) ?? normalizeCycleName(cycle.name);
 
     if (pendingBets.length === 0) {
       throw new Error(`No pending bets in cycle "${cycle.name ?? cycle.id}".`);
     }
+    if (!resolvedName) {
+      throw new Error(
+        `Cycle "${cycle.id}" must have a non-empty name before it can be prepared. Pass --name <name> when preparing or launching it.`,
+      );
+    }
 
     // Write name and transition state BEFORE preparing runs so each bridge-run
     // file is written with the resolved cycle name (#346).
-    this.cycleManager.transitionState(cycle.id, 'active', name);
+    this.cycleManager.transitionState(cycle.id, 'active', resolvedName);
     const updatedCycle = this.cycleManager.get(cycle.id);
-    const resolvedName = updatedCycle.name ?? cycle.id;
     const inProgressBridgeRuns = listBridgeRunsForCycle(this.bridgeRunsDir, cycle.id)
       .filter((meta) => meta.status === 'in-progress');
     const bridgeRunsByRunId = new Map(inProgressBridgeRuns.map((meta) => [meta.runId, meta]));

@@ -3,9 +3,9 @@
 > Functional Spec — how the user interacts with Kata: orchestration flows, CLI patterns, state files, and skill package structure.
 >
 > **Companion documents**:
-> - [Product Design](v1-product-design.md) — Problem, scope, and success criteria
-> - [User Journeys](v1-user-journeys.md) — What users can accomplish
-> - [Kata System Guide](kata-system-guide.md) — How the system works today (the canonical lexicon lives here)
+> - [Product Design](product-design.md) — Problem, scope, and success criteria
+> - [User Journeys](user-journeys.md) — What users can accomplish
+> - [Kata System Guide](../guides/system-guide.md) — How the system works today (the canonical lexicon lives here)
 
 ---
 
@@ -39,7 +39,7 @@ Each gyo (stage) runs a 6-phase orchestration loop:
 │                                                  │
 │ 4. EXECUTE                                       │
 │    Run selected ryu (parallel or sequential)      │
-│    Each ryu = sub-agent with waza sequence        │
+│    Each ryu = delegated worker with waza sequence │
 │    → FlavorExecutionResult[] collected           │
 │                                                  │
 │ 5. SYNTHESIZE                                    │
@@ -82,7 +82,7 @@ The agent interacts with Kata through three channels:
 **3. Skill package (instructions + reference):**
 - Teaches the agent how Kata works, when to use which commands, how to orchestrate
 - Includes workflow guidelines, context flow patterns, CLI reference
-- Distributed to all sub-agents spawned during execution
+- Distributed to delegated worker agents spawned during execution
 
 ### Flag Conventions
 
@@ -106,7 +106,7 @@ The agent interacts with Kata through three channels:
 - Thematically coherent with the karate/dojo metaphor
 - `--plain` mode shows English equivalents
 
-> For the complete command/alias table, see [System Guide — The Kata Lexicon](kata-system-guide.md#11-the-kata-lexicon).
+> For the complete command/alias table, see [System Guide — The Kata Lexicon](../guides/system-guide.md#11-the-kata-lexicon).
 
 ---
 
@@ -162,8 +162,8 @@ User: "Looks good. Start it."
 Claude:
   → kata keiko start <id>
   → Creates .kata/runs/<run-1>/ ... <run-3>/
-  → Spawns 3 bet teammates (Claude Code teams)
-  → "Keiko started. 3 pipelines running.
+  → Sensei remains the shared orchestrator and dispatches worker agents as bets and stages become ready
+  → "Keiko started. 3 pipelines are now under sensei orchestration.
      Open kata kanshi in another pane to monitor."
 ```
 
@@ -172,21 +172,17 @@ Claude:
 **Agent hierarchy during execution:**
 
 ```text
-Main Claude (user-facing orchestrator)
-├── Bet-1 teammate (AUTH-42, full-feature)
-│   ├── Gyo: RESEARCH
-│   │   ├── 6-phase orchestration loop
-│   │   ├── Ryu sub-agent: technical-research
-│   │   └── Ryu sub-agent: codebase-analysis
-│   ├── Gyo: PLAN
-│   │   └── Ryu sub-agent: architecture
-│   ├── Gyo: BUILD ...
-│   └── Gyo: REVIEW ...
-├── Bet-2 teammate (PERF-18, full-feature) ...
-└── Bet-3 teammate (UI-99, quick-fix) ...
+Main Claude / Sensei (user-facing orchestrator)
+├── Tracks Bet-1 state (AUTH-42, full-feature)
+├── Tracks Bet-2 state (PERF-18, full-feature)
+├── Tracks Bet-3 state (UI-99, quick-fix)
+├── Worker agent: AUTH-42 / RESEARCH / technical-research
+├── Worker agent: AUTH-42 / RESEARCH / codebase-analysis
+├── Worker agent: PERF-18 / PLAN / architecture
+└── Worker agent: UI-99 / REVIEW / ux-review
 ```
 
-**Bet teammate is the gyo orchestrator.** It runs the 6-phase loop per gyo, spawns sub-agents for each selected ryu, collects results, writes synthesis, and advances to the next gyo.
+**Sensei is the gyo orchestrator.** It runs the 6-phase loop across active bets, spawns worker agents for the selected ryu, collects results, writes synthesis, and advances the run to the next gyo.
 
 ### 3.4 Monitoring (TUI + Conversational)
 
@@ -417,7 +413,7 @@ Effects: `boost` | `penalize` | `require` | `exclude`
   classification.md       # Heuristics for resource classification (rei scanning)
 ```
 
-**skill.md** teaches the agent: what Kata is, the three-tier hierarchy, how to start a keiko, execute a kata, record maki, check mon, spawn sub-agents for parallel ryu execution, and what context each sub-agent should receive.
+**skill.md** teaches the agent: what Kata is, the orchestrator-plus-worker hierarchy, how to start a keiko, execute a kata, record maki, check mon, dispatch worker agents for parallel ryu execution, and what context each worker should receive.
 
 ---
 

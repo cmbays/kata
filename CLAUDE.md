@@ -38,6 +38,8 @@ Run tests by pattern: `npx vitest run -t "PatternName"`
 
 Read `MEMORY.md` for the Cross-Repo Registry and current ops entrypoints. Do not hardcode private `ops` paths in tracked docs.
 
+Scoped repo rules live in `.claude/rules/`. Keep them aligned with the codebase so file-specific guidance loads only when the matching area is touched.
+
 ## Architecture
 
 **Dependency direction**: domain → infrastructure → features → shared → cli (strict, no reverse imports)
@@ -106,3 +108,21 @@ gh api repos/{owner}/{repo}/pulls/NNN/reviews
 ## Implementation status
 
 **Keiko 5 complete.** ~3013 tests across 147 files. See `MEMORY.md` for current state and cross-repo entrypoints.
+
+## Rule Maintenance
+
+- When a bug, review comment, or recurring friction reveals a repo-specific pattern, update the matching file in `.claude/rules/` in the same change.
+- Keep rules path-scoped, short, and concrete. Move durable file-area guidance into rules instead of growing this root file indefinitely.
+- If a new subsystem accumulates distinct conventions, add a new scoped rule file rather than overloading an unrelated one.
+
+## Compact Instructions
+
+Preserve during compaction:
+- Build/test commands, dependency direction, session-bridge constraints, quality gates, and cross-repo boundary rules.
+- Repo-specific conventions that are easy to forget: worktrees for tracked edits, co-located `.feature` files, `quickpickle`, and REST-over-GraphQL for PR operations.
+
+Discard during compaction:
+- Temporary branch names, one-off debugging notes, stale issue references, ephemeral local paths, and generated counts that can be rediscovered quickly.
+
+Rehydrate from source when needed:
+- `README.md`, `MEMORY.md`, `package.json`, `.claude/rules/`, and the nearest tests/features for the area being changed.
