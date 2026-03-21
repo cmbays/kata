@@ -66,21 +66,14 @@ export function buildCycleNameSuggestionPrompt(cycle: Pick<Cycle, 'id' | 'bets' 
 }
 
 export function parseSuggestedCycleName(raw: string): string | undefined {
-  const firstContentLine = raw
-    .split('\n')
-    .map((line) => line.trim())
-    .find(Boolean);
+  for (const line of raw.split('\n')) {
+    const cleaned = cleanSuggestedCycleNameLine(line);
+    if (isLikelySuggestedCycleName(cleaned)) {
+      return cleaned;
+    }
+  }
 
-  if (!firstContentLine) return undefined;
-
-  const cleaned = firstContentLine
-    .replace(/^(?:[-*]|\d+[.)])\s*/, '')
-    .replace(/^["'`]+|["'`]+$/g, '')
-    .replace(/^cycle name:\s*/i, '')
-    .replace(/^name:\s*/i, '')
-    .trim();
-
-  return normalizeSuggestedCycleName(cleaned);
+  return undefined;
 }
 
 export function buildHeuristicCycleName(cycle: Pick<Cycle, 'bets' | 'createdAt'>): string {
@@ -128,6 +121,30 @@ function normalizeSuggestedCycleName(value: string | undefined): string | undefi
   return collapsed.length > 80 ? collapsed.slice(0, 80).trimEnd() : collapsed;
 }
 
+function cleanSuggestedCycleNameLine(line: string): string | undefined {
+  if (line.trim().startsWith('```')) {
+    return undefined;
+  }
+
+  const cleaned = line
+    .trim()
+    .replace(/^(?:[-*]|\d+[.)])\s*/, '')
+    .replace(/^["'`]+|["'`]+$/g, '')
+    .replace(/^cycle name:\s*/i, '')
+    .replace(/^name:\s*/i, '')
+    .trim();
+
+  return normalizeSuggestedCycleName(cleaned);
+}
+
+function isLikelySuggestedCycleName(value: string | undefined): value is string {
+  if (!value) return false;
+  if (value.startsWith('```')) return false;
+  if (value.endsWith(':')) return false;
+
+  return !/^(?:sure|here(?:'s| is)|i(?:'d| would)? suggest|how about|maybe|my suggestion|suggested name|recommended name|possible name)\b/i.test(value);
+}
+
 function toTitleCase(value: string): string {
   return value
     .split(' ')
@@ -144,5 +161,6 @@ function defaultInvokeClaude(prompt: string): string {
     input: prompt,
     encoding: 'utf-8',
     maxBuffer: 1024 * 1024,
+    timeout: 30_000,
   });
 }

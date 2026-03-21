@@ -119,7 +119,7 @@ gh api repos/{owner}/{repo}/pulls/NNN/reviews
 
 Preserve during compaction:
 - Build/test commands, dependency direction, session-bridge constraints, quality gates, and cross-repo boundary rules.
-- Repo-specific conventions that are easy to forget: worktrees for tracked edits, co-located `.feature` files, `quickpickle`, and REST-over-GraphQL for PR operations.
+- Repo-specific conventions that are easy to forget: worktrees for tracked edits, colocated `.feature` files, `quickpickle`, and REST-over-GraphQL for PR operations.
 
 Discard during compaction:
 - Temporary branch names, one-off debugging notes, stale issue references, ephemeral local paths, and generated counts that can be rediscovered quickly.

@@ -7,6 +7,8 @@ paths:
   - "src/infrastructure/persistence/bridge-run-store.ts"
 ---
 
+# Execution Bridge and Cycles
+
 - Respect the dependency direction documented in `CLAUDE.md`: domain logic belongs in domain services/rules, not in infrastructure coordinators.
 - `SessionExecutionBridge` is a prepare/complete seam for agent dispatch, not a generic execution adapter. Keep it focused on orchestration and persistence coordination.
 - Prefer extracting deterministic helpers from large orchestration files before adding more brittle side-effect-heavy tests.

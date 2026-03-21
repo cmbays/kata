@@ -17,6 +17,7 @@ import type { Cycle } from '@domain/types/cycle.js';
 import type { BridgeRunMeta } from '@domain/types/bridge-run.js';
 import { type Bet } from '@domain/types/bet.js';
 import { StageCategorySchema } from '@domain/types/stage.js';
+import { normalizeCycleName } from '@domain/services/cycle-name.js';
 import { CycleManager } from '@domain/services/cycle-manager.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
 import {
@@ -42,11 +43,6 @@ import {
   summarizeCycleCompletion,
   type CycleCompletionTotals,
 } from '@infra/execution/session-bridge-cycle-completion.js';
-
-function normalizeCycleName(name: string | undefined): string | undefined {
-  const trimmed = name?.trim();
-  return trimmed ? trimmed : undefined;
-}
 
 /**
  * SessionExecutionBridge — splits the adapter lifecycle for in-session execution.

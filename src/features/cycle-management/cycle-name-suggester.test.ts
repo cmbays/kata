@@ -119,6 +119,14 @@ describe('parseSuggestedCycleName', () => {
     expect(parseSuggestedCycleName('  Cycle Name:   Login   Reliability   Push  ')).toBe('Login Reliability Push');
   });
 
+  it('skips preamble lines and picks the first plausible cleaned name', () => {
+    expect(parseSuggestedCycleName("Sure, here's a name:\nCycle Name: Login Reliability Push")).toBe('Login Reliability Push');
+  });
+
+  it('skips code fences and returns the name inside them', () => {
+    expect(parseSuggestedCycleName('```text\nLogin Reliability Push\n```')).toBe('Login Reliability Push');
+  });
+
   it('returns undefined for empty output', () => {
     expect(parseSuggestedCycleName('\n  \n')).toBeUndefined();
   });

@@ -63,10 +63,32 @@ describe('resolveCycleActivationName', () => {
     });
   });
 
+  it('preserves the suggester source when the prompt accepts the suggested name', async () => {
+    const promptForName = vi.fn().mockResolvedValue('Suggested Cycle');
+
+    const result = await resolveCycleActivationName(
+      { cycle: makeCycle(), promptForName },
+      { suggester: { suggest: vi.fn().mockReturnValue({ name: 'Suggested Cycle', source: 'heuristic' }) } },
+    );
+
+    expect(result).toEqual({
+      name: 'Suggested Cycle',
+      source: 'heuristic',
+      suggestedName: 'Suggested Cycle',
+    });
+  });
+
   it('rejects a whitespace-only explicit name', async () => {
     await expect(resolveCycleActivationName({
       cycle: makeCycle(),
       providedName: '   ',
     })).rejects.toThrow('Cycle name must be non-empty when provided.');
+  });
+
+  it('rejects a whitespace-only prompted name before activation', async () => {
+    await expect(resolveCycleActivationName(
+      { cycle: makeCycle(), promptForName: vi.fn().mockResolvedValue('   ') },
+      { suggester: { suggest: vi.fn().mockReturnValue({ name: 'Suggested Cycle', source: 'llm' }) } },
+    )).rejects.toThrow('Cycle name is required before activation.');
   });
 });

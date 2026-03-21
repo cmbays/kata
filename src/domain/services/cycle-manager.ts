@@ -8,12 +8,8 @@ import { CycleNotFoundError, KataError } from '@shared/lib/errors.js';
 import { calculateUtilization } from '@domain/rules/budget-rules.js';
 import { canTransitionCycleState } from '@domain/rules/cycle-rules.js';
 import { createBet, requireBet, trySetBetOutcome, applyBetOutcomes } from '@domain/rules/bet-rules.js';
+import { normalizeCycleName } from '@domain/services/cycle-name.js';
 import { generateCooldownReport } from '@domain/services/cooldown-reporter.js';
-
-function normalizeCycleName(name: string | undefined): string | undefined {
-  const trimmed = name?.trim();
-  return trimmed ? trimmed : undefined;
-}
 
 function requireCycleNameForActivation(cycle: Cycle, name: string | undefined): string {
   const resolvedName = normalizeCycleName(name) ?? normalizeCycleName(cycle.name);

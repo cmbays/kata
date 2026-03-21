@@ -36,7 +36,7 @@ Thumbs.db
 !.claude/rules/
 !.claude/skills/
 !.claude/settings.json
-!.claude/settings.local.json
+.claude/settings.local.json
 
 # Local worktrees and scratch space
 .claude/worktrees/

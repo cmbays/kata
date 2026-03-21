@@ -427,8 +427,8 @@ Then('the cycle name becomes {string}', (world: SessionBridgeWorld, cycleName: s
   expect(updated.name).toBe(cycleName);
 });
 
-Then('the prepared cycle includes {int} runs', (world: SessionBridgeWorld, count: number) => {
-  expect(world.preparedCycle?.preparedRuns).toHaveLength(count);
+Then(/^the prepared cycle includes (\d+) runs?$/, (world: SessionBridgeWorld, count: string) => {
+  expect(world.preparedCycle?.preparedRuns).toHaveLength(Number.parseInt(count, 10));
 });
 
 Then('each pending bet has exactly one bridge run', (world: SessionBridgeWorld) => {

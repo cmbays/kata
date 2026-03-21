@@ -7,9 +7,10 @@ export function shouldPromptForCycleName(isJson: boolean): boolean {
 export async function promptForCycleActivationName(suggestion: CycleNameSuggestion): Promise<string> {
   const { input } = await import('@inquirer/prompts');
 
-  return input({
+  const value = await input({
     message: 'Cycle name:',
     default: suggestion.name,
     validate: (value) => value.trim() ? true : 'Cycle name is required before activation.',
   });
+  return value.trim();
 }

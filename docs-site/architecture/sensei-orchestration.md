@@ -45,7 +45,7 @@ Sensei is responsible for orchestration, not production work.
 1. Identify the current gyo or next gyo to run.
 2. Select the relevant ryu/flavors for that stage.
 3. Decide whether those ryu should run in parallel or sequentially.
-4. Spawn teammates or sub-agents to execute the selected ryu.
+4. Spawn delegated worker agents to execute the selected ryu.
 5. Monitor execution and make sure maki, kime, and kansatsu are being recorded.
 6. Handle mon: approvals, escalations, retries, or `--yolo` continuation.
 7. Detect gaps and decide whether to bridge them now or defer them.

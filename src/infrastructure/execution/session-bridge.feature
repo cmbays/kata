@@ -35,7 +35,7 @@ Feature: Session bridge prepares in-session execution runs
     When the session bridge prepares the cycle for execution with name "Launch Cycle"
     Then the cycle is marked "active"
     And the cycle name becomes "Launch Cycle"
-    And the prepared cycle includes 1 runs
+    And the prepared cycle includes 1 run
 
   Scenario: Preparing the same cycle twice reuses the existing bridge runs
     Given a planning cycle named "Launch Cycle" with pending bets "Fix the login bug, Tighten tests"

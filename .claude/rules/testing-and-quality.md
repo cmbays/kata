@@ -10,6 +10,8 @@ paths:
   - ".dependency-cruiser.cjs"
 ---
 
+# Testing and Quality
+
 - New behavior or clarified behavior should get a co-located `.feature` when practical, and new step files must be imported through `src/acceptance/setup.ts`.
 - Keep command tests focused on command wiring and terminal behavior; prefer direct tests for pure helpers and domain rules.
 - For changed behavior-heavy code, run focused unit/integration/acceptance tests before broader quality gates.
