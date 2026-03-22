@@ -18,6 +18,7 @@ export default {
     'src/features/cycle-management/cooldown-belt-computer.ts',
     'src/features/cycle-management/cooldown-diary-writer.ts',
     'src/features/cycle-management/cooldown-follow-up-runner.ts',
+    'src/features/cycle-management/cooldown-synthesis-manager.ts',
     'src/features/cycle-management/cooldown-session.ts',
     'src/features/kata-agent/kata-agent-confidence-calculator.ts',
     'src/features/kata-agent/kata-agent-observability-aggregator.ts',
