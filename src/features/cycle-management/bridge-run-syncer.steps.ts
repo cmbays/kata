@@ -414,9 +414,8 @@ Then(
   'no incomplete runs are reported',
   (world: BridgeRunSyncerWorld) => {
     expect(world.lastError).toBeUndefined();
-    if (world.incompleteRuns !== undefined) {
-      expect(world.incompleteRuns).toHaveLength(0);
-    }
+    expect(world.incompleteRuns).toBeDefined();
+    expect(world.incompleteRuns).toHaveLength(0);
   },
 );
 

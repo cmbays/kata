@@ -91,6 +91,7 @@ Feature: Bet outcome reconciliation during cooldown
   Scenario: reconciliation is safely skipped when run metadata is unavailable
     Given no run metadata directories are configured
     When outcomes are reconciled for the cycle
+    And cooldown checks for incomplete runs
     Then no outcomes are recorded
     And no incomplete runs are reported
 

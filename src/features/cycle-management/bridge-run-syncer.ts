@@ -113,6 +113,7 @@ export class BridgeRunSyncer {
    * Logs a warning for any unmatched bet IDs.
    */
   recordBetOutcomes(cycleId: string, outcomes: BetOutcomeRecord[]): void {
+    if (outcomes.length === 0) return;
     const { unmatchedBetIds } = this.deps.cycleManager.updateBetOutcomes(cycleId, outcomes);
     if (unmatchedBetIds.length > 0) {
       // Stryker disable next-line StringLiteral: presentation text — join separator in warning message
