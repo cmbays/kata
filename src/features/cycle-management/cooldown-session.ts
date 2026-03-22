@@ -1,5 +1,3 @@
-import { join } from 'node:path';
-import { existsSync, readFileSync, readdirSync, unlinkSync } from 'node:fs';
 import type { CycleManager, CooldownReport } from '@domain/services/cycle-manager.js';
 import type { IKnowledgeStore } from '@domain/ports/knowledge-store.js';
 import type { IPersistence } from '@domain/ports/persistence.js';
@@ -18,32 +16,22 @@ import { PredictionMatcher } from '@features/self-improvement/prediction-matcher
 import { CalibrationDetector } from '@features/self-improvement/calibration-detector.js';
 import { HierarchicalPromoter } from '@infra/knowledge/hierarchical-promoter.js';
 import { FrictionAnalyzer } from '@features/self-improvement/friction-analyzer.js';
-import { JsonStore } from '@infra/persistence/json-store.js';
-import { readAllObservationsForRun, readRun } from '@infra/persistence/run-store.js';
-import type { Observation } from '@domain/types/observation.js';
-import {
-  SynthesisInputSchema,
-  SynthesisResultSchema,
-  type SynthesisProposal,
-} from '@domain/types/synthesis.js';
+import type { SynthesisProposal } from '@domain/types/synthesis.js';
 import type { BeltCalculator } from '@features/belt/belt-calculator.js';
 import type { BeltComputeResult } from '@features/belt/belt-calculator.js';
 import type { KataAgentConfidenceCalculator } from '@features/kata-agent/kata-agent-confidence-calculator.js';
 import { CooldownBeltComputer } from './cooldown-belt-computer.js';
 import { CooldownDiaryWriter } from './cooldown-diary-writer.js';
 import { CooldownFollowUpRunner } from './cooldown-follow-up-runner.js';
+import { CooldownSynthesisManager } from './cooldown-synthesis-manager.js';
 import {
   buildAgentPerspectiveFromProposals,
   buildCooldownBudgetUsage,
   buildCooldownLearningDrafts,
-  buildSynthesisInputRecord,
-  clampConfidenceWithDelta,
   filterExecutionHistoryForCycle,
   listCompletedBetDescriptions,
-  resolveAppliedProposalIds,
   selectEffectiveBetOutcomes,
   shouldWarnOnIncompleteRuns,
-  isSynthesisPendingFile,
 } from './cooldown-session.helpers.js';
 import { BridgeRunSyncer } from './bridge-run-syncer.js';
 
@@ -263,6 +251,7 @@ export class CooldownSession {
   private readonly beltComputer: CooldownBeltComputer;
   private readonly diaryWriter: CooldownDiaryWriter;
   private readonly followUpRunner: CooldownFollowUpRunner;
+  private readonly synthesisManager: CooldownSynthesisManager;
 
   constructor(deps: CooldownSessionDeps) {
     this.deps = deps;
@@ -294,6 +283,12 @@ export class CooldownSession {
       hierarchicalPromoter: this.resolveHierarchicalPromoter(deps),
       frictionAnalyzer: this.resolveFrictionAnalyzer(deps),
       knowledgeStore: deps.knowledgeStore,
+    });
+    this.synthesisManager = new CooldownSynthesisManager({
+      synthesisDir: deps.synthesisDir,
+      runsDir: deps.runsDir,
+      knowledgeStore: deps.knowledgeStore,
+      loadBridgeRunIdsByBetId: (cycleId) => this.bridgeRunSyncer.loadBridgeRunIdsByBetId(cycleId),
     });
   }
 
@@ -413,58 +408,6 @@ export class CooldownSession {
   }
 
 
-
-
-  private readAppliedSynthesisProposals(
-    synthesisInputId?: string,
-    acceptedProposalIds?: readonly string[],
-  ): SynthesisProposal[] | undefined {
-    const resultPath = this.resolveSynthesisResultPath(synthesisInputId);
-    if (!resultPath || !existsSync(resultPath)) return undefined;
-
-    try {
-      const synthesisResult = JsonStore.read(resultPath, SynthesisResultSchema);
-      return this.applyAcceptedSynthesisProposals(synthesisResult.proposals, acceptedProposalIds);
-    // Stryker disable next-line all: catch block is pure error-reporting — non-critical logging
-    } catch (err) {
-      logger.warn(`Failed to read synthesis result for input ${synthesisInputId}: ${err instanceof Error ? err.message : String(err)}`);
-      return undefined;
-    }
-  }
-
-  private resolveSynthesisResultPath(synthesisInputId?: string): string | undefined {
-    if (!synthesisInputId || !this.deps.synthesisDir) return undefined;
-    return join(this.deps.synthesisDir, `result-${synthesisInputId}.json`);
-  }
-
-  private applyAcceptedSynthesisProposals(
-    proposals: readonly SynthesisProposal[],
-    acceptedProposalIds?: readonly string[],
-  ): SynthesisProposal[] {
-    const idsToApply = resolveAppliedProposalIds(proposals, acceptedProposalIds);
-    const appliedProposals: SynthesisProposal[] = [];
-
-    for (const proposal of proposals) {
-      if (!idsToApply.has(proposal.id)) continue;
-      if (this.tryApplyProposal(proposal)) {
-        appliedProposals.push(proposal);
-      }
-    }
-
-    return appliedProposals;
-  }
-
-  private tryApplyProposal(proposal: SynthesisProposal): boolean {
-    try {
-      this.applyProposal(proposal);
-      return true;
-    // Stryker disable next-line all: catch block is pure error-reporting — non-critical logging
-    } catch (err) {
-      logger.warn(`Failed to apply synthesis proposal ${proposal.id} (${proposal.type}): ${err instanceof Error ? err.message : String(err)}`);
-      return false;
-    }
-  }
-
   /**
    * Run the full cooldown session.
    *
@@ -546,7 +489,7 @@ export class CooldownSession {
       const phase = this.buildCooldownPhase(cycleId, betOutcomes);
       this.followUpRunner.run(phase.cycle);
       const effectiveDepth = depth ?? this.deps.synthesisDepth ?? 'standard';
-      const { synthesisInputId, synthesisInputPath } = this.writeSynthesisInput(
+      const { synthesisInputId, synthesisInputPath } = this.synthesisManager.writeInput(
         cycleId,
         phase.cycle,
         phase.report,
@@ -589,7 +532,7 @@ export class CooldownSession {
     const runSummaries = this.maybeLoadRunSummaries(cycle);
     const proposals = this.proposalGenerator.generate(cycleId, runSummaries);
     const ruleSuggestions = this.loadRuleSuggestions();
-    const synthesisProposals = this.readAppliedSynthesisProposals(synthesisInputId, acceptedProposalIds);
+    const synthesisProposals = this.synthesisManager.readAndApplyResults(synthesisInputId, acceptedProposalIds);
     this.diaryWriter.writeForComplete({
       cycleId,
       cycle,
@@ -617,169 +560,6 @@ export class CooldownSession {
       beltResult,
       nextKeikoResult,
     };
-  }
-
-  /**
-   * Apply a single synthesis proposal to the KnowledgeStore.
-   */
-  private applyProposal(proposal: SynthesisProposal): void {
-    switch (proposal.type) {
-      case 'new-learning':
-        this.deps.knowledgeStore.capture({
-          tier: proposal.proposedTier,
-          category: proposal.proposedCategory,
-          content: proposal.proposedContent,
-          confidence: proposal.confidence,
-          source: 'synthesized',
-        });
-        break;
-
-      case 'update-learning': {
-        const existing = this.deps.knowledgeStore.get(proposal.targetLearningId);
-        const newConfidence = clampConfidenceWithDelta(existing.confidence, proposal.confidenceDelta);
-        this.deps.knowledgeStore.update(proposal.targetLearningId, {
-          content: proposal.proposedContent,
-          confidence: newConfidence,
-        });
-        break;
-      }
-
-      case 'promote':
-        this.deps.knowledgeStore.promoteTier(proposal.targetLearningId, proposal.toTier);
-        break;
-
-      case 'archive':
-        this.deps.knowledgeStore.archiveLearning(proposal.targetLearningId, proposal.reason);
-        break;
-
-      case 'methodology-recommendation':
-        // Sensei writes methodology-recommendation to KATA.md — we only log here
-        logger.info(`Methodology recommendation (area: ${proposal.area}): ${proposal.recommendation}`);
-        break;
-    }
-  }
-
-  /**
-   * Read all observations for every bet in the cycle (across all levels: run,
-   * stage, flavor, step), then write a SynthesisInput file to
-   * .kata/synthesis/pending-<id>.json.
-   * Returns the synthesisInputId and synthesisInputPath.
-   * Non-critical: if synthesisDir is not configured, returns placeholder values.
-   *
-   * Run ID resolution order for each bet:
-   *   1. bet.runId (set by CycleManager.setRunId / backfillRunIdInCycle on prepare)
-   *   2. Bridge-run lookup by cycleId+betId (fallback for staged-workflow cycles
-   *      launched before backfillRunIdInCycle was wired — fixes #337 / #335)
-   */
-  private writeSynthesisInput(
-    cycleId: string,
-    cycle: Cycle,
-    report: CooldownReport,
-    depth: import('@domain/types/synthesis.js').SynthesisDepth,
-  ): { synthesisInputId: string; synthesisInputPath: string } {
-    const target = this.createSynthesisTarget();
-    if (!target.synthesisDir) {
-      return { synthesisInputId: target.id, synthesisInputPath: '' };
-    }
-
-    const synthesisInput = buildSynthesisInputRecord({
-      id: target.id,
-      cycleId,
-      createdAt: new Date().toISOString(),
-      depth,
-      observations: this.collectSynthesisObservations(cycleId, cycle),
-      learnings: this.loadSynthesisLearnings(),
-      cycleName: cycle.name,
-      tokenBudget: report.budget.tokenBudget,
-      tokensUsed: report.tokensUsed,
-    });
-
-    this.cleanupStaleSynthesisInputs(target.synthesisDir, cycleId);
-    JsonStore.write(target.filePath, synthesisInput, SynthesisInputSchema);
-
-    return { synthesisInputId: target.id, synthesisInputPath: target.filePath };
-  }
-
-  private createSynthesisTarget(): { id: string; synthesisDir?: string; filePath: string } {
-    const id = crypto.randomUUID();
-    const synthesisDir = this.deps.synthesisDir;
-    // Stryker disable next-line StringLiteral: empty fallback when synthesisDir is absent — never used for writes
-    const filePath = synthesisDir ? join(synthesisDir, `pending-${id}.json`) : '';
-    return { id, synthesisDir, filePath };
-  }
-
-  private collectSynthesisObservations(cycleId: string, cycle: Cycle): Observation[] {
-    const observations: Observation[] = [];
-    // Stryker disable next-line ConditionalExpression: guard redundant with catch in readObservationsForRun
-    if (!this.deps.runsDir) return observations;
-
-    const bridgeRunIdByBetId = this.bridgeRunSyncer.loadBridgeRunIdsByBetId(cycleId);
-
-    for (const bet of cycle.bets) {
-      const runId = bet.runId ?? bridgeRunIdByBetId.get(bet.id);
-      if (!runId) continue;
-
-      const runObs = this.readObservationsForRun(runId, bet.id);
-      // Stryker disable next-line ConditionalExpression: push(...[]) is a no-op — guard is equivalent
-      if (runObs.length > 0) {
-        observations.push(...runObs);
-      }
-    }
-
-    return observations;
-  }
-
-  private readObservationsForRun(runId: string, betId: string): Observation[] {
-    try {
-      const stageSequence = this.readStageSequence(runId);
-      return readAllObservationsForRun(this.deps.runsDir!, runId, stageSequence);
-    // Stryker disable next-line all: catch block is pure error-reporting — non-critical logging
-    } catch (err) {
-      logger.warn(`Failed to read observations for run ${runId} (bet ${betId}): ${err instanceof Error ? err.message : String(err)}`);
-      return [];
-    }
-  }
-
-  private readStageSequence(runId: string): import('@domain/types/stage.js').StageCategory[] {
-    try {
-      return readRun(this.deps.runsDir!, runId).stageSequence;
-    } catch {
-      return [];
-    }
-  }
-
-  private loadSynthesisLearnings(): import('@domain/types/learning.js').Learning[] {
-    try {
-      return this.deps.knowledgeStore.query({});
-    // Stryker disable next-line all: catch block is pure error-reporting — non-critical logging
-    } catch (err) {
-      logger.warn(`Failed to query learnings for synthesis input: ${err instanceof Error ? err.message : String(err)}`);
-      return [];
-    }
-  }
-
-  private cleanupStaleSynthesisInputs(synthesisDir: string, cycleId: string): void {
-    try {
-      const existing = readdirSync(synthesisDir).filter(isSynthesisPendingFile);
-      for (const file of existing) {
-        this.removeStaleSynthesisInputFile(synthesisDir, file, cycleId);
-      }
-    } catch {
-      // Non-critical — if cleanup fails, still write the new file
-    }
-  }
-
-  private removeStaleSynthesisInputFile(synthesisDir: string, file: string, cycleId: string): void {
-    try {
-      const raw = readFileSync(join(synthesisDir, file), 'utf-8');
-      const meta = JSON.parse(raw) as { cycleId?: string };
-      if (meta.cycleId !== cycleId) return;
-      unlinkSync(join(synthesisDir, file));
-      // Stryker disable next-line StringLiteral: presentation text in debug log
-      logger.debug(`Removed stale synthesis input file: ${file}`);
-    } catch {
-      // Skip unreadable / already-deleted files
-    }
   }
 
   /**
