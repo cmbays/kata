@@ -261,7 +261,7 @@ describe('CooldownDiaryWriter', () => {
 
       writer.writeDojoSession('cycle-1');
 
-      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('dojo session'));
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('dojo session for cycle'));
     });
 
     it('logs non-Error throws as strings', () => {

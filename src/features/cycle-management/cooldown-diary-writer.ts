@@ -71,19 +71,24 @@ export class CooldownDiaryWriter {
     ruleSuggestions?: RuleSuggestion[];
     humanPerspective?: string;
   }): void {
-    // Stryker disable next-line ConditionalExpression: guard redundant with catch in writeDiaryEntry
+    // Stryker disable next-line ConditionalExpression: guard redundant with catch below
     if (!this.deps.dojoDir) return;
-
-    this.writeDiaryEntry({
-      cycleId: input.cycleId,
-      cycleName: input.cycleName,
-      betOutcomes: this.enrichBetOutcomesWithDescriptions(input.cycle, input.betOutcomes),
-      proposals: input.proposals,
-      runSummaries: input.runSummaries,
-      learningsCaptured: input.learningsCaptured,
-      ruleSuggestions: input.ruleSuggestions,
-      humanPerspective: input.humanPerspective,
-    });
+    try {
+      this.writeDiaryEntry({
+        cycleId: input.cycleId,
+        cycleName: input.cycleName,
+        betOutcomes: this.enrichBetOutcomesWithDescriptions(input.cycle, input.betOutcomes),
+        proposals: input.proposals,
+        runSummaries: input.runSummaries,
+        learningsCaptured: input.learningsCaptured,
+        ruleSuggestions: input.ruleSuggestions,
+        humanPerspective: input.humanPerspective,
+      });
+    // Stryker disable next-line all: catch block is pure error-reporting
+    } catch (err) {
+      // Stryker disable next-line all: presentation text in warning message
+      logger.warn(`Failed to write run diary for cycle ${input.cycleId}: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   /**
@@ -100,17 +105,22 @@ export class CooldownDiaryWriter {
     synthesisProposals?: SynthesisProposal[];
   }): void {
     if (!this.deps.dojoDir) return;
-
-    this.writeDiaryEntry({
-      cycleId: input.cycleId,
-      cycleName: input.cycleName,
-      betOutcomes: buildDiaryBetOutcomesFromCycleBets(input.cycle.bets) as BetOutcomeRecord[],
-      proposals: input.proposals,
-      runSummaries: input.runSummaries,
-      learningsCaptured: 0,
-      ruleSuggestions: input.ruleSuggestions,
-      agentPerspective: buildAgentPerspectiveFromProposals(input.synthesisProposals ?? []),
-    });
+    try {
+      this.writeDiaryEntry({
+        cycleId: input.cycleId,
+        cycleName: input.cycleName,
+        betOutcomes: buildDiaryBetOutcomesFromCycleBets(input.cycle.bets) as BetOutcomeRecord[],
+        proposals: input.proposals,
+        runSummaries: input.runSummaries,
+        learningsCaptured: 0,
+        ruleSuggestions: input.ruleSuggestions,
+        agentPerspective: buildAgentPerspectiveFromProposals(input.synthesisProposals ?? []),
+      });
+    // Stryker disable next-line all: catch block is pure error-reporting
+    } catch (err) {
+      // Stryker disable next-line all: presentation text in warning message
+      logger.warn(`Failed to write complete diary for cycle ${input.cycleId}: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   /**
@@ -139,7 +149,7 @@ export class CooldownDiaryWriter {
     // Stryker disable next-line all: catch block is pure error-reporting
     } catch (err) {
       // Stryker disable next-line all: presentation text in warning message
-      logger.warn(`Failed to generate dojo session: ${err instanceof Error ? err.message : String(err)}`);
+      logger.warn(`Failed to generate dojo session for cycle ${cycleId}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 

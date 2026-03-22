@@ -380,7 +380,7 @@ Then(
   (world: CooldownDiaryWriterWorld) => {
     expect(world.loggerWarnSpy).toHaveBeenCalled();
     const msgs = world.loggerWarnSpy.mock.calls.map((c: unknown[]) => c[0] as string);
-    const failMsg = msgs.find((m: string) => m.includes('dojo session'));
+    const failMsg = msgs.find((m: string) => m.includes('dojo session for cycle'));
     expect(failMsg).toBeDefined();
   },
 );
