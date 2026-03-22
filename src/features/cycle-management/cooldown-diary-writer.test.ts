@@ -60,7 +60,7 @@ describe('CooldownDiaryWriter', () => {
 
       writer.writeForRun({
         cycleId: 'cycle-1',
-        cycleName: 'Test',
+
         cycle,
         betOutcomes: [{ betId: 'bet-1', outcome: 'complete' }],
         proposals: [],

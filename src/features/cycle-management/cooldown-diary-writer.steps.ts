@@ -228,7 +228,7 @@ When(
     try {
       world.writer.writeForRun({
         cycleId: 'cycle-1',
-        cycleName: 'Test Cycle',
+
         cycle: world.cycle,
         betOutcomes: world.betOutcomes,
         proposals: [],
@@ -249,7 +249,7 @@ When(
     try {
       world.writer.writeForComplete({
         cycleId: 'cycle-1',
-        cycleName: 'Test Cycle',
+
         cycle: world.cycle,
         proposals: [],
         synthesisProposals: world.synthesisProposals,
@@ -268,7 +268,7 @@ When(
     try {
       world.writer.writeForRun({
         cycleId: 'cycle-1',
-        cycleName: 'Test Cycle',
+
         cycle: world.cycle,
         betOutcomes: [],
         proposals: [],

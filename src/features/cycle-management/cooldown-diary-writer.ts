@@ -62,7 +62,6 @@ export class CooldownDiaryWriter {
    */
   writeForRun(input: {
     cycleId: string;
-    cycleName?: string;
     cycle: Cycle;
     betOutcomes: BetOutcomeRecord[];
     proposals: CycleProposal[];
@@ -76,7 +75,7 @@ export class CooldownDiaryWriter {
     try {
       this.writeDiaryEntry({
         cycleId: input.cycleId,
-        cycleName: input.cycleName,
+        cycleName: input.cycle.name,
         betOutcomes: this.enrichBetOutcomesWithDescriptions(input.cycle, input.betOutcomes),
         proposals: input.proposals,
         runSummaries: input.runSummaries,
@@ -97,7 +96,6 @@ export class CooldownDiaryWriter {
    */
   writeForComplete(input: {
     cycleId: string;
-    cycleName?: string;
     cycle: Cycle;
     proposals: CycleProposal[];
     runSummaries?: RunSummary[];
@@ -108,7 +106,7 @@ export class CooldownDiaryWriter {
     try {
       this.writeDiaryEntry({
         cycleId: input.cycleId,
-        cycleName: input.cycleName,
+        cycleName: input.cycle.name,
         betOutcomes: buildDiaryBetOutcomesFromCycleBets(input.cycle.bets) as BetOutcomeRecord[],
         proposals: input.proposals,
         runSummaries: input.runSummaries,

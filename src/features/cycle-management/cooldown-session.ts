@@ -494,7 +494,6 @@ export class CooldownSession {
       this.beltComputer.computeAgentConfidence();
       this.diaryWriter.writeForRun({
         cycleId,
-        cycleName: phase.cycle.name,
         cycle: phase.cycle,
         betOutcomes: phase.effectiveBetOutcomes,
         proposals: phase.proposals,
@@ -593,7 +592,6 @@ export class CooldownSession {
     const synthesisProposals = this.readAppliedSynthesisProposals(synthesisInputId, acceptedProposalIds);
     this.diaryWriter.writeForComplete({
       cycleId,
-      cycleName: cycle.name,
       cycle,
       proposals,
       runSummaries,
