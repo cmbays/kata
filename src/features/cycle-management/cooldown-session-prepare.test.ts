@@ -653,7 +653,7 @@ describe('CooldownSession.prepare() — observation wiring', () => {
   }
 
   function writeBridgeRun(runId: string, betId: string, cycleId: string): void {
-    const meta = { runId, betId, cycleId, cycleName: cycleId, stages: ['research', 'build'], isolation: 'shared', startedAt: new Date().toISOString(), status: 'complete' };
+    const meta = { runId, betId, betName: 'test bet', cycleId, cycleName: cycleId, stages: ['research', 'build'], isolation: 'shared', startedAt: new Date().toISOString(), status: 'complete' };
     writeFileSync(join(bridgeRunsDir, `${runId}.json`), JSON.stringify(meta, null, 2) + '\n');
   }
 

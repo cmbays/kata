@@ -53,7 +53,19 @@ function makeDeps(overrides: Partial<BridgeRunSyncerDeps> = {}): BridgeRunSyncer
 }
 
 function writeBridgeRun(dir: string, runId: string, meta: Record<string, unknown>): void {
-  writeFileSync(join(dir, `${runId}.json`), JSON.stringify(meta));
+  const base = {
+    runId,
+    betId: meta.betId ?? randomUUID(),
+    betName: 'test bet',
+    cycleId: meta.cycleId ?? randomUUID(),
+    cycleName: 'Test Cycle',
+    stages: ['build'],
+    isolation: 'shared',
+    startedAt: '2026-03-22T10:00:00.000Z',
+    status: 'complete',
+    ...meta,
+  };
+  writeFileSync(join(dir, `${runId}.json`), JSON.stringify(base));
 }
 
 function writeValidRunFile(dir: string, runId: string, status: string): void {
@@ -386,11 +398,12 @@ describe('BridgeRunSyncer', () => {
       expect(syncer.loadBridgeRunIdsByBetId(randomUUID()).size).toBe(0);
     });
 
-    it('skips files without betId or runId', () => {
+    it('skips files that fail schema validation', () => {
       const cycleId = randomUUID();
       const deps = makeDeps({ bridgeRunsDir });
 
-      writeBridgeRun(bridgeRunsDir, randomUUID(), { cycleId, status: 'complete' });
+      // Write an incomplete object that won't pass BridgeRunMetaSchema
+      writeFileSync(join(bridgeRunsDir, 'incomplete.json'), JSON.stringify({ cycleId, status: 'complete' }));
 
       const syncer = new BridgeRunSyncer(deps);
       expect(syncer.loadBridgeRunIdsByBetId(cycleId).size).toBe(0);

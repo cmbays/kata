@@ -12,11 +12,8 @@ export interface CooldownBeltDeps {
   beltCalculator?: Pick<BeltCalculator, 'computeAndStore'>;
   projectStateFile?: string;
   agentConfidenceCalculator?: Pick<KataAgentConfidenceCalculator, 'compute'>;
-  /** @deprecated Use `agentConfidenceCalculator` instead. Will be removed in v1. */
-  katakaConfidenceCalculator?: Pick<KataAgentConfidenceCalculator, 'compute'>;
   agentDir?: string;
-  /** @deprecated Use `agentDir` instead. Will be removed in v1. */
-  katakaDir?: string;
+  agentRegistry?: Pick<KataAgentRegistry, 'list'>;
 }
 
 /**
@@ -56,19 +53,17 @@ export class CooldownBeltComputer {
 
   /**
    * Recompute confidence profiles for all registered agents.
-   * Supports legacy kataka aliases (katakaConfidenceCalculator + katakaDir).
    *
    * Non-critical: computation errors are logged as warnings and swallowed
    * so that agent confidence failures do not abort cooldown.
    */
   computeAgentConfidence(): void {
-    const agentConfidenceCalculator = this.deps.agentConfidenceCalculator ?? this.deps.katakaConfidenceCalculator;
-    const agentDir = this.deps.agentDir ?? this.deps.katakaDir;
-    if (!agentConfidenceCalculator || !agentDir) return;
+    if (!this.deps.agentConfidenceCalculator) return;
+    if (!this.deps.agentRegistry && !this.deps.agentDir) return;
 
     let agents: { id: string; name: string }[];
     try {
-      const registry = new KataAgentRegistry(agentDir);
+      const registry = this.deps.agentRegistry ?? new KataAgentRegistry(this.deps.agentDir!);
       agents = registry.list();
     // Stryker disable next-line all: catch block is pure error-reporting — registry load failure
     } catch (err) {
@@ -78,7 +73,7 @@ export class CooldownBeltComputer {
 
     for (const agent of agents) {
       try {
-        agentConfidenceCalculator.compute(agent.id, agent.name);
+        this.deps.agentConfidenceCalculator.compute(agent.id, agent.name);
       // Stryker disable next-line all: catch block is pure error-reporting — per-agent failure
       } catch (err) {
         logger.warn(`Confidence computation failed for agent "${agent.name}": ${err instanceof Error ? err.message : String(err)}`);

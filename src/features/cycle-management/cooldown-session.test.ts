@@ -553,32 +553,6 @@ describe('CooldownSession', () => {
       expect(agentConfidenceCalculator.compute).toHaveBeenCalledWith(betaId, 'Beta');
     });
 
-    it('supports kataka compatibility aliases during complete()', async () => {
-      const katakaDir = join(baseDir, 'agents-compat');
-      const agentId = randomUUID();
-      writeAgentRecord(katakaDir, agentId, 'Compat Agent');
-
-      const cycle = cycleManager.create({ tokenBudget: 50000 }, 'Compat Agent Cycle');
-      const synthesisDir = join(baseDir, 'synthesis-agent-compat');
-      mkdirSync(synthesisDir, { recursive: true });
-
-      const katakaConfidenceCalculator = { compute: vi.fn() };
-      const sessionWithCompat = new CooldownSession({
-        cycleManager,
-        knowledgeStore,
-        persistence: JsonStore,
-        pipelineDir,
-        historyDir,
-        synthesisDir,
-        katakaDir,
-        katakaConfidenceCalculator,
-      });
-
-      await sessionWithCompat.prepare(cycle.id);
-      await sessionWithCompat.complete(cycle.id);
-
-      expect(katakaConfidenceCalculator.compute).toHaveBeenCalledWith(agentId, 'Compat Agent');
-    });
   });
 
   describe('belt advancement integration', () => {
@@ -1774,7 +1748,7 @@ describe('CooldownSession', () => {
       }));
 
       // Write bridge-run file as 'complete' — should take precedence over stale run.json
-      writeFileSync(join(bridgeRunsDir, `${runId}.json`), JSON.stringify({ runId, betId: bet.id, cycleId: cycle.id, cycleName: 'Test', stages: ['build'], isolation: 'shared', startedAt: new Date().toISOString(), status: 'complete' }));
+      writeFileSync(join(bridgeRunsDir, `${runId}.json`), JSON.stringify({ runId, betId: bet.id, betName: 'Complete bridge bet', cycleId: cycle.id, cycleName: 'Test', stages: ['build'], isolation: 'shared', startedAt: new Date().toISOString(), status: 'complete' }));
 
       const sessionWithBridge = new CooldownSession({
         cycleManager, knowledgeStore, persistence: JsonStore, pipelineDir, historyDir, bridgeRunsDir, runsDir,
@@ -1795,7 +1769,7 @@ describe('CooldownSession', () => {
       cycleManager.setRunId(cycle.id, bet.id, runId);
 
       
-      writeFileSync(join(bridgeRunsDir, `${runId}.json`), JSON.stringify({ runId, betId: bet.id, cycleId: cycle.id, cycleName: 'Test', stages: ['build'], isolation: 'shared', startedAt: new Date().toISOString(), status: 'in-progress' }));
+      writeFileSync(join(bridgeRunsDir, `${runId}.json`), JSON.stringify({ runId, betId: bet.id, betName: 'In-progress bridge bet', cycleId: cycle.id, cycleName: 'Test', stages: ['build'], isolation: 'shared', startedAt: new Date().toISOString(), status: 'in-progress' }));
 
       const sessionWithBridge = new CooldownSession({
         cycleManager, knowledgeStore, persistence: JsonStore, pipelineDir, historyDir, bridgeRunsDir,

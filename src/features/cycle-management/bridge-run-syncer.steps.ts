@@ -75,7 +75,19 @@ function writeBridgeRunFile(
   runId: string,
   meta: Record<string, unknown>,
 ): void {
-  writeFileSync(join(bridgeRunsDir, `${runId}.json`), JSON.stringify(meta));
+  const base = {
+    runId,
+    betId: meta.betId ?? randomUUID(),
+    betName: 'test bet',
+    cycleId: meta.cycleId ?? randomUUID(),
+    cycleName: 'Test Cycle',
+    stages: ['build'],
+    isolation: 'shared',
+    startedAt: '2026-03-22T10:00:00.000Z',
+    status: 'complete',
+    ...meta,
+  };
+  writeFileSync(join(bridgeRunsDir, `${runId}.json`), JSON.stringify(base));
 }
 
 function writeRunFile(
