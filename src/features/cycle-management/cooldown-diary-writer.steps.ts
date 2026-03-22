@@ -6,11 +6,11 @@ import { expect, vi } from 'vitest';
 import { logger } from '@shared/lib/logger.js';
 import type { Cycle } from '@domain/types/cycle.js';
 import type { BetOutcomeRecord } from './cooldown-session.js';
-import type { CooldownDiaryWriter, CooldownDiaryDeps } from './cooldown-diary-writer.js';
+import type { CooldownDiaryWriter, CooldownDiaryDeps, DiaryEntryInput } from './cooldown-diary-writer.js';
 import type { SynthesisProposal } from '@domain/types/synthesis.js';
 import type { SessionBuilder } from '@features/dojo/session-builder.js';
 
-type DiaryWriteFn = (input: Record<string, unknown>) => void;
+type DiaryWriteFn = (input: DiaryEntryInput) => void;
 type BuildFn = SessionBuilder['build'];
 
 // -- World -------------------------------------------------------
@@ -224,7 +224,7 @@ When(
   'a run diary is written',
   async (world: CooldownDiaryWriterWorld) => {
     const { CooldownDiaryWriter: Cls } = await loadWriter();
-    world.writer = new Cls(world.deps as CooldownDiaryDeps, world.diaryWriterWriteSpy);
+    world.writer = new Cls({ ...world.deps, diaryWriteFn: world.diaryWriterWriteSpy } as CooldownDiaryDeps);
     try {
       world.writer.writeForRun({
         cycleId: 'cycle-1',
@@ -245,7 +245,7 @@ When(
   'a complete diary is written',
   async (world: CooldownDiaryWriterWorld) => {
     const { CooldownDiaryWriter: Cls } = await loadWriter();
-    world.writer = new Cls(world.deps as CooldownDiaryDeps, world.diaryWriterWriteSpy);
+    world.writer = new Cls({ ...world.deps, diaryWriteFn: world.diaryWriterWriteSpy } as CooldownDiaryDeps);
     try {
       world.writer.writeForComplete({
         cycleId: 'cycle-1',
@@ -264,7 +264,7 @@ When(
   'a diary entry is written',
   async (world: CooldownDiaryWriterWorld) => {
     const { CooldownDiaryWriter: Cls } = await loadWriter();
-    world.writer = new Cls(world.deps as CooldownDiaryDeps, world.diaryWriterWriteSpy);
+    world.writer = new Cls({ ...world.deps, diaryWriteFn: world.diaryWriterWriteSpy } as CooldownDiaryDeps);
     try {
       world.writer.writeForRun({
         cycleId: 'cycle-1',
@@ -284,8 +284,18 @@ When(
   'bet outcomes are enriched',
   async (world: CooldownDiaryWriterWorld) => {
     const { CooldownDiaryWriter: Cls } = await loadWriter();
-    world.writer = new Cls(world.deps as CooldownDiaryDeps);
-    world.enrichedOutcomes = world.writer.enrichBetOutcomesWithDescriptions(world.cycle, world.betOutcomes);
+    // Test enrichment through writeForRun — enrichBetOutcomesWithDescriptions is private
+    world.deps.dojoDir = world.deps.dojoDir ?? '/tmp/enrich-test';
+    const writeSpy = vi.fn<DiaryWriteFn>();
+    world.writer = new Cls({ ...world.deps, diaryWriteFn: writeSpy } as CooldownDiaryDeps);
+    world.writer.writeForRun({
+      cycleId: 'cycle-1',
+      cycle: world.cycle,
+      betOutcomes: world.betOutcomes,
+      proposals: [],
+      learningsCaptured: 0,
+    });
+    world.enrichedOutcomes = (writeSpy.mock.calls[0]?.[0] as { betOutcomes: BetOutcomeRecord[] })?.betOutcomes;
   },
 );
 

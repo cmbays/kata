@@ -53,7 +53,7 @@ describe('CooldownDiaryWriter', () => {
   describe('writeForRun()', () => {
     it('writes a diary entry with enriched bet descriptions', () => {
       const writeSpy = vi.fn();
-      const writer = new CooldownDiaryWriter(makeDeps(), writeSpy);
+      const writer = new CooldownDiaryWriter(makeDeps({ diaryWriteFn: writeSpy }));
       const cycle = makeCycle([
         { id: 'bet-1', description: 'Redesign login', outcome: 'complete' },
       ]);
@@ -74,7 +74,7 @@ describe('CooldownDiaryWriter', () => {
 
     it('passes human perspective through to diary entry', () => {
       const writeSpy = vi.fn();
-      const writer = new CooldownDiaryWriter(makeDeps(), writeSpy);
+      const writer = new CooldownDiaryWriter(makeDeps({ diaryWriteFn: writeSpy }));
 
       writer.writeForRun({
         cycleId: 'cycle-1',
@@ -90,7 +90,7 @@ describe('CooldownDiaryWriter', () => {
 
     it('skips when dojoDir is not configured', () => {
       const writeSpy = vi.fn();
-      const writer = new CooldownDiaryWriter(makeDeps({ dojoDir: undefined }), writeSpy);
+      const writer = new CooldownDiaryWriter(makeDeps({ dojoDir: undefined, diaryWriteFn: writeSpy }));
 
       writer.writeForRun({
         cycleId: 'cycle-1',
@@ -107,7 +107,7 @@ describe('CooldownDiaryWriter', () => {
   describe('writeForComplete()', () => {
     it('derives bet outcomes from cycle state, filtering pending bets', () => {
       const writeSpy = vi.fn();
-      const writer = new CooldownDiaryWriter(makeDeps(), writeSpy);
+      const writer = new CooldownDiaryWriter(makeDeps({ diaryWriteFn: writeSpy }));
       const cycle = makeCycle([
         { id: 'bet-1', description: 'Done', outcome: 'complete' },
         { id: 'bet-2', description: 'Dropped', outcome: 'abandoned' },
@@ -127,7 +127,7 @@ describe('CooldownDiaryWriter', () => {
 
     it('includes agent perspective from synthesis proposals', () => {
       const writeSpy = vi.fn();
-      const writer = new CooldownDiaryWriter(makeDeps(), writeSpy);
+      const writer = new CooldownDiaryWriter(makeDeps({ diaryWriteFn: writeSpy }));
       const proposals: SynthesisProposal[] = [
         { id: 'p1', summary: 'Speed up CI', type: 'new-learning', confidence: 0.8, proposedTier: 'step', proposedCategory: 'tooling', proposedContent: 'CI is slow' } as SynthesisProposal,
       ];
@@ -145,7 +145,7 @@ describe('CooldownDiaryWriter', () => {
 
     it('skips when dojoDir is not configured', () => {
       const writeSpy = vi.fn();
-      const writer = new CooldownDiaryWriter(makeDeps({ dojoDir: undefined }), writeSpy);
+      const writer = new CooldownDiaryWriter(makeDeps({ dojoDir: undefined, diaryWriteFn: writeSpy }));
 
       writer.writeForComplete({
         cycleId: 'cycle-1',
@@ -157,37 +157,52 @@ describe('CooldownDiaryWriter', () => {
     });
   });
 
-  describe('enrichBetOutcomesWithDescriptions()', () => {
+  describe('bet outcome enrichment (via writeForRun)', () => {
     it('fills missing betDescription from cycle bets', () => {
-      const writer = new CooldownDiaryWriter(makeDeps());
+      const writeSpy = vi.fn();
+      const writer = new CooldownDiaryWriter(makeDeps({ diaryWriteFn: writeSpy }));
       const cycle = makeCycle([{ id: 'bet-1', description: 'Ship dashboard' }]);
-      const outcomes: BetOutcomeRecord[] = [{ betId: 'bet-1', outcome: 'complete' }];
 
-      const enriched = writer.enrichBetOutcomesWithDescriptions(cycle, outcomes);
+      writer.writeForRun({
+        cycleId: 'cycle-1',
+        cycle,
+        betOutcomes: [{ betId: 'bet-1', outcome: 'complete' }],
+        proposals: [],
+        learningsCaptured: 0,
+      });
 
-      expect(enriched[0]!.betDescription).toBe('Ship dashboard');
+      expect(writeSpy.mock.calls[0]![0].betOutcomes[0].betDescription).toBe('Ship dashboard');
     });
 
     it('preserves existing betDescription', () => {
-      const writer = new CooldownDiaryWriter(makeDeps());
+      const writeSpy = vi.fn();
+      const writer = new CooldownDiaryWriter(makeDeps({ diaryWriteFn: writeSpy }));
       const cycle = makeCycle([{ id: 'bet-1', description: 'Cycle desc' }]);
-      const outcomes: BetOutcomeRecord[] = [
-        { betId: 'bet-1', outcome: 'complete', betDescription: 'Pre-existing note' },
-      ];
 
-      const enriched = writer.enrichBetOutcomesWithDescriptions(cycle, outcomes);
+      writer.writeForRun({
+        cycleId: 'cycle-1',
+        cycle,
+        betOutcomes: [{ betId: 'bet-1', outcome: 'complete', betDescription: 'Pre-existing note' }],
+        proposals: [],
+        learningsCaptured: 0,
+      });
 
-      expect(enriched[0]!.betDescription).toBe('Pre-existing note');
+      expect(writeSpy.mock.calls[0]![0].betOutcomes[0].betDescription).toBe('Pre-existing note');
     });
 
     it('handles bet without matching cycle entry', () => {
-      const writer = new CooldownDiaryWriter(makeDeps());
-      const cycle = makeCycle([]);
-      const outcomes: BetOutcomeRecord[] = [{ betId: 'bet-orphan', outcome: 'complete' }];
+      const writeSpy = vi.fn();
+      const writer = new CooldownDiaryWriter(makeDeps({ diaryWriteFn: writeSpy }));
 
-      const enriched = writer.enrichBetOutcomesWithDescriptions(cycle, outcomes);
+      writer.writeForRun({
+        cycleId: 'cycle-1',
+        cycle: makeCycle([]),
+        betOutcomes: [{ betId: 'bet-orphan', outcome: 'complete' }],
+        proposals: [],
+        learningsCaptured: 0,
+      });
 
-      expect(enriched[0]!.betDescription).toBeUndefined();
+      expect(writeSpy.mock.calls[0]![0].betOutcomes[0].betDescription).toBeUndefined();
     });
   });
 
@@ -280,7 +295,7 @@ describe('CooldownDiaryWriter', () => {
       const writeSpy = vi.fn().mockImplementation(() => {
         throw new Error('write broke');
       });
-      const writer = new CooldownDiaryWriter(makeDeps(), writeSpy);
+      const writer = new CooldownDiaryWriter(makeDeps({ diaryWriteFn: writeSpy }));
 
       writer.writeForRun({
         cycleId: 'cycle-1',
@@ -297,7 +312,7 @@ describe('CooldownDiaryWriter', () => {
       const writeSpy = vi.fn().mockImplementation(() => {
         throw 42; // eslint-disable-line no-throw-literal
       });
-      const writer = new CooldownDiaryWriter(makeDeps(), writeSpy);
+      const writer = new CooldownDiaryWriter(makeDeps({ diaryWriteFn: writeSpy }));
 
       writer.writeForRun({
         cycleId: 'cycle-1',

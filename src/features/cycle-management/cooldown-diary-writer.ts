@@ -21,12 +21,27 @@ import {
 /**
  * Dependencies injected into CooldownDiaryWriter for testability.
  */
+/** Shape of the input passed to the diary write function. */
+export interface DiaryEntryInput {
+  cycleId: string;
+  cycleName?: string;
+  betOutcomes: BetOutcomeRecord[];
+  proposals: CycleProposal[];
+  runSummaries?: RunSummary[];
+  learningsCaptured: number;
+  ruleSuggestions?: RuleSuggestion[];
+  agentPerspective?: string;
+  humanPerspective?: string;
+}
+
 export interface CooldownDiaryDeps {
   dojoDir?: string;
   dojoSessionBuilder?: Pick<SessionBuilder, 'build'>;
   knowledgeStore: IKnowledgeStore;
   cycleManager: CycleManager;
   runsDir?: string;
+  /** Injectable for testability. When omitted, uses real DiaryStore + DiaryWriter. */
+  diaryWriteFn?: (input: DiaryEntryInput) => void;
 }
 
 /**
@@ -39,11 +54,7 @@ export interface CooldownDiaryDeps {
  * Non-critical: all write failures are logged as warnings and never abort cooldown.
  */
 export class CooldownDiaryWriter {
-  constructor(
-    private readonly deps: CooldownDiaryDeps,
-    /** Injectable diary write function for testability. Defaults to real DiaryStore + DiaryWriter. */
-    private readonly diaryWriteFn?: (input: Record<string, unknown>) => void,
-  ) {}
+  constructor(private readonly deps: CooldownDiaryDeps) {}
 
   /**
    * Write a diary entry for a one-shot cooldown run.
@@ -106,7 +117,7 @@ export class CooldownDiaryWriter {
    * Enrich bet outcomes with human-readable descriptions from the cycle's bets.
    * Preserves any existing betDescription — only fills in missing ones.
    */
-  enrichBetOutcomesWithDescriptions(cycle: Cycle, betOutcomes: BetOutcomeRecord[]): BetOutcomeRecord[] {
+  private enrichBetOutcomesWithDescriptions(cycle: Cycle, betOutcomes: BetOutcomeRecord[]): BetOutcomeRecord[] {
     const betDescriptionMap = new Map(cycle.bets.map((bet) => [bet.id, bet.description]));
     return betOutcomes.map((betOutcome) => ({
       ...betOutcome,
@@ -132,23 +143,14 @@ export class CooldownDiaryWriter {
     }
   }
 
-  private writeDiaryEntry(input: {
-    cycleId: string;
-    cycleName?: string;
-    betOutcomes: BetOutcomeRecord[];
-    proposals: CycleProposal[];
-    runSummaries?: RunSummary[];
-    learningsCaptured: number;
-    ruleSuggestions?: RuleSuggestion[];
-    agentPerspective?: string;
-    humanPerspective?: string;
-  }): void {
+  private writeDiaryEntry(input: DiaryEntryInput): void {
+    if (!this.deps.dojoDir) return;
     try {
-      if (this.diaryWriteFn) {
-        this.diaryWriteFn(input as unknown as Record<string, unknown>);
+      if (this.deps.diaryWriteFn) {
+        this.deps.diaryWriteFn(input);
         return;
       }
-      const diaryDir = join(this.deps.dojoDir!, 'diary');
+      const diaryDir = join(this.deps.dojoDir, 'diary');
       const store = new DiaryStore(diaryDir);
       const writer = new DiaryWriter(store);
       writer.write({
