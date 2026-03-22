@@ -33,10 +33,10 @@ import type { BeltCalculator } from '@features/belt/belt-calculator.js';
 import type { BeltComputeResult } from '@features/belt/belt-calculator.js';
 import type { KataAgentConfidenceCalculator } from '@features/kata-agent/kata-agent-confidence-calculator.js';
 import { CooldownBeltComputer } from './cooldown-belt-computer.js';
+import { CooldownFollowUpRunner } from './cooldown-follow-up-runner.js';
 import {
   buildAgentPerspectiveFromProposals,
   buildCooldownBudgetUsage,
-  buildExpiryCheckMessages,
   buildCooldownLearningDrafts,
   buildDiaryBetOutcomesFromCycleBets,
   buildDojoSessionBuildRequest,
@@ -262,21 +262,14 @@ export interface CooldownPrepareResult {
 export class CooldownSession {
   private readonly deps: CooldownSessionDeps;
   private readonly proposalGenerator: Pick<ProposalGenerator, 'generate'>;
-  private readonly predictionMatcher: Pick<PredictionMatcher, 'match'> | null;
-  private readonly calibrationDetector: Pick<CalibrationDetector, 'detect'> | null;
-  private readonly hierarchicalPromoter: Pick<HierarchicalPromoter, 'promoteStepToFlavor' | 'promoteFlavorToStage' | 'promoteStageToCategory'>;
-  private readonly frictionAnalyzer: Pick<FrictionAnalyzer, 'analyze'> | null;
   private readonly _nextKeikoProposalGenerator: Pick<NextKeikoProposalGenerator, 'generate'> | null;
   private readonly bridgeRunSyncer: BridgeRunSyncer;
   private readonly beltComputer: CooldownBeltComputer;
+  private readonly followUpRunner: CooldownFollowUpRunner;
 
   constructor(deps: CooldownSessionDeps) {
     this.deps = deps;
     this.proposalGenerator = this.resolveProposalGenerator(deps);
-    this.predictionMatcher = this.resolvePredictionMatcher(deps);
-    this.calibrationDetector = this.resolveCalibrationDetector(deps);
-    this.hierarchicalPromoter = this.resolveHierarchicalPromoter(deps);
-    this.frictionAnalyzer = this.resolveFrictionAnalyzer(deps);
     this._nextKeikoProposalGenerator = this.resolveNextKeikoProposalGenerator(deps);
     this.bridgeRunSyncer = new BridgeRunSyncer({
       bridgeRunsDir: deps.bridgeRunsDir,
@@ -290,6 +283,13 @@ export class CooldownSession {
       katakaConfidenceCalculator: deps.katakaConfidenceCalculator,
       agentDir: deps.agentDir,
       katakaDir: deps.katakaDir,
+    });
+    this.followUpRunner = new CooldownFollowUpRunner({
+      predictionMatcher: this.resolvePredictionMatcher(deps),
+      calibrationDetector: this.resolveCalibrationDetector(deps),
+      hierarchicalPromoter: this.resolveHierarchicalPromoter(deps),
+      frictionAnalyzer: this.resolveFrictionAnalyzer(deps),
+      knowledgeStore: deps.knowledgeStore,
     });
   }
 
@@ -408,13 +408,6 @@ export class CooldownSession {
     this.bridgeRunSyncer.recordBetOutcomes(cycleId, betOutcomes);
   }
 
-  private runCooldownFollowUps(cycle: Cycle): void {
-    this.runPredictionMatching(cycle);
-    this.runCalibrationDetection(cycle);
-    this.runHierarchicalPromotion();
-    this.runExpiryCheck();
-    this.runFrictionAnalysis(cycle);
-  }
 
   private writeRunDiary(input: {
     cycleId: string;
@@ -553,7 +546,7 @@ export class CooldownSession {
 
     try {
       const phase = this.buildCooldownPhase(cycleId, betOutcomes);
-      this.runCooldownFollowUps(phase.cycle);
+      this.followUpRunner.run(phase.cycle);
       const beltResult = this.beltComputer.compute();
       this.beltComputer.computeAgentConfidence();
       this.writeRunDiary({
@@ -609,7 +602,7 @@ export class CooldownSession {
 
     try {
       const phase = this.buildCooldownPhase(cycleId, betOutcomes);
-      this.runCooldownFollowUps(phase.cycle);
+      this.followUpRunner.run(phase.cycle);
       const effectiveDepth = depth ?? this.deps.synthesisDepth ?? 'standard';
       const { synthesisInputId, synthesisInputPath } = this.writeSynthesisInput(
         cycleId,
@@ -988,102 +981,6 @@ export class CooldownSession {
       { warnOnInvalid: false },
     );
     return filterExecutionHistoryForCycle(allEntries, cycleId);
-  }
-
-  /**
-   * For each bet with a runId, run PredictionMatcher to match predictions to outcomes.
-   * Writes validation/unmatched reflections to the run's JSONL file.
-   * No-op when runsDir is absent or no prediction matcher is available.
-   */
-  private runPredictionMatching(cycle: Cycle): void {
-    // Stryker disable next-line ConditionalExpression: guard redundant with catch in runForBetRun
-    if (!this.predictionMatcher) return;
-    // Stryker disable next-line StringLiteral: presentation text — label for error logging
-    this.runForEachBetRun(cycle, (runId) => this.predictionMatcher!.match(runId), 'Prediction matching');
-  }
-
-  /**
-   * For each bet with a runId, run CalibrationDetector to detect systematic prediction biases.
-   * Writes CalibrationReflections to the run's JSONL file.
-   * Must run after runPredictionMatching (reads validation reflections it produces).
-   * No-op when runsDir is absent or no calibration detector is available.
-   */
-  private runCalibrationDetection(cycle: Cycle): void {
-    // Stryker disable next-line ConditionalExpression: guard redundant with catch in runForBetRun
-    if (!this.calibrationDetector) return;
-    // Stryker disable next-line StringLiteral: presentation text — label for error logging
-    this.runForEachBetRun(cycle, (runId) => this.calibrationDetector!.detect(runId), 'Calibration detection');
-  }
-
-  private runForEachBetRun(
-    cycle: Cycle,
-    runner: (runId: string) => void,
-    label: string,
-  ): void {
-    for (const bet of cycle.bets) {
-      if (!bet.runId) continue;
-      this.runForBetRun(bet.runId, runner, label);
-    }
-  }
-
-  private runForBetRun(
-    runId: string,
-    runner: (runId: string) => void,
-    label: string,
-  ): void {
-    try {
-      runner(runId);
-    // Stryker disable next-line all: catch block is pure error-reporting — non-critical logging
-    } catch (err) {
-      logger.warn(`${label} failed for run ${runId}: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
-
-  /**
-   * Promote step-tier learnings up through flavor → stage → category.
-   * Non-critical: errors are logged and swallowed.
-   */
-  private runHierarchicalPromotion(): void {
-    try {
-      // Stryker disable next-line ObjectLiteral: tier filter is tested via hierarchical promotion integration
-      const stepLearnings = this.deps.knowledgeStore.query({ tier: 'step' });
-      const { learnings: flavorLearnings } = this.hierarchicalPromoter.promoteStepToFlavor(stepLearnings, 'cooldown-retrospective');
-      const { learnings: stageLearnings } = this.hierarchicalPromoter.promoteFlavorToStage(flavorLearnings, 'cooldown');
-      this.hierarchicalPromoter.promoteStageToCategory(stageLearnings);
-    // Stryker disable next-line all: catch block is pure error-reporting — non-critical logging
-    } catch (err) {
-      logger.warn(`Hierarchical learning promotion failed: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
-
-  /**
-   * Scan all learnings for expiry: auto-archives expired operational ones,
-   * flags stale strategic ones. Non-critical: errors are logged and swallowed.
-   */
-  private runExpiryCheck(): void {
-    try {
-      // Stryker disable next-line ConditionalExpression: guard redundant with catch — checkExpiry absence is swallowed
-      if (typeof (this.deps.knowledgeStore as { checkExpiry?: unknown }).checkExpiry !== 'function') return;
-      const result = this.deps.knowledgeStore.checkExpiry();
-      for (const message of buildExpiryCheckMessages(result)) {
-        logger.debug(message);
-      }
-    // Stryker disable next-line all: catch block is pure error-reporting — non-critical logging
-    } catch (err) {
-      logger.warn(`Learning expiry check failed: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
-
-  /**
-   * For each bet with a runId, run FrictionAnalyzer to resolve contradiction observations.
-   * Writes ResolutionReflections and optionally archives/captures learnings.
-   * No-op when runsDir is absent or no friction analyzer is available.
-   */
-  private runFrictionAnalysis(cycle: Cycle): void {
-    // Stryker disable next-line ConditionalExpression: guard redundant with catch in runForBetRun
-    if (!this.frictionAnalyzer) return;
-    // Stryker disable next-line StringLiteral: presentation text — label for error logging
-    this.runForEachBetRun(cycle, (runId) => this.frictionAnalyzer!.analyze(runId), 'Friction analysis');
   }
 
   private writeDiaryEntry(input: {

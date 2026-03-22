@@ -16,6 +16,7 @@ export default {
     'src/cli/commands/execute.ts',
     'src/features/cycle-management/bridge-run-syncer.ts',
     'src/features/cycle-management/cooldown-belt-computer.ts',
+    'src/features/cycle-management/cooldown-follow-up-runner.ts',
     'src/features/cycle-management/cooldown-session.ts',
     'src/features/kata-agent/kata-agent-confidence-calculator.ts',
     'src/features/kata-agent/kata-agent-observability-aggregator.ts',
