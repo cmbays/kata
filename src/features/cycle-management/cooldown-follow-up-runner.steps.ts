@@ -421,7 +421,7 @@ Then(
 
 // -- Cleanup -----------------------------------------------------
 
-After((_world: CooldownFollowUpRunnerWorld) => {
+After(async (_world: CooldownFollowUpRunnerWorld) => {
   vi.restoreAllMocks();
 });
 

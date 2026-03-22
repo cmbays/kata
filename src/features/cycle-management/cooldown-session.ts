@@ -8,10 +8,7 @@ import type { ExecutionHistoryEntry } from '@domain/types/history.js';
 import type { Cycle } from '@domain/types/cycle.js';
 import type { RuleSuggestion } from '@domain/types/rule.js';
 import { ExecutionHistoryEntrySchema } from '@domain/types/history.js';
-import { DiaryWriter } from '@features/dojo/diary-writer.js';
-import { DiaryStore } from '@infra/dojo/diary-store.js';
 import type { SessionBuilder } from '@features/dojo/session-builder.js';
-import { DataAggregator } from '@features/dojo/data-aggregator.js';
 import { logger } from '@shared/lib/logger.js';
 import { loadRunSummary } from './run-summary-loader.js';
 import { ProposalGenerator, type CycleProposal, type ProposalGeneratorDeps } from './proposal-generator.js';
@@ -33,13 +30,12 @@ import type { BeltCalculator } from '@features/belt/belt-calculator.js';
 import type { BeltComputeResult } from '@features/belt/belt-calculator.js';
 import type { KataAgentConfidenceCalculator } from '@features/kata-agent/kata-agent-confidence-calculator.js';
 import { CooldownBeltComputer } from './cooldown-belt-computer.js';
+import { CooldownDiaryWriter } from './cooldown-diary-writer.js';
 import { CooldownFollowUpRunner } from './cooldown-follow-up-runner.js';
 import {
   buildAgentPerspectiveFromProposals,
   buildCooldownBudgetUsage,
   buildCooldownLearningDrafts,
-  buildDiaryBetOutcomesFromCycleBets,
-  buildDojoSessionBuildRequest,
   buildSynthesisInputRecord,
   clampConfidenceWithDelta,
   filterExecutionHistoryForCycle,
@@ -265,6 +261,7 @@ export class CooldownSession {
   private readonly _nextKeikoProposalGenerator: Pick<NextKeikoProposalGenerator, 'generate'> | null;
   private readonly bridgeRunSyncer: BridgeRunSyncer;
   private readonly beltComputer: CooldownBeltComputer;
+  private readonly diaryWriter: CooldownDiaryWriter;
   private readonly followUpRunner: CooldownFollowUpRunner;
 
   constructor(deps: CooldownSessionDeps) {
@@ -283,6 +280,13 @@ export class CooldownSession {
       katakaConfidenceCalculator: deps.katakaConfidenceCalculator,
       agentDir: deps.agentDir,
       katakaDir: deps.katakaDir,
+    });
+    this.diaryWriter = new CooldownDiaryWriter({
+      dojoDir: deps.dojoDir,
+      dojoSessionBuilder: deps.dojoSessionBuilder,
+      knowledgeStore: deps.knowledgeStore,
+      cycleManager: deps.cycleManager,
+      runsDir: deps.runsDir,
     });
     this.followUpRunner = new CooldownFollowUpRunner({
       predictionMatcher: this.resolvePredictionMatcher(deps),
@@ -409,68 +413,7 @@ export class CooldownSession {
   }
 
 
-  private writeRunDiary(input: {
-    cycleId: string;
-    cycleName?: string;
-    cycle: Cycle;
-    betOutcomes: BetOutcomeRecord[];
-    proposals: CycleProposal[];
-    runSummaries?: RunSummary[];
-    learningsCaptured: number;
-    ruleSuggestions?: RuleSuggestion[];
-    humanPerspective?: string;
-  }): void {
-    // Stryker disable next-line ConditionalExpression: guard redundant with catch in writeDiaryEntry
-    if (!this.deps.dojoDir) return;
 
-    this.writeDiaryEntry({
-      cycleId: input.cycleId,
-      cycleName: input.cycleName,
-      betOutcomes: this.enrichBetOutcomesWithDescriptions(input.cycle, input.betOutcomes),
-      proposals: input.proposals,
-      runSummaries: input.runSummaries,
-      learningsCaptured: input.learningsCaptured,
-      ruleSuggestions: input.ruleSuggestions,
-      humanPerspective: input.humanPerspective,
-    });
-  }
-
-  private enrichBetOutcomesWithDescriptions(cycle: Cycle, betOutcomes: BetOutcomeRecord[]): BetOutcomeRecord[] {
-    const betDescriptionMap = new Map(cycle.bets.map((bet) => [bet.id, bet.description]));
-    return betOutcomes.map((betOutcome) => ({
-      ...betOutcome,
-      // Stryker disable next-line LogicalOperator: fallback enriches diary presentation — both paths produce valid output
-      betDescription: betOutcome.betDescription ?? betDescriptionMap.get(betOutcome.betId),
-    }));
-  }
-
-  private writeCompleteDiary(input: {
-    cycleId: string;
-    cycleName?: string;
-    cycle: Cycle;
-    proposals: CycleProposal[];
-    runSummaries?: RunSummary[];
-    ruleSuggestions?: RuleSuggestion[];
-    synthesisProposals?: SynthesisProposal[];
-  }): void {
-    if (!this.deps.dojoDir) return;
-
-    this.writeDiaryEntry({
-      cycleId: input.cycleId,
-      cycleName: input.cycleName,
-      betOutcomes: buildDiaryBetOutcomesFromCycleBets(input.cycle.bets) as BetOutcomeRecord[],
-      proposals: input.proposals,
-      runSummaries: input.runSummaries,
-      learningsCaptured: 0,
-      ruleSuggestions: input.ruleSuggestions,
-      agentPerspective: buildAgentPerspectiveFromProposals(input.synthesisProposals ?? []),
-    });
-  }
-
-  private writeOptionalDojoSession(cycleId: string, cycleName?: string): void {
-    if (!this.deps.dojoDir || !this.deps.dojoSessionBuilder) return;
-    this.writeDojoSession(cycleId, cycleName);
-  }
 
   private readAppliedSynthesisProposals(
     synthesisInputId?: string,
@@ -549,9 +492,8 @@ export class CooldownSession {
       this.followUpRunner.run(phase.cycle);
       const beltResult = this.beltComputer.compute();
       this.beltComputer.computeAgentConfidence();
-      this.writeRunDiary({
+      this.diaryWriter.writeForRun({
         cycleId,
-        cycleName: phase.cycle.name,
         cycle: phase.cycle,
         betOutcomes: phase.effectiveBetOutcomes,
         proposals: phase.proposals,
@@ -560,7 +502,7 @@ export class CooldownSession {
         ruleSuggestions: phase.ruleSuggestions,
         humanPerspective,
       });
-      this.writeOptionalDojoSession(cycleId, phase.cycle.name);
+      this.diaryWriter.writeDojoSession(cycleId, phase.cycle.name);
       const nextKeikoResult = this.runNextKeikoProposals(phase.cycle);
       this.deps.cycleManager.updateState(cycleId, 'complete');
 
@@ -648,16 +590,15 @@ export class CooldownSession {
     const proposals = this.proposalGenerator.generate(cycleId, runSummaries);
     const ruleSuggestions = this.loadRuleSuggestions();
     const synthesisProposals = this.readAppliedSynthesisProposals(synthesisInputId, acceptedProposalIds);
-    this.writeCompleteDiary({
+    this.diaryWriter.writeForComplete({
       cycleId,
-      cycleName: cycle.name,
       cycle,
       proposals,
       runSummaries,
       ruleSuggestions,
       synthesisProposals,
     });
-    this.writeOptionalDojoSession(cycleId, cycle.name);
+    this.diaryWriter.writeDojoSession(cycleId, cycle.name);
     const beltResult = this.beltComputer.compute();
     this.beltComputer.computeAgentConfidence();
     const nextKeikoResult = this.runNextKeikoProposals(cycle);
@@ -981,82 +922,6 @@ export class CooldownSession {
       { warnOnInvalid: false },
     );
     return filterExecutionHistoryForCycle(allEntries, cycleId);
-  }
-
-  private writeDiaryEntry(input: {
-    cycleId: string;
-    cycleName?: string;
-    betOutcomes: BetOutcomeRecord[];
-    proposals: CycleProposal[];
-    runSummaries?: RunSummary[];
-    learningsCaptured: number;
-    ruleSuggestions?: RuleSuggestion[];
-    /** Part 2 — synthesis proposals summary or sensei reflection. */
-    agentPerspective?: string;
-    /** Part 3 — human input captured during collaborative cooldown. */
-    humanPerspective?: string;
-  }): void {
-    try {
-      const diaryDir = join(this.deps.dojoDir!, 'diary');
-      const store = new DiaryStore(diaryDir);
-      const writer = new DiaryWriter(store);
-      writer.write({
-        ...input,
-        agentPerspective: input.agentPerspective,
-        humanPerspective: input.humanPerspective,
-      });
-    // Stryker disable next-line all: catch block is pure error-reporting
-    } catch (err) {
-      // Stryker disable next-line all: presentation text in warning message
-      logger.warn(`Failed to write dojo diary entry: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
-
-  /**
-   * Generate a DojoSession record for this cooldown.
-   *
-   * Constructs a DataAggregator from available deps, gathers cycle data, then
-   * delegates to the injected dojoSessionBuilder (already wired with its SessionStore).
-   * Non-critical — any error is caught and logged so it never aborts cooldown.
-   *
-   * Requires: dojoDir and dojoSessionBuilder both set in deps.
-   */
-  private writeDojoSession(cycleId: string, cycleName?: string): void {
-    try {
-      const request = this.buildDojoSessionRequest(cycleId, cycleName);
-      const data = this.gatherDojoSessionData(request);
-      this.deps.dojoSessionBuilder!.build(data, { title: request.title });
-    // Stryker disable next-line all: catch block is pure error-reporting
-    } catch (err) {
-      // Stryker disable next-line all: presentation text in warning message
-      logger.warn(`Failed to generate dojo session: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
-
-  private buildDojoSessionRequest(cycleId: string, cycleName?: string): {
-    diaryDir: string;
-    runsDir: string;
-    title: string;
-  } {
-    return buildDojoSessionBuildRequest({
-      dojoDir: this.deps.dojoDir!,
-      cycleId,
-      cycleName,
-      runsDir: this.deps.runsDir,
-    });
-  }
-
-  private gatherDojoSessionData(request: { diaryDir: string; runsDir: string }): ReturnType<DataAggregator['gather']> {
-    const diaryStore = new DiaryStore(request.diaryDir);
-    const aggregator = new DataAggregator({
-      knowledgeStore: this.deps.knowledgeStore as import('@features/dojo/data-aggregator.js').IDojoKnowledgeStore,
-      diaryStore,
-      cycleManager: this.deps.cycleManager,
-      runsDir: request.runsDir,
-    });
-
-    // Stryker disable next-line ObjectLiteral: maxDiaries default matches explicit value — equivalent
-    return aggregator.gather({ maxDiaries: 5 });
   }
 
   /**
