@@ -9,7 +9,7 @@ import { DiaryWriter } from '@features/dojo/diary-writer.js';
 import { DiaryStore } from '@infra/dojo/diary-store.js';
 import { DataAggregator } from '@features/dojo/data-aggregator.js';
 import { logger } from '@shared/lib/logger.js';
-import type { BetOutcomeRecord } from './cooldown-session.js';
+import type { BetOutcomeRecord } from './cooldown-types.js';
 import type { CycleProposal } from './proposal-generator.js';
 import type { RunSummary } from './types.js';
 import {

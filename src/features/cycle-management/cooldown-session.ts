@@ -18,7 +18,6 @@ import { HierarchicalPromoter } from '@infra/knowledge/hierarchical-promoter.js'
 import { FrictionAnalyzer } from '@features/self-improvement/friction-analyzer.js';
 import type { SynthesisProposal } from '@domain/types/synthesis.js';
 import type { BeltCalculator } from '@features/belt/belt-calculator.js';
-import type { BeltComputeResult } from '@features/belt/belt-calculator.js';
 import type { KataAgentConfidenceCalculator } from '@features/kata-agent/kata-agent-confidence-calculator.js';
 import { CooldownBeltComputer } from './cooldown-belt-computer.js';
 import { CooldownDiaryWriter } from './cooldown-diary-writer.js';
@@ -34,6 +33,10 @@ import {
   shouldWarnOnIncompleteRuns,
 } from './cooldown-session.helpers.js';
 import { BridgeRunSyncer } from './bridge-run-syncer.js';
+import type { BetOutcomeRecord, IncompleteRunInfo, CooldownSessionResult, CooldownPrepareResult } from './cooldown-types.js';
+
+// Re-export shared types so existing consumers don't break
+export type { BetOutcomeRecord, IncompleteRunInfo, CooldownSessionResult, CooldownPrepareResult } from './cooldown-types.js';
 
 /**
  * Dependencies injected into CooldownSession for testability.
@@ -121,7 +124,7 @@ export interface CooldownSessionDeps {
    */
   agentConfidenceCalculator?: Pick<KataAgentConfidenceCalculator, 'compute'>;
   /**
-   * Compatibility alias for older callers still passing kataka-named deps.
+   * @deprecated Use `agentConfidenceCalculator` instead. Will be removed in v1.
    */
   katakaConfidenceCalculator?: Pick<KataAgentConfidenceCalculator, 'compute'>;
   /**
@@ -129,7 +132,7 @@ export interface CooldownSessionDeps {
    */
   agentDir?: string;
   /**
-   * Compatibility alias for older callers still passing katakaDir.
+   * @deprecated Use `agentDir` instead. Will be removed in v1.
    */
   katakaDir?: string;
   /**
@@ -158,79 +161,6 @@ export interface CooldownSessionDeps {
   dojoSessionBuilder?: Pick<SessionBuilder, 'build'>;
 }
 
-/**
- * A run that was found to be incomplete when cooldown was triggered.
- */
-export interface IncompleteRunInfo {
-  runId: string;
-  betId: string;
-  status: 'pending' | 'running';
-}
-
-/**
- * Record of a bet's outcome after cooldown review.
- */
-export interface BetOutcomeRecord {
-  betId: string;
-  outcome: 'complete' | 'partial' | 'abandoned';
-  notes?: string;
-  /** Human-readable bet description, for display in diary entries. */
-  betDescription?: string;
-}
-
-/**
- * Full result of a cooldown session.
- */
-export interface CooldownSessionResult {
-  report: CooldownReport;
-  betOutcomes: BetOutcomeRecord[];
-  proposals: CycleProposal[];
-  learningsCaptured: number;
-  /** Per-bet run summaries from .kata/runs/ data. Present when runsDir was provided. */
-  runSummaries?: RunSummary[];
-  /** Pending rule suggestions loaded during cooldown. Present when ruleRegistry was provided. */
-  ruleSuggestions?: RuleSuggestion[];
-  /** ID of the synthesis input file written by prepare(). */
-  synthesisInputId?: string;
-  /** Path to the synthesis input file written by prepare(). */
-  synthesisInputPath?: string;
-  /** Synthesis proposals that were applied during complete(). */
-  synthesisProposals?: SynthesisProposal[];
-  /** Belt computation result. Present when beltCalculator was provided. */
-  beltResult?: BeltComputeResult;
-  /**
-   * Runs that were found to be incomplete (pending/running) when cooldown was triggered.
-   * Non-empty only when runsDir is provided and incomplete runs were detected.
-   * Always present (may be empty array) when runsDir is configured.
-   */
-  incompleteRuns?: IncompleteRunInfo[];
-  /**
-   * LLM-generated next-keiko bet proposals. Present when runsDir is configured
-   * and NextKeikoProposalGenerator ran successfully during complete().
-   */
-  nextKeikoResult?: NextKeikoResult;
-}
-
-/**
- * Intermediate result returned by prepare() before synthesis.
- * Does NOT include completedAt (cycle not yet 'complete').
- */
-export interface CooldownPrepareResult {
-  report: CooldownReport;
-  betOutcomes: BetOutcomeRecord[];
-  proposals: CycleProposal[];
-  learningsCaptured: number;
-  runSummaries?: RunSummary[];
-  ruleSuggestions?: RuleSuggestion[];
-  synthesisInputId: string;
-  synthesisInputPath: string;
-  /**
-   * Runs that were found to be incomplete (pending/running) when cooldown was triggered.
-   * Non-empty only when runsDir is provided and incomplete runs were detected.
-   * Always present (may be empty array) when runsDir is configured.
-   */
-  incompleteRuns?: IncompleteRunInfo[];
-}
 
 /**
  * Orchestrates the full cooldown experience for a cycle.

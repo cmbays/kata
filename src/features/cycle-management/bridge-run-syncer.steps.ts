@@ -7,7 +7,7 @@ import { expect, vi } from 'vitest';
 import type { BetOutcome } from '@domain/types/bet.js';
 import type { Cycle } from '@domain/types/cycle.js';
 import { logger } from '@shared/lib/logger.js';
-import type { BetOutcomeRecord, IncompleteRunInfo } from './cooldown-session.js';
+import type { BetOutcomeRecord, IncompleteRunInfo } from './cooldown-types.js';
 import { BridgeRunSyncer, type BridgeRunSyncerDeps } from './bridge-run-syncer.js';
 
 // ── World ────────────────────────────────────────────────────

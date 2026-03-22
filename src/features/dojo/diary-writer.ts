@@ -1,7 +1,7 @@
 import type { DojoDiaryEntry } from '@domain/types/dojo.js';
 import { DojoDiaryEntrySchema, type DojoMood } from '@domain/types/dojo.js';
 import { DiaryStore } from '@infra/dojo/diary-store.js';
-import type { BetOutcomeRecord } from '@features/cycle-management/cooldown-session.js';
+import type { BetOutcomeRecord } from '@features/cycle-management/cooldown-types.js';
 import type { CycleProposal } from '@features/cycle-management/proposal-generator.js';
 import type { RuleSuggestion } from '@domain/types/rule.js';
 import type { RunSummary } from '@features/cycle-management/types.js';
