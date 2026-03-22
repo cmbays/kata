@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { DiaryStore } from '@infra/dojo/diary-store.js';
-import type { BetOutcomeRecord } from '@features/cycle-management/cooldown-session.js';
+import type { BetOutcomeRecord } from '@features/cycle-management/cooldown-types.js';
 import type { CycleProposal } from '@features/cycle-management/proposal-generator.js';
 import type { RunSummary } from '@features/cycle-management/types.js';
 import { DiaryWriter, type DiaryWriterInput } from './diary-writer.js';

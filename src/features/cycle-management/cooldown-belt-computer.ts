@@ -12,8 +12,10 @@ export interface CooldownBeltDeps {
   beltCalculator?: Pick<BeltCalculator, 'computeAndStore'>;
   projectStateFile?: string;
   agentConfidenceCalculator?: Pick<KataAgentConfidenceCalculator, 'compute'>;
+  /** @deprecated Use `agentConfidenceCalculator` instead. Will be removed in v1. */
   katakaConfidenceCalculator?: Pick<KataAgentConfidenceCalculator, 'compute'>;
   agentDir?: string;
+  /** @deprecated Use `agentDir` instead. Will be removed in v1. */
   katakaDir?: string;
 }
 

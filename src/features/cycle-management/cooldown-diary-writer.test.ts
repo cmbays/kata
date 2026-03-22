@@ -5,7 +5,7 @@ import { vi } from 'vitest';
 import { logger } from '@shared/lib/logger.js';
 import { CooldownDiaryWriter, type CooldownDiaryDeps } from './cooldown-diary-writer.js';
 import type { Cycle } from '@domain/types/cycle.js';
-import type { BetOutcomeRecord } from './cooldown-session.js';
+import type { BetOutcomeRecord } from './cooldown-types.js';
 import type { SynthesisProposal } from '@domain/types/synthesis.js';
 
 function makeCycle(bets: { id: string; description: string; outcome?: string }[]): Cycle {

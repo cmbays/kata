@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { vi } from 'vitest';
 import type { Cycle } from '@domain/types/cycle.js';
 import { BridgeRunSyncer, type BridgeRunSyncerDeps } from './bridge-run-syncer.js';
-import type { BetOutcomeRecord } from './cooldown-session.js';
+import type { BetOutcomeRecord } from './cooldown-types.js';
 
 // ── Helpers ──────────────────────────────────────────────────
 

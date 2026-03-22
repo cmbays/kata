@@ -4,7 +4,7 @@ import type { CycleManager } from '@domain/services/cycle-manager.js';
 import { logger } from '@shared/lib/logger.js';
 import { JsonStoreError } from '@infra/persistence/json-store.js';
 import { readRun } from '@infra/persistence/run-store.js';
-import type { BetOutcomeRecord, IncompleteRunInfo } from './cooldown-session.js';
+import type { BetOutcomeRecord, IncompleteRunInfo } from './cooldown-types.js';
 import {
   collectBridgeRunIds,
   isJsonFile,

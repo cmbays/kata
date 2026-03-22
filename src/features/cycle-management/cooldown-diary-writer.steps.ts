@@ -5,7 +5,7 @@ import { After, Given, Then, When, QuickPickleWorld } from 'quickpickle';
 import { expect, vi } from 'vitest';
 import { logger } from '@shared/lib/logger.js';
 import type { Cycle } from '@domain/types/cycle.js';
-import type { BetOutcomeRecord } from './cooldown-session.js';
+import type { BetOutcomeRecord } from './cooldown-types.js';
 import type { CooldownDiaryWriter, CooldownDiaryDeps, DiaryEntryInput } from './cooldown-diary-writer.js';
 import type { SynthesisProposal } from '@domain/types/synthesis.js';
 import type { SessionBuilder } from '@features/dojo/session-builder.js';
