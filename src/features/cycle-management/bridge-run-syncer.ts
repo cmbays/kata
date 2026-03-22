@@ -185,7 +185,8 @@ export class BridgeRunSyncer {
       return run.status === 'pending' || run.status === 'running' ? run.status : undefined;
     // Stryker disable next-line all: equivalent mutant — catch returns undefined for expected errors
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== 'ENOENT' && !(err instanceof SyntaxError) && !(err instanceof JsonStoreError)) {
+      // readRun wraps all file/parse errors as JsonStoreError — only warn for truly unexpected errors
+      if (!(err instanceof JsonStoreError)) {
         logger.warn(`Unexpected error reading run file for ${runId}: ${err instanceof Error ? err.message : String(err)}`);
       }
       return undefined;
