@@ -45,16 +45,12 @@ import {
   clampConfidenceWithDelta,
   filterExecutionHistoryForCycle,
   listCompletedBetDescriptions,
-  mapBridgeRunStatusToIncompleteStatus,
-  mapBridgeRunStatusToSyncedOutcome,
   resolveAppliedProposalIds,
   selectEffectiveBetOutcomes,
   shouldWarnOnIncompleteRuns,
-  isJsonFile,
   isSynthesisPendingFile,
-  isSyncableBet,
-  collectBridgeRunIds,
 } from './cooldown-session.helpers.js';
+import { BridgeRunSyncer } from './bridge-run-syncer.js';
 
 /**
  * Dependencies injected into CooldownSession for testability.
@@ -272,6 +268,7 @@ export class CooldownSession {
   private readonly hierarchicalPromoter: Pick<HierarchicalPromoter, 'promoteStepToFlavor' | 'promoteFlavorToStage' | 'promoteStageToCategory'>;
   private readonly frictionAnalyzer: Pick<FrictionAnalyzer, 'analyze'> | null;
   private readonly _nextKeikoProposalGenerator: Pick<NextKeikoProposalGenerator, 'generate'> | null;
+  private readonly bridgeRunSyncer: BridgeRunSyncer;
 
   constructor(deps: CooldownSessionDeps) {
     this.deps = deps;
@@ -281,6 +278,11 @@ export class CooldownSession {
     this.hierarchicalPromoter = this.resolveHierarchicalPromoter(deps);
     this.frictionAnalyzer = this.resolveFrictionAnalyzer(deps);
     this._nextKeikoProposalGenerator = this.resolveNextKeikoProposalGenerator(deps);
+    this.bridgeRunSyncer = new BridgeRunSyncer({
+      bridgeRunsDir: deps.bridgeRunsDir,
+      runsDir: deps.runsDir,
+      cycleManager: deps.cycleManager,
+    });
   }
 
   private resolveProposalGenerator(deps: CooldownSessionDeps): Pick<ProposalGenerator, 'generate'> {
@@ -355,7 +357,7 @@ export class CooldownSession {
     learningsCaptured: number;
     effectiveBetOutcomes: BetOutcomeRecord[];
   } {
-    const syncedOutcomes = this.autoSyncBetOutcomesFromBridgeRuns(cycleId);
+    const syncedOutcomes = this.bridgeRunSyncer.syncOutcomes(cycleId);
     this.recordExplicitBetOutcomes(cycleId, betOutcomes);
     const cycle = this.deps.cycleManager.get(cycleId);
     const report = this.buildCooldownReport(cycleId);
@@ -395,7 +397,7 @@ export class CooldownSession {
 
   private recordExplicitBetOutcomes(cycleId: string, betOutcomes: BetOutcomeRecord[]): void {
     if (betOutcomes.length === 0) return;
-    this.recordBetOutcomes(cycleId, betOutcomes);
+    this.bridgeRunSyncer.recordBetOutcomes(cycleId, betOutcomes);
   }
 
   private runCooldownFollowUps(cycle: Cycle): void {
@@ -570,7 +572,7 @@ export class CooldownSession {
    * @param force When true, skips the incomplete-run guard and proceeds even if runs are in-progress.
    */
   async run(cycleId: string, betOutcomes: BetOutcomeRecord[] = [], { force = false, humanPerspective }: { force?: boolean; humanPerspective?: string } = {}): Promise<CooldownSessionResult> {
-    const incompleteRuns = this.checkIncompleteRuns(cycleId);
+    const incompleteRuns = this.bridgeRunSyncer.checkIncomplete(cycleId);
     this.warnOnIncompleteRuns(incompleteRuns, force);
     const previousState = this.beginCooldown(cycleId);
 
@@ -626,7 +628,7 @@ export class CooldownSession {
    * @param force When true, skips the incomplete-run guard and proceeds even if runs are in-progress.
    */
   async prepare(cycleId: string, betOutcomes: BetOutcomeRecord[] = [], depth?: import('@domain/types/synthesis.js').SynthesisDepth, { force = false }: { force?: boolean } = {}): Promise<CooldownPrepareResult> {
-    const incompleteRuns = this.checkIncompleteRuns(cycleId);
+    const incompleteRuns = this.bridgeRunSyncer.checkIncomplete(cycleId);
     this.warnOnIncompleteRuns(incompleteRuns, force);
     const previousState = this.beginCooldown(cycleId);
 
@@ -802,9 +804,7 @@ export class CooldownSession {
     // Stryker disable next-line ConditionalExpression: guard redundant with catch in readObservationsForRun
     if (!this.deps.runsDir) return observations;
 
-    const bridgeRunIdByBetId = this.deps.bridgeRunsDir
-      ? this.loadBridgeRunIdsByBetId(cycleId, this.deps.bridgeRunsDir)
-      : new Map<string, string>();
+    const bridgeRunIdByBetId = this.bridgeRunSyncer.loadBridgeRunIdsByBetId(cycleId);
 
     for (const bet of cycle.bets) {
       const runId = bet.runId ?? bridgeRunIdByBetId.get(bet.id);
@@ -874,93 +874,11 @@ export class CooldownSession {
   }
 
   /**
-   * Build a betId → runId map by scanning bridge-run files for the given cycle.
-   *
-   * This is the fallback lookup used by writeSynthesisInput() when bet.runId is
-   * not set on the cycle record (e.g., staged-workflow cycles launched before
-   * backfillRunIdInCycle was introduced in SessionExecutionBridge — fixes #335).
-   *
-   * Returns an empty Map when bridgeRunsDir is missing or unreadable.
-   */
-  private loadBridgeRunIdsByBetId(cycleId: string, bridgeRunsDir: string): Map<string, string> {
-    const files = this.listJsonFiles(bridgeRunsDir);
-    const metas = files
-      .map((file) => this.readBridgeRunMeta(join(bridgeRunsDir, file)))
-      .filter((meta): meta is NonNullable<typeof meta> => meta !== undefined);
-    return collectBridgeRunIds(metas, cycleId);
-  }
-
-  private listJsonFiles(dir: string): string[] {
-    try {
-      // Stryker disable next-line MethodExpression: filter redundant — readBridgeRunMeta catches non-json parse errors
-      return readdirSync(dir).filter(isJsonFile);
-    } catch {
-      return [];
-    }
-  }
-
-  private readBridgeRunMeta(filePath: string): { cycleId?: string; betId?: string; runId?: string; status?: string } | undefined {
-    try {
-      return JSON.parse(readFileSync(filePath, 'utf-8')) as { cycleId?: string; betId?: string; runId?: string; status?: string };
-    // Stryker disable next-line all: equivalent mutant — empty catch implicitly returns undefined
-    } catch {
-      return undefined;
-    }
-  }
-
-  /**
-   * Auto-derive bet outcomes from bridge-run metadata for any bets still marked 'pending'.
-   *
-   * bridge-run/<runId>.json is updated by `execute complete` / `kiai complete`, unlike run.json which is
-   * written once as "running" and never updated. This ensures cooldown always reflects
-   * actual run completion even if the caller passed empty betOutcomes (fixes #216).
-   *
-   * Non-critical: any errors are swallowed so a missing/corrupt bridge-run file
-   * does not abort the cooldown.
-   */
-  private autoSyncBetOutcomesFromBridgeRuns(cycleId: string): BetOutcomeRecord[] {
-    const bridgeRunsDir = this.deps.bridgeRunsDir;
-    if (!bridgeRunsDir) return [];
-
-    const cycle = this.deps.cycleManager.get(cycleId);
-    const toSync: BetOutcomeRecord[] = [];
-
-    for (const bet of cycle.bets) {
-      // Stryker disable next-line ConditionalExpression: guard redundant — readBridgeRunOutcome returns undefined for missing runId
-      if (!isSyncableBet(bet)) continue;
-
-      const outcome = this.readBridgeRunOutcome(bridgeRunsDir, bet.runId!);
-      if (outcome) {
-        toSync.push({ betId: bet.id, outcome });
-      }
-    }
-
-    if (toSync.length > 0) {
-      this.recordBetOutcomes(cycleId, toSync);
-    }
-
-    return toSync;
-  }
-
-  private readBridgeRunOutcome(
-    bridgeRunsDir: string,
-    runId: string,
-  ): BetOutcomeRecord['outcome'] | undefined {
-    const bridgeRunPath = join(bridgeRunsDir, `${runId}.json`);
-    const status = this.readBridgeRunMeta(bridgeRunPath)?.status;
-    return mapBridgeRunStatusToSyncedOutcome(status);
-  }
-
-  /**
-   * Apply bet outcomes to the cycle via CycleManager.
-   * Logs a warning for any unmatched bet IDs.
+   * Delegate bet outcome recording to the bridge-run syncer.
+   * This is a thin delegation wrapper — the canonical implementation lives on BridgeRunSyncer.
    */
   recordBetOutcomes(cycleId: string, outcomes: BetOutcomeRecord[]): void {
-    const { unmatchedBetIds } = this.deps.cycleManager.updateBetOutcomes(cycleId, outcomes);
-    if (unmatchedBetIds.length > 0) {
-      // Stryker disable next-line StringLiteral: presentation text — join separator in warning message
-      logger.warn(`Bet outcome(s) for cycle "${cycleId}" referenced nonexistent bet IDs: ${unmatchedBetIds.join(', ')}`);
-    }
+    this.bridgeRunSyncer.recordBetOutcomes(cycleId, outcomes);
   }
 
   /**
@@ -1055,61 +973,10 @@ export class CooldownSession {
   }
 
   /**
-   * Check whether any bets in the cycle have runs that are still in-progress.
-   * Returns an array of IncompleteRunInfo for every run with status 'pending' or 'running'.
-   * Returns an empty array when runsDir is not configured or all runs are complete/failed.
-   * Read errors for individual run files are swallowed (the run is skipped silently).
+   * Delegate incomplete run checks to the bridge-run syncer.
    */
   checkIncompleteRuns(cycleId: string): IncompleteRunInfo[] {
-    // Stryker disable next-line ConditionalExpression: guard redundant — loop skips bets without runId
-    if (!this.deps.runsDir && !this.deps.bridgeRunsDir) return [];
-
-    const cycle = this.deps.cycleManager.get(cycleId);
-    const incomplete: IncompleteRunInfo[] = [];
-
-    for (const bet of cycle.bets) {
-      if (!bet.runId) continue;
-      const status = this.resolveIncompleteRunStatus(bet.id, bet.runId);
-      if (status) {
-        incomplete.push({ runId: bet.runId, betId: bet.id, status });
-      }
-    }
-
-    return incomplete;
-  }
-
-  private resolveIncompleteRunStatus(
-    betId: string,
-    runId: string,
-  ): IncompleteRunInfo['status'] | undefined {
-    const bridgeStatus = this.readIncompleteBridgeRunStatus(runId);
-    if (bridgeStatus !== undefined) return bridgeStatus ?? undefined;
-    return this.readIncompleteRunFileStatus(betId, runId);
-  }
-
-  private readIncompleteBridgeRunStatus(runId: string): IncompleteRunInfo['status'] | null | undefined {
-    if (!this.deps.bridgeRunsDir) return undefined;
-
-    const bridgeRunPath = join(this.deps.bridgeRunsDir, `${runId}.json`);
-    if (!existsSync(bridgeRunPath)) return undefined;
-    const status = this.readBridgeRunMeta(bridgeRunPath)?.status;
-    const incompleteStatus = mapBridgeRunStatusToIncompleteStatus(status);
-    return incompleteStatus ?? null;
-  }
-
-  private readIncompleteRunFileStatus(
-    _betId: string,
-    runId: string,
-  ): IncompleteRunInfo['status'] | undefined {
-    if (!this.deps.runsDir) return undefined;
-
-    try {
-      const run = readRun(this.deps.runsDir, runId);
-      return run.status === 'pending' || run.status === 'running' ? run.status : undefined;
-    // Stryker disable next-line all: equivalent mutant — empty catch implicitly returns undefined
-    } catch {
-      return undefined;
-    }
+    return this.bridgeRunSyncer.checkIncomplete(cycleId);
   }
 
   /**

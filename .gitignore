@@ -49,5 +49,8 @@ gitleaks-report.json
 .stryker-tmp/
 survivors.txt
 
+# Pipeline state (ephemeral per-session)
+.workflow/
+
 # kata runtime data (local project state)
 .kata/
