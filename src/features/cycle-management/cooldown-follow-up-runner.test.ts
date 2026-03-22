@@ -1,4 +1,4 @@
-import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { vi } from 'vitest';
 import { logger } from '@shared/lib/logger.js';
 import { CooldownFollowUpRunner, type CooldownFollowUpDeps } from './cooldown-follow-up-runner.js';
 import type { PredictionMatcher } from '@features/self-improvement/prediction-matcher.js';

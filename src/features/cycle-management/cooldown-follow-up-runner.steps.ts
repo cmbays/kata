@@ -1,4 +1,4 @@
-import { Given, Then, When, QuickPickleWorld } from 'quickpickle';
+import { After, Given, Then, When, QuickPickleWorld } from 'quickpickle';
 import { expect, vi } from 'vitest';
 import { logger } from '@shared/lib/logger.js';
 import { CooldownFollowUpRunner, type CooldownFollowUpDeps } from './cooldown-follow-up-runner.js';
@@ -418,5 +418,11 @@ Then(
     expect(failMsg).toBeDefined();
   },
 );
+
+// -- Cleanup -----------------------------------------------------
+
+After((_world: CooldownFollowUpRunnerWorld) => {
+  vi.restoreAllMocks();
+});
 
 // 'cooldown continues normally' step is shared - defined in bridge-run-syncer.steps.ts
