@@ -30,12 +30,11 @@ import {
   type SynthesisProposal,
 } from '@domain/types/synthesis.js';
 import type { BeltCalculator } from '@features/belt/belt-calculator.js';
-import { loadProjectState, type BeltComputeResult } from '@features/belt/belt-calculator.js';
+import type { BeltComputeResult } from '@features/belt/belt-calculator.js';
 import type { KataAgentConfidenceCalculator } from '@features/kata-agent/kata-agent-confidence-calculator.js';
-import { KataAgentRegistry } from '@infra/registries/kata-agent-registry.js';
+import { CooldownBeltComputer } from './cooldown-belt-computer.js';
 import {
   buildAgentPerspectiveFromProposals,
-  buildBeltAdvancementMessage,
   buildCooldownBudgetUsage,
   buildExpiryCheckMessages,
   buildCooldownLearningDrafts,
@@ -269,6 +268,7 @@ export class CooldownSession {
   private readonly frictionAnalyzer: Pick<FrictionAnalyzer, 'analyze'> | null;
   private readonly _nextKeikoProposalGenerator: Pick<NextKeikoProposalGenerator, 'generate'> | null;
   private readonly bridgeRunSyncer: BridgeRunSyncer;
+  private readonly beltComputer: CooldownBeltComputer;
 
   constructor(deps: CooldownSessionDeps) {
     this.deps = deps;
@@ -282,6 +282,14 @@ export class CooldownSession {
       bridgeRunsDir: deps.bridgeRunsDir,
       runsDir: deps.runsDir,
       cycleManager: deps.cycleManager,
+    });
+    this.beltComputer = new CooldownBeltComputer({
+      beltCalculator: deps.beltCalculator,
+      projectStateFile: deps.projectStateFile,
+      agentConfidenceCalculator: deps.agentConfidenceCalculator,
+      katakaConfidenceCalculator: deps.katakaConfidenceCalculator,
+      agentDir: deps.agentDir,
+      katakaDir: deps.katakaDir,
     });
   }
 
@@ -406,39 +414,6 @@ export class CooldownSession {
     this.runHierarchicalPromotion();
     this.runExpiryCheck();
     this.runFrictionAnalysis(cycle);
-  }
-
-  private computeOptionalBeltResult(): BeltComputeResult | undefined {
-    if (!this.deps.beltCalculator || !this.deps.projectStateFile) return undefined;
-
-    try {
-      const state = loadProjectState(this.deps.projectStateFile);
-      const beltResult = this.deps.beltCalculator.computeAndStore(this.deps.projectStateFile, state);
-      const beltAdvanceMessage = buildBeltAdvancementMessage(beltResult);
-      if (beltAdvanceMessage) {
-        logger.info(beltAdvanceMessage);
-      }
-      return beltResult;
-    // Stryker disable next-line all: catch block is pure error-reporting — non-critical logging
-    } catch (err) {
-      logger.warn(`Belt computation failed: ${err instanceof Error ? err.message : String(err)}`);
-      return undefined;
-    }
-  }
-
-  private computeOptionalAgentConfidence(): void {
-    const agentConfidenceCalculator = this.deps.agentConfidenceCalculator ?? this.deps.katakaConfidenceCalculator;
-    const agentDir = this.deps.agentDir ?? this.deps.katakaDir;
-    if (!agentConfidenceCalculator || !agentDir) return;
-
-    try {
-      const registry = new KataAgentRegistry(agentDir);
-      for (const agent of registry.list()) {
-        agentConfidenceCalculator.compute(agent.id, agent.name);
-      }
-    } catch (err) {
-      logger.warn(`Agent confidence computation failed: ${err instanceof Error ? err.message : String(err)}`);
-    }
   }
 
   private writeRunDiary(input: {
@@ -579,8 +554,8 @@ export class CooldownSession {
     try {
       const phase = this.buildCooldownPhase(cycleId, betOutcomes);
       this.runCooldownFollowUps(phase.cycle);
-      const beltResult = this.computeOptionalBeltResult();
-      this.computeOptionalAgentConfidence();
+      const beltResult = this.beltComputer.compute();
+      this.beltComputer.computeAgentConfidence();
       this.writeRunDiary({
         cycleId,
         cycleName: phase.cycle.name,
@@ -690,8 +665,8 @@ export class CooldownSession {
       synthesisProposals,
     });
     this.writeOptionalDojoSession(cycleId, cycle.name);
-    const beltResult = this.computeOptionalBeltResult();
-    this.computeOptionalAgentConfidence();
+    const beltResult = this.beltComputer.compute();
+    this.beltComputer.computeAgentConfidence();
     const nextKeikoResult = this.runNextKeikoProposals(cycle);
 
     this.deps.cycleManager.updateState(cycleId, 'complete');
