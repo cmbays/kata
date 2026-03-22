@@ -21,9 +21,7 @@ interface CooldownBeltComputerWorld extends QuickPickleWorld {
   beltCalculatorSpy?: { computeAndStore: ReturnType<typeof vi.fn<ComputeAndStoreFn>> };
   projectStateFile?: string;
   agentConfidenceCalculatorSpy?: { compute: ReturnType<typeof vi.fn<ComputeFn>> };
-  katakaConfidenceCalculatorSpy?: { compute: ReturnType<typeof vi.fn<ComputeFn>> };
   agentDir?: string;
-  katakaDir?: string;
   computer?: CooldownBeltComputer;
   beltResult?: BeltComputeResult;
   loggerInfoSpy: ReturnType<typeof vi.fn>;
@@ -55,9 +53,7 @@ function buildComputer(world: CooldownBeltComputerWorld): CooldownBeltComputer {
     beltCalculator: world.beltCalculatorSpy,
     projectStateFile: world.projectStateFile,
     agentConfidenceCalculator: world.agentConfidenceCalculatorSpy,
-    katakaConfidenceCalculator: world.katakaConfidenceCalculatorSpy,
     agentDir: world.agentDir,
-    katakaDir: world.katakaDir,
   };
   return new CooldownBeltComputer(deps);
 }
@@ -145,22 +141,6 @@ Given(
   (world: CooldownBeltComputerWorld, name1: string, name2: string) => {
     writeAgentRecord(world.agentDir!, name1);
     writeAgentRecord(world.agentDir!, name2);
-  },
-);
-
-Given(
-  'agent confidence tracking is enabled via legacy kataka configuration',
-  (world: CooldownBeltComputerWorld) => {
-    world.katakaDir = join(world.tmpDir, 'kataka-agents');
-    mkdirSync(world.katakaDir, { recursive: true });
-    world.katakaConfidenceCalculatorSpy = { compute: vi.fn<ComputeFn>() };
-  },
-);
-
-Given(
-  'agent {string} is registered in the kataka directory',
-  (world: CooldownBeltComputerWorld, name: string) => {
-    writeAgentRecord(world.katakaDir!, name);
   },
 );
 
@@ -271,9 +251,8 @@ Then(
   'confidence is computed for agent {string}',
   (world: CooldownBeltComputerWorld, agentName: string) => {
     expect(world.lastError).toBeUndefined();
-    const calculator = world.agentConfidenceCalculatorSpy ?? world.katakaConfidenceCalculatorSpy;
-    expect(calculator).toBeDefined();
-    const calls = calculator!.compute.mock.calls as [string, string][];
+    expect(world.agentConfidenceCalculatorSpy).toBeDefined();
+    const calls = world.agentConfidenceCalculatorSpy!.compute.mock.calls as [string, string][];
     const match = calls.find(([, name]) => name === agentName);
     expect(match).toBeDefined();
   },
@@ -285,9 +264,6 @@ Then(
     expect(world.lastError).toBeUndefined();
     if (world.agentConfidenceCalculatorSpy) {
       expect(world.agentConfidenceCalculatorSpy.compute).not.toHaveBeenCalled();
-    }
-    if (world.katakaConfidenceCalculatorSpy) {
-      expect(world.katakaConfidenceCalculatorSpy.compute).not.toHaveBeenCalled();
     }
   },
 );

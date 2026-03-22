@@ -1,13 +1,13 @@
 import { join } from 'node:path';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import type { CycleManager } from '@domain/services/cycle-manager.js';
 import { logger } from '@shared/lib/logger.js';
 import { JsonStoreError } from '@infra/persistence/json-store.js';
 import { readRun } from '@infra/persistence/run-store.js';
+import { readBridgeRunMeta, listBridgeRunsForCycle } from '@infra/persistence/bridge-run-store.js';
 import type { BetOutcomeRecord, IncompleteRunInfo } from './cooldown-types.js';
 import {
   collectBridgeRunIds,
-  isJsonFile,
   isSyncableBet,
   mapBridgeRunStatusToIncompleteStatus,
   mapBridgeRunStatusToSyncedOutcome,
@@ -101,10 +101,7 @@ export class BridgeRunSyncer {
    */
   loadBridgeRunIdsByBetId(cycleId: string): Map<string, string> {
     if (!this.deps.bridgeRunsDir) return new Map();
-    const files = this.listJsonFiles(this.deps.bridgeRunsDir);
-    const metas = files
-      .map((file) => this.readBridgeRunMeta(join(this.deps.bridgeRunsDir!, file)))
-      .filter((meta): meta is NonNullable<typeof meta> => meta !== undefined);
+    const metas = listBridgeRunsForCycle(this.deps.bridgeRunsDir, cycleId);
     return collectBridgeRunIds(metas, cycleId);
   }
 
@@ -127,33 +124,8 @@ export class BridgeRunSyncer {
     bridgeRunsDir: string,
     runId: string,
   ): BetOutcomeRecord['outcome'] | undefined {
-    const bridgeRunPath = join(bridgeRunsDir, `${runId}.json`);
-    const status = this.readBridgeRunMeta(bridgeRunPath)?.status;
-    return mapBridgeRunStatusToSyncedOutcome(status);
-  }
-
-  private listJsonFiles(dir: string): string[] {
-    try {
-      // Stryker disable next-line MethodExpression: filter redundant — readBridgeRunMeta catches non-json parse errors
-      return readdirSync(dir).filter(isJsonFile);
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-        logger.warn(`Unexpected error listing bridge-run directory ${dir}: ${err instanceof Error ? err.message : String(err)}`);
-      }
-      return [];
-    }
-  }
-
-  private readBridgeRunMeta(filePath: string): { cycleId?: string; betId?: string; runId?: string; status?: string } | undefined {
-    try {
-      return JSON.parse(readFileSync(filePath, 'utf-8')) as { cycleId?: string; betId?: string; runId?: string; status?: string };
-    // Stryker disable next-line all: equivalent mutant — catch returns undefined for expected errors
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== 'ENOENT' && !(err instanceof SyntaxError)) {
-        logger.warn(`Unexpected error reading bridge-run file ${filePath}: ${err instanceof Error ? err.message : String(err)}`);
-      }
-      return undefined;
-    }
+    const meta = readBridgeRunMeta(bridgeRunsDir, runId);
+    return mapBridgeRunStatusToSyncedOutcome(meta?.status);
   }
 
   private resolveIncompleteRunStatus(
@@ -170,8 +142,8 @@ export class BridgeRunSyncer {
 
     const bridgeRunPath = join(this.deps.bridgeRunsDir, `${runId}.json`);
     if (!existsSync(bridgeRunPath)) return undefined;
-    const status = this.readBridgeRunMeta(bridgeRunPath)?.status;
-    const incompleteStatus = mapBridgeRunStatusToIncompleteStatus(status);
+    const meta = readBridgeRunMeta(this.deps.bridgeRunsDir, runId);
+    const incompleteStatus = mapBridgeRunStatusToIncompleteStatus(meta?.status);
     return incompleteStatus ?? null;
   }
 

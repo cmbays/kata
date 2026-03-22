@@ -98,6 +98,12 @@ function writeBridgeRun(
 ): void {
   writeFileSync(join(bridgeRunsDir, `${runId}.json`), JSON.stringify({
     runId,
+    betName: 'test bet',
+    cycleName: 'Test Cycle',
+    stages: ['build'],
+    isolation: 'shared',
+    startedAt: '2026-03-22T10:00:00.000Z',
+    status: 'complete',
     ...data,
   }));
 }

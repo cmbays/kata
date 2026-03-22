@@ -49,12 +49,6 @@ Feature: Belt and agent confidence computation during cooldown
     Then confidence is computed for agent "Alpha"
     And confidence is computed for agent "Beta"
 
-  Scenario: agent confidence supports legacy kataka aliases
-    Given agent confidence tracking is enabled via legacy kataka configuration
-    And agent "Legacy" is registered in the kataka directory
-    When agent confidence computation runs
-    Then confidence is computed for agent "Legacy"
-
   Scenario: agent confidence is skipped when tracking is not enabled
     Given agent confidence tracking is not enabled
     When agent confidence computation runs

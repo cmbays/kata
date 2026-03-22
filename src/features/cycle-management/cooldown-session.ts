@@ -124,17 +124,9 @@ export interface CooldownSessionDeps {
    */
   agentConfidenceCalculator?: Pick<KataAgentConfidenceCalculator, 'compute'>;
   /**
-   * @deprecated Use `agentConfidenceCalculator` instead. Will be removed in v1.
-   */
-  katakaConfidenceCalculator?: Pick<KataAgentConfidenceCalculator, 'compute'>;
-  /**
    * Optional path to the agent registry directory. Required when agentConfidenceCalculator is provided.
    */
   agentDir?: string;
-  /**
-   * @deprecated Use `agentDir` instead. Will be removed in v1.
-   */
-  katakaDir?: string;
   /**
    * Optional injected NextKeikoProposalGenerator for testability.
    * When omitted and runsDir is set, a NextKeikoProposalGenerator is constructed automatically.
@@ -196,9 +188,7 @@ export class CooldownSession {
       beltCalculator: deps.beltCalculator,
       projectStateFile: deps.projectStateFile,
       agentConfidenceCalculator: deps.agentConfidenceCalculator,
-      katakaConfidenceCalculator: deps.katakaConfidenceCalculator,
       agentDir: deps.agentDir,
-      katakaDir: deps.katakaDir,
     });
     this.diaryWriter = new CooldownDiaryWriter({
       dojoDir: deps.dojoDir,

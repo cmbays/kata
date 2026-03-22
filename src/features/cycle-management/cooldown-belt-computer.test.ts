@@ -164,60 +164,23 @@ describe('CooldownBeltComputer', () => {
       expect(computeSpy).toHaveBeenCalledWith(id2, 'Agent-B');
     });
 
-    it('prefers agentConfidenceCalculator over katakaConfidenceCalculator', () => {
-      const agentDir = join(tmpDir, 'agents-pref');
-      writeAgentRecord(agentDir, randomUUID(), 'X');
-
-      const canonicalSpy = vi.fn();
-      const legacySpy = vi.fn();
-      const computer = new CooldownBeltComputer(makeDeps({
-        agentDir,
-        agentConfidenceCalculator: { compute: canonicalSpy },
-        katakaConfidenceCalculator: { compute: legacySpy },
-      }));
-
-      computer.computeAgentConfidence();
-
-      expect(canonicalSpy).toHaveBeenCalled();
-      expect(legacySpy).not.toHaveBeenCalled();
-    });
-
-    it('prefers agentDir over katakaDir', () => {
-      const agentDir = join(tmpDir, 'agents-dir-pref');
-      const katakaDir = join(tmpDir, 'kataka-dir-pref');
-      writeAgentRecord(agentDir, randomUUID(), 'Canonical');
-      writeAgentRecord(katakaDir, randomUUID(), 'Legacy');
-
+    it('uses injected agentRegistry instead of constructing from agentDir', () => {
+      const id1 = randomUUID();
       const computeSpy = vi.fn();
+      const registryStub = { list: vi.fn(() => [{ id: id1, name: 'Injected' }]) };
+
       const computer = new CooldownBeltComputer(makeDeps({
-        agentDir,
-        katakaDir,
         agentConfidenceCalculator: { compute: computeSpy },
+        agentRegistry: registryStub,
       }));
 
       computer.computeAgentConfidence();
 
-      const names = computeSpy.mock.calls.map((c: [string, string]) => c[1]);
-      expect(names).toContain('Canonical');
-      expect(names).not.toContain('Legacy');
+      expect(registryStub.list).toHaveBeenCalledOnce();
+      expect(computeSpy).toHaveBeenCalledWith(id1, 'Injected');
     });
 
-    it('falls back to katakaConfidenceCalculator when canonical is absent', () => {
-      const katakaDir = join(tmpDir, 'kataka-fallback');
-      writeAgentRecord(katakaDir, randomUUID(), 'Fallback');
-
-      const legacySpy = vi.fn();
-      const computer = new CooldownBeltComputer(makeDeps({
-        katakaDir,
-        katakaConfidenceCalculator: { compute: legacySpy },
-      }));
-
-      computer.computeAgentConfidence();
-
-      expect(legacySpy).toHaveBeenCalledWith(expect.any(String), 'Fallback');
-    });
-
-    it('no-ops when calculator is provided but directory is missing', () => {
+    it('no-ops when calculator is provided but neither registry nor directory is available', () => {
       const computeSpy = vi.fn();
       const computer = new CooldownBeltComputer(makeDeps({
         agentConfidenceCalculator: { compute: computeSpy },
