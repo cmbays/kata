@@ -8,7 +8,6 @@ import type { Run, StageState } from '@domain/types/run-state.js';
 import { KnowledgeStore } from '@infra/knowledge/knowledge-store.js';
 import { JsonStore } from '@infra/persistence/json-store.js';
 import { appendObservation, createRunTree, writeStageState } from '@infra/persistence/run-store.js';
-import { KataAgentRegistry } from '@infra/registries/kata-agent-registry.js';
 import { SynthesisResultSchema } from '@domain/types/synthesis.js';
 import { logger } from '@shared/lib/logger.js';
 import {
@@ -189,22 +188,15 @@ describe('CooldownSession unit seams', () => {
           milestoneIssueCount: 0,
         })),
       };
+      const agentRegistry = {
+        list: vi.fn(() => [{ id: randomUUID(), name: 'Unit Agent' }]),
+      };
 
       writeProjectState(fixture.projectStateFile);
-      const registry = new KataAgentRegistry(fixture.agentDir);
-      registry.register({
-        id: randomUUID(),
-        name: 'Unit Agent',
-        role: 'executor',
-        skills: ['testing'],
-        createdAt: new Date().toISOString(),
-        active: true,
-      });
 
       const session = new CooldownSession({
         ...fixture.baseDeps,
         dojoDir: fixture.dojoDir,
-        agentDir: fixture.agentDir,
         projectStateFile: fixture.projectStateFile,
         proposalGenerator,
         predictionMatcher,
@@ -213,6 +205,7 @@ describe('CooldownSession unit seams', () => {
         hierarchicalPromoter,
         beltCalculator,
         agentConfidenceCalculator,
+        agentRegistry,
         dojoSessionBuilder,
         nextKeikoProposalGenerator,
         ruleRegistry: { getPendingSuggestions: vi.fn(() => []) },
@@ -232,6 +225,7 @@ describe('CooldownSession unit seams', () => {
         fixture.projectStateFile,
         expect.objectContaining({ currentBelt: 'mukyu' }),
       );
+      expect(agentRegistry.list).toHaveBeenCalledOnce();
       expect(agentConfidenceCalculator.compute).toHaveBeenCalledTimes(1);
       expect(dojoSessionBuilder.build).toHaveBeenCalledTimes(1);
       expect(nextKeikoProposalGenerator.generate).toHaveBeenCalledTimes(1);

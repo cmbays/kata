@@ -1,11 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { Given, Then, When, QuickPickleWorld } from 'quickpickle';
 import { expect, vi } from 'vitest';
 import { logger } from '@shared/lib/logger.js';
-import { CooldownBeltComputer, type CooldownBeltDeps } from './cooldown-belt-computer.js';
+import { CooldownBeltComputer, type CooldownAgentRegistry, type CooldownBeltDeps } from './cooldown-belt-computer.js';
 import type { BeltComputeResult } from '@features/belt/belt-calculator.js';
 import type { BeltLevel } from '@domain/types/belt.js';
 import type { BeltCalculator } from '@features/belt/belt-calculator.js';
@@ -13,6 +13,7 @@ import type { KataAgentConfidenceCalculator } from '@features/kata-agent/kata-ag
 
 type ComputeAndStoreFn = BeltCalculator['computeAndStore'];
 type ComputeFn = KataAgentConfidenceCalculator['compute'];
+type ListAgentsFn = CooldownAgentRegistry['list'];
 
 // ── World ────────────────────────────────────────────────────
 
@@ -21,7 +22,7 @@ interface CooldownBeltComputerWorld extends QuickPickleWorld {
   beltCalculatorSpy?: { computeAndStore: ReturnType<typeof vi.fn<ComputeAndStoreFn>> };
   projectStateFile?: string;
   agentConfidenceCalculatorSpy?: { compute: ReturnType<typeof vi.fn<ComputeFn>> };
-  agentDir?: string;
+  agentRegistry?: { list: ReturnType<typeof vi.fn<ListAgentsFn>> };
   computer?: CooldownBeltComputer;
   beltResult?: BeltComputeResult;
   loggerInfoSpy: ReturnType<typeof vi.fn>;
@@ -29,31 +30,12 @@ interface CooldownBeltComputerWorld extends QuickPickleWorld {
   lastError?: Error;
 }
 
-// ── Helpers ──────────────────────────────────────────────────
-
-function writeAgentRecord(dir: string, name: string): string {
-  mkdirSync(dir, { recursive: true });
-  const id = randomUUID();
-  writeFileSync(
-    join(dir, `${id}.json`),
-    JSON.stringify({
-      id,
-      name,
-      role: 'executor',
-      skills: [],
-      createdAt: new Date().toISOString(),
-      active: true,
-    }),
-  );
-  return id;
-}
-
 function buildComputer(world: CooldownBeltComputerWorld): CooldownBeltComputer {
   const deps: CooldownBeltDeps = {
     beltCalculator: world.beltCalculatorSpy,
     projectStateFile: world.projectStateFile,
     agentConfidenceCalculator: world.agentConfidenceCalculatorSpy,
-    agentDir: world.agentDir,
+    agentRegistry: world.agentRegistry,
   };
   return new CooldownBeltComputer(deps);
 }
@@ -130,8 +112,6 @@ Given(
 Given(
   'agent confidence tracking is enabled',
   (world: CooldownBeltComputerWorld) => {
-    world.agentDir = join(world.tmpDir, 'agents');
-    mkdirSync(world.agentDir, { recursive: true });
     world.agentConfidenceCalculatorSpy = { compute: vi.fn<ComputeFn>() };
   },
 );
@@ -139,8 +119,12 @@ Given(
 Given(
   'agents {string} and {string} are registered',
   (world: CooldownBeltComputerWorld, name1: string, name2: string) => {
-    writeAgentRecord(world.agentDir!, name1);
-    writeAgentRecord(world.agentDir!, name2);
+    world.agentRegistry = {
+      list: vi.fn<ListAgentsFn>(() => [
+        { id: randomUUID(), name: name1 },
+        { id: randomUUID(), name: name2 },
+      ]),
+    };
   },
 );
 
@@ -155,17 +139,16 @@ Given(
   'agent confidence tracking is enabled without an agent registry',
   (world: CooldownBeltComputerWorld) => {
     world.agentConfidenceCalculatorSpy = { compute: vi.fn<ComputeFn>() };
-    // agentDir left undefined
+    // agentRegistry left undefined
   },
 );
 
 Given(
   'the agent registry contains invalid data',
   (world: CooldownBeltComputerWorld) => {
-    // Point agentDir at a file instead of a directory — KataAgentRegistry will fail
-    const brokenPath = join(world.tmpDir, 'not-a-directory.json');
-    writeFileSync(brokenPath, '{}');
-    world.agentDir = brokenPath;
+    world.agentRegistry = {
+      list: vi.fn<ListAgentsFn>(() => { throw new Error('Simulated registry failure'); }),
+    };
   },
 );
 

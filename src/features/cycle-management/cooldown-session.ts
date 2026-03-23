@@ -19,7 +19,8 @@ import { FrictionAnalyzer } from '@features/self-improvement/friction-analyzer.j
 import type { SynthesisProposal } from '@domain/types/synthesis.js';
 import type { BeltCalculator } from '@features/belt/belt-calculator.js';
 import type { KataAgentConfidenceCalculator } from '@features/kata-agent/kata-agent-confidence-calculator.js';
-import { CooldownBeltComputer } from './cooldown-belt-computer.js';
+import { KataAgentRegistry } from '@infra/registries/kata-agent-registry.js';
+import { CooldownBeltComputer, type CooldownAgentRegistry } from './cooldown-belt-computer.js';
 import { CooldownDiaryWriter } from './cooldown-diary-writer.js';
 import { CooldownFollowUpRunner } from './cooldown-follow-up-runner.js';
 import { CooldownSynthesisManager } from './cooldown-synthesis-manager.js';
@@ -128,6 +129,11 @@ export interface CooldownSessionDeps {
    */
   agentDir?: string;
   /**
+   * Optional injected agent registry reader for agent confidence computation.
+   * When omitted and agentDir is set, CooldownSession constructs KataAgentRegistry automatically.
+   */
+  agentRegistry?: CooldownAgentRegistry;
+  /**
    * Optional injected NextKeikoProposalGenerator for testability.
    * When omitted and runsDir is set, a NextKeikoProposalGenerator is constructed automatically.
    * Backward compatible — omitting this field skips next-keiko proposal generation.
@@ -188,7 +194,7 @@ export class CooldownSession {
       beltCalculator: deps.beltCalculator,
       projectStateFile: deps.projectStateFile,
       agentConfidenceCalculator: deps.agentConfidenceCalculator,
-      agentDir: deps.agentDir,
+      agentRegistry: this.resolveAgentRegistry(deps),
     });
     this.diaryWriter = new CooldownDiaryWriter({
       dojoDir: deps.dojoDir,
@@ -250,6 +256,11 @@ export class CooldownSession {
   ): Pick<NextKeikoProposalGenerator, 'generate'> | null {
     if (deps.nextKeikoProposalGenerator) return deps.nextKeikoProposalGenerator;
     return deps.nextKeikoGeneratorDeps ? new NextKeikoProposalGenerator(deps.nextKeikoGeneratorDeps) : null;
+  }
+
+  private resolveAgentRegistry(deps: CooldownSessionDeps): CooldownAgentRegistry | undefined {
+    if (deps.agentRegistry) return deps.agentRegistry;
+    return deps.agentDir ? new KataAgentRegistry(deps.agentDir) : undefined;
   }
 
   private warnOnIncompleteRuns(incompleteRuns: IncompleteRunInfo[], force: boolean): void {
