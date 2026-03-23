@@ -1,9 +1,12 @@
 import type { BeltCalculator } from '@features/belt/belt-calculator.js';
 import { loadProjectState, type BeltComputeResult } from '@features/belt/belt-calculator.js';
 import type { KataAgentConfidenceCalculator } from '@features/kata-agent/kata-agent-confidence-calculator.js';
-import { KataAgentRegistry } from '@infra/registries/kata-agent-registry.js';
 import { logger } from '@shared/lib/logger.js';
 import { buildBeltAdvancementMessage } from './cooldown-session.helpers.js';
+
+export interface CooldownAgentRegistry {
+  list(): Array<{ id: string; name: string }>;
+}
 
 /**
  * Dependencies injected into CooldownBeltComputer for testability.
@@ -12,8 +15,7 @@ export interface CooldownBeltDeps {
   beltCalculator?: Pick<BeltCalculator, 'computeAndStore'>;
   projectStateFile?: string;
   agentConfidenceCalculator?: Pick<KataAgentConfidenceCalculator, 'compute'>;
-  agentDir?: string;
-  agentRegistry?: Pick<KataAgentRegistry, 'list'>;
+  agentRegistry?: CooldownAgentRegistry;
 }
 
 /**
@@ -56,15 +58,13 @@ export class CooldownBeltComputer {
    *
    * Non-critical: computation errors are logged as warnings and swallowed
    * so that agent confidence failures do not abort cooldown.
-   */
+  */
   computeAgentConfidence(): void {
-    if (!this.deps.agentConfidenceCalculator) return;
-    if (!this.deps.agentRegistry && !this.deps.agentDir) return;
+    if (!this.deps.agentConfidenceCalculator || !this.deps.agentRegistry) return;
 
     let agents: { id: string; name: string }[];
     try {
-      const registry = this.deps.agentRegistry ?? new KataAgentRegistry(this.deps.agentDir!);
-      agents = registry.list();
+      agents = this.deps.agentRegistry.list();
     // Stryker disable next-line all: catch block is pure error-reporting — registry load failure
     } catch (err) {
       logger.warn(`Agent confidence computation failed: ${err instanceof Error ? err.message : String(err)}`);

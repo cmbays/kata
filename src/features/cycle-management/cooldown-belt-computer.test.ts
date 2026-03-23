@@ -1,27 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { logger } from '@shared/lib/logger.js';
 import { CooldownBeltComputer, type CooldownBeltDeps } from './cooldown-belt-computer.js';
 
 function makeDeps(overrides: Partial<CooldownBeltDeps> = {}): CooldownBeltDeps {
   return { ...overrides };
-}
-
-function writeAgentRecord(dir: string, id: string, name: string): void {
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(
-    join(dir, `${id}.json`),
-    JSON.stringify({
-      id,
-      name,
-      role: 'executor',
-      skills: [],
-      createdAt: new Date().toISOString(),
-      active: true,
-    }),
-  );
 }
 
 describe('CooldownBeltComputer', () => {
@@ -145,20 +130,24 @@ describe('CooldownBeltComputer', () => {
 
   describe('computeAgentConfidence()', () => {
     it('calls compute for each registered agent', () => {
-      const agentDir = join(tmpDir, 'agents');
       const id1 = randomUUID();
       const id2 = randomUUID();
-      writeAgentRecord(agentDir, id1, 'Agent-A');
-      writeAgentRecord(agentDir, id2, 'Agent-B');
+      const registryStub = {
+        list: vi.fn(() => [
+          { id: id1, name: 'Agent-A' },
+          { id: id2, name: 'Agent-B' },
+        ]),
+      };
 
       const computeSpy = vi.fn();
       const computer = new CooldownBeltComputer(makeDeps({
-        agentDir,
+        agentRegistry: registryStub,
         agentConfidenceCalculator: { compute: computeSpy },
       }));
 
       computer.computeAgentConfidence();
 
+      expect(registryStub.list).toHaveBeenCalledOnce();
       expect(computeSpy).toHaveBeenCalledTimes(2);
       expect(computeSpy).toHaveBeenCalledWith(id1, 'Agent-A');
       expect(computeSpy).toHaveBeenCalledWith(id2, 'Agent-B');
@@ -191,22 +180,25 @@ describe('CooldownBeltComputer', () => {
       expect(computeSpy).not.toHaveBeenCalled();
     });
 
-    it('no-ops when directory is provided but calculator is missing', () => {
-      const agentDir = join(tmpDir, 'agents-no-calc');
-      writeAgentRecord(agentDir, randomUUID(), 'Orphan');
+    it('no-ops when registry is provided but calculator is missing', () => {
+      const registryStub = { list: vi.fn(() => [{ id: randomUUID(), name: 'Orphan' }]) };
 
-      const computer = new CooldownBeltComputer(makeDeps({ agentDir }));
+      const computer = new CooldownBeltComputer(makeDeps({ agentRegistry: registryStub }));
 
       // Should not throw
       computer.computeAgentConfidence();
+      expect(registryStub.list).not.toHaveBeenCalled();
     });
 
     it('continues computing remaining agents when one agent fails', () => {
-      const agentDir = join(tmpDir, 'agents-partial-fail');
       const id1 = randomUUID();
       const id2 = randomUUID();
-      writeAgentRecord(agentDir, id1, 'Failing');
-      writeAgentRecord(agentDir, id2, 'Healthy');
+      const registryStub = {
+        list: vi.fn(() => [
+          { id: id1, name: 'Failing' },
+          { id: id2, name: 'Healthy' },
+        ]),
+      };
 
       const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
       const computeSpy = vi.fn((_id: string, name: string) => {
@@ -215,12 +207,13 @@ describe('CooldownBeltComputer', () => {
       });
 
       const computer = new CooldownBeltComputer(makeDeps({
-        agentDir,
+        agentRegistry: registryStub,
         agentConfidenceCalculator: { compute: computeSpy },
       }));
 
       computer.computeAgentConfidence();
 
+      expect(registryStub.list).toHaveBeenCalledOnce();
       expect(computeSpy).toHaveBeenCalledTimes(2);
       expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Confidence computation failed for agent "Failing"'));
       warnSpy.mockRestore();
@@ -228,11 +221,10 @@ describe('CooldownBeltComputer', () => {
 
     it('warns and continues when agent registry throws', () => {
       const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
-      const brokenPath = join(tmpDir, 'broken.json');
-      writeFileSync(brokenPath, '{}');
-
       const computer = new CooldownBeltComputer(makeDeps({
-        agentDir: brokenPath,
+        agentRegistry: {
+          list: vi.fn(() => { throw new Error('registry exploded'); }),
+        },
         agentConfidenceCalculator: { compute: vi.fn() },
       }));
 
@@ -244,11 +236,10 @@ describe('CooldownBeltComputer', () => {
 
     it('warns with stringified non-Error thrown values', () => {
       const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
-      const agentDir = join(tmpDir, 'agents-throw');
-      writeAgentRecord(agentDir, randomUUID(), 'Thrower');
-
       const computer = new CooldownBeltComputer(makeDeps({
-        agentDir,
+        agentRegistry: {
+          list: vi.fn(() => [{ id: randomUUID(), name: 'Thrower' }]),
+        },
         agentConfidenceCalculator: {
           compute: vi.fn(() => { throw 'non-error throw'; }),
         },
